@@ -4,8 +4,21 @@ import path from 'node:path';
 import { query } from '@anthropic-ai/claude-agent-sdk';
 import { buildEnv, newWorkspace } from './lib.mjs';
 
+const PROBE_TIMEOUT_MS = 10 * 60 * 1000; // 与 checks.mjs 同款：网络卡死/权限挂起时 abort，runner 记为 ERROR 而非挂死
+
 function baseOptions(provider, cwd, extra = {}) {
-  return { cwd, env: buildEnv(provider), permissionMode: 'acceptEdits', settingSources: [], maxTurns: 6, ...extra };
+  const abortController = new AbortController();
+  const timer = setTimeout(() => abortController.abort(new Error(`probe 超时（${PROBE_TIMEOUT_MS / 60000} 分钟）`)), PROBE_TIMEOUT_MS);
+  timer.unref(); // 正常完成后不阻止进程退出
+  return {
+    cwd,
+    env: buildEnv(provider),
+    permissionMode: 'acceptEdits',
+    settingSources: [],
+    maxTurns: 6,
+    abortController,
+    ...extra,
+  };
 }
 
 // P1: SDK session resume 在第三方端点下的可靠性（06 号 §六 持久化方案的分叉依据）
