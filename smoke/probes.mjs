@@ -72,6 +72,11 @@ export async function probeRelayAnthropic() {
 
 // P4: canUseTool 回调在第三方端点下的行为（审批条 UI 的机制基础）
 // permissionMode 'default' 下 Write 需要审批 → 必然经过 canUseTool
+// 诊断证据（2026-07-20 DeepSeek 实测，见 task-34 报告）：回调 content 恒为小写 'hello'（大小写非根因）；
+//   真正根因是模型把"当前目录"猜成臆造的绝对路径（如 \root\probe.txt、\workspace\probe.txt），
+//   Write 落在 options.cwd 之外 → 读死 cwd/probe.txt 得 ENOENT，间歇 fileOk=false。
+//   故按回调记录的 file_path 实际去向读取（回退 cwd/probe.txt，再回退列目录），保留 filePath 证据；
+//   断言大小写不敏感以增强健壮性。ok 判定仍为 calls.length>0 && fileOk，不放水。
 export async function probeCanUseTool(provider) {
   const cwd = newWorkspace(`${provider.id}-canusetool`);
   const calls = [];
@@ -80,14 +85,22 @@ export async function probeCanUseTool(provider) {
     options: baseOptions(provider, cwd, {
       permissionMode: 'default',
       canUseTool: async (toolName, input) => {
-        calls.push({ toolName, inputKeys: Object.keys(input) });
+        calls.push({ toolName, inputKeys: Object.keys(input), file_path: input.file_path });
         return { behavior: 'allow', updatedInput: input };
       },
     }),
   });
   let result = null;
   for await (const m of q) { if (m.type === 'result') result = m; }
-  let fileOk = false;
-  try { fileOk = (await fs.readFile(path.join(cwd, 'probe.txt'), 'utf8')).includes('hello'); } catch {}
-  return { probe: 'canusetool', ok: calls.length > 0 && fileOk, details: { calls, fileOk, subtype: result?.subtype } };
+  // 按模型实际写入去向读取：优先回调记录的 file_path，回退 cwd/probe.txt
+  const candidates = [...calls.filter(c => c.file_path).map(c => c.file_path), path.join(cwd, 'probe.txt')];
+  let filePath = null, foundContent = null;
+  for (const p of candidates) {
+    try { foundContent = await fs.readFile(p, 'utf8'); filePath = p; break; } catch {}
+  }
+  const fileOk = foundContent != null && foundContent.toLowerCase().includes('hello');
+  if (foundContent == null) {
+    try { foundContent = 'DIR:' + JSON.stringify(await fs.readdir(cwd)); } catch { foundContent = '<读取失败且目录不可列>'; }
+  }
+  return { probe: 'canusetool', ok: calls.length > 0 && fileOk, details: { calls, filePath, foundContent: String(foundContent).slice(0, 50), fileOk, subtype: result?.subtype } };
 }
