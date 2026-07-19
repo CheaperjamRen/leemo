@@ -1,5 +1,6 @@
 // smoke/probes.mjs — Phase 0 四项探测（不卡 PASS 门，只记录事实供后续设计）
 import fs from 'node:fs/promises';
+import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { query } from '@anthropic-ai/claude-agent-sdk';
 import { buildEnv, newWorkspace } from './lib.mjs';
@@ -71,12 +72,9 @@ export async function probeRelayAnthropic() {
 }
 
 // P4: canUseTool 回调在第三方端点下的行为（审批条 UI 的机制基础）
-// permissionMode 'default' 下 Write 需要审批 → 必然经过 canUseTool
-// 诊断证据（2026-07-20 DeepSeek 实测，见 task-34 报告）：回调 content 恒为小写 'hello'（大小写非根因）；
-//   真正根因是模型把"当前目录"猜成臆造的绝对路径（如 \root\probe.txt、\workspace\probe.txt），
-//   Write 落在 options.cwd 之外 → 读死 cwd/probe.txt 得 ENOENT，间歇 fileOk=false。
-//   故按回调记录的 file_path 实际去向读取（回退 cwd/probe.txt，再回退列目录），保留 filePath 证据；
-//   断言大小写不敏感以增强健壮性。ok 判定仍为 calls.length>0 && fileOk，不放水。
+// permissionMode 'default' 下 Write 需要审批 → 必然经过 canUseTool。
+// 判定证据链（防陈旧文件假阳）：本次确有 Write 调用 → 读取该 Write 的目标路径 → 内容匹配。
+// writtenInCwd 单独记录"模型是否把文件写在工作区内"（Phase 0 行为发现：模型可能臆造 cwd 外绝对路径）。
 export async function probeCanUseTool(provider) {
   const cwd = newWorkspace(`${provider.id}-canusetool`);
   const calls = [];
@@ -85,22 +83,33 @@ export async function probeCanUseTool(provider) {
     options: baseOptions(provider, cwd, {
       permissionMode: 'default',
       canUseTool: async (toolName, input) => {
-        calls.push({ toolName, inputKeys: Object.keys(input), file_path: input.file_path });
+        const filePath = typeof input.file_path === 'string' ? input.file_path : null;
+        calls.push({
+          toolName,
+          filePath,
+          preExisted: filePath ? existsSync(path.isAbsolute(filePath) ? filePath : path.join(cwd, filePath)) : null,
+        });
         return { behavior: 'allow', updatedInput: input };
       },
     }),
   });
   let result = null;
   for await (const m of q) { if (m.type === 'result') result = m; }
-  // 按模型实际写入去向读取：优先回调记录的 file_path，回退 cwd/probe.txt
-  const candidates = [...calls.filter(c => c.file_path).map(c => c.file_path), path.join(cwd, 'probe.txt')];
-  let filePath = null, foundContent = null;
-  for (const p of candidates) {
-    try { foundContent = await fs.readFile(p, 'utf8'); filePath = p; break; } catch {}
+
+  const write = calls.find(c => c.toolName === 'Write' && c.filePath);
+  let resolvedPath = null, writtenInCwd = null, foundContent = '';
+  if (write) {
+    resolvedPath = path.isAbsolute(write.filePath) ? write.filePath : path.join(cwd, write.filePath);
+    writtenInCwd = resolvedPath.toLowerCase().startsWith(cwd.toLowerCase());
+    try { foundContent = await fs.readFile(resolvedPath, 'utf8'); } catch {}
+    if (!writtenInCwd && foundContent.toLowerCase().includes('hello')) {
+      await fs.unlink(resolvedPath).catch(() => {}); // 清理本次探测写在工作区外的残留，防污染后续 run
+    }
   }
-  const fileOk = foundContent != null && foundContent.toLowerCase().includes('hello');
-  if (foundContent == null) {
-    try { foundContent = 'DIR:' + JSON.stringify(await fs.readdir(cwd)); } catch { foundContent = '<读取失败且目录不可列>'; }
-  }
-  return { probe: 'canusetool', ok: calls.length > 0 && fileOk, details: { calls, filePath, foundContent: String(foundContent).slice(0, 50), fileOk, subtype: result?.subtype } };
+  const ok = Boolean(write) && foundContent.toLowerCase().includes('hello');
+  return {
+    probe: 'canusetool',
+    ok,
+    details: { calls, resolvedPath, writtenInCwd, foundContent: foundContent.slice(0, 50), subtype: result?.subtype },
+  };
 }
