@@ -3,6 +3,7 @@
 import { loadEnv, saveResult, redact } from './lib.mjs';
 import { PROVIDERS, resolveProvider } from './providers.mjs';
 import { checkStreaming, checkTools, checkMultiTurn, checkSubagent, checkCompaction } from './checks.mjs';
+import { probeResume, probeAnySearch, probeRelayAnthropic, probeCanUseTool } from './probes.mjs';
 
 loadEnv();
 
@@ -14,7 +15,12 @@ export const CHECKS = {
   subagent: checkSubagent,
   compaction: checkCompaction,
 };
-export const PROBES = {};   // { resume: fn(provider), anysearch: fn, 'relay-anthropic': fn, canusetool: fn(provider) }
+export const PROBES = {
+  resume: probeResume,
+  anysearch: probeAnySearch,
+  'relay-anthropic': probeRelayAnthropic,
+  canusetool: probeCanUseTool,
+};
 
 function arg(name, dflt) {
   const i = process.argv.indexOf(`--${name}`);
