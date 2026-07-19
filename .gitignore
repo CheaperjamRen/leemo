@@ -1,0 +1,6 @@
+node_modules/
+.env
+smoke/results/
+smoke/workspaces/
+dist/
+*.log
