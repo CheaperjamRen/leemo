@@ -2,11 +2,18 @@
 // 用法: node smoke/smoke-cc-sdk.mjs --provider deepseek|glm|kimi|all --check all|streaming,tools,... --probes
 import { loadEnv, saveResult, redact } from './lib.mjs';
 import { PROVIDERS, resolveProvider } from './providers.mjs';
+import { checkStreaming, checkTools, checkMultiTurn, checkSubagent, checkCompaction } from './checks.mjs';
 
 loadEnv();
 
 // Task 3 在此注册五项核心验证；Task 4 注册探测
-export const CHECKS = {};   // { streaming: fn(provider), tools: fn, multiturn: fn, subagent: fn, compaction: fn }
+export const CHECKS = {
+  streaming: checkStreaming,
+  tools: checkTools,
+  multiturn: checkMultiTurn,
+  subagent: checkSubagent,
+  compaction: checkCompaction,
+};
 export const PROBES = {};   // { resume: fn(provider), anysearch: fn, 'relay-anthropic': fn, canusetool: fn(provider) }
 
 function arg(name, dflt) {
