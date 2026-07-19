@@ -10,7 +10,12 @@ export function loadEnv() {
   if (!fs.existsSync(envPath)) return;
   for (const line of fs.readFileSync(envPath, 'utf8').split(/\r?\n/)) {
     const m = line.match(/^\s*([A-Z0-9_]+)\s*=\s*(.*)\s*$/);
-    if (m && !line.trim().startsWith('#') && m[2] !== '') process.env[m[1]] ??= m[2];
+    if (m && !line.trim().startsWith('#') && m[2] !== '') {
+      let val = m[2];
+      const qm = val.match(/^(['"])(.*)\1$/);
+      if (qm) val = qm[2];
+      process.env[m[1]] ??= val;
+    }
   }
 }
 
@@ -48,7 +53,8 @@ export function newWorkspace(tag) {
 export function redact(str) {
   let out = String(str);
   for (const [k, v] of Object.entries(process.env)) {
-    if (/(_API_KEY|_TOKEN)$/.test(k) && v && v.length > 8) out = out.split(v).join(`<${k}>`);
+    // ≥4：真实 key 不会更短；阈值防止 "0"/"1" 这类占位值触发全局替换把日志搅烂
+    if (/(_API_KEY|_TOKEN)$/.test(k) && v && v.length >= 4) out = out.split(v).join(`<${k}>`);
   }
   return out;
 }

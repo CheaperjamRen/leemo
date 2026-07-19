@@ -1,6 +1,6 @@
 // smoke/smoke-cc-sdk.mjs — Phase 0 runner
 // 用法: node smoke/smoke-cc-sdk.mjs --provider deepseek|glm|kimi|all --check all|streaming,tools,... --probes
-import { loadEnv, saveResult } from './lib.mjs';
+import { loadEnv, saveResult, redact } from './lib.mjs';
 import { PROVIDERS, resolveProvider } from './providers.mjs';
 
 loadEnv();
@@ -13,7 +13,7 @@ function arg(name, dflt) {
   const i = process.argv.indexOf(`--${name}`);
   if (i === -1) return dflt;
   const v = process.argv[i + 1];
-  return v && !v.startsWith('--') ? v : true;
+  return v && !v.startsWith('--') ? v : dflt;
 }
 
 const providerArg = arg('provider', 'deepseek');
@@ -32,17 +32,17 @@ for (const pid of providerIds) {
   const run = { provider: pid, model: provider.model, startedAt: new Date().toISOString(), checks: [], probes: [] };
 
   for (const name of checkNames) {
-    if (!CHECKS[name]) { console.error(`[skip] 未知 check: ${name}`); continue; }
+    if (!CHECKS[name]) { console.error(`[skip] 未知 check: ${name}（可选: ${Object.keys(CHECKS).join('/')}）`); continue; }
     console.log(`\n--- check: ${name} ---`);
     const t0 = Date.now();
     try {
       const r = await CHECKS[name](provider);
       r.ms = Date.now() - t0;
       run.checks.push(r);
-      console.log(`${r.pass ? 'PASS' : 'FAIL'} (${r.ms}ms)`, JSON.stringify(r.details).slice(0, 300));
+      console.log(`${r.pass ? 'PASS' : 'FAIL'} (${r.ms}ms)`, redact(JSON.stringify(r.details)).slice(0, 300));
     } catch (e) {
       run.checks.push({ check: name, pass: false, error: String(e), ms: Date.now() - t0 });
-      console.log(`ERROR: ${e}`);
+      console.log('ERROR: ' + redact(String(e)));
     }
   }
 
@@ -52,8 +52,8 @@ for (const pid of providerIds) {
       try {
         const r = await fn(provider);
         run.probes.push(r);
-        console.log(`ok=${r.ok}`, JSON.stringify(r.details).slice(0, 300));
-      } catch (e) { run.probes.push({ probe: name, ok: false, error: String(e) }); console.log(`ERROR: ${e}`); }
+        console.log(`ok=${r.ok}`, redact(JSON.stringify(r.details)).slice(0, 300));
+      } catch (e) { run.probes.push({ probe: name, ok: false, error: String(e) }); console.log('ERROR: ' + redact(String(e))); }
     }
   }
 
