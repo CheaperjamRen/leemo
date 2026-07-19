@@ -102,8 +102,8 @@ export async function probeCanUseTool(provider) {
     resolvedPath = path.isAbsolute(write.filePath) ? write.filePath : path.join(cwd, write.filePath);
     writtenInCwd = resolvedPath.toLowerCase().startsWith(cwd.toLowerCase());
     try { foundContent = await fs.readFile(resolvedPath, 'utf8'); } catch {}
-    if (!writtenInCwd && foundContent.toLowerCase().includes('hello')) {
-      await fs.unlink(resolvedPath).catch(() => {}); // 清理本次探测写在工作区外的残留，防污染后续 run
+    if (!writtenInCwd && !write.preExisted && foundContent.toLowerCase().includes('hello')) {
+      await fs.unlink(resolvedPath).catch(() => {}); // 只清理本轮新建的 cwd 外残留；预先存在的文件一律不删，只留证据
     }
   }
   const ok = Boolean(write) && foundContent.toLowerCase().includes('hello');
