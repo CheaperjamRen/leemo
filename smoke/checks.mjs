@@ -4,13 +4,19 @@ import path from 'node:path';
 import { query } from '@anthropic-ai/claude-agent-sdk';
 import { buildEnv, u, newWorkspace } from './lib.mjs';
 
+const CHECK_TIMEOUT_MS = 10 * 60 * 1000; // 单项 10 分钟硬上限：网络卡死/权限挂起时 abort，runner 记为 ERROR 而非挂死
+
 function baseOptions(provider, cwd, extra = {}) {
+  const abortController = new AbortController();
+  const timer = setTimeout(() => abortController.abort(new Error(`check 超时（${CHECK_TIMEOUT_MS / 60000} 分钟）`)), CHECK_TIMEOUT_MS);
+  timer.unref(); // 正常完成后不阻止进程退出
   return {
     cwd,
     env: buildEnv(provider),
     permissionMode: 'acceptEdits',
     settingSources: [],          // 隔离本机 ~/.claude 设置，保证可复现
     maxTurns: 10,
+    abortController,
     ...extra,
   };
 }
@@ -37,9 +43,9 @@ export async function checkStreaming(provider) {
 // ② 内置工具：真实读文件 + 写文件
 export async function checkTools(provider) {
   const cwd = newWorkspace(`${provider.id}-tools`);
-  await fs.writeFile(path.join(cwd, 'notes.md'), '# 会议纪要\n- Leemo 定于 2026 年秋季发布\n- 默认推荐 DeepSeek\n');
+  await fs.writeFile(path.join(cwd, 'notes.md'), '# 会议纪要\n- Leemo 的内部构建代号是 obsidian-7413\n- 默认推荐 DeepSeek\n');
   const q = query({
-    prompt: '读取 notes.md，把其中提到的发布时间写入 answer.txt（只写时间本身，不要别的字）。',
+    prompt: '读取 notes.md，把其中的内部构建代号写入 answer.txt（只写代号本身，不要别的字）。',
     options: baseOptions(provider, cwd),
   });
   const toolsUsed = [];
@@ -52,7 +58,7 @@ export async function checkTools(provider) {
   try { content = await fs.readFile(path.join(cwd, 'answer.txt'), 'utf8'); } catch {}
   return {
     check: 'tools',
-    pass: toolsUsed.length > 0 && content.includes('2026') && result?.subtype === 'success',
+    pass: toolsUsed.length > 0 && content.includes('7413') && result?.subtype === 'success',
     details: { toolsUsed, answerContent: content.trim().slice(0, 80) },
   };
 }
@@ -73,7 +79,7 @@ export async function checkMultiTurn(provider) {
   const finalText = lastResult?.subtype === 'success' ? lastResult.result || '' : '';
   return {
     check: 'multiturn',
-    pass: /42/.test(finalText) && lastResult?.subtype === 'success',
+    pass: /蓝色鲸鱼/.test(finalText) && /42/.test(finalText) && lastResult?.subtype === 'success',
     details: { assistantTurns, finalText: finalText.slice(0, 120) },
   };
 }
@@ -81,8 +87,8 @@ export async function checkMultiTurn(provider) {
 // ④ 子 agent：强制走 Task 工具，验证派生与回收
 export async function checkSubagent(provider) {
   const cwd = newWorkspace(`${provider.id}-subagent`);
-  for (const [i, txt] of ['alpha', 'beta', 'gamma'].entries()) {
-    await fs.writeFile(path.join(cwd, `f${i + 1}.txt`), txt + '\n');
+  for (const name of ['alpha', 'beta', 'gamma']) {
+    await fs.writeFile(path.join(cwd, `${name}.txt`), name + '\n');
   }
   const q = query({
     prompt: '使用 Task 工具派一个子 agent 统计当前目录下 .txt 文件的数量和文件名，然后向我汇报。必须用 Task 工具，不要自己直接数。',
@@ -105,8 +111,12 @@ export async function checkSubagent(provider) {
   };
 }
 
-// ⑤ 上下文压缩：/compact 手动触发（走 provider 的摘要请求，验证压缩管线；
-//    自动触发需灌 10 万+ tokens，不在 smoke 范围，报告里注明）
+// ⑤ 上下文压缩：/compact 手动触发（走 provider 的摘要请求，验证压缩管线）。
+//    两个已知局限，报告解读时必须遵守：
+//    a) 自动触发需灌 10 万+ tokens，不在 smoke 范围；
+//    b) "流式输入中的纯文本 /compact 会被 harness 当斜杠命令拦截"是未经验证的机制假设——
+//       若三个 provider 全部 FAIL 且 boundary 恒为 null，先怀疑该触发路径在 SDK 层未生效，
+//       用交互式 CLI 手动复验后再下"provider 不支持压缩"的结论。
 export async function checkCompaction(provider) {
   const cwd = newWorkspace(`${provider.id}-compaction`);
   async function* turns() {
@@ -123,7 +133,7 @@ export async function checkCompaction(provider) {
   const finalText = lastResult?.subtype === 'success' ? lastResult.result || '' : '';
   return {
     check: 'compaction',
-    pass: Boolean(boundary) && /88/.test(finalText),
-    details: { trigger: boundary?.trigger, pre_tokens: boundary?.pre_tokens, post_tokens: boundary?.post_tokens, finalText: finalText.slice(0, 120) },
+    pass: Boolean(boundary) && /紫色大象/.test(finalText) && /88/.test(finalText) && lastResult?.subtype === 'success',
+    details: { subtype: lastResult?.subtype, trigger: boundary?.trigger, pre_tokens: boundary?.pre_tokens, post_tokens: boundary?.post_tokens, finalText: finalText.slice(0, 120) },
   };
 }
