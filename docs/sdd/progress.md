@@ -75,3 +75,9 @@ G1: complete (commit 14fd5e6, review Approved)
 Claude Code 工作区正式切到 E:\Leemo; CLAUDE.md 已建(角色/文档链/铁律/状态入口)
 台账与 G2-G4 简报从旧会话 scratchpad 迁入 docs/sdd/ (本文件即台账正本, 后续会话直接续写)
 下一步: G2(拆 tsconfig 前置 + 13 坑 TDD, brief=docs/sdd/gw-g2-brief.md) → G3 → G4(要 RELAY2_*)
+
+G2-PRE (拆 tsconfig): complete (commit 438bf23, review Approved; brief=gw-g2pre-brief.md, report=gw-g2pre-report.md)
+  - 结构: tsconfig.vendor.json(DOM+宽catch, declaration emit→dist/vendor-types) + 根tsconfig(ES2022+严格catch, exclude vendor, paths 指 .d.ts); typecheck=两条命令(vendor emit 先行, && 顺序硬约束); vitest alias 仍指真实 .ts 不变
+  - 验收证据全过: 严格catch RED 探针 TS18046 / --listFiles 零 vendor .ts / 增强合并 + 负对照 TS2339 / 零 LEEMO-PATCH
+  - Minor 备忘: ①@gateway/* 映射含 vendor 子树=潜在防火墙旁路(自研代码勿 import @gateway/vendor/**, G2 派卡已带此约束) ②IDE/裸 tsc -p tsconfig.json 需先跑一次 npm run typecheck 生成 dist/vendor-types(gitignored)
+→ G2 正卡: Opus 执行, BASE=438bf23
