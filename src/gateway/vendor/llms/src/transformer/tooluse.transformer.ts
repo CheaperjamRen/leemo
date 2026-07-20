@@ -4,7 +4,8 @@ import { Transformer } from "../types/transformer";
 export class TooluseTransformer implements Transformer {
   name = "tooluse";
 
-  transformRequestIn(request: UnifiedChatRequest): UnifiedChatRequest {
+  // LEEMO-PATCH: added `async` — the Transformer interface types transformRequestIn as returning Promise<Record<string,any>>; upstream declared it sync (returns UnifiedChatRequest), which callers already `await`. async makes signature assignable (fixes TS2416) with identical runtime behavior.
+  async transformRequestIn(request: UnifiedChatRequest): Promise<UnifiedChatRequest> {
     request.messages.push({
       role: "system",
       content: `<system-reminder>Tool mode is active. The user expects you to proactively execute the most suitable tool to help complete the task. 

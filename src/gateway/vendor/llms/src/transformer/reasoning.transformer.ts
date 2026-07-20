@@ -1,19 +1,44 @@
-import { UnifiedChatRequest } from "../types/llm";
-import { Transformer } from "../types/transformer";
+import { UnifiedChatRequest } from "@/types/llm";
+import { Transformer, TransformerOptions } from "../types/transformer";
 
-export class DeepseekTransformer implements Transformer {
-  name = "deepseek";
+export class ReasoningTransformer implements Transformer {
+  static TransformerName = "reasoning";
+  enable: any;
 
-  async transformRequestIn(request: UnifiedChatRequest): Promise<UnifiedChatRequest> {
-    if (request.max_tokens && request.max_tokens > 8192) {
-      request.max_tokens = 8192; // DeepSeek has a max token limit of 8192
+  constructor(private readonly options?: TransformerOptions) {
+    this.enable = this.options?.enable ?? true;
+  }
+
+  async transformRequestIn(
+    request: UnifiedChatRequest
+  ): Promise<UnifiedChatRequest> {
+    if (!this.enable) {
+      request.thinking = {
+        type: "disabled",
+        budget_tokens: -1,
+      };
+      request.enable_thinking = false;
+      return request;
+    }
+    if (request.reasoning) {
+      request.thinking = {
+        type: "enabled",
+        budget_tokens: request.reasoning.max_tokens,
+      };
+      request.enable_thinking = true;
     }
     return request;
   }
 
   async transformResponseOut(response: Response): Promise<Response> {
+    if (!this.enable) return response;
     if (response.headers.get("Content-Type")?.includes("application/json")) {
       const jsonResponse = await response.json();
+      if (jsonResponse.choices[0]?.message.reasoning_content) {
+        jsonResponse.thinking = {
+          content: jsonResponse.choices[0]?.message.reasoning_content
+        }
+      }
       // Handle non-streaming response if needed
       return new Response(JSON.stringify(jsonResponse), {
         status: response.status,
@@ -29,15 +54,17 @@ export class DeepseekTransformer implements Transformer {
       const encoder = new TextEncoder();
       let reasoningContent = "";
       let isReasoningComplete = false;
-      let buffer = ""; // 用于缓冲不完整的数据
+      let buffer = ""; // Buffer for incomplete data
 
       const stream = new ReadableStream({
         async start(controller) {
           const reader = response.body!.getReader();
+
+          // Process buffer function
           const processBuffer = (
             buffer: string,
             controller: ReadableStreamDefaultController,
-            encoder: typeof TextEncoder
+            encoder: TextEncoder
           ) => {
             const lines = buffer.split("\n");
             for (const line of lines) {
@@ -47,11 +74,13 @@ export class DeepseekTransformer implements Transformer {
             }
           };
 
+          // Process line function
           const processLine = (
             line: string,
             context: {
               controller: ReadableStreamDefaultController;
-              encoder: typeof TextEncoder;
+              // LEEMO-PATCH: upstream typed this `typeof TextEncoder` (the constructor); the value passed & used as `encoder.encode(...)` is a TextEncoder INSTANCE. Fixes 6× TS2339/TS2741 under strict tsc (upstream esbuild pipeline never type-checked this).
+              encoder: TextEncoder;
               reasoningContent: () => string;
               appendReasoningContent: (content: string) => void;
               isReasoningComplete: () => boolean;
@@ -60,12 +89,13 @@ export class DeepseekTransformer implements Transformer {
           ) => {
             const { controller, encoder } = context;
 
-            if (
-              line.startsWith("data: ") &&
-              line.trim() !== "data: [DONE]"
-            ) {
+            // LEEMO-PATCH: `this` here is the ReadableStream source object (upstream used shorthand `async start(controller)`, not an arrow like anthropic.transformer.ts), so it has no `logger`; the cast fixes TS2339 while preserving upstream runtime behavior (this.logger is undefined → optional chain no-ops).
+            (this as any).logger?.debug({ line }, `Processing reason line`);
+
+            if (line.startsWith("data: ") && line.trim() !== "data: [DONE]") {
               try {
                 const data = JSON.parse(line.slice(6));
+                console.log(JSON.stringify(data))
 
                 // Extract reasoning_content from delta
                 if (data.choices?.[0]?.delta?.reasoning_content) {
@@ -96,7 +126,8 @@ export class DeepseekTransformer implements Transformer {
 
                 // Check if reasoning is complete (when delta has content but no reasoning_content)
                 if (
-                  data.choices?.[0]?.delta?.content &&
+                  (data.choices?.[0]?.delta?.content ||
+                    data.choices?.[0]?.delta?.tool_calls) &&
                   context.reasoningContent() &&
                   !context.isReasoningComplete()
                 ) {
@@ -128,7 +159,7 @@ export class DeepseekTransformer implements Transformer {
                   controller.enqueue(encoder.encode(thinkingLine));
                 }
 
-                if (data.choices[0]?.delta?.reasoning_content) {
+                if (data.choices?.[0]?.delta?.reasoning_content) {
                   delete data.choices[0].delta.reasoning_content;
                 }
 
@@ -157,7 +188,7 @@ export class DeepseekTransformer implements Transformer {
             while (true) {
               const { done, value } = await reader.read();
               if (done) {
-                // 处理缓冲区中剩余的数据
+                // Process remaining data in buffer
                 if (buffer.trim()) {
                   processBuffer(buffer, controller, encoder);
                 }
@@ -167,9 +198,9 @@ export class DeepseekTransformer implements Transformer {
               const chunk = decoder.decode(value, { stream: true });
               buffer += chunk;
 
-              // 处理缓冲区中完整的数据行
+              // Process complete lines from buffer
               const lines = buffer.split("\n");
-              buffer = lines.pop() || ""; // 最后一行可能不完整，保留在缓冲区
+              buffer = lines.pop() || ""; // Keep incomplete line in buffer
 
               for (const line of lines) {
                 if (!line.trim()) continue;
@@ -177,7 +208,7 @@ export class DeepseekTransformer implements Transformer {
                 try {
                   processLine(line, {
                     controller,
-                    encoder,
+                    encoder: encoder,
                     reasoningContent: () => reasoningContent,
                     appendReasoningContent: (content) =>
                       (reasoningContent += content),
@@ -186,7 +217,7 @@ export class DeepseekTransformer implements Transformer {
                   });
                 } catch (error) {
                   console.error("Error processing line:", line, error);
-                  // 如果解析失败，直接传递原始行
+                  // Pass through original line if parsing fails
                   controller.enqueue(encoder.encode(line + "\n"));
                 }
               }
@@ -209,7 +240,7 @@ export class DeepseekTransformer implements Transformer {
         status: response.status,
         statusText: response.statusText,
         headers: {
-          "Content-Type": response.headers.get("Content-Type") || "text/plain",
+          "Content-Type": "text/event-stream",
           "Cache-Control": "no-cache",
           Connection: "keep-alive",
         },
