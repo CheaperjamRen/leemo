@@ -81,3 +81,11 @@ G2-PRE (拆 tsconfig): complete (commit 438bf23, review Approved; brief=gw-g2pre
   - 验收证据全过: 严格catch RED 探针 TS18046 / --listFiles 零 vendor .ts / 增强合并 + 负对照 TS2339 / 零 LEEMO-PATCH
   - Minor 备忘: ①@gateway/* 映射含 vendor 子树=潜在防火墙旁路(自研代码勿 import @gateway/vendor/**, G2 派卡已带此约束) ②IDE/裸 tsc -p tsconfig.json 需先跑一次 npm run typecheck 生成 dist/vendor-types(gitignored)
 → G2 正卡: Opus 执行, BASE=438bf23
+
+G2: complete (commits b8603aa + fix 898fa16, re-review Approved; report=gw-g2-report.md §修复轮)
+  - 交付: core/{translate,normalize,provider-opts,tokens}.ts + 13 坑测试文件(58/58 绿) + fixtures + 恰 2 处 LEEMO-PATCH(reasoning gate line~192 / server-tool observable strip)
+  - 修复轮(复审 Important): server-tool 判定统一为 normalize.isServerTool 单一活跃源(type-based, 忽略 input_schema); facade anthropicToOpenAI 先于 vendor 剥离并返回 {result, stripped}——G3 经 translate 即拿剥离列表, 不触 vendor; pitfall-09 预算断言钉字面值(4000/12000/24000/40000/60000/16000)
+  - **G3 消费契约: anthropicToOpenAI 返回 {result: OpenAIChatBody, stripped: AnthropicTool[]}(AnthropicToOpenAIResult), 非裸 body**
+  - 验收方亲跑: 13 坑测试名齐全 PASS + typecheck 两段 exit 0 ✓; 抽读①②⑨⑫断言实(复审确认非空转, ⑫快照配独立结构断言)
+  - Minor 备忘(留待收官终审 triage): ①vendor 备份谓词无测试覆盖(活跃路径已由 facade 预剥离, 死代码低危) ②谓词双文本副本靠注释互指同步(单一"活跃"源非单一文本源) ③双 structuredClone 微开销 ④⑧图片-only tool_result 留占位文本/⑩⑫尾 usage 依赖 SSE framing/o200k 近似——三项 G4 live 复核
+→ G3 派卡: 网关薄壳, BASE=898fa16
