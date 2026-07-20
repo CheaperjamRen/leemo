@@ -84,6 +84,20 @@ export function normalizeThinking(
 }
 
 /**
+ * The SINGLE source of truth for "is this a server/builtin tool?" (pitfall ②).
+ * A server tool carries a versioned, non-"custom" `type` (web_search_*,
+ * computer_*, bash_*, text_editor_*, code_execution_*). Client custom tools
+ * have no `type`, or `type:"custom"`. Deliberately does NOT inspect
+ * input_schema: server tools MAY carry one, and an input_schema clause here was
+ * the source of the vendor/normalize predicate divergence. Both the facade
+ * (translate.ts) and the vendor backstop (LEEMO-PATCH ②) defer to this rule.
+ */
+export function isServerTool(tool: AnthropicTool): boolean {
+  const type = typeof tool?.type === "string" ? tool.type : "";
+  return type !== "" && type !== "custom";
+}
+
+/**
  * Observably strip server/builtin tools (pitfall ②, first-party half). Client
  * custom tools (no `type`, or type:"custom") are kept; everything else is
  * removed and returned in `stripped` so the shell can log it. When nothing
@@ -98,9 +112,7 @@ export function stripServerTools(req: AnthropicChatRequest): {
   if (Array.isArray(request.tools)) {
     const kept: AnthropicTool[] = [];
     for (const t of request.tools) {
-      const type = typeof t.type === "string" ? t.type : "";
-      const isServerTool = type !== "" && type !== "custom";
-      if (isServerTool) stripped.push(t);
+      if (isServerTool(t)) stripped.push(t);
       else kept.push(t);
     }
     if (kept.length) request.tools = kept;

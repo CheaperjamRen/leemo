@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { openaiToAnthropicResponse, openaiToAnthropicStream, anthropicToOpenAI } from "@gateway/core/translate";
-import { stripServerTools } from "@gateway/core/normalize";
+import { stripServerTools, isServerTool } from "@gateway/core/normalize";
 import { serverToolsRequest } from "./fixtures/anthropic-requests";
 import { sseEventStream, collectStream, parseAnthropicSSE } from "./fixtures/sse";
 
@@ -70,11 +70,64 @@ describe("pitfall-02 tool-use stop_reason + server-tool strip", () => {
   });
 
   it("pitfall-02: end-to-end OpenAI body carries ONLY the client tool (LEEMO-PATCH ② in-pipeline strip)", async () => {
-    const openai = await anthropicToOpenAI(serverToolsRequest);
+    const { result: openai } = await anthropicToOpenAI(serverToolsRequest);
     const names = (openai.tools ?? []).map((t: any) => t.function?.name);
     // server tools (web_search, computer) must not survive into the wire body
     expect(names).toEqual(["Read"]);
     expect(names).not.toContain("web_search");
     expect(names).not.toContain("computer");
+  });
+
+  // ---- review-round: single predicate source + facade-exposed stripped list ----
+
+  it("pitfall-02: isServerTool predicate is the single definition (type-based, ignores input_schema)", () => {
+    // A versioned, non-custom tool is a server tool EVEN IF it carries an
+    // input_schema. The old vendor predicate had `&& !input_schema`, which
+    // disagreed with normalize's rule for exactly this shape.
+    expect(isServerTool({ type: "computer_20250124", name: "computer", input_schema: { type: "object" } })).toBe(true);
+    expect(isServerTool({ type: "web_search_20250305", name: "web_search" })).toBe(true);
+    // client tools: no type, or type:"custom"
+    expect(isServerTool({ name: "Read", input_schema: { type: "object" } })).toBe(false);
+    expect(isServerTool({ type: "custom", name: "MyTool", input_schema: { type: "object" } })).toBe(false);
+  });
+
+  it("pitfall-02: divergent shape (versioned non-custom type WITH input_schema) is stripped consistently", async () => {
+    const req = {
+      model: "m",
+      max_tokens: 100,
+      messages: [{ role: "user" as const, content: "go" }],
+      tools: [
+        { name: "Read", description: "d", input_schema: { type: "object", properties: {} } },
+        // versioned server tool that ALSO carries an input_schema — the shape
+        // the two predicates disagreed on.
+        { type: "computer_20250124", name: "computer", input_schema: { type: "object", properties: {} } },
+      ],
+    };
+    const { result, stripped } = await anthropicToOpenAI(req);
+    const wireNames = (result.tools ?? []).map((t: any) => t.function?.name);
+    // wire tools must NOT contain the server tool
+    expect(wireNames).toEqual(["Read"]);
+    // and the facade-returned stripped list must MATCH what actually left the wire
+    expect(stripped.map((t: any) => t.name)).toEqual(["computer"]);
+  });
+
+  it("pitfall-02: facade exposes the stripped list so G3 reaches it WITHOUT touching vendor", async () => {
+    const { result, stripped } = await anthropicToOpenAI(serverToolsRequest);
+    const wireNames = (result.tools ?? []).map((t: any) => t.function?.name);
+    expect(wireNames).toEqual(["Read"]);
+    // observable strip list, reachable via the sole G3 entry point (translate)
+    expect(stripped.map((t: any) => t.name).sort()).toEqual(["computer", "web_search"]);
+  });
+
+  it("pitfall-02: facade stripped list is empty when only client tools are present", async () => {
+    const req = {
+      model: "m",
+      max_tokens: 100,
+      messages: [{ role: "user" as const, content: "go" }],
+      tools: [{ name: "Read", description: "d", input_schema: { type: "object", properties: {} } }],
+    };
+    const { result, stripped } = await anthropicToOpenAI(req);
+    expect(stripped).toEqual([]);
+    expect((result.tools ?? []).map((t: any) => t.function?.name)).toEqual(["Read"]);
   });
 });

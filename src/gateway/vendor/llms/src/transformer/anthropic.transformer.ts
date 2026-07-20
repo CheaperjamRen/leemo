@@ -243,14 +243,15 @@ export class AnthropicTransformer implements Transformer {
     }
   }
 
-  // LEEMO-PATCH: server/builtin tools observably stripped. Upstream mapped EVERY anthropic tool into a function tool — server tools (web_search/computer/bash/text_editor/code_execution: versioned `type`, no input_schema) became malformed function tools with parameters:undefined that OpenAI-protocol endpoints reject. Now they are filtered out; the removed list is exposed on this.strippedServerTools for the gateway to log. Client custom tools (no `type`, or type:"custom") pass through unchanged, preserving upstream behavior for them.
+  // LEEMO-PATCH: server/builtin tools observably stripped (defense-in-depth backstop). The gateway facade (src/gateway/core/translate.ts) already strips server tools first-party via normalize.isServerTool BEFORE calling this, so in normal operation `tools` arrives pre-filtered; this backstop guards any direct vendor use. Predicate MUST stay byte-identical to normalize.isServerTool: versioned, non-"custom" `type` (web_search_*/computer_*/bash_*/text_editor_*/code_execution_*). It deliberately does NOT test input_schema — an earlier `&& !tool?.input_schema` clause here disagreed with normalize for server tools that carry a schema, so a stale strip-log could lie. Client custom tools (no `type`, or type:"custom") pass through unchanged. Removed list exposed on this.strippedServerTools.
   strippedServerTools: any[] = [];
 
   private convertAnthropicToolsToUnified(tools: any[]): UnifiedTool[] {
     this.strippedServerTools = [];
     const clientTools = tools.filter((tool) => {
+      // Keep in sync with normalize.isServerTool (single predicate definition).
       const type = typeof tool?.type === "string" ? tool.type : "";
-      const isServerTool = type !== "" && type !== "custom" && !tool?.input_schema;
+      const isServerTool = type !== "" && type !== "custom";
       if (isServerTool) this.strippedServerTools.push(tool);
       return !isServerTool;
     });

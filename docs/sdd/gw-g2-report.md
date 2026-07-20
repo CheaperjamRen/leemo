@@ -111,3 +111,71 @@ typecheck: tsc -p tsconfig.vendor.json && tsc -p tsconfig.json  → 0 errors
 2. **⑨ vendor `getThinkLevel` 与 NewMax EFFORT_BUDGET_MAP 的关系**：本卡的 `normalizeThinking` 产出 anthropic 侧 `thinking.budget_tokens`（NewMax 图纸值）；vendor 内部再用自己的 `getThinkLevel(budget)` 折算成 none/low/medium/high 四档 effort。两者不冲突（前者是我们的预算规整，后者是 vendor 的 effort 分档），但真端点是否吃 effort 字段需 G4 live 验证。
 3. **⑩/⑫ usage 落点依赖分帧**：vendor 状态机在 `finish_reason` 处 break 内层循环，故末尾 usage-only chunk 必须在**独立 read** 到达才会被采集。测试用 `sseEventStream`（一事件一 read，真实流式行为）覆盖；若真端点把 usage 和 finish_reason 塞进同一 SSE 帧，vendor 仍能拿到（同 chunk 的 `chunk.usage` 在 finish_reason 分支内也读），但**若 usage 单独帧且紧跟 [DONE] 无分隔**行为已被 `pitfall-12:99` 钉住。G4 live 需复核真端点分帧。
 4. count_tokens 用 o200k_base 近似（Claude 真 tokenizer 闭源）；仅供 CC compaction 估算，非精确计费。
+
+---
+
+## §修复轮（复审 Approved-with-fixes → 已修）
+
+复审：Approved 方向正确 + 1 Important（server-tool 判定双源分歧 + 剥离列表未经 facade 暴露）+ 1 Minor（⑨预算断言自引用）。均严格 TDD 修复。
+
+### Important：判定单源化 + facade 暴露剥离列表
+
+**根因：** 两处"什么算 server tool"定义不一致——
+- 自研 `normalize.stripServerTools`：`type !== "" && type !== "custom"`（类型判据，无 input_schema 条款）
+- vendor PATCH ②（旧）：`type !== "" && type !== "custom" && !tool?.input_schema`
+
+对"带版本化非 custom type **且带** input_schema"的工具（如 `{type:"computer_20250124", input_schema:{...}}`），两者判定相反：normalize 判其为 server tool（应剥），旧 vendor 判据因 `&& !input_schema` 判其保留 → 日志与 wire 不一致。且 facade `anthropicToOpenAI` 旧签名只返回裸 body，从不读 `strippedServerTools`，任务卡要求的"返回被剥列表"经 G3 唯一入口不可达。
+
+**修法：**
+1. **单一谓词源**：normalize.ts 新增导出 `isServerTool(tool): boolean`（唯一定义=类型判据，显式不看 input_schema，注释说明 input_schema 条款正是分歧根源）。`stripServerTools` 改调它。
+2. **facade 主动剥离 + 暴露**：`anthropicToOpenAI` 在进 vendor **前**先调 `stripServerTools`（first-party 唯一 ACTIVE 剥离），返回值签名改为 `{ result: OpenAIChatBody, stripped: AnthropicTool[] }`。`stripped` 即实际离开请求的工具，与 wire tools 证明一致（不依赖读 vendor 内部字段）。
+3. **vendor PATCH ② 对齐**：删除 `&& !tool?.input_schema`，判据与 `isServerTool` 字面一致 + 加 `// Keep in sync with normalize.isServerTool` 交叉引用注释；降级为 defense-in-depth backstop（正常路径工具已被 facade 预剥）。**仍在既有 PATCH ② 站点内改，未新增第三处 PATCH**（grep LEEMO-PATCH=2；vendor diff=3 insert/2 delete）。
+
+**公共 API 签名变更（写进契约）：**
+- 旧：`anthropicToOpenAI(req, opts?): Promise<OpenAIChatBody>`
+- 新：`anthropicToOpenAI(req, opts?): Promise<{ result: OpenAIChatBody; stripped: AnthropicTool[] }>`（新增导出类型 `AnthropicToOpenAIResult`）。G3 调用方需 `const { result, stripped } = await anthropicToOpenAI(...)`。normalize 新增导出 `isServerTool`。
+
+**TDD 证据：** `docs/sdd/g2-evidence/red-C-review.txt`
+- RED（tests written, impl 未改，focused 2 文件）：`Tests 7 failed | 9 passed (16)`。关键失败：`isServerTool` 未导出；分歧形状 `{type:computer_*, input_schema}` 端到端未一致剥离；facade 未返回 stripped；旧签名致 `{result}` 解构得 undefined→`Cannot read properties of undefined (reading 'reasoning')`。
+- GREEN（修后 focused）：`Tests 16 passed (16)`；全量 `58 passed (58)`；typecheck 2-pass exit 0。
+
+新增测试（pitfall-02）：
+- `isServerTool predicate is the single definition (type-based, ignores input_schema)` — 断言带 input_schema 的 computer_* = true，Read/custom = false
+- `divergent shape ... stripped consistently` — 构造 `{type:computer_20250124, input_schema}`，断言 wire tools=['Read'] **且** facade stripped=['computer'] 一致
+- `facade exposes the stripped list so G3 reaches it WITHOUT touching vendor`
+- `facade stripped list is empty when only client tools`
+
+### Minor：⑨ 预算断言字面值钉死
+
+旧断言 `expect(budget).toBe(EFFORT_BUDGET_MAP.high)` 从实现同款常量取值再比较——map 打错也过。改为字面值：low=4000/medium=12000/high=24000/xhigh=40000/max=60000/default=16000，并加 `expect(EFFORT_BUDGET_MAP).toEqual(expected)` 与 `expect(DEFAULT_THINKING_BUDGET).toBe(16000)` 守卫实现常量。这些断言修前即 PASS（实现常量本就正确）——本 Minor 是**测试质量**修复（消除自引用），非行为 bug。
+
+### 修复轮命令 + 输出
+
+```
+# RED（focused, impl 未改）
+npx vitest run pitfall-02 pitfall-09  → Tests  7 failed | 9 passed (16)
+
+# GREEN（focused）
+npx vitest run pitfall-02 pitfall-09  → Tests  16 passed (16)
+
+# 全量 + typecheck
+npx vitest run                        → Test Files 14 passed (14) / Tests 58 passed (58)
+npm run typecheck                     → exit 0（tsc vendor && tsc root 均绿）
+grep -c LEEMO-PATCH ...transformer.ts → 2
+git diff --stat vendor/               → 1 file, 3 insertions(+), 2 deletions(-)
+```
+
+### 修复轮变更文件
+- `src/gateway/core/normalize.ts`（+`isServerTool` 导出，`stripServerTools` 改调它）
+- `src/gateway/core/translate.ts`（签名→`{result,stripped}`，进 vendor 前 first-party 剥离，+`AnthropicToOpenAIResult` 导出）
+- `src/gateway/vendor/llms/src/transformer/anthropic.transformer.ts`（PATCH ② 判据对齐，仍 2 处 PATCH）
+- 9 个 pitfall 测试文件（call-site 改 `{result: openai}` 解构；pitfall-02 +4 新测试 + `isServerTool` import；pitfall-09 字面值 + guard）
+- `docs/sdd/g2-evidence/red-C-review.txt`（新增 RED 证据）
+
+### 修复轮自审
+- ✅ Important 先写失败测试（分歧形状 + facade 可达性）留 RED 证据再修；判定单源=`isServerTool`，vendor/normalize/facade 三处同据。
+- ✅ facade 返回被剥列表，G3 经 translate 唯一入口即可拿（不触 vendor）；签名变更已入报告契约。
+- ✅ 仍恰 2 LEEMO-PATCH，未扩 patch 面（vendor diff 3/2 行，仅 PATCH ② 块内）。
+- ✅ Minor：⑨ 全档字面值 4000/12000/24000/40000/60000/16000 钉死 + 实现常量守卫。
+- ✅ 全量 58/58，typecheck 2-pass 绿，无禁词/明文 key，测试输出 pristine；CLAUDE.md / NewmaxAI逆向报告/ / smoke/ 未碰。
+

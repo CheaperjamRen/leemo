@@ -18,19 +18,31 @@ describe("pitfall-09 thinking normalize + provider gate", () => {
     const out = normalizeThinking(simpleTextRequest, true, "high");
     expect(out.thinking).toBeDefined();
     expect(out.thinking!.type).toBe("enabled");
-    expect(out.thinking!.budget_tokens).toBe(EFFORT_BUDGET_MAP.high); // 24000
+    expect(out.thinking!.budget_tokens).toBe(24000); // NewMax high, literal-pinned
   });
 
-  it("pitfall-09: every effort level resolves to its mapped budget", () => {
-    for (const [effort, budget] of Object.entries(EFFORT_BUDGET_MAP)) {
+  it("pitfall-09: every effort level resolves to its NewMax literal budget", () => {
+    // Literal NewMax EFFORT_BUDGET_MAP values — pinned so a typo in the impl
+    // constant is caught (no self-reference to the imported map).
+    const expected: Record<string, number> = {
+      low: 4000,
+      medium: 12000,
+      high: 24000,
+      xhigh: 40000,
+      max: 60000,
+    };
+    for (const [effort, budget] of Object.entries(expected)) {
       const out = normalizeThinking(simpleTextRequest, true, effort as any);
       expect(out.thinking!.budget_tokens).toBe(budget);
     }
+    // guard: the imported map matches the pinned literals exactly (same keys/values)
+    expect(EFFORT_BUDGET_MAP).toEqual(expected);
   });
 
   it("pitfall-09: no effort but capable → default budget 16000", () => {
     const out = normalizeThinking(thinkingRequest, true);
-    expect(out.thinking!.budget_tokens).toBe(DEFAULT_THINKING_BUDGET);
+    expect(out.thinking!.budget_tokens).toBe(16000); // NewMax default, literal-pinned
+    expect(DEFAULT_THINKING_BUDGET).toBe(16000); // guard the impl constant too
   });
 
   it("pitfall-09: incapable model → thinking disabled regardless of effort", () => {
@@ -49,12 +61,12 @@ describe("pitfall-09 thinking normalize + provider gate", () => {
   // ---- LEEMO-PATCH ① gate (end-to-end) ----
 
   it("pitfall-09: reasoningInjection='off' emits NO reasoning field despite thinking request", async () => {
-    const openai = await anthropicToOpenAI(thinkingRequest, { reasoningInjection: "off" });
+    const { result: openai } = await anthropicToOpenAI(thinkingRequest, { reasoningInjection: "off" });
     expect(openai.reasoning).toBeUndefined();
   });
 
   it("pitfall-09: reasoningInjection='auto' passes reasoning through when thinking enabled", async () => {
-    const openai = await anthropicToOpenAI(thinkingRequest, { reasoningInjection: "auto" });
+    const { result: openai } = await anthropicToOpenAI(thinkingRequest, { reasoningInjection: "auto" });
     expect(openai.reasoning).toBeDefined();
   });
 });

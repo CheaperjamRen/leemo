@@ -23,7 +23,9 @@ import {
   normalizeThinking,
   promoteToolResultImages,
   flattenToolSchema,
+  stripServerTools,
   type AnthropicChatRequest,
+  type AnthropicTool,
 } from "./normalize";
 
 export interface OpenAIChatBody {
@@ -38,6 +40,16 @@ export interface OpenAIChatBody {
   stream_options?: { include_usage: boolean };
   reasoning?: unknown;
   [k: string]: unknown;
+}
+
+/** Result of anthropicToOpenAI: the OpenAI wire body PLUS the server/builtin
+ *  tools that were observably stripped (pitfall ②). G3's shell reads `stripped`
+ *  for logging WITHOUT ever touching the vendor transformer. `stripped` is
+ *  guaranteed consistent with `result.tools` — both derive from the single
+ *  isServerTool predicate applied once, first-party, before the vendor runs. */
+export interface AnthropicToOpenAIResult {
+  result: OpenAIChatBody;
+  stripped: AnthropicTool[];
 }
 
 /** Fallback max_tokens when the client omits it (OpenAI-compat endpoints need a
@@ -69,11 +81,21 @@ function stripCacheControl(node: any): void {
 export async function anthropicToOpenAI(
   req: AnthropicChatRequest,
   opts?: Partial<ProviderOpts>
-): Promise<OpenAIChatBody> {
+): Promise<AnthropicToOpenAIResult> {
   const o = resolveProviderOpts(opts);
 
   // ---- first-party pre-processing on the Anthropic shape ----
   let working: AnthropicChatRequest = promoteToolResultImages(req); // ⑧
+
+  // ② Strip server/builtin tools FIRST-PARTY, before the vendor runs. This is
+  // the single ACTIVE strip: `stripped` is exactly what left the request, so
+  // the facade return is provably consistent with the wire tools (no reliance
+  // on reading the vendor's internal strippedServerTools). The vendor
+  // LEEMO-PATCH ② remains as a defense-in-depth backstop using the SAME
+  // isServerTool predicate.
+  const serverStrip = stripServerTools(working);
+  working = serverStrip.request;
+  const stripped = serverStrip.stripped;
 
   // ⑨ thinking budget / capability. Only touch thinking when the client asked
   // for it or the provider forces an effort — never inject it unbidden.
@@ -92,7 +114,7 @@ export async function anthropicToOpenAI(
   }
 
   // ---- drive the (patched) vendor transformer ----
-  // reasoningInjection gate = LEEMO-PATCH ①; server-tool strip = LEEMO-PATCH ②.
+  // reasoningInjection gate = LEEMO-PATCH ①; server-tool strip backstop = LEEMO-PATCH ②.
   const transformer = new AnthropicTransformer({
     reasoningInjection: o.reasoningInjection,
   } as any);
@@ -110,7 +132,7 @@ export async function anthropicToOpenAI(
   if (unified.stream !== undefined) body.stream = unified.stream;
   if (unified.tool_choice !== undefined) body.tool_choice = unified.tool_choice;
   if (unified.reasoning !== undefined) body.reasoning = unified.reasoning;
-  // tools: [] (all server tools stripped by patch ②) → omit; OpenAI rejects [].
+  // tools: [] (all server tools stripped) → omit; OpenAI rejects [].
   if (Array.isArray(unified.tools) && unified.tools.length) body.tools = unified.tools;
 
   // ⑥ max_tokens: fill default, clamp to cap, rename field per provider.
@@ -125,7 +147,7 @@ export async function anthropicToOpenAI(
   // ⑤ strip cache_control everywhere it may have survived the vendor copy.
   stripCacheControl(body.messages);
 
-  return body;
+  return { result: body, stripped };
 }
 
 export async function openaiToAnthropicResponse(

@@ -63,7 +63,7 @@ describe("pitfall-11 GLM schema flatten", () => {
       messages: [{ role: "user" as const, content: "go" }],
       tools: [anyOfSchemaTool],
     };
-    const openai = await anthropicToOpenAI(req, { flattenSchemas: true } as any);
+    const { result: openai } = await anthropicToOpenAI(req, { flattenSchemas: true } as any);
     expect(deepHasAnyKey(openai.tools, banned)).toBe(false);
   });
 });

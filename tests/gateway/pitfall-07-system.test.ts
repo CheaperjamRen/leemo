@@ -9,7 +9,7 @@ import { stringSystemRequest, blockSystemRequest } from "./fixtures/anthropic-re
 
 describe("pitfall-07 system string/blocks", () => {
   it("pitfall-07: string system → single system message with same text", async () => {
-    const openai = await anthropicToOpenAI(stringSystemRequest);
+    const { result: openai } = await anthropicToOpenAI(stringSystemRequest);
     const sys = openai.messages.find((m: any) => m.role === "system");
     expect(sys).toBeDefined();
     const text = typeof sys.content === "string"
@@ -19,7 +19,7 @@ describe("pitfall-07 system string/blocks", () => {
   });
 
   it("pitfall-07: block-array system carries all block texts", async () => {
-    const openai = await anthropicToOpenAI(blockSystemRequest);
+    const { result: openai } = await anthropicToOpenAI(blockSystemRequest);
     const sys = openai.messages.find((m: any) => m.role === "system");
     expect(sys).toBeDefined();
     const text =

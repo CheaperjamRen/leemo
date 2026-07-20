@@ -37,17 +37,17 @@ describe("pitfall-10 usage mapping + include_usage toggle", () => {
   });
 
   it("pitfall-10: includeUsage:true on a streaming request sets stream_options.include_usage", async () => {
-    const openai = await anthropicToOpenAI({ ...simpleTextRequest, stream: true }, { includeUsage: true });
+    const { result: openai } = await anthropicToOpenAI({ ...simpleTextRequest, stream: true }, { includeUsage: true });
     expect(openai.stream_options).toEqual({ include_usage: true });
   });
 
   it("pitfall-10: includeUsage:false omits stream_options entirely", async () => {
-    const openai = await anthropicToOpenAI({ ...simpleTextRequest, stream: true }, { includeUsage: false });
+    const { result: openai } = await anthropicToOpenAI({ ...simpleTextRequest, stream: true }, { includeUsage: false });
     expect(openai.stream_options).toBeUndefined();
   });
 
   it("pitfall-10: non-streaming request never carries stream_options", async () => {
-    const openai = await anthropicToOpenAI({ ...simpleTextRequest, stream: false }, { includeUsage: true });
+    const { result: openai } = await anthropicToOpenAI({ ...simpleTextRequest, stream: false }, { includeUsage: true });
     expect(openai.stream_options).toBeUndefined();
   });
 });

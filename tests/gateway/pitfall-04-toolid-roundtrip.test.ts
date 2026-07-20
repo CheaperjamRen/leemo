@@ -12,7 +12,7 @@ import { sseEventStream, collectStream, parseAnthropicSSE } from "./fixtures/sse
 
 describe("pitfall-04 tool id round-trip", () => {
   it("pitfall-04: request keeps tool_use id as assistant tool_call id and tool_result tool_call_id", async () => {
-    const openai = await anthropicToOpenAI(toolRoundTripRequest);
+    const { result: openai } = await anthropicToOpenAI(toolRoundTripRequest);
     const assistant = openai.messages.find(
       (m: any) => m.role === "assistant" && m.tool_calls?.length
     );

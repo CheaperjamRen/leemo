@@ -49,7 +49,7 @@ describe("pitfall-08 tool_result image promotion", () => {
   });
 
   it("pitfall-08: end-to-end the image survives as an OpenAI image_url", async () => {
-    const openai = await anthropicToOpenAI(toolResultWithImageRequest);
+    const { result: openai } = await anthropicToOpenAI(toolResultWithImageRequest);
     const hasImageUrl = JSON.stringify(openai).includes('"image_url"');
     expect(hasImageUrl).toBe(true);
   });

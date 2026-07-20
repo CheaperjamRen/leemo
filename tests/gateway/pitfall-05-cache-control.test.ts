@@ -22,7 +22,7 @@ describe("pitfall-05 cache_control stripped", () => {
     // sanity: fixture actually contains cache_control (guards a vacuous test)
     expect(deepFindKey(blockSystemRequest, "cache_control")).toBe(true);
 
-    const openai = await anthropicToOpenAI(blockSystemRequest);
+    const { result: openai } = await anthropicToOpenAI(blockSystemRequest);
     expect(deepFindKey(openai, "cache_control")).toBe(false);
   });
 });
