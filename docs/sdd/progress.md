@@ -89,3 +89,11 @@ G2: complete (commits b8603aa + fix 898fa16, re-review Approved; report=gw-g2-re
   - 验收方亲跑: 13 坑测试名齐全 PASS + typecheck 两段 exit 0 ✓; 抽读①②⑨⑫断言实(复审确认非空转, ⑫快照配独立结构断言)
   - Minor 备忘(留待收官终审 triage): ①vendor 备份谓词无测试覆盖(活跃路径已由 facade 预剥离, 死代码低危) ②谓词双文本副本靠注释互指同步(单一"活跃"源非单一文本源) ③双 structuredClone 微开销 ④⑧图片-only tool_result 留占位文本/⑩⑫尾 usage 依赖 SSE framing/o200k 近似——三项 G4 live 复核
 → G3 派卡: 网关薄壳, BASE=898fa16
+
+G3: complete (commit be3d32d, review Approved; report=gw-g3-report.md)
+  - 交付: server.ts(startGateway, 127.0.0.1:0, 全路由面)+registry.ts(内存Map+fromEnv+脱敏logger)+dev.ts+server.test.ts(12 用例, mock 上游全链路); 69/69 绿+typecheck 两段绿
+  - 密钥隔离/abort/不缓冲三大断言复审确认非空转: 真key只出现在mock上游收到的头(响应+日志扫描无key); abort=mock侧req close实证(ac.abort()承重); SSE双时间戳断言(缓冲实现两条都必挂)
+  - 计划外新增(复审裁定合理非蔓延): src/gateway/alias-hook.mjs——tsx/node 不读 tsconfig paths, dev.ts 需运行时别名解析; hook 仅 dev.ts 自注册, vitest 零加载零干扰; 冻结配置(tsconfig/vitest.config)未碰
+  - Minor 备忘(留待收官终审 triage): ①backpressure+断连竞态可悬挂 drain promise(上游已由 abort 释放, 仅 promise 泄漏) ②stripped 非空日志行为已实现未测试 ③alias-hook 依赖 tsx 先注册补 .ts 扩展(裸 node --import 会挂, 仅 dev 入口用) ④上游 401/403 映射为客户端 401 语义略歧
+  - 验收方亲跑: 69/69 + typecheck exit 0 + closedEarly/authorization 断言存在 ✓
+== G4 门口: 需用户提供 RELAY2_*(OpenAI 协议端点)才能开跑 ==
