@@ -1,0 +1,307 @@
+// Leemo gateway — HTTP shell (first-party). 127.0.0.1 only.
+//
+// Endpoint face the claude-agent-sdk hits (Anthropic wire):
+//   POST /v1/messages(?beta=true)          → translate → upstream OpenAI → back
+//   POST /v1/messages/count_tokens         → local o200k_base estimate
+//   GET  /v1/models                        → registry, claude- disguised ids
+//   GET  /health                           → { status: "ok" }
+//
+// Key isolation: the SDK sends a placeholder `leemo-gw:<providerId>` (via
+// Authorization: Bearer … OR x-api-key: …). The shell resolves it in the
+// registry to the REAL {baseUrl, apiKey, model, opts}; the real key rides out
+// ONLY in the upstream Authorization header this file builds. It is never put in
+// a client response or an un-redacted log line.
+//
+// Consumes ONLY the G2 core facade (translate / tokens) + the registry — never
+// the vendor transformer or its types (type-firewall).
+
+import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
+import type { AddressInfo } from "node:net";
+import { anthropicToOpenAI, openaiToAnthropicResponse, openaiToAnthropicStream } from "./core/translate";
+import { countTokens, classifyEndpoint } from "./core/tokens";
+import type { AnthropicChatRequest } from "./core/normalize";
+import { ProviderRegistry, type ResolvedProvider } from "./registry";
+
+export interface GatewayHandle {
+  port: number;
+  close: () => Promise<void>;
+}
+
+const PLACEHOLDER_PREFIX = "leemo-gw:";
+
+/** Anthropic error envelope `{type:"error", error:{type, message}}`. */
+function anthropicError(type: string, message: string): { type: "error"; error: { type: string; message: string } } {
+  return { type: "error", error: { type, message } };
+}
+
+function sendJson(res: ServerResponse, status: number, obj: unknown): void {
+  const body = JSON.stringify(obj);
+  res.writeHead(status, { "Content-Type": "application/json; charset=utf-8" });
+  res.end(body);
+}
+
+function sendError(res: ServerResponse, status: number, type: string, message: string): void {
+  sendJson(res, status, anthropicError(type, message));
+}
+
+function errMessage(e: unknown): string {
+  return e instanceof Error ? e.message : String(e);
+}
+
+/** Extract `<providerId>` from Authorization: Bearer leemo-gw:<id> OR
+ *  x-api-key: leemo-gw:<id>. The SDK may use either header. */
+function parseProviderId(req: IncomingMessage): string | undefined {
+  const auth = req.headers["authorization"];
+  const xkey = req.headers["x-api-key"];
+  const candidates: string[] = [];
+  if (typeof auth === "string") {
+    const m = auth.match(/^Bearer\s+(.+)$/i);
+    candidates.push(m ? m[1].trim() : auth.trim());
+  }
+  if (typeof xkey === "string") candidates.push(xkey.trim());
+  for (const c of candidates) {
+    if (c.startsWith(PLACEHOLDER_PREFIX)) {
+      const id = c.slice(PLACEHOLDER_PREFIX.length).trim();
+      if (id) return id;
+    }
+  }
+  return undefined;
+}
+
+async function readBody(req: IncomingMessage): Promise<string> {
+  const chunks: Buffer[] = [];
+  for await (const chunk of req) chunks.push(chunk as Buffer);
+  return Buffer.concat(chunks).toString("utf8");
+}
+
+/** Map an upstream HTTP status to an Anthropic error type. Message is generic —
+ *  we NEVER echo the upstream body (it may embed the key). */
+function upstreamErrorType(status: number): string {
+  if (status === 401 || status === 403) return "authentication_error";
+  if (status === 404) return "not_found_error";
+  if (status === 429) return "rate_limit_error";
+  if (status >= 500) return "api_error";
+  return "invalid_request_error";
+}
+
+/** POST /v1/messages(?beta=true): translate → upstream → back (stream or not). */
+async function handleMessages(
+  req: IncomingMessage,
+  res: ServerResponse,
+  registry: ProviderRegistry
+): Promise<void> {
+  const providerId = parseProviderId(req);
+  if (!providerId) {
+    sendError(res, 401, "authentication_error", "missing or malformed gateway token");
+    return;
+  }
+  const provider: ResolvedProvider | undefined = registry.resolve(providerId);
+  if (!provider) {
+    sendError(res, 401, "authentication_error", "unknown gateway provider token");
+    return;
+  }
+
+  let anthropicReq: AnthropicChatRequest;
+  try {
+    anthropicReq = JSON.parse(await readBody(req)) as AnthropicChatRequest;
+  } catch (e) {
+    sendError(res, 400, "invalid_request_error", `invalid JSON body: ${errMessage(e)}`);
+    return;
+  }
+
+  const wantStream = anthropicReq.stream === true;
+
+  // ---- translate anthropic → openai (G2 core) ----
+  let openaiBody;
+  let stripped;
+  try {
+    const out = await anthropicToOpenAI(anthropicReq, provider.opts);
+    openaiBody = out.result;
+    stripped = out.stripped;
+  } catch (e) {
+    sendError(res, 400, "invalid_request_error", `request translation failed: ${errMessage(e)}`);
+    return;
+  }
+  // upstream must receive the provider's REAL model, not the claude- disguise.
+  openaiBody.model = provider.model;
+  if (stripped.length) {
+    registry.logger.info(`stripped ${stripped.length} server tool(s): ${stripped.map((t) => t.name ?? t.type ?? "?").join(", ")}`);
+  }
+
+  // ---- upstream call: real key ONLY here ----
+  const ac = new AbortController();
+  // client disconnect → abort upstream (and stop pumping).
+  let clientGone = false;
+  res.on("close", () => {
+    if (!res.writableEnded) {
+      clientGone = true;
+      ac.abort();
+    }
+  });
+
+  const upstreamUrl = `${provider.baseUrl.replace(/\/+$/, "")}/chat/completions`;
+  let upstream: Response;
+  try {
+    upstream = await fetch(upstreamUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${provider.apiKey}`,
+      },
+      body: JSON.stringify(openaiBody),
+      signal: ac.signal,
+    });
+  } catch (e) {
+    if (clientGone || ac.signal.aborted) return; // client bailed; nothing to send
+    registry.logger.error(`upstream fetch failed: ${errMessage(e)}`);
+    if (!res.headersSent) sendError(res, 502, "api_error", "upstream request failed");
+    return;
+  }
+
+  if (!upstream.ok) {
+    // drain the body so the socket is freed; do NOT echo it (may embed the key).
+    try {
+      await upstream.text();
+    } catch {
+      /* ignore */
+    }
+    const type = upstreamErrorType(upstream.status);
+    registry.logger.warn(`upstream returned ${upstream.status}`);
+    if (!res.headersSent) sendError(res, upstream.status, type, `upstream provider error (${upstream.status})`);
+    return;
+  }
+
+  if (!wantStream) {
+    // ---- non-stream: one OpenAI ChatCompletion → one Anthropic Message ----
+    let openaiJson: unknown;
+    try {
+      openaiJson = await upstream.json();
+    } catch (e) {
+      if (!res.headersSent) sendError(res, 502, "api_error", `invalid upstream JSON: ${errMessage(e)}`);
+      return;
+    }
+    try {
+      const anthropicMsg = await openaiToAnthropicResponse(openaiJson);
+      if (!res.headersSent) sendJson(res, 200, anthropicMsg);
+    } catch (e) {
+      if (!res.headersSent) sendError(res, 502, "api_error", `response translation failed: ${errMessage(e)}`);
+    }
+    return;
+  }
+
+  // ---- streaming: OpenAI SSE → Anthropic SSE, piped UNBUFFERED ----
+  if (!upstream.body) {
+    if (!res.headersSent) sendError(res, 502, "api_error", "upstream returned no stream body");
+    return;
+  }
+  let converted: ReadableStream<Uint8Array>;
+  try {
+    converted = await openaiToAnthropicStream(upstream.body as unknown as ReadableStream<Uint8Array>);
+  } catch (e) {
+    if (!res.headersSent) sendError(res, 502, "api_error", `stream translation failed: ${errMessage(e)}`);
+    return;
+  }
+
+  res.writeHead(200, {
+    "Content-Type": "text/event-stream; charset=utf-8",
+    "Cache-Control": "no-cache",
+    Connection: "keep-alive",
+  });
+
+  const reader = converted.getReader();
+  res.on("close", () => {
+    // stop reading upstream the moment the client is gone.
+    if (!res.writableEnded) reader.cancel().catch(() => {});
+  });
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (res.destroyed || clientGone) break;
+      const ok = res.write(Buffer.from(value));
+      if (!ok) await new Promise<void>((resolve) => res.once("drain", resolve));
+    }
+    if (!res.writableEnded) res.end();
+  } catch (e) {
+    // upstream aborted (client gone) or stream error — tear down cleanly.
+    if (!clientGone) registry.logger.error(`stream pump error: ${errMessage(e)}`);
+    if (!res.writableEnded) {
+      try {
+        res.end();
+      } catch {
+        /* ignore */
+      }
+    }
+  }
+}
+
+/** POST /v1/messages/count_tokens: local estimate, no upstream. */
+async function handleCountTokens(req: IncomingMessage, res: ServerResponse): Promise<void> {
+  let body: AnthropicChatRequest;
+  try {
+    body = JSON.parse(await readBody(req)) as AnthropicChatRequest;
+  } catch (e) {
+    sendError(res, 400, "invalid_request_error", `invalid JSON body: ${errMessage(e)}`);
+    return;
+  }
+  sendJson(res, 200, { input_tokens: countTokens(body) });
+}
+
+/** GET /v1/models: Anthropic list format, claude- disguised ids. */
+function handleModels(res: ServerResponse, registry: ProviderRegistry): void {
+  const now = Math.floor(Date.now() / 1000);
+  const data = registry.models().map((m) => ({
+    type: "model",
+    id: m.id,
+    display_name: m.id,
+    created_at: new Date(now * 1000).toISOString(),
+  }));
+  sendJson(res, 200, { data, has_more: false, first_id: data[0]?.id ?? null, last_id: data[data.length - 1]?.id ?? null });
+}
+
+export async function startGateway(registry: ProviderRegistry): Promise<GatewayHandle> {
+  const server = createServer((req, res) => {
+    const url = req.url ?? "/";
+    const method = (req.method ?? "GET").toUpperCase();
+    const face = classifyEndpoint(url);
+
+    const run = async (): Promise<void> => {
+      try {
+        if (face.kind === "health" && method === "GET") {
+          sendJson(res, 200, { status: "ok" });
+          return;
+        }
+        if (face.kind === "models" && method === "GET") {
+          handleModels(res, registry);
+          return;
+        }
+        if (face.kind === "count_tokens" && method === "POST") {
+          await handleCountTokens(req, res);
+          return;
+        }
+        if (face.kind === "messages" && method === "POST") {
+          await handleMessages(req, res, registry);
+          return;
+        }
+        sendError(res, 404, "not_found_error", `no route for ${method} ${url}`);
+      } catch (e) {
+        registry.logger.error(`unhandled request error: ${errMessage(e)}`);
+        if (!res.headersSent) sendError(res, 500, "api_error", "internal gateway error");
+        else if (!res.writableEnded) res.end();
+      }
+    };
+    void run();
+  });
+
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const port = (server.address() as AddressInfo).port;
+
+  return {
+    port,
+    close: () =>
+      new Promise<void>((resolve, reject) =>
+        server.close((err) => (err ? reject(err) : resolve()))
+      ),
+  };
+}
