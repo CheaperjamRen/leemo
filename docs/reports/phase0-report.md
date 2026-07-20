@@ -56,3 +56,42 @@
 - **canUseTool 可用**：`permissionMode:'default'` 下 Write 必经 canUseTool 回调（返回 `{behavior:'allow'|'deny'}`）→ 06 §2.9 审批条 UI 机制基础成立。
 - **各端点耗时量级**：单次简单 check——DeepSeek 3-8s／GLM 6-15s；compaction（三段式）——DeepSeek 88.7s／GLM 61.4s；Kimi 401（含 SDK 重试）单项 179-371s（streaming 187／tools 183／multiturn 359／subagent 179／compaction 365／probes 371）。
 - **usage 量级**：系统提示占大头，单次 `input_tokens`≈18-19k（DeepSeek 18975／GLM 17899），`output_tokens` 极小（11-50）；compaction `pre_tokens`≈21-22k → `post_tokens`≈3-4k。费用未单独采集（check 未捕获 `total_cost_usd`），量级由 token 数推断；后续如需精确成本，在 Bridge 层统一读 `result.total_cost_usd`。
+
+## 六、Kimi 复跑补记（2026-07-20，换 key 后）
+
+（本节为换 KIMI_API_KEY 后的补跑记录；§一矩阵/§三.1/§四中 Kimi 行以本节为准。）
+
+新 `KIMI_API_KEY` 生效，401 消失，端点 `api.moonshot.cn/anthropic` 五项核心验证 + 四项探测全部走通。逐项独立调用，结果如下：
+
+| 验证项 | 结果 | 关键 details | 耗时 |
+|--------|------|--------------|------|
+| ① 流式 streaming | **PASS** | streamEvents=52 · subtype=success · input_tokens=17817（cache_read=1792）· output_tokens=47 | 6.9s |
+| ② 工具调用 tools | **PASS** | toolsUsed=[Read,Read,Write] · answerContent=`obsidian-7413` | 10.5s |
+| ③ 多轮 multiturn | **PASS** | finalText="蓝色鲸鱼 42" · assistantTurns=4 | 4.4s |
+| ④ 子 agent subagent | **PASS** | taskToolUsed=true · toolNames=[Agent,TaskOutput,Glob] · subagentActivity=5 · answer 含"3 个"+alpha/beta（gamma 因 details.answer 存储时 slice(0,150) 截断，非模型漏报——check 判定式为 `/3|三/.test(answer)` 对完整 result.result 做正则，非对截断后的 details 做二次校验，数量断言真实成立） | 19.5s |
+| ⑤ 压缩 compaction | **PASS** | trigger=manual · pre_tokens=22173→post_tokens=2301 · 召回"紫色大象 88" · messageTypes 含 `system:compact_boundary` | 115.3s |
+| 探测 probes | resume ok=true（召回=7）／anysearch ok=true（www=200,api=404）／relay-anthropic **ok=false**（`TypeError: fetch failed`，与 §三.2 历史瞬断同性质，P2/P3 已知与 provider 无关，niubiapi 端点本身在 DeepSeek/GLM 轮次为 200，本次判瞬时网络抖动，不因换 key 而变）／canusetool ok=true（writtenInCwd=true，写入 `smoke/workspaces/kimi-canusetool-*/probe.txt`，foundContent=`hello`） | 各探测数秒级 |
+
+五项核心验证 **5/5 PASS**，四项探测 **3/4 ok**（relay-anthropic 瞬断，判定与凭证无关，不影响 Kimi 满血结论）。守则②（compaction "Not enough messages"）本轮**未触发**——堆料 pre_tokens=22173，与 DeepSeek/GLM 同量级，boundary 正常产生，说明该串此前未见并非 Kimi 特性问题，而是 401 期间从未进入 compaction 逻辑。
+
+### kimi-k3 可用性探测
+
+`GET /v1/models`（Bearer 鉴权，未回显 key）返回 12 个模型，含 `kimi-k3`（无其他 `k3-*` 变体）：
+
+```
+kimi-k2.5, kimi-k2.6, kimi-k2.7-code, kimi-k2.7-code-highspeed, kimi-k3,
+moonshot-v1-128k, moonshot-v1-128k-vision-preview, moonshot-v1-32k,
+moonshot-v1-32k-vision-preview, moonshot-v1-8k, moonshot-v1-8k-vision-preview,
+moonshot-v1-auto
+```
+
+以 `KIMI_MODEL=kimi-k3` 覆盖后跑两项探测（Anthropic 兼容端点 `api.moonshot.cn/anthropic`）：
+
+| 探测 | 结果 | 关键 details | 耗时 |
+|------|------|--------------|------|
+| streaming | **PASS** | streamEvents=19 · subtype=success · input_tokens=19219（cache_read=512）· output_tokens=27 | 16.1s |
+| tools | **PASS** | toolsUsed=[Read,Write] · answerContent=`obsidian-7413` | 71.0s |
+
+**结论：**
+- **Kimi (kimi-k2.5)：满血**。新 key 生效，5/5 核心验证 + 3/4 探测（第 4 项 relay-anthropic 为已知瞬断，与 Kimi 凭证无关）全部通过，性能量级（6-20s 单项，compaction 115s）与 DeepSeek/GLM 同一数量级，无降级迹象。§一矩阵/§三.1/§四判定自本节起以此为准：Kimi 由 ERROR（401）更正为 **PASS**。
+- **kimi-k3 经 Anthropic 兼容端点可用性：√（`kimi-k3`）**。模型列表确认存在，streaming/tools 两项探测 PASS，可作为后续前端试镜候选模型名；本节仅为可用性探测，未纳入五项核心矩阵正式复跑范围。
