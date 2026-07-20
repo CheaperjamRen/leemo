@@ -1,31 +1,30 @@
 {
+  // First-party (app) config: src/ (minus vendor) + tests/. STRICT, Node-only.
+  // The vendor tree is excluded from source; the root program sees vendor ONLY
+  // through the declarations emitted by tsconfig.vendor.json into
+  // dist/vendor-types (paths below map the aliases there). This keeps DOM libs
+  // and loose catch out of first-party code.
   "compilerOptions": {
     "target": "ES2022",
     "module": "ESNext",
     "moduleResolution": "bundler",
-    // DOM libs: the vendored @musistudio/llms core is written entirely against
-    // Web/Fetch/Streams APIs (Response, ReadableStream, TextEncoder). Node 18+
-    // provides these at runtime; DOM typings match how the code was authored
-    // (e.g. Response.json(): Promise<any>) and — per vendor discipline —
-    // resolve typecheck via tsconfig instead of editing byte-identical source.
-    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "lib": ["ES2022"],
     "types": ["node"],
     "strict": true,
-    // Kept strict:true, but relax this one strict-family flag: upstream vendor
-    // uses `catch (error) { error.message }` throughout (incl. the pristine
-    // 1069-line anthropic.transformer.ts). Relaxing here avoids patching vendor
-    // source for a purely-typing concern.
-    "useUnknownInCatchVariables": false,
     "esModuleInterop": true,
     "forceConsistentCasingInFileNames": true,
     "skipLibCheck": true,
     "noEmit": true,
     "baseUrl": ".",
     "paths": {
-      "@/*": ["src/gateway/vendor/llms/src/*"],
-      "@vendor/*": ["src/gateway/vendor/*"],
+      "@/*": ["dist/vendor-types/llms/src/*"],
+      "@vendor/*": ["dist/vendor-types/*"],
       "@gateway/*": ["src/gateway/*"]
     }
   },
-  "include": ["src", "tests"]
+  // dist/vendor-types is included so augmentations.d.ts (declare module
+  // "@/types/llm") is loaded into the program and its UnifiedChatRequest merge
+  // takes effect. .d.ts files are skipLibCheck-exempt from deep checking.
+  "include": ["src", "tests", "dist/vendor-types"],
+  "exclude": ["src/gateway/vendor"]
 }
