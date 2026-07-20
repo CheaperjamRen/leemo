@@ -1,0 +1,27 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`pitfall-12 SSE state machine > pitfall-12: text→tool switch produces the canonical ordered event sequence 1`] = `
+[
+  "message_start",
+  "content_block_start",
+  "content_block_delta",
+  "content_block_delta",
+  "content_block_stop",
+  "content_block_start",
+  "content_block_delta",
+  "content_block_delta",
+  "content_block_stop",
+  "message_delta",
+  "message_stop",
+]
+`;
+
+exports[`pitfall-12 SSE state machine > pitfall-12: zero-arg tool yields a complete tool_use block (snapshot) 1`] = `
+[
+  "message_start",
+  "content_block_start",
+  "content_block_stop",
+  "message_delta",
+  "message_stop",
+]
+`;

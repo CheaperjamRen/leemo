@@ -188,7 +188,8 @@ export class AnthropicTransformer implements Transformer {
         : undefined,
       tool_choice: request.tool_choice,
     };
-    if (request.thinking) {
+    // LEEMO-PATCH: reasoning injection gated by provider opts. Upstream injected result.reasoning unconditionally whenever request.thinking was present, which breaks OpenAI-protocol models that don't support reasoning. When options.reasoningInjection === "off" the gateway suppresses injection entirely; default/"auto" preserves upstream behavior.
+    if (request.thinking && this.options?.reasoningInjection !== "off") {
       result.reasoning = {
         effort: getThinkLevel(request.thinking.budget_tokens),
         // max_tokens: request.thinking.budget_tokens,
@@ -242,8 +243,18 @@ export class AnthropicTransformer implements Transformer {
     }
   }
 
+  // LEEMO-PATCH: server/builtin tools observably stripped. Upstream mapped EVERY anthropic tool into a function tool — server tools (web_search/computer/bash/text_editor/code_execution: versioned `type`, no input_schema) became malformed function tools with parameters:undefined that OpenAI-protocol endpoints reject. Now they are filtered out; the removed list is exposed on this.strippedServerTools for the gateway to log. Client custom tools (no `type`, or type:"custom") pass through unchanged, preserving upstream behavior for them.
+  strippedServerTools: any[] = [];
+
   private convertAnthropicToolsToUnified(tools: any[]): UnifiedTool[] {
-    return tools.map((tool) => ({
+    this.strippedServerTools = [];
+    const clientTools = tools.filter((tool) => {
+      const type = typeof tool?.type === "string" ? tool.type : "";
+      const isServerTool = type !== "" && type !== "custom" && !tool?.input_schema;
+      if (isServerTool) this.strippedServerTools.push(tool);
+      return !isServerTool;
+    });
+    return clientTools.map((tool) => ({
       type: "function",
       function: {
         name: tool.name,

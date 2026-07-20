@@ -1,0 +1,7 @@
+== RED-B (first-party impl done, vendor UNPATCHED) ==
+Tests  1 failed | 52 passed (53)
+
+The 1 failure = LEEMO-PATCH #1 (reasoning gate) genuine RED:
+  pitfall-09: reasoningInjection='off' emits NO reasoning field
+  AssertionError: expected { effort: 'high', enabled: true } to be undefined
+  (vendor transformRequestOut injects result.reasoning whenever request.thinking present)
