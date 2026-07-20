@@ -6,3 +6,4 @@ smoke/results/
 smoke/workspaces/
 dist/
 *.log
+.playwright-mcp/
