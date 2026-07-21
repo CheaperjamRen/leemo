@@ -172,4 +172,18 @@ B3: complete (commits 30b4745 + fix 6a61e48, re-review Approved; report=br-b3-re
   - 验收方亲跑: 206/206+typecheck 绿+关键断言存在(format C: 再问 seen===2 / 非危险缓存 seen===1 / permanent auto-allow seen===0) ✓
   - **⏸ 用户定稿节点(待过目)**: 09 契约要点——①provider 扩展轴 ②危险命令审批收紧(dangerous 只 allow-once)是否认可
   - **NewMax 对照(用户要求)**: 核心机制平齐; 当场验 usage 缓存扣减无重复计费 bug(网关 input=prompt−cached, pitfall-⑩ 钉); 3 可吸收增强进 backlog(memory newmax-gateway-borrowables): max_tokens 撞400降级重试/定价模糊匹配+名称标准化/能力预检可配置; 审批安全层 NewMax 无=我们增量
-→ B4 派卡(唯一打真网 live=Opus 4.8): DeepSeek 直连+relay2 网关并发, BASE=6a61e48, 跑前 VPN 三件套
+[用户 7/21 签字前修订] 用户推翻 B3 严格审批设计 + 要求 provider 对齐 NewMax(读 NewMax-预置Provider全量整理: 33 provider/本地Ollama/OAuth订阅/双协议):
+  - 审批哲学修订: 绝大多数用户不审批(觉得危险也不拒, 还要模型干活), 反复弹卡=麻烦非安全; 默认低摩擦, 危险可选放行/一轮一卡, 别老烦 → 宪法 06§2.9 被用户修订(默认安全, 用户可选放开)。记忆 approval-ux-philosophy
+  - provider 对齐: authMode 加 none(本地无key), capabilities 加 local/protocolSwitchable/multiKey/requiresProxy 对齐 NewMax 便捷特性(全量目录+设置UI=Provider里程碑)。记忆 provider-extensibility-constraint 更新
+
+B3-R (契约修订): complete (commit 2db6c8a, re-review Approved; brief=br-b3r-brief, report=br-b3r-report)
+  - 交付: ApprovalBroker 策略化(PermissionPolicy 驱动) + contract 加 PermissionMode/authMode none/capabilities 轴 + 09 修订; 215/215 绿(206→215, +9 纯新增)
+  - 硬 3 行为(复审逐条门控验证): ①bypassPermissions 短路(mode 严格门控, 在 classify/transport/whitelist 之前, 危险也零卡, 默认策略绝不误撞) ②dangerousCommandCaching 开关(默认 false=B3 严格逐字保留, true=危险可缓存, 读 policy 非硬编码, 两档对称) ③fail-closed default 逐字保留
+  - plan/acceptEdits 仅契约留位(Phase-1 执行语义), broker 暂按 default, 未臆造工具分类
+  - 默认策略 {acceptEdits, dangerousCommandCaching:false}=安全, 有回归测试证省略 policy 仍严(seen===2 双危险再问)
+  - 复审证非削弱: interact.test 零删除行(危险默认严/fail-closed/并发/三档逐字未动), contract.test 仅拓宽 authMode union(+none, 原成员仍断言)
+  - 主控默认值决定(设计方): acceptEdits 起步 + bypass 明显可选, 未默认零卡(留"agent 尊重我"信号); **用户可改默认为 bypassPermissions 零卡(已告知, 契约已支持, 仅默认档选择)**
+  - Minor(accept): acceptEdits 现等价 default(Phase-1 翻转自动放行时须重访默认); 报告 BASE 头 cosmetic 误标
+  - 验收方亲跑: 215/215+typecheck 绿 + bypass/toggle/none 断言存在 ✓
+== 09 契约含 7/21 修订, 待用户最终签字(两点已按用户意见落地: 扩展轴 + 审批哲学) ==
+→ B4 派卡(唯一打真网 live=Opus 4.8): DeepSeek 直连+relay2 网关并发, BASE=2db6c8a, 跑前 VPN 三件套
