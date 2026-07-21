@@ -119,3 +119,15 @@ G4: complete (commit befcbb8 已 push, review Approved; report=gw-g4-report.md)
   - Minor triage: 修凑手×3(G3 drain 竞态一行 race+一测试 / stripped 日志一断言 / 谓词孪生一锁定测试喂 divergent shape 直打 vendor 路径, 可合并进下批任一网关卡); accept-as-is×5(vendor 备份谓词未测/双 structuredClone/⑧图片占位+o200k 近似/alias-hook 依赖 tsx 序/saveResult redact no-op——安全由进程隔离结构性保证); follow-up 低优×1(上游 401/403→客户端 401 语义混淆, Bridge 侧宜区分 502)
   - Bridge 层建议: 先解流式 usage 再读 result.total_cost_usd(上批遗留④); 自动 compaction 经网关列为下批显式测试目标
 == 网关竖切批次 CLOSED (7/21) — 下批: Bridge 层(带走 Important×2 + 凑手 Minor×3 + 低优×1) ==
+
+== 第三批开工 (7/21): Bridge 竖切 ==
+计划: docs/plans/2026-07-21-bridge-slice.md (B0-B4, commit 8f3f8a2); 用户计划评审拍板: NewMax usage 模式(流末提取→四维→价目×price/1M 六位精度 TEXT)/余额官方 API 拉取(B2 balance.ts, DeepSeek 必做)/今日七天汇总契约预留实现 Phase 1/permanent 档钩子外置/o200k 回填标 estimated
+简报: br-b*-brief.md; 报告: br-b*-report.md
+
+B0 (网关欠账清偿): complete (commit f268f84, review Approved; report=br-b0-report.md)
+  - **诊断关键发现(relay-sse-probe)**: 上游确发真 usage 帧(4399/10/cached 3840), 但与 finish_reason 同一网络读——vendor break-on-finish 内循环(anthropic.transformer:923)读不到, safeClose 终 delta 拿到空 usage→全零。根因非上游不发!
+  - 修复全自研零 vendor 改动: sniffer(vendor 前扫帧存 sink)+rewriter(vendor 后改写终 message_delta); 真 usage 透传无标记, 无上游 usage 时 o200k 回填标 leemo_estimated:true(B2 estimated 通道); message_start 恒 o200k 估值(真值只在流末, 不缓冲拿不到——复审判合理偏差, **消费方不得把 message_start.input_tokens 当权威, B2 只从终 delta 提取**)
+  - 同卡: RELAY2_OPTS JSON env 通道+构造路径测试 / drain-close 竞态修 / stripped 日志断言 / pitfall-02 vendor 直打锁定测试 / 401/403→502 api_error
+  - 85/85 绿(69→85), typecheck 绿; 同读批帧回归测试已钉(THE bug 的镇仓测试)
+  - Minor 备忘: ①passthrough 热路径 outputText 恒累积(仅内存开销) ②RELAY2_OPTS 畸形 JSON 会致整 provider 不可用(fail-fast 设计, 爆炸半径备忘) ③B4 须 live 验证自动 compaction 经网关真触发(message_start 估值是否够 CC 计数)
+→ B1 派卡: 会话池, BASE=f268f84
