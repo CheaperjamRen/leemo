@@ -140,7 +140,12 @@ describe("fetchBalance — Kimi", () => {
 
     const info = await fetchBalance(kimiProvider, { fetchFn });
     expect(info.supported).toBe(true);
-    expect(info.totalUsd).toBeCloseTo(49.58894, 5);
+    // Moonshot bills in CNY (platform.moonshot.cn) — available_balance is a
+    // yuan amount, not USD. Must land in totalCny, and totalUsd must stay
+    // unset (a prior bug mislabeled this as totalUsd, inflating the
+    // displayed balance ~6.8x).
+    expect(info.totalCny).toBeCloseTo(49.58894, 5);
+    expect(info.totalUsd).toBeUndefined();
   });
 });
 

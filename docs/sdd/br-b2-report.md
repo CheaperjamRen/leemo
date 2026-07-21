@@ -1,6 +1,6 @@
 # Task B2 报告：事件规范化 + usage/cost/pricing + 余额拉取 + 防幻觉抽查
 
-> BASE=701fe09。执行模型=Sonnet 5。零 live 调用（fake SDK 消息流 + fake fetch 注入）。
+> BASE=7e3b716。执行模型=Sonnet 5。零 live 调用（fake SDK 消息流 + fake fetch 注入）。
 
 ## 1. LeemoEvent 全 variant 清单
 
@@ -83,7 +83,7 @@ CNY→USD 汇率：**6.7669**（https://api.frankfurter.app ，ECB 源，汇率�
 | Provider | 结论 | 出处 | 关键点 |
 |---|---|---|---|
 | **DeepSeek** | **支持**，`GET https://api.deepseek.com/user/balance` | https://api-docs.deepseek.com/api/get-user-balance/（2026-07-21） | 响应 `{is_available, balance_infos:[{currency,total_balance,granted_balance,topped_up_balance}]}`；**金额字段是字符串**（官方文档原样如此，代码内 `Number()` 强转）。一个 GitHub 上的第三方 OpenAPI 镜像给出的 schema（`{type,amount,currency}`）与官方文档不符，**未采用**，以官方页面直读为准。 |
-| **Kimi (Moonshot)** | **支持**，`GET https://api.moonshot.cn/v1/users/me/balance` | https://platform.moonshot.cn/docs/api/balance（2026-07-21） | 响应 `{code, data:{available_balance,voucher_balance,cash_balance}, scode, status}`；**金额字段是数字**（与 DeepSeek 相反，官方示例响应直接是 number，无需 `Number()` 转换）。 |
+| **Kimi (Moonshot)** | **支持**，`GET https://api.moonshot.cn/v1/users/me/balance` | https://platform.moonshot.cn/docs/api/balance（2026-07-21） | 响应 `{code, data:{available_balance,voucher_balance,cash_balance}, scode, status}`；**金额字段是数字**（与 DeepSeek 相反，官方示例响应直接是 number，无需 `Number()` 转换）。**币种=CNY**（platform.moonshot.cn 按人民币计费）——`available_balance` 映射到 `totalCny`，非 `totalUsd`（复审 Important 修复，见下方§修复轮；避免 UI 把余额虚高 ~6.8 倍）。 |
 | **GLM (智谱)** | **不支持**，`{supported:false}` | 查过 open.bigmodel.cn 相关文档与开发者社区 | 未找到任何公开、文档化、API-Key 认证的余额查询端点；网上流传的是一个非官方、cookie 鉴权、随时可能失效的逆向端点，且那个端点查的是"套餐/编码计划配额"这个不同概念，不是钱包余额。判定：不实现，`supported:false`，由 `UNSUPPORTED` allowlist 显式登记（而非"默认支持"再报错），保证以后新增 provider 不会静默"意外支持"。 |
 | 其它/未知 providerId | `{supported:false}`，`fetchFn` 全程不被调用 | — | `balance.test.ts`「an entirely unknown providerId → supported:false, does not call fetchFn」用 `called` 标志位实测这一点，非空转。 |
 
@@ -183,3 +183,41 @@ Error: Cannot find module '../../src/bridge/pricing' imported from E:/Leemo/test
 ---
 
 **验收命令复现**：`Set-Location E:\Leemo; npm test; npm run typecheck` → 164/164 passed + typecheck 两段 exit 0。
+
+---
+
+## 修复轮（复审 Approved + 1 Important → 已修）
+
+复审结论：**Approved，1 个 Important 必修**（+ 1 处可追溯性 nit：报告头 BASE 误写 `701fe09`，应为 `7e3b716`，已在文首订正）。
+
+### Important — Kimi 余额把 CNY 金额错标成 totalUsd（已修）
+
+**缺陷**：`src/bridge/balance.ts` 的 `fetchKimiBalance` 原实现 `return { supported: true, totalUsd: body.data.available_balance }`。但 Moonshot（platform.moonshot.cn）按人民币计费，`available_balance` 是 CNY 金额，不是 USD——若原样显示在 UI，余额会虚高约 6.8 倍（USD/CNY≈6.7669，见§4）。对照同文件里 DeepSeek 路径（按 `currency==='USD'|'CNY'` 分流到 `totalUsd`/`totalCny` 两个字段，balance.ts:104-109）可看出币种理应分开处理，Kimi 这条路径当初漏了这一步、把币种硬编码成了 USD。
+
+**修法**：
+1. `src/bridge/balance.ts`：`fetchKimiBalance` 返回值改为 `{ supported: true, totalCny: body.data.available_balance }`；Kimi 段顶部注释同步订正（原文提到"USD"的措辞已改为明确说明"Moonshot 按 CNY 计费，映射到 totalCny，不是 totalUsd"，并点出这是一个曾经犯过、已修复的错误，供后续读者警惕同类坑）。
+2. `tests/bridge/balance.test.ts`：原断言 `expect(info.totalUsd).toBeCloseTo(49.58894, 5)` 是"把 bug 焊死成规范"的空转断言，已改为 `expect(info.totalCny).toBeCloseTo(49.58894, 5)` + `expect(info.totalUsd).toBeUndefined()`——同时钉住"金额落在正确字段"和"错误字段必须留空"两件事，防止同一坑以"totalUsd 又被顺手填回去"的形式复发。
+
+**RED/GREEN 证据**：先改测试断言（改到应指向修复后语义），跑 `npx vitest run tests/bridge/balance.test.ts`，在实现修复前得到真实 RED：
+
+```
+× fetchBalance — Kimi > parses the official Moonshot balance response shape (code/data/scode/status)
+AssertionError: expected undefined to be close to 49.58894, received difference is NaN, but expected 0.000005
+ Test Files  1 failed (1)
+      Tests  1 failed | 7 passed (8)
+```
+
+（`info.totalCny` 在旧实现下是 `undefined`，NaN 差值证实断言确实在检验修复前的错误状态，非空转。）改 `balance.ts` 的 `totalUsd`→`totalCny`后重跑，GREEN：
+
+```
+ Test Files  1 passed (1)
+      Tests  8 passed (8)
+```
+
+全量回归：`npm test` → **164/164 passed**（断言内容调整，用例数不变）；`npm run typecheck` → 两段 exit 0。
+
+**币种订正说明**：本卡两个余额 provider 现在的币种语义是——DeepSeek 按响应里的 `currency` 字段动态分流（USD→`totalUsd`，CNY→`totalCny`，都可能出现，取决于账户开户地）；Kimi 固定输出 CNY（Moonshot 平台本身只有人民币计价，不会返回 USD 分支），故 Kimi 恒用 `totalCny`，且 `totalUsd` 恒为 `undefined`。这与 pricing.ts 里 GLM/Kimi 价目表的 CNY→USD 折算是两回事——那里是"为了统一 costUsd 单位而做的价目层折算"，这里是"balance.ts 如实反映账户里实际货币的余额"，不应该也去做汇率折算（余额折算成 USD 会引入汇率时效性问题，且用户在 Moonshot 官网看到的就是 CNY 原始数字，balance.ts 应该如实对应，不该自作主张换算）。
+
+**新 commit（不 amend）**：`fix(bridge): kimi balance is CNY not USD`。
+
+

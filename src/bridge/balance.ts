@@ -123,6 +123,10 @@ async function fetchDeepSeekBalance(
 //     number, cash_balance: number }, scode: string, status: boolean }
 // Unlike DeepSeek, amounts here are NUMBERS, not strings (per the official
 // example response) — parsed as-is, no Number() coercion needed.
+// Moonshot bills in CNY (platform.moonshot.cn is the CN-billed platform) —
+// available_balance is a yuan amount, NOT USD. Must map to totalCny, never
+// totalUsd (an earlier draft mislabeled this, inflating the displayed
+// balance ~6.8x — see docs/sdd/br-b2-report.md §修复轮).
 // ---------------------------------------------------------------------------
 
 interface KimiBalanceResponse {
@@ -152,7 +156,7 @@ async function fetchKimiBalance(
 
     return {
       supported: true,
-      totalUsd: body.data.available_balance,
+      totalCny: body.data.available_balance,
     };
   } catch (e) {
     return { supported: false, raw: summarizeError(e, provider.apiKey) };
