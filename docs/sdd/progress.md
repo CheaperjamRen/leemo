@@ -97,3 +97,12 @@ G3: complete (commit be3d32d, review Approved; report=gw-g3-report.md)
   - Minor 备忘(留待收官终审 triage): ①backpressure+断连竞态可悬挂 drain promise(上游已由 abort 释放, 仅 promise 泄漏) ②stripped 非空日志行为已实现未测试 ③alias-hook 依赖 tsx 先注册补 .ts 扩展(裸 node --import 会挂, 仅 dev 入口用) ④上游 401/403 映射为客户端 401 语义略歧
   - 验收方亲跑: 69/69 + typecheck exit 0 + closedEarly/authorization 断言存在 ✓
 == G4 门口: 需用户提供 RELAY2_*(OpenAI 协议端点)才能开跑 ==
+
+[7/21] RELAY2_* 已配(用户选中转站 niubiapi: BASE=https://www.niubiapi.com/v1, MODEL=gpt-5.6-luna, key 由 .env 内复制, 未出对话)
+G4: complete (commit befcbb8 已 push, review Approved; report=gw-g4-report.md)
+  - **网关竖切 Live 验收 PASS (5/5)**: streaming✅ tools✅ multiturn✅ subagent✅(Agent 工具) compaction✅(boundary+召回) via 网关→niubiapi(gpt-5.6-luna)
+  - 设计: 子进程边界=密钥边界(runner 不读 .env, SDK 子进程 env dump 实证只有 leemo-gw:relay2 占位); 复审确认无 soft-pass 路径, §七数值与 results JSON 逐项吻合, 泄漏扫描零命中
+  - 验收方亲跑复跑: 5/5 一致(streaming 14ev/tools obsidian-7413/multiturn 蓝色鲸鱼42/subagent Agent+activity7/compaction 21650→2766+紫色大象88) + 泄漏扫描零命中 ✓
+  - **零 usage 疑点(留 follow-up 卡)**: 流式 message usage 全零(直连时有值); 但验收复跑 compaction pre_tokens=21650 非零(执行者轮为 0, 有波动)→count_tokens 链路通, 问题聚焦流式 usage 映射(坑⑩ live)。复审给出决定性首查: 抓 relay 原始 SSE 看是否有带 usage 的 data 帧——无帧=上游不发(需 count_tokens 兜底), 有帧=网关透传 bug
+  - Minor 备忘: saveResult 的 env 基 redact 在本 runner 为 no-op(安全实际来自进程隔离+泄漏扫描, 非 redact 层)
+== 网关竖切 G1-G4 全部完成, 收官全分支终审进行中 ==
