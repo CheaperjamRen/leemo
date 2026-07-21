@@ -113,8 +113,10 @@ export function classifyRisk(toolName: string, input: Record<string, unknown>): 
 export type ApprovalTier = "allow-once" | "allow-conversation" | "allow-permanent" | "deny";
 
 /** A request the broker sends the host for a decision. `inputSummary` is a
- *  short human-readable rendering (never the raw input — no secrets leak into
- *  the approval UI/log). */
+ *  short human-readable rendering of the tool input (truncated for display) so
+ *  the user can identify what they are approving. It is NOT a redaction step —
+ *  showing the actual command is intentional (the user must see it to judge);
+ *  secret hygiene lives upstream (env sanitization, key-free IPC payloads). */
 export interface ApprovalRequest {
   id: string;
   toolName: string;
@@ -169,9 +171,10 @@ function cacheKey(toolName: string, risk: RiskLevel): string {
   return `${toolName} :: ${risk}`;
 }
 
-/** Best-effort, secret-safe one-line summary of a tool input for the approval
- *  card. Prefers a `command`/`file_path`/`pattern` field, else a truncated
- *  JSON. Never throws. */
+/** Best-effort one-line summary of a tool input for the approval card
+ *  (truncated for display, so the user can identify what they're approving —
+ *  not a redaction step; the actual command is shown on purpose). Prefers a
+ *  `command`/`file_path`/`pattern` field, else a truncated JSON. Never throws. */
 function summarizeInput(toolName: string, input: Record<string, unknown>): string {
   const pick = (k: string): string | undefined =>
     typeof input[k] === "string" ? (input[k] as string) : undefined;
@@ -266,12 +269,23 @@ export function createApprovalBroker(
       }
 
       case "allow-conversation":
-        conversationAllow.add(key);
+        // Danger-only guard (Leemo design decision, completing 06 §2.9): the
+        // dangerous tier is allow-once ONLY — never cached, never persisted.
+        // Destructive commands are highly specific; approving `rm -rf /tmp/x`
+        // must not auto-allow `format C:` (both key to `Bash :: dangerous`).
+        // Symmetric with the allow-permanent danger-downgrade above.
+        if (risk !== "dangerous") conversationAllow.add(key);
         return allow();
 
       case "allow-once":
-      default:
         return allow();
+
+      default:
+        // Fail-closed. `decision.decision` is typed ApprovalTier, but it rides
+        // in from the host over IPC (untrusted runtime data) — a malformed or
+        // future-unknown value must DENY, never coerce to allow. This mirrors
+        // the broker's "don't trust the host UI" posture (danger-downgrade).
+        return { behavior: "deny", message: "Denied: unknown approval decision" };
     }
   };
 

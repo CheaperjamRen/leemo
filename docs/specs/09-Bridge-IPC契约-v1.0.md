@@ -68,7 +68,7 @@ SDK 需要用工具
   → 命中永久白名单(persistence.getWhitelist, 按 toolName+risk)? → 直接 allow(不问)
   → 命中本对话缓存(conversation cache, 按 toolName+risk)?       → 直接 allow(不问)
   → 否则: 生成 ApprovalRequest{id, toolName, inputSummary, risk}
-         经 bridge:approvalRequest 推宿主(inputSummary 是脱敏摘要, 非原始 input)
+         经 bridge:approvalRequest 推宿主(inputSummary 是输入摘要, 截断展示供用户审批时辨识; 非脱敏——展示命令原文是刻意的, 用户需看清才能批)
   → 宿主渲染对话内嵌审批条, 用户选档
   → 宿主经 bridge:approvalDecision 回 ApprovalDecision{id, decision, message?}
   → broker 按 decision 落地 → 返回 PermissionResult 给 SDK
@@ -79,13 +79,16 @@ SDK 需要用工具
 | 档 | decision 值 | broker 行为 | 缓存/持久化 |
 |---|---|---|---|
 | 允许一次 | `allow-once` | allow | 不缓存（同工具再来仍问） |
-| 本对话内总是允许 | `allow-conversation` | allow | 写**本对话内存缓存**（同工具同风险后续不问）；不跨对话 |
-| 永久允许 | `allow-permanent` | allow | 经 `persistence.addToWhitelist` 写全局白名单（跨对话；设置页可查可撤，06 §2.9） |
+| 本对话内总是允许 | `allow-conversation` | allow | 写**本对话内存缓存**（同工具同风险后续不问）；不跨对话；**dangerous 例外见下** |
+| 永久允许 | `allow-permanent` | allow | 经 `persistence.addToWhitelist` 写全局白名单（跨对话；设置页可查可撤，06 §2.9）；**dangerous 例外见下** |
 | 拒绝 | `deny` | deny（带 message） | 无 |
+| 未知/畸形 decision | 其它任意值 | **deny（fail-closed）** | 无 |
 
-**危险降档（06 §2.9 铁律：危险操作永不提供"永久允许"档）**：
+> **fail-closed default**：`decision` 字段虽类型标 `ApprovalTier`，但值由宿主经 IPC 传入（运行时不可信数据）。畸形/未来未知字符串**一律 deny**，绝不 coerce 成 allow——与 broker "不信任宿主 UI" 的姿态一致（危险降档同源）。
+
+**危险档纪律（06 §2.9 + 设计负责人 7/21 补全）**：**dangerous 档只允许 `allow-once`——禁 conversation 缓存、禁 permanent 持久化**。理由：破坏性操作命令高度特异，批准一个（`rm -rf /tmp/data`）绝不等于授权另一个（`format C:`，二者同 `Bash::dangerous` 键）。
 - `classifyRisk` 内置 Bash 危险模式**种子清单**（`rm -rf`/`del /f`/`format C:`/`mkfs`/`dd of=/dev/`/`diskpart`/`fdisk`/`reg add|delete`/`shutdown`/fork-bomb 等——注释标注"种子清单，非穷举"；漏判只降级为 moderate 走正常问询，绝不静默放行）。
-- `risk === 'dangerous'` 时：**即便宿主返回 `allow-permanent`，broker 拒绝写永久白名单**，降级为 `allow-once`（本次放行、不缓存、下次仍问）。这是 broker 内部强制，不信任宿主端 UI 是否隐藏了永久档。
+- `risk === 'dangerous'` 时：**即便宿主返回 `allow-permanent` 或 `allow-conversation`，broker 一律降级为 `allow-once`**（本次放行、不缓存、不持久化、下次仍问）。broker 内部强制，不信任宿主端 UI。
 
 **并发**：每个 `canUseTool` 调用带独立 `id` + 独立 transport Promise，多个挂起互不串（waiters 隔离）。
 
@@ -167,7 +170,7 @@ SDK 需要用工具
 | `events.ts`（B2） | `LeemoEvent`、`UsageRecord`、`PathAudit`、`PathClaim` |
 | `pricing.ts`（B2） | `ModelPricing` |
 | `balance.ts`（B2） | `BalanceInfo` |
-| `pool.ts`（B1） | `ConversationConfig`、`ConversationState`（`ConversationHandle` 进程内对象不 re-export，投影 = `ConversationRef`） |
+| `pool.ts`（B1） | `ConversationState`（`ConversationConfig` 内嵌 `provider:Provider` 持 key，进程内创建配置**不 re-export**、不过 IPC，投影 = 无 key 的 `CreateConversationRequest`；`ConversationHandle` 进程内对象不 re-export，投影 = `ConversationRef`） |
 | `providers.ts`（B1） | `ModelCapabilities`（`Provider` 含 key，不 re-export；投影 = `ProviderSpec`） |
 | `interact.ts`（B3） | `RiskLevel`、`ApprovalTier`、`ApprovalRequest`、`ApprovalDecision`、`WhitelistEntry`、`AskUserOption`、`AskUserQuestion`、`AskUserInput`、`AskUserPayload`、`AskUserAnswerItem`、`AskUserAnswer` |
 | `contract.ts` 新增（IPC 面） | `ProviderSpec`、`ProviderAuthMode`、`ProviderKind`、`ProviderCapabilities`、`CreateConversationRequest`、`ConversationRef`、`SendRequest`、`SetModelRequest`、`FetchBalanceRequest`、`UsageSummaryQuery`/`UsageSummary`/`UsageSummaryByProvider`/`UsageSummaryByDay`、`BridgeInvokeMap`/`BridgeEventMap`/`BridgeChannel`、常量 `BRIDGE_CHANNELS`/`KNOWN_PROVIDER_KINDS` |

@@ -44,10 +44,18 @@ export type { BalanceInfo } from "./balance";
 // Re-exports — B1 conversation pool (src/bridge/pool.ts)
 // ===========================================================================
 //
-// ConversationConfig / ConversationState cross the boundary as-is.
-// ConversationHandle is a PROCESS-IN object (methods, live AbortController) and
-// does NOT cross IPC — its serializable projection is `ConversationRef` below.
-export type { ConversationConfig, ConversationState } from "./pool";
+// Only `ConversationState` (a plain string union) crosses the boundary as-is.
+//
+// `ConversationConfig` is DELIBERATELY NOT re-exported: it is a PROCESS-IN
+// creation config that embeds `provider: Provider`, which carries `apiKey` (the
+// real secret) — the same reason Provider itself is excluded below. No channel
+// binds it: `bridge:createConversation` takes the key-free
+// `CreateConversationRequest` (provider referenced by id). It stays defined in
+// pool.ts (B1, unchanged); the contract just doesn't surface it.
+//
+// `ConversationHandle` is likewise process-in (methods, live AbortController)
+// and does NOT cross IPC — its serializable projection is `ConversationRef`.
+export type { ConversationState } from "./pool";
 
 // Provider (src/bridge/providers.ts) is DELIBERATELY NOT re-exported: it
 // carries `apiKey` (the real secret) and is a process-in descriptor. Secrets

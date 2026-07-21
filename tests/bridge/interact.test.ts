@@ -244,6 +244,71 @@ describe("ApprovalBroker — danger downgrade (permanent is refused for dangerou
   });
 });
 
+// Leemo design decision (设计负责人 7/21, completing 06 §2.9): the dangerous
+// tier is allow-once ONLY — no conversation cache, no permanent whitelist.
+// Destructive commands are highly specific; approving one (`rm -rf /tmp/data`)
+// must NEVER auto-allow another (`format C:`) that shares the tool+risk key.
+describe("ApprovalBroker — dangerous tier refuses conversation caching too", () => {
+  it("host returns allow-conversation for a dangerous command, but a DIFFERENT dangerous command still asks", async () => {
+    const { persistence, list } = memoryPersistence();
+    const { transport, seen } = scriptedApprovalTransport(() => "allow-conversation");
+    const broker = createApprovalBroker(transport, persistence);
+
+    const r1 = await decide(broker.canUseTool, "Bash", { command: "rm -rf /tmp/data" });
+    expect(r1.behavior).toBe("allow"); // allowed THIS time
+
+    // A second, DIFFERENT dangerous command (same tool+risk key `Bash::dangerous`)
+    // must NOT be served from cache — it is highly specific and separately risky.
+    const r2 = await decide(broker.canUseTool, "Bash", { command: "format C:" });
+    expect(r2.behavior).toBe("allow");
+    // The sharp assertion: transport consulted BOTH times (nothing cached).
+    expect(seen.length).toBe(2);
+    // And never persisted.
+    expect(list.length).toBe(0);
+  });
+
+  it("even the SAME dangerous command asks again (dangerous is strictly allow-once)", async () => {
+    const { persistence } = memoryPersistence();
+    const { transport, seen } = scriptedApprovalTransport(() => "allow-conversation");
+    const broker = createApprovalBroker(transport, persistence);
+
+    await decide(broker.canUseTool, "Bash", { command: "rm -rf /tmp/data" });
+    await decide(broker.canUseTool, "Bash", { command: "rm -rf /tmp/data" });
+    expect(seen.length).toBe(2);
+  });
+
+  it("a MODERATE command still caches (the guard is dangerous-only, not a blanket disable)", async () => {
+    const { persistence } = memoryPersistence();
+    const { transport, seen } = scriptedApprovalTransport(() => "allow-conversation");
+    const broker = createApprovalBroker(transport, persistence);
+
+    await decide(broker.canUseTool, "Bash", { command: "ls -la" });
+    await decide(broker.canUseTool, "Bash", { command: "git status" }); // same Bash::moderate key
+    expect(seen.length).toBe(1); // second served from conversation cache
+  });
+});
+
+// The ApprovalDecision.decision field is typed ApprovalTier, but the value
+// arrives over IPC from the host — untrusted runtime data. A malformed / future
+// unknown string must NOT coerce to allow (fail-closed, matching the broker's
+// "don't trust the host UI" posture that danger-downgrade already embodies).
+describe("ApprovalBroker — unknown decision is fail-closed (deny)", () => {
+  it("a malformed decision string is denied, not allowed", async () => {
+    const { persistence } = memoryPersistence();
+    const transport: ApprovalTransport = {
+      async request(req) {
+        // Simulate a malformed/unknown decision off the wire.
+        return { id: req.id, decision: "totally-bogus" as ApprovalDecision["decision"] };
+      },
+    };
+    const broker = createApprovalBroker(transport, persistence);
+    const r = await decide(broker.canUseTool, "Read", { file_path: "a.txt" });
+    expect(r.behavior).toBe("deny");
+    if (r.behavior === "deny") expect(typeof r.message).toBe("string");
+  });
+});
+
+
 // ===========================================================================
 // ApprovalBroker — concurrency (waiters don't cross)
 // ===========================================================================

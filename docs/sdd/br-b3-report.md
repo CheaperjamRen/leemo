@@ -3,6 +3,7 @@
 > BASE=0b8128e。执行=Opus 4.8。零 live（fake transport 注入）。
 > 交付：`src/bridge/interact.ts` + `src/bridge/contract.ts` + `docs/specs/09-Bridge-IPC契约-v1.0.md` + `tests/bridge/{interact,contract}.test.ts`。
 > 结果：**202/202 绿（164→202，+38）**，typecheck 两段 exit 0，四个新文件零 null 字节。
+> **§修复轮（复审后，见文末）：206/206 绿；三 Important + 两 Minor 全修。**
 
 ---
 
@@ -201,3 +202,41 @@ export declare function tool<Schema extends AnyZodRawShape>(
 2. **`AskUserToolResult` 是 `CallToolResult` 的结构子集**：我方定义了最小形状（`content:[{type:'text',text}]` + `isError?`）而非 import mcp sdk 的 `CallToolResult`（避免 contract/interact 依赖 `@modelcontextprotocol/sdk` 的深层类型面）。handler 里 `as unknown as` 桥接到 SDK 期望的返回类型——运行时 probe 已证形状被接受。若复审偏好直接用 SDK 的 `CallToolResult`，可改（但会把 mcp sdk 类型拉进 bridge 层）。
 3. **zod 显式依赖**：从传递依赖提升为直接依赖（`4.4.3` exact）。若项目有"最小依赖"偏好，替代方案是继续依赖传递解析（但幻影依赖，`npm ci` 语义脆弱）——我方选了显式固定。
 4. **`bridge:usageSummary` channel 已进 `BRIDGE_CHANNELS` 但标 Phase 1 预留**：契约面存在、实现首发缺席（符合简报"契约先占位"）。复审若认为预留 channel 不该进冻结常量集，可移出——但那样 Phase 1 加它就要动 `BRIDGE_CHANNELS`（与"加能力不改契约"原则相悖），故选择现在纳入 + 注释标预留。
+
+---
+
+## §修复轮（复审 Needs fixes：0 Critical + 3 Important + 2 Minor，全修）
+
+复审自 `30b4745`。三 Important 冻结前必修、两 Minor 顺带。严格 TDD：#2/#3 先写 RED 再改。结果 **206/206 绿（202→206，+4 守卫测试）**，typecheck 两段 exit 0，null 扫描零。
+
+### Important #1（撤 ConversationConfig re-export）
+- **问题**：`contract.ts` re-export 了 `ConversationConfig`，但它内嵌 `provider: Provider`（持 `apiKey`），与我方排除 Provider 的理由自相矛盾——冻结契约里摆一个带 key 的进程内类型是陷阱（非活跃泄漏：无 channel 绑它，createConversation 用无 key 的 `CreateConversationRequest`）。
+- **修法**：删 `ConversationConfig` re-export（只留 `ConversationState`）；订正 §B1 pool 注释——明标 `ConversationConfig` 是**进程内创建配置、不过 IPC**，投影为无 key 的 `CreateConversationRequest`。`pool.ts` 未动（B1 禁改）。同步 09 文档 §六 re-export 表。
+- 无新测试（纯 re-export 撤除；`contract.test.ts` 本就不引 ConversationConfig，全绿）。
+
+### Important #2（dangerous 档禁一切缓存 — 设计负责人拍板补全 06 §2.9）
+- **设计决定**：**dangerous 档只允许 `allow-once`，禁 conversation 缓存、禁 permanent**（破坏性命令高度特异，批一个≠授权另一个）。
+- **RED**：`interact.ts:268` allow-conversation 原无条件缓存（key=`Bash::dangerous`）→ host 对 `rm -rf /tmp/data` 返回 allow-conversation 后，`format C:`（同键）命中缓存自动放行。新测试断言"第二条不同 dangerous 命令仍走 transport（`seen.length===2`）"→ 现实现 RED（实际 1）。
+- **GREEN**：allow-conversation 分支加 `if (risk !== "dangerous") conversationAllow.add(key)`——与 permanent-降 dangerous 对称。
+- **测试**：新增 3 例——①不同 dangerous 命令不缓存（seen===2）；②同一 dangerous 命令仍问（strictly once）；③**moderate 命令仍缓存**（守卫是 dangerous-only 非一刀切，seen===1）。
+- 09 文档审批档表 + 危险纪律段同步（明写"dangerous 只 allow-once，不缓存不持久化"）。
+
+### Important #3（审批 default 改 fail-closed）
+- **问题**：`allow-once` 与 `default` 同走 `allow()`；`ApprovalDecision.decision` 虽类型标 `ApprovalTier`，但值是宿主经 IPC 来的运行时不可信数据，畸形/未知字符串会 coerce 成 allow——与 broker "不信任宿主 UI" 姿态矛盾。
+- **RED**：新测试构造畸形 decision（`"totally-bogus"`）→ 断言 deny → 现实现 RED（实际 allow）。
+- **GREEN**：`case "allow-once": return allow();` 显式列出；`default:` 改 `{behavior:'deny', message:'Denied: unknown approval decision'}`（fail-closed）。
+- **测试**：新增 1 例（畸形 decision → deny + message 非空）。
+
+### Minor（两项，顺带）
+- **inputSummary 措辞夸大"脱敏"**：实为命令原文截断（给用户看清才能批，本身对）。软化——`interact.ts` 两处 docstring（`ApprovalRequest.inputSummary` 注释 + `summarizeInput` 注释）去掉 "secret-safe"/"never the raw input/no secrets leak"，改为"截断展示供用户审批辨识、非脱敏（展示命令原文是刻意的）；密钥卫生在上游（env 脱敏 + 无 key IPC payload）"。09 文档 §二同步。
+- （复审提及 `interact.ts:1009-1011` 应为笔误——文件仅 ~490 行；对应的措辞在 `summarizeInput` docstring，已软化。）
+
+### 修复轮文件面
+`src/bridge/interact.ts`（broker switch + 两 docstring）、`src/bridge/contract.ts`（撤 re-export + 注释）、`tests/bridge/interact.test.ts`（+4 测试）、`docs/specs/09-…v1.0.md`（审批表 + 危险纪律 + inputSummary 措辞 + re-export 表）。**仍未碰 forbidden 清单**（pool/providers/events/pricing/balance/gateway/smoke/vendor/CLAUDE.md/02/06/08）。
+
+### 修复轮自查
+- ✅ dangerous 档三态都只 allow-once：permanent 降级（原有）+ conversation 拒缓存（新）+ 本次仍放行；moderate 缓存不受影响（对照测试锁定）。
+- ✅ default fail-closed：未知 decision → deny（非 allow），与危险降档同源"不信任宿主"。
+- ✅ 契约不再含带 key 的进程内类型；`ConversationState` 仍导出（纯字符串 union，安全）。
+- ✅ 措辞不再声称脱敏；密钥卫生归因到真实来源（上游 env 脱敏 + 无 key payload）。
+- ✅ 206/206 绿；typecheck exit 0；null 扫描零；无 Electron/vendor/gateway 导入；无真 key 字面量。
