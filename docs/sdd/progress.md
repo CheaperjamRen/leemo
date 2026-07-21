@@ -142,3 +142,17 @@ B1: complete (commits d1c884c + fix 701fe09, re-review Approved; report=br-b1-re
   - **B2 消费契约: send 透传 SDK 原消息(TMessage 泛型=B2 包装点); registryFactory 占位 B4 定型; streaming-input(Query.interrupt/setModel)=B4 接线点**
   - 验收方亲跑: 119/119+typecheck 绿+泄漏断言(stubEnv RELAY2_API_KEY→undefined)存在 ✓
 → B2 派卡: 事件规范化, BASE=701fe09
+
+B2: complete (commits d34e12b + fix 0b8128e, review Approved; report=br-b2-report.md; 执行=Sonnet 5 首次降档卡)
+  - 交付: bridge/{events,pricing,balance}.ts; 164/164 绿(119→164, +45)
+  - events.ts: normalizeSdkStream → LeemoEvent 11 variant 判别联合(conversation.started/text.delta/thinking.delta/text.final/tool.started/tool.finished/subagent.activity/compact.boundary/usage.final/run.finished/error); 结构事件映射逐字段比对 checks.mjs 真实形状(复审证实非臆造); subagent 判定认 parent_tool_use_id 存在不认工具名(Agent/Task 双名坑规避); text.delta 防御式可选链(stream_event 形状未 live 佐证)
+  - UsageRecord: 字段面⊇proxy_request_logs; cost=NewMax 模式(total_cost_usd>0→sdk / 查表→local-pricing tokens×price/1e6 toFixed6 / 无→unpriced); tokensEstimated 读 leemo_estimated; costSource 三分支+estimated 两分支复审证实非空转
+  - pricing.ts: 占位表 DeepSeek $0.14/$0.28/$0.0028(官方 USD) + GLM ¥8/28/2 + Kimi ¥4/21/0.70(官方 CNY @6.7669 换算, 出处 URL+日期入报告); relay2 gpt-5.6-luna 故意不进表(中转站转售价不可查→unpriced, 不编价)
+  - balance.ts: DeepSeek(必做)+Kimi 官方端点; GLM supported:false(无公开端点); fetchFn 注入零 live; 错误路径不抛+redact key
+  - within-cwd 逃逸检测: resolved===cwd || startsWith(cwd+sep)(复审证 C:\workspaceEVIL 不误判); key redact 复审证网络错误路径无 key 泄漏
+  - 修复轮(复审 Important): Kimi 余额 available_balance 是 CNY 错标 totalUsd(虚高 6.8×)→改 totalCny+断言锁币种(0b8128e)
+  - 验收方亲跑: 164/164+typecheck 绿+Kimi 断言已翻(totalCny 设/totalUsd undefined) ✓
+  - **待 B4 live 验证的假设(执行者标注)**: ①stream_event delta 内部形状 ②leemo_estimated 是否流穿到 result.usage
+  - Minor 备忘: within-cwd Windows 大小写敏感(安全方向, 过度告警非漏报); CNY/USD 汇率硬编码快照(Phase 1 清理)
+  - **用户 7/21 provider 面提醒(进记忆 provider-extensibility-constraint)**: 未来 20+ provider(官方API/OAuth订阅/中转站/coding plan/自定义)——B3 契约冻结须留 authMode/kind/capabilities 扩展轴, balance.ts 的 id 硬编码是 Phase1 占位不得冻进契约, 09 文档明写"加 provider=加数据不改契约"
+→ B3 派卡: 交互桥+IPC 契约冻结(高风险=Opus 4.8), BASE=0b8128e
