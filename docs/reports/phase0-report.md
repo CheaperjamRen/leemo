@@ -95,3 +95,45 @@ moonshot-v1-auto
 **结论：**
 - **Kimi (kimi-k2.5)：满血**。新 key 生效，5/5 核心验证 + 3/4 探测（第 4 项 relay-anthropic 为已知瞬断，与 Kimi 凭证无关）全部通过，性能量级（6-20s 单项，compaction 115s）与 DeepSeek/GLM 同一数量级，无降级迹象。§一矩阵/§三.1/§四判定自本节起以此为准：Kimi 由 ERROR（401）更正为 **PASS**。
 - **kimi-k3 经 Anthropic 兼容端点可用性：√（`kimi-k3`）**。模型列表确认存在，streaming/tools 两项探测 PASS，可作为后续前端试镜候选模型名；本节仅为可用性探测，未纳入五项核心矩阵正式复跑范围。
+
+## 七、网关竖切 Live 验收（2026-07-21，Task G4）
+
+> 日期：2026-07-21 ／ SDK：@anthropic-ai/claude-agent-sdk@0.3.210 ／ 执行机：Windows（Node v24.16.0）／ 仓库 HEAD=96cb0b3（G1–G3 完成过审，网关 69/69 单元+快照测试绿）
+> 目的：本地协议网关竖切的**活体证明**——启动真实网关，SDK 经 `ANTHROPIC_BASE_URL` 指向网关，网关以**纯 OpenAI 协议**转发到用户中转站（`RELAY2_*`，`gpt-5.6-luna`），把 §一 的五项核心验证原样（`smoke/checks.mjs` 五个导出函数，未改一字）跑通。
+> 运行器：`smoke/gateway-live.mjs`（新增，未改任何既有 smoke 资产）；复现命令 `Set-Location E:\Leemo; node smoke\gateway-live.mjs --check all`。证据 JSON：`smoke/results/gateway-relay2-*.json`（gitignore 未入库）。
+> 链路：`claude-agent-sdk ──ANTHROPIC_BASE_URL──▶ 127.0.0.1:<port> (Leemo gateway) ──OpenAI /chat/completions──▶ niubiapi 中转站`。
+
+### 五项矩阵（全部经网关，非直连）
+
+| 验证项 | 结果 | 关键 details | 耗时 |
+|--------|------|--------------|------|
+| ① 流式 streaming | **PASS** | streamEvents=14 · subtype=success · is_error=false（网关 SSE 状态机把上游 OpenAI 增量转成 ≥5 个 Anthropic `stream_event` 并正常收束）| 15.2s |
+| ② 工具调用 tools | **PASS** | toolsUsed=[PowerShell,PowerShell,Read,Write] · answerContent=`obsidian-7413`（含工具轮次 stop_reason=tool_use、tool_id 往返、写盘落地全链路通）| 75.5s |
+| ③ 多轮 multiturn | **PASS** | finalText="蓝色鲸鱼 42" · assistantTurns=2（同 session resume 召回上一轮暗号）| 8.5s |
+| ④ 子 agent subagent | **PASS** | taskToolUsed=true · toolNames=[**Agent**,Glob] · subagentActivity=3 · answer 列 alpha/beta/gamma 且明写"3 个"（子 agent 派生/回收经网关正常；工具真名 `Agent` 与 §五 一致）| 16.3s |
+| ⑤ 上下文压缩 compaction | **PASS** | trigger=manual · messageTypes 含 `system:compact_boundary` · post_tokens=2595 · 召回"紫色大象 88" · subtype=success（resume+字符串 `/compact` 经网关触发压缩管线，boundary 产出且召回存活）| 107.7s |
+
+**五项 5/5 PASS ⇒ 网关竖切达成（阈值 ≥4/5，实测满分）。**
+
+### 密钥隔离活体证据（铁律核验）
+
+运行器**从不**调用 `loadEnv()`／`loadEnvFile()`，故其 `process.env` 全程无 `RELAY2_API_KEY`；`checks.mjs` 的 `buildEnv()` 以 `...process.env` 展开生成 SDK 子进程 env，运行器无 key ⇒ 子进程 env 只可能拿到占位 token。真 key 只活在**网关子进程**内存（`dev.ts` 自身 `loadEnvFile` 读 `.env`）。结果 JSON 的 `isolation` 字段实测：
+
+```
+ANTHROPIC_BASE_URL      = http://127.0.0.1:<port>   (指向网关)
+ANTHROPIC_AUTH_TOKEN    = leemo-gw:relay2           (占位 token，非真 key)
+ANTHROPIC_API_KEY       = ""                         (空)
+childEnv_has_RELAY2_API_KEY        = false           (子进程 env 无真 key)
+childEnv_keyShapedValues           = []              (子进程 env 无 sk-/Bearer 形状值)
+runner_process_env_has_RELAY2_API_KEY = false        (运行器进程亦无真 key)
+```
+
+泄漏扫描：`Select-String -Path smoke\results\*.json -Pattern 'sk-[a-zA-Z0-9]{8}'` → **零命中**（新增 `gateway-live.mjs` 及本轮 `gateway-relay2-*.json` 亦零命中；结果与日志双层脱敏 = `lib.redact` + `sk-/Bearer` 形状正则兜底）。
+
+### 观察与归因（不放水记录）
+
+1. **streaming 的 `usage` 全零**、**compaction 的 `pre_tokens=0`**：功能断言全部成立（事件数、boundary、召回、落盘均真实通过），但经网关时 SDK 侧读到的 token 计数为 0——直连端点（§一/§六）为 `input_tokens≈18k`、`pre_tokens≈21-22k`。归因：网关响应/SSE 的 **usage 映射（13 坑之⑩）** 未把上游 OpenAI 的 `usage`/`stream_options.include_usage` 透传/换算到 Anthropic 字段，或该中转站流式未回 usage。属**网关侧计量口径问题，不影响本次五项功能判定**（判定式不依赖 token 数），但对后续"Bridge 层统一读 `result.total_cost_usd`/成本采集"是硬约束——**记为 G2/G3 后续卡的整改点**（本卡禁改网关代码，仅归因记录）。
+2. **compaction 耗时 107.7s**：与直连量级（DeepSeek 88.7s／GLM 61.4s／Kimi 115.3s）同级，堆料/触发/召回三段经网关无异常，未触 10 分钟 abort。
+3. **未发现阻断性网关 bug**：五项功能全通；上述计量口径为非阻断观察，已按铁律回报 G2/G3。
+
+**结论：网关竖切 Live 验收 PASS（5/5）。** 本地协议网关使 claude-agent-sdk 经纯 OpenAI 协议中转站跑通 Phase 0 全部五项核心能力，密钥隔离铁律活体核验通过。竖切达成，A 线收口。
