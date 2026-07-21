@@ -187,3 +187,13 @@ B3-R (契约修订): complete (commit 2db6c8a, re-review Approved; brief=br-b3r-
   - 验收方亲跑: 215/215+typecheck 绿 + bypass/toggle/none 断言存在 ✓
 == 09 契约含 7/21 修订, 待用户最终签字(两点已按用户意见落地: 扩展轴 + 审批哲学) ==
 → B4 派卡(唯一打真网 live=Opus 4.8): DeepSeek 直连+relay2 网关并发, BASE=2db6c8a, 跑前 VPN 三件套
+
+B4 (Bridge live E2E): complete (commit fef5f4c 已 push, review Approved; 中断一次已恢复; report=br-b4-report.md + phase0-report §八)
+  - **核心 7/7 全过**: c1 双接线事件流 / c2 usage 非零(DeepSeek in=21821 $0.162483, relay2-经网关 in=18828 $0.094465) / c3 tokensEstimated 结论 / c4 密钥隔离(relay2 子env=leemo-gw:relay2 占位, 无兄弟key) / c5 审批 live(canUseTool×2 真往返) / c6 resume 召回(MOMO-7413) / c7 CONFIG_DIR 隔离
+  - **三待验证假设结清(B4 核心目的)**: ①text.delta **确实产出**(直连43/网关9, events.ts 防御式映射工作) ②**tokensEstimated=false**(leemo_estimated 不流穿到 SDK result.usage, 被剥离, 最终=真值 costSource=sdk)——B2 risk#2 有答案 ③compaction 自动未触发(需10万+token, 手动经网关早在 §七证, 记观测)
+  - balance live PASS(DeepSeek totalCny≈25.5, balance.ts 响应形状假设真端点验通)
+  - 复审证 c4 修复收窄非掏空(首跑 artifact 证真key断言恒绿, 修复只排短配置值撞正则如 glm-5.2; 真 sk-key 40+字符仍抓; 且名基兄弟key断言独立于形状启发式)
+  - **live 逼出的真问题(执行者按纪律没就地修, 报回)**: 经网关对话 costSource 错解析为 sdk——relay 模型伪装 claude- 前缀, SDK 按内置 Anthropic 价算出成本($0.094465 非中转站真转售价), events.ts 规则①"官方端点"前提对网关接线不成立 → **Phase-1/B2 成本准确性 gap**(用量看板本就 Phase-1, 归后续修)
+  - Minor(smoke harness, accept): c1 有恒真子条件(text.final 未真断言, 但 started+success+tool-round 承重) / c3 gate 薄 / c6 /7413/ 兜底松
+  - 验收方: 复审逐条 artifact 核对 + 泄漏扫描零命中 ✓
+== Bridge 竖切 B0-B4 全部完成, 收官全分支终审进行中 ==
