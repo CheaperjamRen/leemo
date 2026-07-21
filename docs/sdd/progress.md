@@ -197,3 +197,13 @@ B4 (Bridge live E2E): complete (commit fef5f4c 已 push, review Approved; 中断
   - Minor(smoke harness, accept): c1 有恒真子条件(text.final 未真断言, 但 started+success+tool-round 承重) / c3 gate 薄 / c6 /7413/ 兜底松
   - 验收方: 复审逐条 artifact 核对 + 泄漏扫描零命中 ✓
 == Bridge 竖切 B0-B4 全部完成, 收官全分支终审进行中 ==
+
+[全分支终审] (Opus, 8f3f8a2..f6f78a5, 17 commits) **Ready to close: Yes** — 215/215+typecheck 独立复跑绿; 契约连贯机器可核+密钥全批零泄漏(sanitizeHostEnv 承重, B4 env dump 实证); 审批姿态自洽(默认安全/bypass 严格门控/fail-closed); 类型缝无漂移
+  - **Important×2(均 latent 无首发消费者+impl-only 不动契约, 记为下批 gate)**:
+    ①**costSource=sdk 错算所有 provider(终审修正: 非仅网关)**——无 Leemo provider 是真 Anthropic API, DeepSeek 直连发 model=deepseek-chat / relay 发 claude-伪装名, SDK 都按内置 Anthropic 价算 → DeepSeek 直连 $0.162 vs 真值~$0.003-0.01(20-50× 虚高), rule② local-pricing 被 rule① 短路。根因=NormalizeCtx 无接线/真伪信号, events.ts 无法辨真 Anthropic vs 伪装。**必须先于前端渲染任何成本修**。修法: NormalizeCtx 加 trustSdkCost(或 authMode/kind==anthropic 官方)标志, rule① 只对真 Anthropic 触发, 其余落 local-pricing→unpriced。
+    ②审批 dangerLocked 守写不守读——已持久化的 {Bash,dangerous} 白名单项(仅 toggle=ON 时可写)在 toggle 翻回 OFF 后仍被读命中自动放行, 违背"dangerous 严格每次问"。首发不可达(内存持久化+无运行时 toggle)→ Phase-1 gate。修: dangerLocked 也跳白名单/缓存读(fail-closed read)。
+  - Minor: pool↔interact 接线未做(canUseTool/mcpServers/permissionMode 只在 B4 smoke adapter 接, 产线 pool 未穿)——**Phase-1 首个任务**, 契约有效(进程内非 IPC, 后加字段不动冻结); pathAudit 无顶层逃逸信号(前端备忘)
+  - 7 累积 Minor triage: costSource+CNY 汇率+acceptEdits==default → Phase-1; 其余 accept-as-is(过剥安全向/命令原文展示刻意/harness 非产线)
+  - 下批建议: ①costSource 修先于成本 UI ②pool↔interact 接线(permissionMode 变 live) ③SQLite 持久化时闭合 dangerLocked 读写不对称 ④balance/pricing 派发从 id 改 kind ⑤前端可依 09/contract.ts 现在施工(冻结/连贯/无 key)
+== Bridge 竖切批次 CLOSED (7/22) — 测试 85→215 全绿; 含用户两轮深度介入(NewMax provider 对照+审批哲学修订) ==
+下批候选: Provider 目录里程碑(填 33+ provider 对齐 NewMax) / 前端壳(依 09 契约) / Phase-1 骨架(pool↔interact 接线+SQLite+成本修) — 待用户定, 交接 prompt 已备
