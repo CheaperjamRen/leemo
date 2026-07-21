@@ -131,3 +131,14 @@ B0 (网关欠账清偿): complete (commit f268f84, review Approved; report=br-b0
   - 85/85 绿(69→85), typecheck 绿; 同读批帧回归测试已钉(THE bug 的镇仓测试)
   - Minor 备忘: ①passthrough 热路径 outputText 恒累积(仅内存开销) ②RELAY2_OPTS 畸形 JSON 会致整 provider 不可用(fail-fast 设计, 爆炸半径备忘) ③B4 须 live 验证自动 compaction 经网关真触发(message_start 估值是否够 CC 计数)
 → B1 派卡: 会话池, BASE=f268f84
+
+B1: complete (commits d1c884c + fix 701fe09, re-review Approved; report=br-b1-report.md §修复轮)
+  - 交付: providers.ts(buildConversationEnv 纯函数+sanitizeHostEnv 剥密)+pool.ts(createBridge/ConversationHandle 生命周期); 119/119 绿(85→119)
+  - sdk.d.ts 核实(防臆造): abort=options.abortController(无 signal 字段)/env 语义=全量替换子进程环境(必须自 spread)/resume?: string
+  - 修复轮(复审 Important, 高价值发现): process.env spread 曾架空密钥隔离——宿主 env 的 RELAY2_API_KEY 及兄弟 provider key 会进 SDK 子进程(子进程可跑 bash=printenv 泄漏面), 且原泄漏测试恰空转(fixture key 只在 provider 对象不在 process.env) → sanitizeHostEnv(/_API_KEY$|_AUTH_TOKEN$|_SECRET(_|$)|_ACCESS_KEY/i+ANTHROPIC_API_KEY) 先剥宿主 env 再铺会话自身 token(自伤路径已验防); 泄漏测试 stubEnv 注入真实路径 RED 过
+  - 同轮: 并发 send 防护(running 时抛)/mid-stream throw 测试/6 槽位对齐 Phase 0(+OPUS+SMALL_FAST)+DISABLE_NONESSENTIAL_TRAFFIC=1
+  - 复审运维备注: 原复审者 transcript 过长致三连 524 超时, 冷启动新复审者自包含派单解决——**长 transcript 复用是超时诱因, re-review 材料本自包含, 卡住即冷启动重派**
+  - Minor 备忘: /_ACCESS_KEY/ 未锚定(偏安全侧)/state 提前翻 running(B2 caller 契约微紧)
+  - **B2 消费契约: send 透传 SDK 原消息(TMessage 泛型=B2 包装点); registryFactory 占位 B4 定型; streaming-input(Query.interrupt/setModel)=B4 接线点**
+  - 验收方亲跑: 119/119+typecheck 绿+泄漏断言(stubEnv RELAY2_API_KEY→undefined)存在 ✓
+→ B2 派卡: 事件规范化, BASE=701fe09
