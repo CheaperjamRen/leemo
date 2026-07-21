@@ -111,3 +111,11 @@ G4: complete (commit befcbb8 已 push, review Approved; report=gw-g4-report.md)
   - 仓库级 git http/https.proxy(baidu-int)已删; GitHub 直连验证 OK
   - niubiapi 直连 403 事件(G4 验收后复跑失败)诊断: Node fetch 被拦(疑 Cloudflare TLS 指纹, PowerShell 能 200), 非代码回归; 解法=NODE_USE_ENV_PROXY=1+https_proxy=VPN+no_proxy=127.0.0.1(保 SDK→网关直连), streaming 复跑 PASS 3.8s; 已写进 CLAUDE.md git 条目
   - 上批遗留① (.gitignore 补 .env.*+!.env.example) 核实: 工作区迁移时已带上(.gitignore 现含三行), 关闭
+
+[全分支终审] (Opus, 68edca1..befcbb8; 首派遭 API 中断, 续跑完成) **Ready to close: Yes** — 69/69+typecheck 复跑绿; 类型防火墙(三腿别名各自解析一致)/密钥纪律(零 key 形字面量+上游错误体不回显)/vendor 纪律(恰 5 LEEMO-PATCH: G1×3 类型级+G2×2 行为级)/命名全分支达标; live 5/5 无 soft-pass
+  - **Important×2(非本批阻塞, 判为 Bridge 前置, 下批开卡)**:
+    ①流式 usage 全零≠仅成本问题——CC 自动 compaction 依赖 input token 计数, message_start 硬编码 0(vendor anthropic.transformer ~471)可能致自动压缩经网关永不触发(手动 /compact 已验通); 首查=抓 relay 原始 SSE 看有无 usage 帧→无帧则网关以本地 count_tokens 回填 message_start, 有帧则查透传
+    ②ProviderOpts 全表经产线入口死路——registry.fromEnv 硬编码 opts:{}, flattenSchemas/maxTokensField/reasoningInjection 等已测但无法配置; 接第二 provider(GLM)前必须 fromEnv 增 per-provider opts 或 Bridge 自建 registry
+  - Minor triage: 修凑手×3(G3 drain 竞态一行 race+一测试 / stripped 日志一断言 / 谓词孪生一锁定测试喂 divergent shape 直打 vendor 路径, 可合并进下批任一网关卡); accept-as-is×5(vendor 备份谓词未测/双 structuredClone/⑧图片占位+o200k 近似/alias-hook 依赖 tsx 序/saveResult redact no-op——安全由进程隔离结构性保证); follow-up 低优×1(上游 401/403→客户端 401 语义混淆, Bridge 侧宜区分 502)
+  - Bridge 层建议: 先解流式 usage 再读 result.total_cost_usd(上批遗留④); 自动 compaction 经网关列为下批显式测试目标
+== 网关竖切批次 CLOSED (7/21) — 下批: Bridge 层(带走 Important×2 + 凑手 Minor×3 + 低优×1) ==
