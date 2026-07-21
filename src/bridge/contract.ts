@@ -74,6 +74,8 @@ export type {
   ApprovalRequest,
   ApprovalDecision,
   WhitelistEntry,
+  PermissionMode,
+  PermissionPolicy,
   AskUserOption,
   AskUserQuestion,
   AskUserInput,
@@ -87,6 +89,7 @@ export type {
 import type { LeemoEvent } from "./events";
 import type { BalanceInfo } from "./balance";
 import type { ApprovalRequest, ApprovalDecision, AskUserPayload, AskUserAnswer } from "./interact";
+import type { PermissionMode } from "./interact";
 import type { ModelCapabilities } from "./providers";
 
 // ===========================================================================
@@ -100,8 +103,11 @@ import type { ModelCapabilities } from "./providers";
  *  - 'oauth-subscription' — login-based, quota not balance (Claude Max / Kimi /
  *    智谱 coding plan, 火山方舟/阿里百炼/百度千帆 coding plans). Slot RESERVED;
  *    no adapter ships first release, but the axis exists so adding one later is
- *    catalog data, not a contract change. */
-export type ProviderAuthMode = "api-key" | "oauth-subscription";
+ *    catalog data, not a contract change.
+ *  - 'none'               — no key at all: a LOCAL model server (Ollama /
+ *    LM Studio, user 7/21). Points at a loopback/LAN baseUrl; nothing to
+ *    authenticate. Pairs with `capabilities.local`. */
+export type ProviderAuthMode = "api-key" | "oauth-subscription" | "none";
 
 /** Provider FAMILY identifier. INTENTIONALLY an open `string`, NOT a closed
  *  union: a new family or a user's custom provider must NOT require editing this
@@ -136,6 +142,21 @@ export interface ProviderCapabilities {
   /** Is an OAuth-subscription / coding-plan provider — surfaces QUOTA rather
    *  than a monetary balance. Pairs with authMode='oauth-subscription'. */
   subscriptionPlan: boolean;
+
+  // ── NewMax-parity reserve (user 7/21; all OPTIONAL) ──────────────────────
+  // Convenience axes lifted from NewMax's provider deep-dive (33 presets). The
+  // TYPE reserve lands now so the full catalog + settings-page UI (= Provider
+  // milestone) is catalog data, not a contract change. None are read by any
+  // first-release code path.
+  /** Runs locally with no key (Ollama / LM Studio). Pairs with authMode='none'. */
+  local?: boolean;
+  /** Endpoint accepts an anthropic⇄openai Base-URL protocol switch (NewMax has
+   *  ~10 such providers). Drives the direct-vs-gateway wiring choice per config. */
+  protocolSwitchable?: boolean;
+  /** Supports multi-key rotation (round-robin across several keys). */
+  multiKey?: boolean;
+  /** Overseas endpoint that needs an outbound proxy to reach. */
+  requiresProxy?: boolean;
 }
 
 /** The IPC-facing, key-free projection of a Provider (06 §3.1 shape minus the
@@ -216,6 +237,11 @@ export interface CreateConversationRequest {
   modelId: string;
   /** Loopback gateway port for openai-format providers; omitted for anthropic. */
   gatewayPort?: number;
+  /** Per-conversation permission-mode override (07/21 policy-driven approval).
+   *  Omit to use the broker's default policy; set e.g. 'bypassPermissions' for a
+   *  zero-friction session. `dangerousCommandCaching` stays a broker/settings-
+   *  level toggle (not per-request). */
+  permissionMode?: PermissionMode;
 }
 
 /** Serializable projection of a ConversationHandle — the id is the only thing

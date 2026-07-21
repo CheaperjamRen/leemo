@@ -1,8 +1,17 @@
-# 09 — Bridge IPC 契约 v1.0（冻结件）
+# 09 — Bridge IPC 契约 v1.0（冻结件，含 7/21 签字前修订）
 
 > 里程碑 5 交付物。BASE=0b8128e（Task B3）。TS 形态权威 = `src/bridge/contract.ts`；本文件是人读版冻结声明。
 > **本文档冻结后，双壳前端（渲染进程）可依此契约并行施工。** 契约面 channel/payload 类型名与 `contract.ts` 一一对应（下表每个 payload 类型都能在 `contract.ts` 找到同名导出）。
-> 权威链：06 §2.9（审批三档 + 危险永不永久）、06 §3.1/3.2（Provider 形状 + 两种接线）、08 §二（ask_user MCP）。冲突时后者覆盖前者。
+> 权威链：06 §2.9（审批 → **7/21 修订为策略驱动，见下**）、06 §3.1/3.2（Provider 形状 + 两种接线）、08 §二（ask_user MCP）。冲突时后者覆盖前者。
+> **版本注记**：v1.0 含 **7/21 签字前修订**（Task B3-R）——审批策略化（PermissionMode + dangerousCommandCaching 开关 + bypassPermissions 零卡）、本地无 key provider（`authMode:'none'`）、NewMax 便捷能力轴（local/protocolSwitchable/multiKey/requiresProxy）。契约冻结在此修订之后定稿。
+
+---
+
+## 宪法修订记录（06 §2.9，用户 7/21）
+
+> 06 §2.9 原文将"**危险操作永不提供永久允许档**"定为硬不变量。用户（设计负责人）7/21 **主动修订**为：**默认安全、用户可选放开**。
+>
+> **理由**：绝大多数用户不会逐条审批、觉得危险也不会拒（他们要模型把活干完），反复弹卡只让人觉得产品麻烦而非安全。故审批改为**策略驱动**——**默认仍保守**（危险严格一次一批、不缓存不持久化），但用户可经**设置开关**（`dangerousCommandCaching`）或**`bypassPermissions` 模式**显式放开。放开是用户的显式选择，自负其责；默认策略不变地保留 B3 的安全姿态。
 
 ---
 
@@ -57,13 +66,27 @@
 
 ---
 
-## 二、审批往返时序（三档 + 危险降档）
+## 二、审批往返时序（策略驱动：模式 + 三档 + 危险条件缓存）
 
-审批基线：`permissionMode: 'acceptEdits'` + `canUseTool` 回调（06 §2.9）。`ApprovalBroker`（`src/bridge/interact.ts`）适配 SDK 的 `canUseTool` 签名（实测自 sdk.d.ts：`(toolName, input, {signal, toolUseID, requestId, …}) => Promise<PermissionResult | null>`；broker 永不返回 null）。
+审批**策略驱动**（7/21 修订）。`ApprovalBroker(transport, persistence, policy?)`（`src/bridge/interact.ts`）适配 SDK 的 `canUseTool` 签名（实测自 sdk.d.ts：`(toolName, input, {signal, toolUseID, requestId, …}) => Promise<PermissionResult | null>`；broker 永不返回 null）。`policy` 可选，缺省 = `{ mode:'acceptEdits', dangerousCommandCaching:false }`（保留 B3 安全默认）。
+
+**PermissionMode（`PermissionMode`）**：
+
+| 模式 | 本卡 broker 语义 | 备注 |
+|---|---|---|
+| `default` | 完整问询流（走下方三档） | 基线 |
+| `acceptEdits` | **暂等同 `default`**（完整问询流） | 自动放行编辑类工具的语义依赖工具分类 = **Phase 1 执行语义**；本卡只在契约留 mode 值 |
+| `bypassPermissions` | **短路：一切工具直接 allow（含危险），不生成 ApprovalRequest、不经 transport（零卡）** | 用户显式选 = 自负其责；本卡硬行为 |
+| `plan` | **暂等同 `default`**（完整问询流） | 只读规划语义 = **Phase 1 执行语义**；本卡只留 mode 值，不臆造 plan 逻辑 |
+
+> `bypassPermissions` 是本卡实现的硬短路；`plan`/`acceptEdits` 是**留位 mode 值**（Phase-1 执行语义），broker 暂按 `default` 处理，不发明工具分类逻辑。每对话可经 `CreateConversationRequest.permissionMode?` 覆盖全局默认。
+
+**PermissionPolicy（`PermissionPolicy = { mode, dangerousCommandCaching }`）**：`dangerousCommandCaching` = 设置页"危险命令总是放行"开关。`false`（默认、安全）= 危险严格一次一批（不缓存、不持久化）；`true`（用户开）= 危险与普通档一样可缓存/持久化。
 
 ```
 SDK 需要用工具
   → canUseTool(toolName, input, options)          [SDK 调 broker]
+  → policy.mode === 'bypassPermissions'? → 直接 allow(零卡：不问、不经 transport、危险也放行)
   → broker: risk = classifyRisk(toolName, input)  [safe|moderate|dangerous]
   → 命中永久白名单(persistence.getWhitelist, 按 toolName+risk)? → 直接 allow(不问)
   → 命中本对话缓存(conversation cache, 按 toolName+risk)?       → 直接 allow(不问)
@@ -79,16 +102,19 @@ SDK 需要用工具
 | 档 | decision 值 | broker 行为 | 缓存/持久化 |
 |---|---|---|---|
 | 允许一次 | `allow-once` | allow | 不缓存（同工具再来仍问） |
-| 本对话内总是允许 | `allow-conversation` | allow | 写**本对话内存缓存**（同工具同风险后续不问）；不跨对话；**dangerous 例外见下** |
-| 永久允许 | `allow-permanent` | allow | 经 `persistence.addToWhitelist` 写全局白名单（跨对话；设置页可查可撤，06 §2.9）；**dangerous 例外见下** |
+| 本对话内总是允许 | `allow-conversation` | allow | 写**本对话内存缓存**（同工具同风险后续不问）；不跨对话；**dangerous 视开关，见下** |
+| 永久允许 | `allow-permanent` | allow | 经 `persistence.addToWhitelist` 写全局白名单（跨对话；设置页可查可撤）；**dangerous 视开关，见下** |
 | 拒绝 | `deny` | deny（带 message） | 无 |
 | 未知/畸形 decision | 其它任意值 | **deny（fail-closed）** | 无 |
 
 > **fail-closed default**：`decision` 字段虽类型标 `ApprovalTier`，但值由宿主经 IPC 传入（运行时不可信数据）。畸形/未来未知字符串**一律 deny**，绝不 coerce 成 allow——与 broker "不信任宿主 UI" 的姿态一致（危险降档同源）。
 
-**危险档纪律（06 §2.9 + 设计负责人 7/21 补全）**：**dangerous 档只允许 `allow-once`——禁 conversation 缓存、禁 permanent 持久化**。理由：破坏性操作命令高度特异，批准一个（`rm -rf /tmp/data`）绝不等于授权另一个（`format C:`，二者同 `Bash::dangerous` 键）。
-- `classifyRisk` 内置 Bash 危险模式**种子清单**（`rm -rf`/`del /f`/`format C:`/`mkfs`/`dd of=/dev/`/`diskpart`/`fdisk`/`reg add|delete`/`shutdown`/fork-bomb 等——注释标注"种子清单，非穷举"；漏判只降级为 moderate 走正常问询，绝不静默放行）。
-- `risk === 'dangerous'` 时：**即便宿主返回 `allow-permanent` 或 `allow-conversation`，broker 一律降级为 `allow-once`**（本次放行、不缓存、不持久化、下次仍问）。broker 内部强制，不信任宿主端 UI。
+**危险档纪律（策略条件化 — 06 §2.9 经 7/21 修订）**：危险档的"只 `allow-once`"从**硬不变量降为默认策略**，由 `policy.dangerousCommandCaching` 控制：
+- **`dangerousCommandCaching === false`（默认、安全）**：**dangerous 档只允许 `allow-once`——禁 conversation 缓存、禁 permanent 持久化**。即便宿主返回 `allow-permanent`/`allow-conversation`，broker 一律降级为 `allow-once`（本次放行、不缓存、不持久化、下次仍问）。理由：破坏性命令高度特异，批准一个（`rm -rf /tmp/data`）绝不等于授权另一个（`format C:`，二者同 `Bash::dangerous` 键）。broker 内部强制，不信任宿主端 UI。
+- **`dangerousCommandCaching === true`（用户经设置开关放开）**：dangerous 与普通档同等——`allow-conversation` 写本对话缓存、`allow-permanent` 写全局白名单。用户显式选了低摩擦，自负其责。
+- `classifyRisk` 内置 Bash 危险模式**种子清单**（`rm -rf`/`del /f`/`format C:`/`mkfs`/`dd of=/dev/`/`diskpart`/`fdisk`/`reg add|delete`/`shutdown`/fork-bomb 等——注释标注"种子清单，非穷举"；漏判只降级为 moderate 走正常问询，绝不静默放行）。**注**：种子清单与危险分类不受开关影响；开关只改"危险被批准后能否缓存"，不改"什么算危险"。
+
+**审批哲学（7/21 定调）**：**默认低摩擦**——多数用户只想让模型把活干完，逐条弹卡读作"麻烦"而非"安全"。**危险操作默认每次问**（安全底线保留），但用户可经**设置开关**（`dangerousCommandCaching`）放行、或选 **`bypassPermissions`** 彻底零卡。**别老烦用户**：放开是用户的显式、自负其责的选择；产品默认保守，但把"少打扰"的控制权交给用户。**fail-closed 底线不动**：无论何种模式/开关，畸形/未知 decision 一律 deny。
 
 **并发**：每个 `canUseTool` 调用带独立 `id` + 独立 transport Promise，多个挂起互不串（waiters 隔离）。
 
@@ -129,10 +155,12 @@ SDK 需要用工具
 
 | 轴 | 类型 | 首发 | 说明 |
 |---|---|---|---|
-| `authMode` | `'api-key' \| 'oauth-subscription'` | **只实现 `api-key`** | `oauth-subscription` 槽位预留：订阅 OAuth 调用是**配额不是余额、是登录不是 key**（Claude Max/Kimi/智谱 coding plan、火山方舟/阿里百炼/百度千帆）。 |
+| `authMode` | `'api-key' \| 'oauth-subscription' \| 'none'` | **实现 `api-key`（+ `none` 本地）** | `oauth-subscription` 槽位预留：订阅 OAuth 调用是**配额不是余额、是登录不是 key**（Claude Max/Kimi/智谱 coding plan、火山方舟/阿里百炼/百度千帆）。**`none`（7/21 新增）= 本地模型无需 key**（Ollama/LM Studio，用户点名），指向 loopback/LAN `baseUrl`，无鉴权，配 `capabilities.local`。 |
 | `kind` | `string`（**开放字符串**） | 少数已知值 | provider 家族标识。`KNOWN_PROVIDER_KINDS` 提供参考值集（deepseek/glm/kimi/qwen/anthropic/openrouter/relay/custom），**但类型是 `string` 不是闭合 union**——新家族/自定义 provider 不需改契约。 |
 | `apiFormat` | `'anthropic' \| 'openai'` | 两者 | 保留自 B1/B2，驱动直连 vs 网关接线（06 §3.2）。 |
-| `capabilities` | `ProviderCapabilities` | 按 provider 声明 | `{ balanceApi, modelDiscovery, subscriptionPlan }`——balance/pricing/quota 是 provider **按能力声明**的，内部派发按 `kind`/family，**不按具体 id 硬编码**。 |
+| `capabilities` | `ProviderCapabilities` | 按 provider 声明 | 现有 `{ balanceApi, modelDiscovery, subscriptionPlan }` + **7/21 NewMax 对照留位（均可选）**：`local?`（本地部署）、`protocolSwitchable?`（anthropic⇄openai Base-URL 切换，NewMax ~10 个 provider 支持）、`multiKey?`（多 key 轮换）、`requiresProxy?`（海外端点需代理）。balance/pricing/quota 是 provider **按能力声明**的，内部派发按 `kind`/family，**不按具体 id 硬编码**。 |
+
+> **NewMax 便捷特性留位说明**：上表 `capabilities` 的四个新可选轴是**契约留位**，首发无任何代码路径读它们。对齐 NewMax 便捷特性（双协议切换 / 多 key / requiresProxy / per-provider env / 模型槽位 / 从服务商拉取模型 / 测试连接）= **Provider 里程碑**填目录数据 + 建设置页 UI；契约已把轴留好，届时是加数据不是改契约。
 
 **反模式警示（写进契约冻结）**：B2 的 `balance.ts` 现用 `provider.id === 'deepseek'|'kimi'` 硬编码 `FETCHERS` 表——那是明确自注的 **Phase 1 占位**，**不得把 id→capability 的假设编进本契约**。契约按 `providerId` 取实例 OK（IPC 引用），但"id 决定能力"绝不焊进类型；真 Provider 目录落地时，balance/pricing/quota 改按 `kind`/family 派发。
 
@@ -151,19 +179,20 @@ SDK 需要用工具
 
 ## 六、冻结声明 + 变更纪律（v1.0）
 
-**v1.0 冻结**：§一 channel 集（`BRIDGE_CHANNELS`）、§一各 invoke/event payload 类型、§二/§三两条往返时序语义、§四 `ProviderSpec` 扩展轴。下游前端依此并行施工。
+**v1.0 冻结（含 7/21 修订）**：§一 channel 集（`BRIDGE_CHANNELS`）、§一各 invoke/event payload 类型、§二审批策略语义（PermissionMode/PermissionPolicy + 危险条件缓存 + bypass 零卡 + fail-closed）、§三 ask_user 时序、§四 `ProviderSpec` 扩展轴。下游前端依此并行施工。
 
 **变更纪律（明写原则）**：
 1. **加 provider = 加目录数据，不改契约**。新 provider 是一条 `ProviderSpec` 目录记录，不是一次类型变更。
 2. **自定义 provider 是一等公民**（`kind:'custom'` 或任意字符串 + 用户填 BaseURL/Key/模型/协议二选，06 §3.1）。契约不得假设 provider 来自预置集。
 3. **balance/pricing/quota 是 provider 按 `kind` 声明的 capability**，内部派发**按 kind/family 不按实例 id**。
-4. **`authMode`/`kind`/`capabilities` 是预留扩展轴**，首发只实现 `api-key` + 少数 `kind`；扩展走目录数据与 adapter，不动本契约。
-5. 破坏性变更（改 channel 名/删字段/收窄 union）需 **v2.0** 并记变更纪律；加**可选**字段兼容 v1.x。
+4. **`authMode`/`kind`/`capabilities` 是预留扩展轴**，首发实现 `api-key`（+ `none` 本地）+ 少数 `kind`；扩展走目录数据与 adapter，不动本契约。**NewMax 便捷特性（双协议切换/多 key/requiresProxy/per-provider env/模型槽位/从服务商拉取/测试连接）= Provider 里程碑填目录数据，契约已留轴**（`capabilities.local/protocolSwitchable/multiKey/requiresProxy`）。
+5. **审批是策略驱动**（7/21 修订）：`PermissionMode` 四值 + `PermissionPolicy.dangerousCommandCaching` 开关是**冻结契约面**；`plan`/`acceptEdits` 的执行语义 = Phase-1 落地（本卡只留 mode 值，broker 暂按 default 处理）；扩展执行语义走 Phase 1，不改契约面。
+6. 破坏性变更（改 channel 名/删字段/收窄 union）需 **v2.0** 并记变更纪律；加**可选**字段兼容 v1.x。
 
 **契约类型完备性自证**（复审可核）：
 - `contract.ts` re-export 覆盖 B1/B2/B3 全部对外类型（下表），无遗漏、无重复定义（全部 `export type … from`，不再定义）。
 - 本文档每个 payload 类型名 = `contract.ts` 同名导出（`BridgeInvokeMap`/`BridgeEventMap` 键即 channel 名，机器可核）。
-- 扩展轴在 `ProviderSpec`/`ProviderCapabilities` 真实存在（`tests/bridge/contract.test.ts` 构造 OAuth-custom-quota 实例，删轴即 typecheck 红）。
+- 扩展轴在 `ProviderSpec`/`ProviderCapabilities` 真实存在（`tests/bridge/contract.test.ts` 构造 OAuth-custom-quota 实例 + 本地 `authMode:'none'`/`capabilities.local` 实例 + `PermissionMode`/`PermissionPolicy` 用例，删轴即 typecheck 红）。
 
 | 来源模块 | re-export 的对外类型 |
 |---|---|
@@ -172,5 +201,5 @@ SDK 需要用工具
 | `balance.ts`（B2） | `BalanceInfo` |
 | `pool.ts`（B1） | `ConversationState`（`ConversationConfig` 内嵌 `provider:Provider` 持 key，进程内创建配置**不 re-export**、不过 IPC，投影 = 无 key 的 `CreateConversationRequest`；`ConversationHandle` 进程内对象不 re-export，投影 = `ConversationRef`） |
 | `providers.ts`（B1） | `ModelCapabilities`（`Provider` 含 key，不 re-export；投影 = `ProviderSpec`） |
-| `interact.ts`（B3） | `RiskLevel`、`ApprovalTier`、`ApprovalRequest`、`ApprovalDecision`、`WhitelistEntry`、`AskUserOption`、`AskUserQuestion`、`AskUserInput`、`AskUserPayload`、`AskUserAnswerItem`、`AskUserAnswer` |
-| `contract.ts` 新增（IPC 面） | `ProviderSpec`、`ProviderAuthMode`、`ProviderKind`、`ProviderCapabilities`、`CreateConversationRequest`、`ConversationRef`、`SendRequest`、`SetModelRequest`、`FetchBalanceRequest`、`UsageSummaryQuery`/`UsageSummary`/`UsageSummaryByProvider`/`UsageSummaryByDay`、`BridgeInvokeMap`/`BridgeEventMap`/`BridgeChannel`、常量 `BRIDGE_CHANNELS`/`KNOWN_PROVIDER_KINDS` |
+| `interact.ts`（B3 / B3-R） | `RiskLevel`、`ApprovalTier`、`ApprovalRequest`、`ApprovalDecision`、`WhitelistEntry`、**`PermissionMode`**、**`PermissionPolicy`**（7/21 新增）、`AskUserOption`、`AskUserQuestion`、`AskUserInput`、`AskUserPayload`、`AskUserAnswerItem`、`AskUserAnswer` |
+| `contract.ts` 新增（IPC 面） | `ProviderSpec`、`ProviderAuthMode`（+`none`）、`ProviderKind`、`ProviderCapabilities`（+`local/protocolSwitchable/multiKey/requiresProxy`）、`CreateConversationRequest`（+`permissionMode?`）、`ConversationRef`、`SendRequest`、`SetModelRequest`、`FetchBalanceRequest`、`UsageSummaryQuery`/`UsageSummary`/`UsageSummaryByProvider`/`UsageSummaryByDay`、`BridgeInvokeMap`/`BridgeEventMap`/`BridgeChannel`、常量 `BRIDGE_CHANNELS`/`KNOWN_PROVIDER_KINDS` |

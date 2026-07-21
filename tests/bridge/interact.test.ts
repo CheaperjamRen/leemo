@@ -9,6 +9,7 @@ import {
   type ApprovalRequest,
   type ApprovalDecision,
   type WhitelistEntry,
+  type PermissionPolicy,
   type AskUserTransport,
   type AskUserPayload,
   type AskUserAnswer,
@@ -308,6 +309,92 @@ describe("ApprovalBroker — unknown decision is fail-closed (deny)", () => {
   });
 });
 
+
+// ===========================================================================
+// ApprovalBroker — policy-driven approval (07/21 B3 revision)
+//
+// The default construction (no policy arg) preserves B3's safe behavior — the
+// danger-downgrade / refuses-conversation-cache / fail-closed suites above all
+// build the broker with NO policy and still pass, which is the "default stays
+// strict" regression. These add the two NEW policy behaviors: the
+// dangerousCommandCaching toggle, and bypassPermissions short-circuit.
+// ===========================================================================
+
+// dangerousCommandCaching toggle ON (user opted into low friction via the
+// settings switch): dangerous is no longer force-downgraded — it caches /
+// persists like any tier. Design negative (multi-user reality): most users
+// reject nothing anyway; nagging reads as "annoying" not "safe" (设计负责人 7/21).
+describe("ApprovalBroker — dangerousCommandCaching toggle ON lets dangerous cache", () => {
+  it("host allow-conversation on a dangerous command now caches → a DIFFERENT dangerous command is not re-asked", async () => {
+    const { persistence, list } = memoryPersistence();
+    const { transport, seen } = scriptedApprovalTransport(() => "allow-conversation");
+    const policy: PermissionPolicy = { mode: "acceptEdits", dangerousCommandCaching: true };
+    const broker = createApprovalBroker(transport, persistence, policy);
+
+    const r1 = await decide(broker.canUseTool, "Bash", { command: "rm -rf /tmp/data" });
+    // A DIFFERENT dangerous command, SAME Bash::dangerous key → served from cache
+    // now (the exact case the default policy REFUSES; the toggle flips it).
+    const r2 = await decide(broker.canUseTool, "Bash", { command: "format C:" });
+    expect(r1.behavior).toBe("allow");
+    expect(r2.behavior).toBe("allow");
+    // The sharp assertion: transport consulted exactly ONCE (2nd hit cache).
+    expect(seen.length).toBe(1);
+    // conversation cache is in-memory only — never persists.
+    expect(list.length).toBe(0);
+  });
+
+  it("host allow-permanent on a dangerous command now persists it (toggle on)", async () => {
+    const { persistence, list } = memoryPersistence();
+    const { transport } = scriptedApprovalTransport(() => "allow-permanent");
+    const policy: PermissionPolicy = { mode: "acceptEdits", dangerousCommandCaching: true };
+    const broker = createApprovalBroker(transport, persistence, policy);
+
+    const r1 = await decide(broker.canUseTool, "Bash", { command: "rm -rf /tmp/data" });
+    expect(r1.behavior).toBe("allow");
+    // The sharp assertion: dangerous WAS persisted (default policy refuses this).
+    expect(list.length).toBe(1);
+    expect(list[0].toolName).toBe("Bash");
+    expect(list[0].risk).toBe("dangerous");
+  });
+
+  it("the DEFAULT policy (no policy arg) STILL keeps dangerous strictly allow-once (regression)", async () => {
+    const { persistence, list } = memoryPersistence();
+    const { transport, seen } = scriptedApprovalTransport(() => "allow-conversation");
+    const broker = createApprovalBroker(transport, persistence); // default policy
+
+    await decide(broker.canUseTool, "Bash", { command: "rm -rf /tmp/data" });
+    await decide(broker.canUseTool, "Bash", { command: "format C:" });
+    // Default = safe: dangerous never caches, so both were asked.
+    expect(seen.length).toBe(2);
+    expect(list.length).toBe(0);
+  });
+});
+
+// bypassPermissions: the user explicitly chose zero-friction — self-responsible.
+// The broker allows EVERYTHING (incl. dangerous) with NO ApprovalRequest and NO
+// transport call at all (zero card). This is a hard behavior of this card.
+describe("ApprovalBroker — bypassPermissions mode short-circuits (zero card)", () => {
+  it("allows every tool incl. dangerous with ZERO transport calls and no persistence", async () => {
+    const { persistence, list } = memoryPersistence();
+    // Transport would DENY if ever consulted — proving the allow came from the
+    // short-circuit, not from the host.
+    const { transport, seen } = scriptedApprovalTransport(() => "deny");
+    const policy: PermissionPolicy = { mode: "bypassPermissions", dangerousCommandCaching: false };
+    const broker = createApprovalBroker(transport, persistence, policy);
+
+    const rSafe = await decide(broker.canUseTool, "Read", { file_path: "a.txt" });
+    const rMod = await decide(broker.canUseTool, "Write", { file_path: "b.txt", content: "1" });
+    const rDanger = await decide(broker.canUseTool, "Bash", { command: "rm -rf /" });
+
+    expect(rSafe.behavior).toBe("allow");
+    expect(rMod.behavior).toBe("allow");
+    // Dangerous allowed too — bypass means the user owns the risk.
+    expect(rDanger.behavior).toBe("allow");
+    // The sharp assertions: transport NEVER consulted, nothing persisted.
+    expect(seen.length).toBe(0);
+    expect(list.length).toBe(0);
+  });
+});
 
 // ===========================================================================
 // ApprovalBroker — concurrency (waiters don't cross)

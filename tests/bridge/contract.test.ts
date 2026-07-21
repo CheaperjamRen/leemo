@@ -6,6 +6,8 @@ import {
   type ProviderAuthMode,
   type ProviderKind,
   type ProviderCapabilities,
+  type PermissionMode,
+  type PermissionPolicy,
   type UsageSummary,
   type UsageSummaryQuery,
   type BridgeInvokeMap,
@@ -81,10 +83,88 @@ describe("contract — extensibility axes exist in real types (not just prose)",
     expect(caps.balanceApi).toBe(true);
   });
 
-  it("authMode union is exactly the two reserved values", () => {
+  it("authMode union includes the local no-key value ('none') plus the two reserved axes", () => {
+    // 07/21 revision widened the union with 'none' (local models: Ollama / LM
+    // Studio need no key). Still asserts every reserved axis is present.
     const a: ProviderAuthMode = "api-key";
     const b: ProviderAuthMode = "oauth-subscription";
-    expect([a, b]).toEqual(["api-key", "oauth-subscription"]);
+    const c: ProviderAuthMode = "none";
+    expect([a, b, c]).toEqual(["api-key", "oauth-subscription", "none"]);
+  });
+});
+
+describe("contract — policy-driven approval types (07/21 B3 revision)", () => {
+  it("PermissionMode carries the four Claude-Code-aligned modes incl. bypassPermissions", () => {
+    const modes: PermissionMode[] = ["default", "acceptEdits", "bypassPermissions", "plan"];
+    expect(modes).toContain("bypassPermissions");
+    expect(modes).toContain("plan");
+    expect(modes.length).toBe(4);
+  });
+
+  it("PermissionPolicy pairs a mode with the dangerousCommandCaching toggle", () => {
+    const safe: PermissionPolicy = { mode: "acceptEdits", dangerousCommandCaching: false };
+    const loose: PermissionPolicy = { mode: "bypassPermissions", dangerousCommandCaching: true };
+    expect(safe.dangerousCommandCaching).toBe(false);
+    expect(loose.mode).toBe("bypassPermissions");
+    expect(loose.dangerousCommandCaching).toBe(true);
+  });
+
+  it("CreateConversationRequest accepts an OPTIONAL permissionMode override", () => {
+    const base: CreateConversationRequest = { providerId: "deepseek", modelId: "deepseek-chat" };
+    const overridden: CreateConversationRequest = {
+      providerId: "deepseek",
+      modelId: "deepseek-chat",
+      permissionMode: "bypassPermissions",
+    };
+    expect(base.permissionMode).toBeUndefined();
+    expect(overridden.permissionMode).toBe("bypassPermissions");
+  });
+});
+
+describe("contract — local no-key provider + NewMax capability axes (07/21)", () => {
+  it("authMode 'none' + capabilities.local typecheck for a local provider (Ollama)", () => {
+    // The exact local-model shape user 7/21 called out: no key, points at a
+    // loopback endpoint. ONLY compiles if 'none' and `local` are real fields.
+    const ollama: ProviderSpec = {
+      id: "ollama-local",
+      name: "Ollama (local)",
+      kind: "custom",
+      category: "custom",
+      apiFormat: "openai",
+      authMode: "none",
+      baseUrl: "http://127.0.0.1:11434/v1",
+      models: ["llama3.1"],
+      capabilities: {
+        balanceApi: false,
+        modelDiscovery: true,
+        subscriptionPlan: false,
+        local: true,
+      },
+    };
+    expect(ollama.authMode).toBe("none");
+    expect(ollama.capabilities.local).toBe(true);
+  });
+
+  it("ProviderCapabilities NewMax-parity axes are real optional fields", () => {
+    const caps: ProviderCapabilities = {
+      balanceApi: false,
+      modelDiscovery: true,
+      subscriptionPlan: false,
+      local: true,
+      protocolSwitchable: true,
+      multiKey: true,
+      requiresProxy: true,
+    };
+    expect(caps.protocolSwitchable).toBe(true);
+    expect(caps.multiKey).toBe(true);
+    expect(caps.requiresProxy).toBe(true);
+    // All optional — a minimal capabilities object (no NewMax axes) still valid.
+    const minimal: ProviderCapabilities = {
+      balanceApi: true,
+      modelDiscovery: false,
+      subscriptionPlan: false,
+    };
+    expect(minimal.local).toBeUndefined();
   });
 });
 

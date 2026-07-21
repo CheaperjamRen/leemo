@@ -105,6 +105,47 @@ export function classifyRisk(toolName: string, input: Record<string, unknown>): 
 }
 
 // ===========================================================================
+// Permission policy (outward — re-exported by contract.ts)
+//
+// 07/21 B3 revision (设计负责人 overruled B3's hard-coded "dangerous never
+// caches" invariant). Rationale: most users approve everything and reject
+// nothing anyway — a per-call nag reads as "annoying", not "safe". So approval
+// is now POLICY-driven: safe by default, but the user can loosen it via a
+// settings toggle or opt fully out with bypassPermissions. Constitution note:
+// 06 §2.9 "危险永不永久" is revised by the user to "default safe, user may opt
+// into convenience" — the DEFAULT policy still preserves the conservative B3
+// behavior; loosening is an explicit user choice.
+// ===========================================================================
+
+/** Claude-Code-aligned permission modes. THIS card gives only `bypassPermissions`
+ *  hard broker semantics (zero-card, allow-everything). `plan` (read-only
+ *  planning) and `acceptEdits` (auto-allow edit tools) are RESERVED contract
+ *  values with **Phase-1 execution semantics** — the broker treats them exactly
+ *  as `default` for now (full ask-the-host flow) and invents no plan/edit
+ *  tool-classification logic (that depends on tool taxonomy = Phase 1). */
+export type PermissionMode = "default" | "acceptEdits" | "bypassPermissions" | "plan";
+
+/** A broker's approval policy (per-conversation overridable via
+ *  `CreateConversationRequest.permissionMode`).
+ *  - `mode` — see PermissionMode.
+ *  - `dangerousCommandCaching` — the settings-page "危险命令总是放行" toggle.
+ *    `false` (default, safe): dangerous is strictly allow-once — never cached,
+ *    never persisted (B3's behavior). `true` (user opted in): dangerous caches /
+ *    persists like any other tier. */
+export interface PermissionPolicy {
+  mode: PermissionMode;
+  dangerousCommandCaching: boolean;
+}
+
+/** The broker's safe default policy (preserves B3: dangerous strictly
+ *  allow-once). `acceptEdits` is the baseline mode (06 §2.9) but the broker
+ *  treats it as `default` until Phase-1 edit-classification lands. */
+export const DEFAULT_PERMISSION_POLICY: PermissionPolicy = {
+  mode: "acceptEdits",
+  dangerousCommandCaching: false,
+};
+
+// ===========================================================================
 // Approval types (outward — re-exported by contract.ts)
 // ===========================================================================
 
@@ -218,17 +259,42 @@ const allow = (): PermissionResult => ({ behavior: "allow" });
  * Concurrency: every call carries its own request id and awaits its own
  * transport Promise — nothing is shared but the two caches, which are only
  * read/written with the resolved decision, so overlapping calls never cross.
+ *
+ * Policy (07/21 revision): the optional `policy` governs approval friction.
+ *   • mode 'bypassPermissions' → short-circuit: allow EVERYTHING (incl.
+ *     dangerous) with no ApprovalRequest and no transport call (zero card). The
+ *     user explicitly chose this — self-responsible.
+ *   • mode 'plan' / 'acceptEdits' → RESERVED (Phase-1 execution semantics);
+ *     treated as 'default' here (full ask-the-host flow), no logic invented.
+ *   • dangerousCommandCaching → gates whether the dangerous tier may cache /
+ *     persist. false (default, safe): dangerous is strictly allow-once. true
+ *     (user opted in via settings): dangerous caches / persists like any tier.
+ * The default policy preserves B3's conservative behavior exactly.
  */
 export function createApprovalBroker(
   transport: ApprovalTransport,
-  persistence: ApprovalPersistence
+  persistence: ApprovalPersistence,
+  policy: PermissionPolicy = DEFAULT_PERMISSION_POLICY
 ): ApprovalBroker {
   // Conversation-scoped auto-allow cache (in-memory, this broker only).
   const conversationAllow = new Set<string>();
 
   const canUseTool: CanUseTool = async (toolName, input, _options) => {
+    // (0) bypassPermissions short-circuit — zero card. The user opted fully out
+    // of approvals: allow every tool, including dangerous ones, WITHOUT building
+    // an ApprovalRequest or touching the transport. (`plan`/`acceptEdits` are
+    // reserved mode values with Phase-1 execution semantics — deliberately NOT
+    // special-cased here; they fall through to the default ask-the-host flow.)
+    if (policy.mode === "bypassPermissions") {
+      return allow();
+    }
+
     const risk = classifyRisk(toolName, input);
     const key = cacheKey(toolName, risk);
+    // When the toggle is off (default), the dangerous tier may never cache or
+    // persist — it is downgraded to allow-once. When on, it behaves like any
+    // other tier. `dangerLocked` = "this dangerous call must stay allow-once".
+    const dangerLocked = risk === "dangerous" && !policy.dangerousCommandCaching;
 
     // (2) permanent whitelist — shared across conversations via persistence.
     const whitelist = await persistence.getWhitelist();
@@ -258,10 +324,12 @@ export function createApprovalBroker(
         };
 
       case "allow-permanent": {
-        // Danger-never-permanent (06 §2.9): refuse to persist a dangerous tool
-        // even when the host returns allow-permanent — downgrade to allow-once
-        // (allow THIS time, cache nothing, so the next call asks again).
-        if (risk === "dangerous") {
+        // Danger-caching is policy-conditional (07/21 revision of 06 §2.9). By
+        // default (dangerLocked) a dangerous tool is refused persistence even
+        // when the host returns allow-permanent — downgrade to allow-once (allow
+        // THIS time, cache nothing, next call asks again). With the toggle on,
+        // dangerous persists like any tier (the user opted into low friction).
+        if (dangerLocked) {
           return allow();
         }
         await persistence.addToWhitelist({ toolName, risk });
@@ -269,12 +337,11 @@ export function createApprovalBroker(
       }
 
       case "allow-conversation":
-        // Danger-only guard (Leemo design decision, completing 06 §2.9): the
-        // dangerous tier is allow-once ONLY — never cached, never persisted.
-        // Destructive commands are highly specific; approving `rm -rf /tmp/x`
-        // must not auto-allow `format C:` (both key to `Bash :: dangerous`).
-        // Symmetric with the allow-permanent danger-downgrade above.
-        if (risk !== "dangerous") conversationAllow.add(key);
+        // Symmetric with allow-permanent: by default the dangerous tier is
+        // allow-once ONLY (never cached) — approving `rm -rf /tmp/x` must not
+        // auto-allow `format C:` (both key to `Bash :: dangerous`). The toggle
+        // (dangerousCommandCaching) lets the user opt dangerous into caching.
+        if (!dangerLocked) conversationAllow.add(key);
         return allow();
 
       case "allow-once":
@@ -285,6 +352,7 @@ export function createApprovalBroker(
         // in from the host over IPC (untrusted runtime data) — a malformed or
         // future-unknown value must DENY, never coerce to allow. This mirrors
         // the broker's "don't trust the host UI" posture (danger-downgrade).
+        // PRESERVED verbatim through the 07/21 revision.
         return { behavior: "deny", message: "Denied: unknown approval decision" };
     }
   };
