@@ -94,3 +94,48 @@ CONFIG_DIR 隔离粒度=provider：同 provider 两对话共享 `providers/<id>/
 1. **`registryFactory` 本卡未用**：简报的 createBridge deps 签名含 `registryFactory?`，但 B1 不起真网关（gatewayPort 由 ConversationConfig 每对话注入）。故留为 `registryFactory?: unknown` 占位，B4 live 接真网关时定型。非阻断，属接口预留。
 2. **send 的 prompt 目前是 `string`**：Handle 类型 `send(prompt: string)`。SDK query 的 prompt 支持 `string | AsyncIterable<SDKUserMessage>`（streaming-input 模式，interrupt/setModel/setPermissionMode 等控制方法**仅在 streaming-input 下可用**）。B1 fake 注入下 string 足够且所有断言通过；**B4 接真 SDK 时，若要用 Query.interrupt()/setModel() 控制方法，需改走 streaming-input（AsyncIterable prompt）**——本卡的 interrupt 语义用 abortController 实现（d.ts 确认可用、不依赖 streaming-input），故不阻断，但记此为 B4 的接线注意点。
 3. 无其它阻断项。
+
+---
+
+## 修复轮（复审 Needs fixes → 已修）
+
+复审结论：1 Important 必修 + 3 Minor（控制方拍板顺带）。全部严格 TDD（先 RED 后实现），新增/改动断言先对真实缺陷 RED 过。
+
+### Important — process.env spread 架空密钥隔离（已修）
+
+**缺陷**：`pool.ts` 的 `{ ...process.env, ...buildConversationEnv() }` 在 B4/生产形态下会把宿主 process.env 里的真 key（gateway 从 `RELAY2_API_KEY` 读、及兄弟 provider 的 key）全量带进 SDK 子进程——子进程能跑 bash，`printenv` 即泄漏。原两处泄漏断言对此空转（fixture 的 key 只在 `provider.apiKey`，从不进 process.env）。
+
+**修法（照控制方拍板）**：strip 策略（非 allowlist）。新增纯函数 `sanitizeHostEnv(env)`（providers.ts），spread 宿主 env 后、apply buildConversationEnv 前剥除敏感变量。模式清单：
+- `/_API_KEY$/i`
+- `/_AUTH_TOKEN$/i`
+- `/_SECRET(_|$)/i`
+- `/_ACCESS_KEY/i`
+- `/^ANTHROPIC_API_KEY$/i`
+
+两模式都 strip。direct 模式本对话自己的 key 由 buildConversationEnv 的 `ANTHROPIC_AUTH_TOKEN` 在 strip 之后铺上，不受影响；兄弟 provider 的 key 不进来。
+
+**去空转化泄漏测试**（RED 过）：用 `vi.stubEnv` 注入 `RELAY2_API_KEY`/`SOME_VENDOR_API_KEY`/`SIBLING_AUTH_TOKEN`（含 `HOST-LEAK`/`SIBLING-HOST` 标记的假值），`try/finally + vi.unstubAllEnvs` 恢复：
+- gateway 模式：断言子 env 不含这些注入变量、`JSON.stringify(env)` 不含 `HOST-LEAK`。
+- direct 模式：断言子 env 的 `ANTHROPIC_AUTH_TOKEN` 恰为本 provider key、兄弟 `GLM_API_KEY`/`RELAY2_API_KEY` 被 strip、blob 不含 `SIBLING-HOST`。
+- `sanitizeHostEnv` 纯函数级：各模式命中/系统变量（PATH/HOME/LANG）保留/大小写不敏感/不改入参，共 4 例。
+
+RED 证据：实现前 `sanitizeHostEnv is not a function` + 泄漏断言 fail。GREEN：34/34 bridge。
+
+### Minor 3 项（已修）
+
+3. **并发 send 防护**：`state==='running'` 时再 send 直接抛 `/in progress|running/`（sequential-turns 契约，防 currentAbort 被覆盖致前轮不可中断）。send 里 state 同步翻 running（buildOptions 先行，故其抛错——如缺 gateway port——不会把对话卡在 running）。测试：running 中第二次 send 抛错、只有一次 queryFn call、前轮 controller 仍可 interrupt。
+4. **queryFn 中途 throw**：fake generator yield 一条后 `throw`，断言异常传播（`rejects.toThrow`）且 `finally` 把 state 复位 `idle`（对话可复用）。
+5. **6 槽位对齐 Phase 0**：EnvTemplate/SLOT_KEYS 补 `ANTHROPIC_DEFAULT_OPUS_MODEL`、`ANTHROPIC_SMALL_FAST_MODEL`（缺省=modelId，envTemplate 可覆盖，gateway 走 claude- 前缀）+ `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1`（两模式，smoke/lib.mjs:29-35 先例）。providers 测试改为 6 槽位遍历断言 + DISABLE 断言。
+
+### 修复轮验证
+- `npx vitest run tests/bridge` → 34 passed（providers 20 + pool 14）；pool 连跑 3 次 16/16 稳定。
+- 全量 `npx vitest run` → **18 files / 119 passed**（前轮 110 + 9 净新）。
+- `npm run typecheck` 两条全过。
+- key-shape 扫描 `src/bridge` 零命中（实现无明文 key，假值仅在测试）。
+
+### 决策记录
+- strip 用 suffix/name 正则而非值级扫描：变量名判定确定、零误伤业务值；值级扫描会误删含 "secret" 字样的正常配置。
+- `ANTHROPIC_API_KEY` 单列进模式（虽 `/_API_KEY$/i` 已覆盖，显式列出锁语义，兼作文档）。
+- 6 槽位对齐 smoke/lib.mjs 既有实证面，不自造槽位。
+
+**新 commit（不 amend）**：见 `fix(bridge): sanitize host env against key leakage, concurrent-send guard, 6-slot alias parity`。

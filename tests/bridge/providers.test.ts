@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildConversationEnv } from "../../src/bridge/providers";
+import { buildConversationEnv, sanitizeHostEnv } from "../../src/bridge/providers";
 import {
   deepseekDirect,
   deepseekWithTemplate,
@@ -13,12 +13,23 @@ import {
 // It does NOT read process.env, .env, or the filesystem — those are the pool's
 // concern. Every assertion below pins an exact VALUE, not mere presence.
 
-// The 4 model-alias slots CC honors (宪法 B4). ANTHROPIC_MODEL is the primary;
-// the other three are the SONNET / HAIKU / SUBAGENT class overrides.
+// The 6 CC model-alias slots CC honors (宪法 B4 + Phase 0 smoke/lib.mjs parity).
+// ANTHROPIC_MODEL is the primary; the rest are SONNET / OPUS / HAIKU /
+// SMALL_FAST / SUBAGENT class overrides.
 const SLOT_MODEL = "ANTHROPIC_MODEL";
 const SLOT_SONNET = "ANTHROPIC_DEFAULT_SONNET_MODEL";
+const SLOT_OPUS = "ANTHROPIC_DEFAULT_OPUS_MODEL";
 const SLOT_HAIKU = "ANTHROPIC_DEFAULT_HAIKU_MODEL";
+const SLOT_SMALL = "ANTHROPIC_SMALL_FAST_MODEL";
 const SLOT_SUBAGENT = "CLAUDE_CODE_SUBAGENT_MODEL";
+const ALL_SLOTS = [
+  SLOT_MODEL,
+  SLOT_SONNET,
+  SLOT_OPUS,
+  SLOT_HAIKU,
+  SLOT_SMALL,
+  SLOT_SUBAGENT,
+];
 
 describe("buildConversationEnv — DIRECT wiring (apiFormat=anthropic)", () => {
   it("points BASE_URL at the provider endpoint and AUTH_TOKEN at the real key", () => {
@@ -29,12 +40,9 @@ describe("buildConversationEnv — DIRECT wiring (apiFormat=anthropic)", () => {
     );
   });
 
-  it("maps all 4 model-alias slots to the chosen modelId by default", () => {
+  it("maps all 6 model-alias slots to the chosen modelId by default", () => {
     const env = buildConversationEnv(deepseekDirect, "deepseek-v4pro");
-    expect(env[SLOT_MODEL]).toBe("deepseek-v4pro");
-    expect(env[SLOT_SONNET]).toBe("deepseek-v4pro");
-    expect(env[SLOT_HAIKU]).toBe("deepseek-v4pro");
-    expect(env[SLOT_SUBAGENT]).toBe("deepseek-v4pro");
+    for (const slot of ALL_SLOTS) expect(env[slot]).toBe("deepseek-v4pro");
   });
 
   it("blanks ANTHROPIC_API_KEY so an ambient key can never override AUTH_TOKEN", () => {
@@ -43,12 +51,19 @@ describe("buildConversationEnv — DIRECT wiring (apiFormat=anthropic)", () => {
     expect(env.ANTHROPIC_API_KEY).toBe("");
   });
 
+  it("sets CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1 (Phase 0 smoke/lib parity)", () => {
+    const env = buildConversationEnv(deepseekDirect, "deepseek-v4pro");
+    expect(env.CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC).toBe("1");
+  });
+
   it("honors an envTemplate slot override while defaulting the untouched slots", () => {
     // deepseekWithTemplate remaps only the HAIKU slot to the flash model.
     const env = buildConversationEnv(deepseekWithTemplate, "deepseek-v4pro");
     expect(env[SLOT_HAIKU]).toBe("deepseek-v4flash"); // template wins
     expect(env[SLOT_MODEL]).toBe("deepseek-v4pro"); // default
     expect(env[SLOT_SONNET]).toBe("deepseek-v4pro"); // default
+    expect(env[SLOT_OPUS]).toBe("deepseek-v4pro"); // default
+    expect(env[SLOT_SMALL]).toBe("deepseek-v4pro"); // default
     expect(env[SLOT_SUBAGENT]).toBe("deepseek-v4pro"); // default
   });
 
@@ -71,10 +86,7 @@ describe("buildConversationEnv — GATEWAY wiring (apiFormat=openai)", () => {
 
   it("disguises the model with the claude- prefix (G3 /v1/models semantics)", () => {
     const env = buildConversationEnv(relay2Gateway, "gpt-5.6-luna", 61340);
-    expect(env[SLOT_MODEL]).toBe("claude-gpt-5.6-luna");
-    expect(env[SLOT_SONNET]).toBe("claude-gpt-5.6-luna");
-    expect(env[SLOT_HAIKU]).toBe("claude-gpt-5.6-luna");
-    expect(env[SLOT_SUBAGENT]).toBe("claude-gpt-5.6-luna");
+    for (const slot of ALL_SLOTS) expect(env[slot]).toBe("claude-gpt-5.6-luna");
   });
 
   it("carries NO real key anywhere in the env (leak assertion)", () => {
@@ -112,5 +124,60 @@ describe("buildConversationEnv — purity", () => {
     const b = buildConversationEnv(deepseekDirect, "deepseek-v4pro");
     expect(a).not.toBe(b);
     expect(a).toEqual(b);
+  });
+});
+
+describe("sanitizeHostEnv — strip secret-shaped host vars before spread", () => {
+  // The SDK REPLACES the child env, so the pool must spread process.env for
+  // PATH/HOME/etc. But process.env in production carries the gateway's real
+  // upstream keys (RELAY2_API_KEY etc.) and any sibling-provider secrets — a
+  // child that runs bash could printenv them. sanitizeHostEnv drops every
+  // secret-shaped var; the conversation's OWN token is re-applied afterward by
+  // buildConversationEnv (ANTHROPIC_AUTH_TOKEN), so direct wiring is unaffected.
+
+  it("drops *_API_KEY (incl. ANTHROPIC_API_KEY) and *_AUTH_TOKEN", () => {
+    const clean = sanitizeHostEnv({
+      RELAY2_API_KEY: "sk-test-relay-should-be-stripped",
+      ANTHROPIC_API_KEY: "sk-test-anthropic-should-be-stripped",
+      SOME_VENDOR_AUTH_TOKEN: "sk-test-vendor-token",
+      PATH: "/usr/bin",
+    });
+    expect(clean.RELAY2_API_KEY).toBeUndefined();
+    expect(clean.ANTHROPIC_API_KEY).toBeUndefined();
+    expect(clean.SOME_VENDOR_AUTH_TOKEN).toBeUndefined();
+    expect(clean.PATH).toBe("/usr/bin"); // benign system var preserved
+  });
+
+  it("drops *_SECRET and *_ACCESS_KEY shapes", () => {
+    const clean = sanitizeHostEnv({
+      MY_SECRET: "s1",
+      DB_SECRET_VALUE: "s2",
+      AWS_ACCESS_KEY_ID: "AKIA-test",
+      AWS_SECRET_ACCESS_KEY: "sk-test-aws",
+      HOME: "/home/momo",
+    });
+    expect(clean.MY_SECRET).toBeUndefined();
+    expect(clean.DB_SECRET_VALUE).toBeUndefined();
+    expect(clean.AWS_ACCESS_KEY_ID).toBeUndefined();
+    expect(clean.AWS_SECRET_ACCESS_KEY).toBeUndefined();
+    expect(clean.HOME).toBe("/home/momo");
+  });
+
+  it("is case-insensitive on the sensitive suffixes", () => {
+    const clean = sanitizeHostEnv({
+      relay2_api_key: "sk-test-lower",
+      Some_Auth_Token: "sk-test-mixed",
+      LANG: "en_US.UTF-8",
+    });
+    expect(clean.relay2_api_key).toBeUndefined();
+    expect(clean.Some_Auth_Token).toBeUndefined();
+    expect(clean.LANG).toBe("en_US.UTF-8");
+  });
+
+  it("does not mutate its input and returns a fresh object", () => {
+    const input = { RELAY2_API_KEY: "sk-test", PATH: "/bin" };
+    const clean = sanitizeHostEnv(input);
+    expect(clean).not.toBe(input);
+    expect(input.RELAY2_API_KEY).toBe("sk-test"); // original untouched
   });
 });

@@ -26,12 +26,15 @@ export interface ModelCapabilities {
   vision: boolean;
 }
 
-/** The four CC model-alias slots (宪法 B4). A provider's envTemplate may pin any
- *  subset; unpinned slots default to the conversation's chosen modelId. */
+/** The CC model-alias slots (宪法 B4 + Phase 0 smoke/lib.mjs parity — 6 slots).
+ *  A provider's envTemplate may pin any subset; unpinned slots default to the
+ *  conversation's chosen modelId. */
 export interface EnvTemplate {
   ANTHROPIC_MODEL?: string;
   ANTHROPIC_DEFAULT_SONNET_MODEL?: string;
+  ANTHROPIC_DEFAULT_OPUS_MODEL?: string;
   ANTHROPIC_DEFAULT_HAIKU_MODEL?: string;
+  ANTHROPIC_SMALL_FAST_MODEL?: string;
   CLAUDE_CODE_SUBAGENT_MODEL?: string;
 }
 
@@ -56,13 +59,57 @@ export interface Provider {
  *  to match the SDK's own `env?: {[k]: string | undefined}` field. */
 export type ConversationEnv = Record<string, string | undefined>;
 
-/** Order matters only for readability; all four slots are always emitted. */
+/** Order matters only for readability; all six slots are always emitted.
+ *  Mirrors the env face Phase 0 verified in smoke/lib.mjs (buildEnv). */
 const SLOT_KEYS = [
   "ANTHROPIC_MODEL",
   "ANTHROPIC_DEFAULT_SONNET_MODEL",
+  "ANTHROPIC_DEFAULT_OPUS_MODEL",
   "ANTHROPIC_DEFAULT_HAIKU_MODEL",
+  "ANTHROPIC_SMALL_FAST_MODEL",
   "CLAUDE_CODE_SUBAGENT_MODEL",
 ] as const;
+
+/** Suffix/name patterns for secret-shaped host env vars we refuse to spread into
+ *  the SDK child. Strip-not-allowlist: Windows children depend on too many
+ *  system vars to enumerate an allowlist safely, so we drop the sensitive ones
+ *  and keep the rest. Case-insensitive. */
+const SECRET_ENV_PATTERNS: RegExp[] = [
+  /_API_KEY$/i,
+  /_AUTH_TOKEN$/i,
+  /_SECRET(_|$)/i,
+  /_ACCESS_KEY/i,
+  /^ANTHROPIC_API_KEY$/i,
+];
+
+/** True if an env var name looks like it carries a secret. */
+function isSecretEnvName(name: string): boolean {
+  return SECRET_ENV_PATTERNS.some((re) => re.test(name));
+}
+
+/**
+ * Drop every secret-shaped variable from a host env snapshot.
+ *
+ * The SDK REPLACES the child's environment (see buildConversationEnv callers),
+ * so the pool must spread `process.env` for PATH/HOME/etc. But in production
+ * `process.env` carries the gateway's real upstream keys (RELAY2_API_KEY …) and
+ * potentially sibling-provider secrets — a child that can run bash could
+ * `printenv` them. sanitizeHostEnv removes them BEFORE the conversation's own
+ * token is layered on (buildConversationEnv sets ANTHROPIC_AUTH_TOKEN after), so
+ * direct wiring keeps its own key and no sibling secret rides along.
+ *
+ * Pure: never mutates the input; returns a fresh object.
+ */
+export function sanitizeHostEnv(
+  hostEnv: Record<string, string | undefined>
+): Record<string, string | undefined> {
+  const out: Record<string, string | undefined> = {};
+  for (const [name, value] of Object.entries(hostEnv)) {
+    if (isSecretEnvName(name)) continue;
+    out[name] = value;
+  }
+  return out;
+}
 
 /**
  * Build the SDK `options.env` for one conversation round.
@@ -108,6 +155,9 @@ export function buildConversationEnv(
     // Blank the API-key channel so an ambient ANTHROPIC_API_KEY (spread from
     // process.env by the pool) can never shadow AUTH_TOKEN. (Phase 0 buildEnv.)
     ANTHROPIC_API_KEY: "",
+    // Suppress non-essential background traffic in the SDK child (Phase 0
+    // smoke/lib.mjs precedent). Both wiring modes.
+    CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1",
   };
 
   for (const slot of SLOT_KEYS) {

@@ -1,4 +1,4 @@
-import { describe, it, expect, afterEach } from "vitest";
+import { describe, it, expect, afterEach, vi } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -125,6 +125,68 @@ describe("pool — GATEWAY wiring never leaks the real key", () => {
     const realKey = relay2Gateway.apiKey;
     for (const v of Object.values(env)) {
       if (typeof v === "string") expect(v).not.toContain(realKey);
+    }
+  });
+
+  it("does NOT leak real keys that live in the HOST process.env (the real path)", async () => {
+    // Production reality: the gateway reads RELAY2_API_KEY from process.env, and
+    // the host may carry sibling-provider secrets. The SDK REPLACES the child
+    // env, so the pool spreads process.env — which WOULD carry these keys into a
+    // child that can printenv. This asserts the strip removes them.
+    vi.stubEnv("RELAY2_API_KEY", "sk-test-relay-HOST-LEAK-aaaaaaaaaaaa");
+    vi.stubEnv("SOME_VENDOR_API_KEY", "sk-test-vendor-HOST-LEAK-bbbbbbbb");
+    vi.stubEnv("SIBLING_AUTH_TOKEN", "sk-test-sibling-HOST-LEAK-cccccccc");
+    try {
+      const { queryFn, calls } = makeFakeQuery({
+        scripts: [oneTurnStream("sess-g2", "x")],
+      });
+      const bridge = createBridge({ queryFn, dataDir: freshDataDir() });
+      const convo = bridge.createConversation({
+        provider: relay2Gateway,
+        modelId: "gpt-5.6-luna",
+        gatewayPort: 61340,
+      });
+      await drain(convo.send("hi"));
+
+      const env = calls[0].options.env!;
+      expect(env.RELAY2_API_KEY).toBeUndefined();
+      expect(env.SOME_VENDOR_API_KEY).toBeUndefined();
+      expect(env.SIBLING_AUTH_TOKEN).toBeUndefined();
+      // and no env VALUE contains any of the injected secrets
+      const blob = JSON.stringify(env);
+      expect(blob).not.toContain("HOST-LEAK");
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it("DIRECT wiring carries only THIS provider's key (via AUTH_TOKEN), not siblings' host keys", async () => {
+    // deepseek is direct: its own key rides ANTHROPIC_AUTH_TOKEN (applied after
+    // the strip). A sibling provider's key sitting in process.env must NOT ride
+    // along.
+    vi.stubEnv("GLM_API_KEY", "sk-test-glm-SIBLING-HOST-dddddddddddd");
+    vi.stubEnv("RELAY2_API_KEY", "sk-test-relay-SIBLING-HOST-eeeeeeee");
+    try {
+      const { queryFn, calls } = makeFakeQuery({
+        scripts: [oneTurnStream("sess-g3", "x")],
+      });
+      const bridge = createBridge({ queryFn, dataDir: freshDataDir() });
+      const convo = bridge.createConversation({
+        provider: deepseekDirect,
+        modelId: "deepseek-v4pro",
+      });
+      await drain(convo.send("hi"));
+
+      const env = calls[0].options.env!;
+      // own key present exactly once, on the AUTH_TOKEN channel
+      expect(env.ANTHROPIC_AUTH_TOKEN).toBe(deepseekDirect.apiKey);
+      // sibling host keys stripped
+      expect(env.GLM_API_KEY).toBeUndefined();
+      expect(env.RELAY2_API_KEY).toBeUndefined();
+      const blob = JSON.stringify(env);
+      expect(blob).not.toContain("SIBLING-HOST");
+    } finally {
+      vi.unstubAllEnvs();
     }
   });
 });
@@ -375,5 +437,61 @@ describe("pool — mid-conversation model change takes effect next round", () =>
     );
     // Round 1's captured env is untouched (no retroactive mutation).
     expect(calls[0].options.env!.ANTHROPIC_MODEL).toBe("deepseek-v4pro");
+  });
+});
+
+// ---- sequential-turn guard -------------------------------------------------
+
+describe("pool — concurrent send guard (sequential turns)", () => {
+  it("send() while a round is in progress throws, so currentAbort can't be clobbered", async () => {
+    const { queryFn, calls } = makeFakeQuery({
+      scripts: [oneTurnStream("sess-seq", "x")],
+      blockUntilAbortOnCall: 0, // first round stays active until aborted
+    });
+    const bridge = createBridge({ queryFn, dataDir: freshDataDir() });
+    const convo = bridge.createConversation({
+      provider: deepseekDirect,
+      modelId: "deepseek-v4pro",
+    });
+
+    const first = convo.send("one");
+    expect(convo.state).toBe("running"); // running eagerly at send()
+    // A second send while running is rejected — the first round's abort survives.
+    expect(() => convo.send("two")).toThrow(/in progress|running/i);
+
+    // Start consuming the first round (registers the queryFn call), then prove
+    // the second send never reached queryFn: only one call total.
+    const it = first[Symbol.asyncIterator]();
+    await it.next(); // pull the init message; call 0 now recorded
+    expect(calls.length).toBe(1);
+
+    // The first round's controller is still the live one; interrupt cancels it.
+    convo.interrupt();
+    let m = await it.next();
+    while (!m.done) m = await it.next();
+    expect(calls.length).toBe(1);
+    expect(calls[0].options.abortController!.signal.aborted).toBe(true);
+  });
+});
+
+// ---- mid-stream queryFn throw ----------------------------------------------
+
+describe("pool — queryFn error propagation", () => {
+  it("propagates a mid-stream throw and resets state to idle", async () => {
+    const boom = new Error("upstream exploded mid-stream");
+    const queryFn = async function* (): AsyncIterable<SdkMessageLike> {
+      yield { type: "system", session_id: "sess-boom" };
+      throw boom;
+    };
+    const bridge = createBridge({ queryFn, dataDir: freshDataDir() });
+    const convo = bridge.createConversation({
+      provider: deepseekDirect,
+      modelId: "deepseek-v4pro",
+    });
+    await expect(drain(convo.send("go"))).rejects.toThrow(
+      "upstream exploded mid-stream"
+    );
+    // finally ran despite the throw → conversation is reusable.
+    expect(convo.state).toBe("idle");
   });
 });

@@ -19,7 +19,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
-import { buildConversationEnv, type Provider } from "./providers";
+import { buildConversationEnv, sanitizeHostEnv, type Provider } from "./providers";
 
 /** Minimal structural view of an SDK message. The pool reads only `type` and
  *  `session_id`; the rest is passthrough payload B2 normalizes into LeemoEvent.
@@ -151,8 +151,12 @@ class Conversation implements ConversationHandle {
 
     const env: Record<string, string | undefined> = {
       // env REPLACES the subprocess environment (SDK contract) — spread
-      // process.env so the child keeps PATH/HOME/etc.
-      ...process.env,
+      // process.env so the child keeps PATH/HOME/etc., but FIRST strip every
+      // secret-shaped host var (RELAY2_API_KEY, sibling-provider keys, …). The
+      // conversation's OWN token is layered on right after via
+      // buildConversationEnv (ANTHROPIC_AUTH_TOKEN), so direct wiring is
+      // unaffected while sibling secrets never reach the child. (B1 fix.)
+      ...sanitizeHostEnv(process.env),
       ...buildConversationEnv(this.provider, this.modelId, this.gatewayPort),
       CLAUDE_CONFIG_DIR: configDir,
     };
@@ -166,12 +170,24 @@ class Conversation implements ConversationHandle {
     if (this._state === "disposed") {
       throw new Error("cannot send() on a disposed conversation");
     }
+    // Sequential-turn contract: one active round at a time. Guarding here keeps
+    // interrupt()/dispose() bound to a single currentAbort — a second send()
+    // would otherwise clobber it and orphan the first round's cancellation.
+    if (this._state === "running") {
+      throw new Error(
+        "cannot send() while a round is in progress (turns are sequential)"
+      );
+    }
     // Build options eagerly (sync) so interrupt() before/at iteration works and
-    // env captures the model/resume as of this call.
+    // env captures the model/resume as of this call. buildOptions may throw
+    // (e.g. missing gateway port) — do it BEFORE flipping state so a failure
+    // leaves the conversation reusable (idle), not stuck running.
     const options = this.buildOptions();
+    // Flip to running synchronously so a racing send() is rejected even before
+    // the generator is first pulled.
+    this.setState("running");
     const self = this;
     return (async function* () {
-      self.setState("running");
       try {
         for await (const msg of self.queryFn({ prompt, options })) {
           // Capture the session id as it flows by, for next round's resume.
