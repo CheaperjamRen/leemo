@@ -49,6 +49,14 @@ export function countTokens(req: AnthropicChatRequest): number {
   return encode(text).length;
 }
 
+/** Approximate token count for a bare string, using o200k_base. Used by the
+ *  streaming usage backfill (B0) to estimate output_tokens from the accumulated
+ *  assistant text when the upstream emits no usage frame. */
+export function countText(text: string): number {
+  if (!text) return 0;
+  return encode(text).length;
+}
+
 export type EndpointKind =
   | "messages"
   | "count_tokens"

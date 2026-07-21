@@ -29,6 +29,18 @@ export interface ProviderOpts {
   maxTokensField?: "max_tokens" | "max_completion_tokens";
   /** Flatten anyOf/oneOf/$ref/$defs out of tool schemas (GLM, pitfall ⑪). */
   flattenSchemas?: boolean;
+  /** Streaming usage recovery (B0). The vendor drops upstream usage frames that
+   *  arrive in the SAME network read as finish_reason (its inner loop breaks on
+   *  finish_reason), and hardcodes message_start.input_tokens=0. So a first-party
+   *  transform over the vendor's Anthropic stream ALWAYS passes REAL upstream
+   *  usage through to the terminal message_delta (never double-counting). This
+   *  switch only gates the O200K FALLBACK when no upstream usage frame exists:
+   *    - 'auto' (default): backfill message_start.input_tokens (o200k of request)
+   *      + terminal message_delta.output_tokens (o200k of accumulated output),
+   *      and mark the terminal usage `leemo_estimated:true` so B2 sets estimated.
+   *    - 'off': no o200k fallback; leave the vendor's zeros. Real passthrough
+   *      still applies when an upstream usage frame is present. */
+  usageBackfill?: "auto" | "off";
 }
 
 /** Field-complete defaults; a bare `{}` from a caller resolves to these. */
@@ -37,6 +49,7 @@ export const DEFAULT_PROVIDER_OPTS: ProviderOpts = {
   includeUsage: true,
   maxTokensField: "max_tokens",
   thinkingCapability: true,
+  usageBackfill: "auto",
 };
 
 /** Merge caller-supplied opts over the defaults (missing keys → defaults). */

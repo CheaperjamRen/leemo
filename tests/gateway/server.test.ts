@@ -14,7 +14,7 @@
 import { describe, it, expect, afterEach } from "vitest";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
-import { startGateway } from "@gateway/server";
+import { startGateway, waitForDrain } from "@gateway/server";
 import { ProviderRegistry } from "@gateway/registry";
 
 // A fake but well-shaped provider key. NEVER a real-looking secret (key discipline).
@@ -416,5 +416,148 @@ describe("gateway shell (G3)", () => {
     expect(body).toContain("event: message_start");
     expect(body).toContain("event: message_stop");
     expect(body).not.toContain(REAL_KEY);
+  });
+
+  // ---- B0 additions -------------------------------------------------------
+
+  it("B0-凑手②: stripped server tools produce a log line naming them (observable)", async () => {
+    const logs: string[] = [];
+    const mock = await startMock((_req, res) => sendJson(res, 200, NON_STREAM_OK));
+    cleanups.push(mock.close);
+    const { url } = await makeRegistryAndGateway(mock.url, logs);
+
+    const resp = await fetch(`${url}/v1/messages?beta=true`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: "Bearer leemo-gw:p1" },
+      body: JSON.stringify({
+        model: "claude-sonnet-4-20250514",
+        max_tokens: 100,
+        messages: [{ role: "user", content: "search" }],
+        tools: [
+          { name: "Read", description: "d", input_schema: { type: "object", properties: {} } },
+          { type: "web_search_20250305", name: "web_search" },
+          { type: "computer_20250124", name: "computer" },
+        ],
+      }),
+    });
+    expect(resp.status).toBe(200);
+    // upstream received ONLY the client tool
+    const wireTools = (mock.captured[0].body.tools ?? []).map((t: any) => t.function?.name);
+    expect(wireTools).toEqual(["Read"]);
+    // and the gateway logged the strip, naming both server tools
+    const logLine = logs.find((l) => l.includes("stripped") && l.includes("server tool"));
+    expect(logLine).toBeDefined();
+    expect(logLine).toContain("web_search");
+    expect(logLine).toContain("computer");
+  });
+
+  it("B0-低优: upstream 401 maps to a 502 api_error (upstream auth failed), NOT a client 401", async () => {
+    const logs: string[] = [];
+    const mock = await startMock((_req, res) => {
+      sendJson(res, 401, { error: { message: `invalid upstream key Bearer ${REAL_KEY}` } });
+    });
+    cleanups.push(mock.close);
+    const { url } = await makeRegistryAndGateway(mock.url, logs);
+
+    const resp = await fetch(`${url}/v1/messages?beta=true`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: "Bearer leemo-gw:p1" },
+      body: JSON.stringify({ model: "x", max_tokens: 10, messages: [{ role: "user", content: "hi" }] }),
+    });
+    // client sees 502 — the gateway token WAS valid; the failure is upstream-side.
+    expect(resp.status).toBe(502);
+    const text = await resp.text();
+    const j = JSON.parse(text);
+    expect(j.type).toBe("error");
+    expect(j.error.type).toBe("api_error");
+    expect(j.error.message.toLowerCase()).toContain("upstream");
+    // no key leak in body or logs
+    expect(text).not.toContain(REAL_KEY);
+    expect(logs.join("\n")).not.toContain(REAL_KEY);
+  });
+
+  it("B0-低优: upstream 403 also maps to 502 api_error", async () => {
+    const logs: string[] = [];
+    const mock = await startMock((_req, res) => sendJson(res, 403, { error: { message: "forbidden" } }));
+    cleanups.push(mock.close);
+    const { url } = await makeRegistryAndGateway(mock.url, logs);
+
+    const resp = await fetch(`${url}/v1/messages?beta=true`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: "Bearer leemo-gw:p1" },
+      body: JSON.stringify({ model: "x", max_tokens: 10, messages: [{ role: "user", content: "hi" }] }),
+    });
+    expect(resp.status).toBe(502);
+    const j = (await resp.json()) as any;
+    expect(j.error.type).toBe("api_error");
+  });
+
+  it("B0-凑手①: waitForDrain resolves on close even when drain never fires (no hang)", async () => {
+    // A fake writable whose 'drain' NEVER fires — only 'close' does. The old
+    // `res.once("drain", resolve)` would hang here forever; waitForDrain must
+    // resolve on 'close' and detach every listener (no leak).
+    const handlers = new Map<string, Array<() => void>>();
+    let attached = 0;
+    let detached = 0;
+    const fake = {
+      once(event: string, cb: () => void) {
+        attached++;
+        const arr = handlers.get(event) ?? [];
+        arr.push(cb);
+        handlers.set(event, arr);
+        return this;
+      },
+      off(event: string, cb: () => void) {
+        detached++;
+        const arr = (handlers.get(event) ?? []).filter((h) => h !== cb);
+        handlers.set(event, arr);
+        return this;
+      },
+    };
+    const p = waitForDrain(fake);
+    // fire ONLY close — drain never comes
+    for (const cb of handlers.get("close") ?? []) cb();
+    await expect(p).resolves.toBeUndefined();
+    // all three listeners registered, and all detached (no leak)
+    expect(attached).toBe(3);
+    expect(detached).toBe(3);
+  });
+
+  it("B0-凑手①: backpressure + client disconnect does not hang the pump (drain race)", async () => {
+    const logs: string[] = [];
+    // Emit a large burst then hold the connection open. The gateway's res.write
+    // returns false under backpressure; if the client disconnects while the pump
+    // is awaiting 'drain', a drain-only wait would hang forever. The fix resolves
+    // that wait on close/error too — so the pump tears down promptly.
+    const mock = await startMock(async (_req, res) => {
+      res.writeHead(200, { "Content-Type": "text/event-stream" });
+      res.write(`data: ${JSON.stringify({ choices: [{ index: 0, delta: { role: "assistant", content: "" } }] })}\n\n`);
+      // a big content delta to force backpressure on the downstream socket
+      const big = "y".repeat(2_000_000);
+      res.write(`data: ${JSON.stringify({ choices: [{ index: 0, delta: { content: big } }] })}\n\n`);
+      // never end — wait for the client abort.
+    });
+    cleanups.push(mock.close);
+    const { url } = await makeRegistryAndGateway(mock.url, logs);
+
+    const ac = new AbortController();
+    const resp = await fetch(`${url}/v1/messages?beta=true`, {
+      method: "POST",
+      signal: ac.signal,
+      headers: { "Content-Type": "application/json", Authorization: "Bearer leemo-gw:p1" },
+      body: JSON.stringify({ model: "x", max_tokens: 10, stream: true, messages: [{ role: "user", content: "hi" }] }),
+    });
+    const reader = resp.body!.getReader();
+    await reader.read(); // pull the first event so the pump is mid-flight
+    ac.abort();
+    try { await reader.cancel(); } catch { /* aborted */ }
+
+    // The gateway must observe its upstream connection close (proving the pump
+    // did NOT hang on a never-firing drain). Poll with a hard deadline.
+    const deadline = Date.now() + 3000;
+    while (!mock.closedEarly && Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, 20));
+    }
+    expect(mock.closedEarly).toBe(true);
   });
 });

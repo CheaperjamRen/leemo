@@ -133,12 +133,29 @@ export function fromEnv(env: NodeJS.ProcessEnv = process.env): {
   if (!apiKey) missing.push("RELAY2_API_KEY");
   if (!model) missing.push("RELAY2_MODEL");
 
+  // Optional per-provider ProviderOpts channel (B0). Absent/blank → empty opts.
+  // Malformed JSON is a config error surfaced via `missing` (dev.ts reports it),
+  // NEVER silently dropped — booting with ignored opts would hide real misconfig.
+  let opts: Partial<ProviderOpts> = {};
+  const rawOpts = env.RELAY2_OPTS?.trim();
+  if (rawOpts) {
+    try {
+      const parsed = JSON.parse(rawOpts);
+      if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+        throw new Error("RELAY2_OPTS must be a JSON object");
+      }
+      opts = parsed as Partial<ProviderOpts>;
+    } catch {
+      missing.push("RELAY2_OPTS");
+    }
+  }
+
   if (missing.length) {
     return { registry: new ProviderRegistry({ records: [] }), configured: false, missing };
   }
   const registry = new ProviderRegistry({
     records: [
-      { id: "relay2", baseUrl: baseUrl!, apiKey: apiKey!, model: model!, apiFormat: "openai", opts: {} },
+      { id: "relay2", baseUrl: baseUrl!, apiKey: apiKey!, model: model!, apiFormat: "openai", opts },
     ],
   });
   return { registry, configured: true, missing: [] };

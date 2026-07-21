@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { openaiToAnthropicResponse, openaiToAnthropicStream, anthropicToOpenAI } from "@gateway/core/translate";
 import { stripServerTools, isServerTool } from "@gateway/core/normalize";
+import { AnthropicTransformer } from "@vendor/llms/src/transformer/anthropic.transformer";
 import { serverToolsRequest } from "./fixtures/anthropic-requests";
 import { sseEventStream, collectStream, parseAnthropicSSE } from "./fixtures/sse";
 
@@ -129,5 +130,58 @@ describe("pitfall-02 tool-use stop_reason + server-tool strip", () => {
     const { result, stripped } = await anthropicToOpenAI(req);
     expect(stripped).toEqual([]);
     expect((result.tools ?? []).map((t: any) => t.function?.name)).toEqual(["Read"]);
+  });
+
+  // ---- B0 凑手③: lock the VENDOR backstop predicate (previously untested) ----
+  //
+  // In normal operation the facade pre-strips server tools before the vendor
+  // runs, so the vendor's LEEMO-PATCH ② backstop is dead code on the hot path
+  // and had zero test coverage (G2 review Minor). Drive the vendor transformer
+  // DIRECTLY (bypassing the facade) with the divergent shape the two predicates
+  // once disagreed on — a versioned, non-custom `type` that ALSO carries an
+  // input_schema — and lock that the backstop strips it and exposes it on
+  // strippedServerTools. This pins the byte-identical predicate against drift.
+
+  it("pitfall-02 (B0): vendor backstop strips a versioned server tool WITH input_schema (divergent shape)", async () => {
+    const transformer = new AnthropicTransformer();
+    transformer.logger = { debug() {}, error() {}, info() {}, warn() {}, trace() {} } as any;
+
+    const unified: any = await transformer.transformRequestOut({
+      model: "m",
+      max_tokens: 100,
+      messages: [{ role: "user", content: "go" }],
+      tools: [
+        { name: "Read", description: "d", input_schema: { type: "object", properties: {} } },
+        // versioned server tool that ALSO carries an input_schema — the shape an
+        // earlier `&& !tool?.input_schema` clause got wrong.
+        { type: "computer_20250124", name: "computer", input_schema: { type: "object", properties: {} } },
+        { type: "web_search_20250305", name: "web_search" },
+      ],
+    } as any);
+
+    // only the client tool survives into the unified/OpenAI tool list
+    const wireNames = (unified.tools ?? []).map((t: any) => t.function?.name);
+    expect(wireNames).toEqual(["Read"]);
+    // the backstop exposes exactly the two server tools it removed
+    expect(transformer.strippedServerTools.map((t: any) => t.name).sort()).toEqual(["computer", "web_search"]);
+  });
+
+  it("pitfall-02 (B0): vendor backstop keeps client tools (no type / type:custom) even WITH input_schema", async () => {
+    const transformer = new AnthropicTransformer();
+    transformer.logger = { debug() {}, error() {}, info() {}, warn() {}, trace() {} } as any;
+
+    const unified: any = await transformer.transformRequestOut({
+      model: "m",
+      max_tokens: 100,
+      messages: [{ role: "user", content: "go" }],
+      tools: [
+        { name: "Read", input_schema: { type: "object" } },
+        { type: "custom", name: "MyTool", input_schema: { type: "object" } },
+      ],
+    } as any);
+
+    const wireNames = (unified.tools ?? []).map((t: any) => t.function?.name);
+    expect(wireNames.sort()).toEqual(["MyTool", "Read"]);
+    expect(transformer.strippedServerTools).toEqual([]);
   });
 });

@@ -68,6 +68,26 @@ export function openaiSSE(items: Array<Record<string, any> | string>): string {
   return items.map(serializeItem).join("");
 }
 
+/** Build a stream where each GROUP of OpenAI items is delivered as ONE network
+ *  read (frames concatenated). This reproduces the live relay wire shape the B0
+ *  diagnostic found: the trailing usage frame arrives in the SAME read as the
+ *  finish_reason frame. The vendor's inner loop breaks on finish_reason and never
+ *  reaches that co-arriving usage line — so real usage is dropped unless a
+ *  first-party path recovers it. */
+export function sseGroupedStream(
+  groups: Array<Array<Record<string, any> | string>>
+): ReadableStream<Uint8Array> {
+  const enc = new TextEncoder();
+  const reads = groups.map((g) => enc.encode(g.map(serializeItem).join("")));
+  let i = 0;
+  return new ReadableStream<Uint8Array>({
+    pull(controller) {
+      if (i < reads.length) controller.enqueue(reads[i++]);
+      else controller.close();
+    },
+  });
+}
+
 /** Read a ReadableStream<Uint8Array> fully into a string. */
 export async function collectStream(
   stream: ReadableStream<Uint8Array>

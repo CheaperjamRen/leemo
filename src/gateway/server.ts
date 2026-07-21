@@ -74,10 +74,44 @@ async function readBody(req: IncomingMessage): Promise<string> {
   return Buffer.concat(chunks).toString("utf8");
 }
 
+/** Await socket backpressure relief WITHOUT the classic hang (B0 凑手①).
+ *  `res.write` returning false means we must wait for 'drain' before writing
+ *  more — but if the client disconnects mid-wait, 'drain' NEVER fires and a
+ *  bare `res.once("drain", resolve)` promise leaks forever. Resolve on 'close'
+ *  and 'error' too, and always detach the listeners so nothing lingers. Accepts
+ *  the minimal structural surface so it can be unit-tested with a fake emitter. */
+export function waitForDrain(res: {
+  once: (event: string, cb: () => void) => unknown;
+  off?: (event: string, cb: () => void) => unknown;
+  removeListener?: (event: string, cb: () => void) => unknown;
+}): Promise<void> {
+  return new Promise<void>((resolve) => {
+    const detach = (res.off ?? res.removeListener)?.bind(res);
+    const done = () => {
+      if (detach) {
+        detach("drain", onDrain);
+        detach("close", onEnd);
+        detach("error", onEnd);
+      }
+      resolve();
+    };
+    const onDrain = () => done();
+    const onEnd = () => done();
+    res.once("drain", onDrain);
+    res.once("close", onEnd);
+    res.once("error", onEnd);
+  });
+}
+
 /** Map an upstream HTTP status to an Anthropic error type. Message is generic —
- *  we NEVER echo the upstream body (it may embed the key). */
+ *  we NEVER echo the upstream body (it may embed the key).
+ *
+ *  NOTE (B0 低优): upstream 401/403 are handled specially in handleMessages —
+ *  they map to a 502 api_error ("upstream auth failed"), NOT a client 401. A
+ *  client 401 is reserved for an invalid gateway placeholder token; if the
+ *  gateway token was valid but the REAL upstream key was rejected, that is an
+ *  upstream/config failure the client cannot fix by re-authenticating. */
 function upstreamErrorType(status: number): string {
-  if (status === 401 || status === 403) return "authentication_error";
   if (status === 404) return "not_found_error";
   if (status === 429) return "rate_limit_error";
   if (status >= 500) return "api_error";
@@ -165,8 +199,15 @@ async function handleMessages(
     } catch {
       /* ignore */
     }
-    const type = upstreamErrorType(upstream.status);
     registry.logger.warn(`upstream returned ${upstream.status}`);
+    // B0 低优: upstream auth rejection (401/403) is an upstream/config failure,
+    // not a client auth problem — surface it as 502 api_error so the client does
+    // NOT mistake it for its own (valid) gateway token being wrong.
+    if (upstream.status === 401 || upstream.status === 403) {
+      if (!res.headersSent) sendError(res, 502, "api_error", "upstream auth failed (upstream provider rejected the gateway's key)");
+      return;
+    }
+    const type = upstreamErrorType(upstream.status);
     if (!res.headersSent) sendError(res, upstream.status, type, `upstream provider error (${upstream.status})`);
     return;
   }
@@ -196,7 +237,10 @@ async function handleMessages(
   }
   let converted: ReadableStream<Uint8Array>;
   try {
-    converted = await openaiToAnthropicStream(upstream.body as unknown as ReadableStream<Uint8Array>);
+    converted = await openaiToAnthropicStream(upstream.body as unknown as ReadableStream<Uint8Array>, {
+      request: anthropicReq,
+      opts: provider.opts,
+    });
   } catch (e) {
     if (!res.headersSent) sendError(res, 502, "api_error", `stream translation failed: ${errMessage(e)}`);
     return;
@@ -220,7 +264,7 @@ async function handleMessages(
       if (done) break;
       if (res.destroyed || clientGone) break;
       const ok = res.write(Buffer.from(value));
-      if (!ok) await new Promise<void>((resolve) => res.once("drain", resolve));
+      if (!ok) await waitForDrain(res);
     }
     if (!res.writableEnded) res.end();
   } catch (e) {
