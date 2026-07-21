@@ -18,14 +18,14 @@ Leemo（人格：momo/默默）= 基于 claude-agent-sdk 的桌面 AI 工作台+
 
 ## 铁律（每次派卡/验收都适用）
 
-- **执行者≠验收者**。分工：K3=前端视觉/组件卡（Kimi Code CLI，无头 `kimi -p` 驱动，只做视觉层不碰 store/IPC）；GLM=规格写死的自包含逻辑卡；Opus=高风险+对抗审查；本会话=设计+验收。
+- **执行者≠验收者**。分工：K3=前端视觉/组件卡（Kimi Code CLI，无头 `kimi -p` 驱动，只做视觉层不碰 store/IPC）；GLM5.2=规格写死的自包含逻辑卡；Opus4.8=高风险+对抗审查；本会话=设计+验收。
 - TDD 边界：Bridge/IPC/store/MCP/**网关**=严格 TDD；前端视觉=用户目验；前端逻辑（reducer/store）要测试。
 - 任务卡自包含：文件清单+禁改清单+验收命令；验收只认可复现证据。
 - 密钥纪律：key 只经 `.env`（已 gitignore）；任何文件/日志/commit 无明文 key。
 - 命名：Leemo/momo；新内容禁"幸运鹿/LuckyDeer/Lulu"。
 - 名词预算=2（本子/成果）；新想法先过通用性检验（删掉"学习"还成立吗）再进 backlog；已拍板决策不劝改。
 - `smoke/` 是 Phase 0 已验收资产：跑可以，改需专门立卡。
-- git：公司 PAC 代理已配**仓库级** http.proxy（勿动勿全局化）；GitHub API 会 403 限流，git 操作正常。
+- git：公司代理已弃用（仓库级 http.proxy 已删）；GitHub 直连可用。用户私人 VPN 代理=`http://127.0.0.1:10801`，**仅**外网访问（Google/web search 等）时设 `http_proxy/https_proxy`；模型端点均为国内直连不走代理。⚠️ niubiapi 中转站从本网络会 403 掉 Node fetch（PowerShell 能过）——跑 `smoke/gateway-live.mjs` 需先设 `NODE_USE_ENV_PROXY=1` + `https_proxy=http://127.0.0.1:10801` + `no_proxy=127.0.0.1,localhost`（已验证 PASS）。
 - 用户偏好：**AskUserQuestion 选项卡提问（每轮≤4 问）**；用户会在 Other 里写高质量补充，逐句认真读；里程碑一会话（省上下文成本）。
 
 ## 旧工作区（只读参考）

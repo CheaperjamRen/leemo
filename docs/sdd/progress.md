@@ -106,3 +106,8 @@ G4: complete (commit befcbb8 已 push, review Approved; report=gw-g4-report.md)
   - **零 usage 疑点(留 follow-up 卡)**: 流式 message usage 全零(直连时有值); 但验收复跑 compaction pre_tokens=21650 非零(执行者轮为 0, 有波动)→count_tokens 链路通, 问题聚焦流式 usage 映射(坑⑩ live)。复审给出决定性首查: 抓 relay 原始 SSE 看是否有带 usage 的 data 帧——无帧=上游不发(需 count_tokens 兜底), 有帧=网关透传 bug
   - Minor 备忘: saveResult 的 env 基 redact 在本 runner 为 no-op(安全实际来自进程隔离+泄漏扫描, 非 redact 层)
 == 网关竖切 G1-G4 全部完成, 收官全分支终审进行中 ==
+
+[7/21] 网络环境变更(用户通知): 公司网络弃用→私人 VPN(127.0.0.1:10801, 仅外网用)
+  - 仓库级 git http/https.proxy(baidu-int)已删; GitHub 直连验证 OK
+  - niubiapi 直连 403 事件(G4 验收后复跑失败)诊断: Node fetch 被拦(疑 Cloudflare TLS 指纹, PowerShell 能 200), 非代码回归; 解法=NODE_USE_ENV_PROXY=1+https_proxy=VPN+no_proxy=127.0.0.1(保 SDK→网关直连), streaming 复跑 PASS 3.8s; 已写进 CLAUDE.md git 条目
+  - 上批遗留① (.gitignore 补 .env.*+!.env.example) 核实: 工作区迁移时已带上(.gitignore 现含三行), 关闭
