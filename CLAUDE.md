@@ -27,6 +27,7 @@ Leemo（人格：momo/默默）= 基于 claude-agent-sdk 的桌面 AI 工作台+
 - `smoke/` 是 Phase 0 已验收资产：跑可以，改需专门立卡。
 - git：公司代理已弃用（仓库级 http.proxy 已删）；GitHub 直连可用。用户私人 VPN 代理=`http://127.0.0.1:10801`，**仅**外网访问（Google/web search 等）时设 `http_proxy/https_proxy`；模型端点均为国内直连不走代理。⚠️ niubiapi 中转站从本网络会 403 掉 Node fetch（PowerShell 能过）——跑 `smoke/gateway-live.mjs` 需先设 `NODE_USE_ENV_PROXY=1` + `https_proxy=http://127.0.0.1:10801` + `no_proxy=127.0.0.1,localhost`（已验证 PASS）。
 - 用户偏好：**AskUserQuestion 选项卡提问（每轮≤4 问）**；用户会在 Other 里写高质量补充，逐句认真读；里程碑一会话（省上下文成本）。
+- 会话成本纪律：**里程碑/批次收官时主动产出新会话交接 prompt**（自包含、指向文档不内联长文，便宜起步）；平时每到阶段节点评估一次"续本会话 vs 新开"的成本（上下文已积多大、台账/简报是否足以让新会话满血接管），主动告知状况+建议。用户目标=又便宜又好又高质量。
 
 ## 旧工作区（只读参考）
 
