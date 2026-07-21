@@ -156,3 +156,20 @@ B2: complete (commits d34e12b + fix 0b8128e, review Approved; report=br-b2-repor
   - Minor 备忘: within-cwd Windows 大小写敏感(安全方向, 过度告警非漏报); CNY/USD 汇率硬编码快照(Phase 1 清理)
   - **用户 7/21 provider 面提醒(进记忆 provider-extensibility-constraint)**: 未来 20+ provider(官方API/OAuth订阅/中转站/coding plan/自定义)——B3 契约冻结须留 authMode/kind/capabilities 扩展轴, balance.ts 的 id 硬编码是 Phase1 占位不得冻进契约, 09 文档明写"加 provider=加数据不改契约"
 → B3 派卡: 交互桥+IPC 契约冻结(高风险=Opus 4.8), BASE=0b8128e
+
+B3 复审(Opus): Needs fixes — 零 Critical(安全边界干净: ProviderSpec 及全 channel payload 无 apiKey, 扩展轴 authMode/kind/capabilities 是真类型字段), 3 Important 冻结前必修:
+  - #1 ConversationConfig re-export 透传 apiKey(经内嵌 Provider)且注释误标"as-is 过 IPC"——非活跃泄漏(无 channel 绑它, createConversation 用无 key 的 CreateConversationRequest)但冻结契约里摆个带 key 的进程内类型是陷阱 → 撤 re-export + 订正注释
+  - #2【设计方拍板】审批 allow-conversation 对 dangerous 档过度缓存: 批准 rm -rf /tmp/data 后 format C: 同键(Bash::dangerous)自动放行。**Leemo 设计决定: dangerous 档只给 allow-once, 禁 conversation 缓存也禁 permanent**(把 06 §2.9"dangerous 永不 permanent"补全为"dangerous 永不任何缓存")。理由: 破坏性操作命令特异, 批准一个不得授权另一个。补测试。此决定冻结前会在 09 契约过目节点告知用户可否决。
+  - #3 未知/畸形 host decision fail-open(allow-once 与 default 同走 allow): IPC payload 是运行时不可信数据, 安全门必须 fail-closed → default 改 deny
+  - Minor: inputSummary 非真脱敏但 09 文档/注释称"脱敏"(命令原文截断展示给用户审批是对的, 措辞夸大)→ 软化措辞; channel↔type XOR 测试靠手维护键集(accept)
+
+B3: complete (commits 30b4745 + fix 6a61e48, re-review Approved; report=br-b3-report.md §修复轮; 里程碑 5 契约冻结件)
+  - 交付: interact.ts(ApprovalBroker 三档+危险降档 + createAskUserMcp)+contract.ts(全类型汇总+扩展轴)+docs/specs/09-Bridge-IPC契约-v1.0.md; 206/206 绿(164→206, +42)
+  - sdk.d.ts 核实(执行者纠正简报 3 处推测): canUseTool=(toolName,input,{signal 必需,toolUseID,requestId,…})=>Promise<PermissionResult|null>(broker 永不返 null); createSdkMcpServer/tool 如简报
+  - 安全边界复审硬验通过: ProviderSpec 及全 channel payload 无 apiKey(密钥永不过 IPC); 扩展轴 authMode/kind/capabilities 是真类型字段(contract.test 类型级钉)
+  - 修复轮(复审 3 Important): ①撤 ConversationConfig re-export(内嵌 Provider 持 key) ②【设计负责人拍板补全 06§2.9】dangerous 档只 allow-once,禁 conversation 缓存禁 permanent(rm-rf 批准不授权 format C:) ③审批 default fail-closed deny(IPC 不可信数据); Minor: inputSummary 措辞软化
+  - 复审证回归陷阱双清: 非 dangerous 缓存仍工作(moderate seen===1)、happy-path allow-once 仍 allow(独立 case 非 default)
+  - 验收方亲跑: 206/206+typecheck 绿+关键断言存在(format C: 再问 seen===2 / 非危险缓存 seen===1 / permanent auto-allow seen===0) ✓
+  - **⏸ 用户定稿节点(待过目)**: 09 契约要点——①provider 扩展轴 ②危险命令审批收紧(dangerous 只 allow-once)是否认可
+  - **NewMax 对照(用户要求)**: 核心机制平齐; 当场验 usage 缓存扣减无重复计费 bug(网关 input=prompt−cached, pitfall-⑩ 钉); 3 可吸收增强进 backlog(memory newmax-gateway-borrowables): max_tokens 撞400降级重试/定价模糊匹配+名称标准化/能力预检可配置; 审批安全层 NewMax 无=我们增量
+→ B4 派卡(唯一打真网 live=Opus 4.8): DeepSeek 直连+relay2 网关并发, BASE=6a61e48, 跑前 VPN 三件套
