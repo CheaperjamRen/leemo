@@ -15,7 +15,11 @@ export interface ProviderRecord {
   baseUrl: string;
   apiKey: string;
   model: string;
-  apiFormat: "openai";
+  /** Every configured model. `model` remains the default/fallback. */
+  models?: string[];
+  apiFormat: "openai" | "openai-responses";
+  /** Extra upstream headers. Authorization is always replaced by apiKey. */
+  headers?: Record<string, string>;
   /** Per-provider translation switches (see core/provider-opts). */
   opts?: Partial<ProviderOpts>;
 }
@@ -26,6 +30,8 @@ export interface ResolvedProvider {
   baseUrl: string;
   apiKey: string;
   model: string;
+  apiFormat: "openai" | "openai-responses";
+  headers?: Record<string, string>;
   opts: Partial<ProviderOpts>;
 }
 
@@ -60,23 +66,30 @@ function buildRedactor(secrets: string[]): (line: string) => string {
 }
 
 export interface RegistryInit {
-  records: ProviderRecord[];
+  /** A getter keeps the long-lived desktop gateway in sync after settings save. */
+  records: ProviderRecord[] | (() => ProviderRecord[]);
   /** where redacted log lines go; defaults to console.error. */
   logSink?: LogSink;
 }
 
 export class ProviderRegistry {
-  private readonly map = new Map<string, ProviderRecord>();
-  private readonly redact: (line: string) => string;
+  private readonly records: () => ProviderRecord[];
   private readonly sink: LogSink;
   readonly logger: RedactingLogger;
 
   constructor(init: RegistryInit) {
-    for (const r of init.records) this.map.set(r.id, r);
+    const records = init.records;
+    this.records = typeof records === "function"
+      ? records
+      : () => records;
     this.sink = init.logSink ?? ((line) => console.error(line));
-    this.redact = buildRedactor(init.records.map((r) => r.apiKey));
-    const emit = (level: string, msg: string) =>
-      this.sink(`[${level}] ${this.redact(msg)}`);
+    const emit = (level: string, msg: string) => {
+      const secrets = this.records().flatMap((record) => [
+        record.apiKey,
+        ...Object.values(record.headers ?? {}),
+      ]);
+      this.sink(`[${level}] ${buildRedactor(secrets)(msg)}`);
+    };
     this.logger = {
       info: (m) => emit("info", m),
       warn: (m) => emit("warn", m),
@@ -88,31 +101,37 @@ export class ProviderRegistry {
   /** Resolve a placeholder-token provider id to its real record, or undefined
    *  if unknown (→ 401 at the shell). */
   resolve(id: string): ResolvedProvider | undefined {
-    const rec = this.map.get(id);
+    const rec = this.records().find((candidate) => candidate.id === id);
     if (!rec) return undefined;
     return {
       id: rec.id,
       baseUrl: rec.baseUrl,
       apiKey: rec.apiKey,
       model: rec.model,
+      apiFormat: rec.apiFormat,
+      ...(rec.headers ? { headers: { ...rec.headers } } : {}),
       opts: rec.opts ?? {},
     };
   }
 
   /** Ids of all registered providers (used by /v1/models). */
   ids(): string[] {
-    return [...this.map.keys()];
+    return this.records().map((record) => record.id);
   }
 
   /** Models exposed to gateway-model-discovery, each disguised behind a
    *  `claude-` prefix so the SDK surfaces it (id needs claude/anthropic
    *  prefix). Returns {id (disguised), providerId, model (real)}. */
   models(): Array<{ id: string; providerId: string; model: string }> {
-    return [...this.map.values()].map((r) => ({
-      id: `claude-${r.model}`,
-      providerId: r.id,
-      model: r.model,
-    }));
+    return this.records().flatMap((record) =>
+      [...new Set([record.model, ...(record.models ?? [])])]
+        .filter((model) => model.trim().length > 0)
+        .map((model) => ({
+          id: `claude-${model}`,
+          providerId: record.id,
+          model,
+        })),
+    );
   }
 }
 

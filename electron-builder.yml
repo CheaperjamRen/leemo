@@ -1,0 +1,69 @@
+# electron-builder 打包配置（轮 5）。
+#
+# 决定这份配置形状的**唯一大事实**：SDK 的原生 CLI 是一个 241MB 的
+# `claude.exe`，装在 sibling 包 @anthropic-ai/claude-agent-sdk-win32-x64 里。
+# 它必须**摊在 asar 外面**才能被 spawn —— asar 是一个大文件里的虚拟文件系统，
+# 操作系统的进程加载器不认识它。见 src/main/cli-binary.ts。
+appId: com.leemo.app
+productName: Leemo
+# `electron` 已是开发依赖，npm 安装后 `node_modules/electron/dist` 就有与
+# package.json 精确匹配的完整运行时。让 builder 直接复用它，避免每个 worktree
+# 打包时再去 GitHub 下载同一份 130MB+ 压缩包；缺依赖时应在 npm ci 阶段明确失败。
+electronDist: node_modules/electron/dist
+directories:
+  output: dist-package
+files:
+  - dist/**          # vite renderer build
+  - dist-electron/** # esbuild main + preload
+  - package.json
+  # 产品维护者精选的 Skill 源包进 ASAR，避免数百个 loose 文件拖慢安装。
+  # 首次启动再按内容哈希原子展开到 app data 的只读运行缓存。
+  - bundled-skills/default-enabled/**/*
+  - bundled-skills/optional/**/*
+  - bundled-skills/catalog.json
+  - bundled-skills/office/release/**/*
+  # node_modules 不在这里列：electron-builder 自己按 package.json 的
+  # dependencies 算生产依赖树并复制，devDependencies 永不入包。而
+  # scripts/build-main.mjs 是 `packages: "external"`（SDK 要 spawn 子进程，
+  # 不能被 inline），所以运行时确实要从 node_modules 解析 —— 这两件事必须对得上。
+asar: true
+# One verified native file plus its manifest/license. Keeping it outside ASAR
+# is required for Windows process launch and adds only three loose files.
+extraResources:
+  - from: bundled-runtime/windows-mcp/release
+    to: windows-mcp
+    filter:
+      - Sbroenne.WindowsMcp.exe
+      - manifest.json
+      - LICENSE.txt
+asarUnpack:
+  # ① 原生 CLI：必须真落地，否则"能开窗、一发消息就 spawn 失败"。
+  - "**/node_modules/@anthropic-ai/claude-agent-sdk-win32-x64/**"
+  # ② better-sqlite3：.node 要被 dlopen。electron-builder 通常会自动摊开原生
+  #    模块，但这条是 App 起不起来的关键（起不来就没有对话），显式写死不赌默认。
+  - "**/node_modules/better-sqlite3/**"
+  # ③ 内置 Playwright MCP 由 Leemo.exe 以 ELECTRON_RUN_AS_NODE 启动。CLI 与
+  #    Playwright 驱动都必须是可执行进程能读到的真实文件，不能只留在 asar 里。
+  - "**/node_modules/@playwright/mcp/**"
+  - "**/node_modules/playwright/**"
+  - "**/node_modules/playwright-core/**"
+# 不重建原生模块：better-sqlite3 v13 走 N-API（node-addon-api），同一份 prebuild
+# 在 Node 与 Electron 两处通吃，不存在 dual-ABI 问题（此前已验证，故仓库里没有
+# @electron/rebuild）。开着它只会在没有 MSVC 的机器上白失败一次。
+npmRebuild: false
+win:
+  icon: build/icon.svg
+  # NSIS 安装包 = 本轮交付物。不额外出 portable：那会把 241MB 再压一遍，
+  # 而 NSIS 本来就会顺手产出 win-unpacked/，免安装验证用它就够。
+  target:
+    - nsis
+nsis:
+  oneClick: false                        # 250MB+ 的东西，得让用户自己选盘
+  allowToChangeInstallationDirectory: true
+  perMachine: false                      # 每用户安装 ⇒ 不弹 UAC
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+mac:
+  target: dir
+linux:
+  target: dir

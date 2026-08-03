@@ -9,7 +9,7 @@
     "module": "ESNext",
     "moduleResolution": "bundler",
     "lib": ["ES2022"],
-    "types": ["node"],
+    "types": ["node", "electron"],
     "strict": true,
     "esModuleInterop": true,
     "forceConsistentCasingInFileNames": true,
@@ -26,5 +26,5 @@
   // "@/types/llm") is loaded into the program and its UnifiedChatRequest merge
   // takes effect. .d.ts files are skipLibCheck-exempt from deep checking.
   "include": ["src", "tests", "dist/vendor-types"],
-  "exclude": ["src/gateway/vendor"]
+  "exclude": ["src/gateway/vendor", "src/renderer"]
 }

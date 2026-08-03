@@ -5,5 +5,47 @@ node_modules/
 smoke/results/
 smoke/workspaces/
 dist/
+dist-electron/
+dist-package/
+dist-smoke/
+dist-verify/
+/dist-rc*/
+/dist-visual-rc*/
+/verify-*.log
 *.log
 .playwright-mcp/
+.leemo-workspace/
+
+# 轮 7 —— 逆向/调试临时产物。留在磁盘上给下一手用（NewMax 解包产物是批次 E 视觉
+# 与 C1「可搜索的设置」的关键参考：42 个设置分区的 i18n 表、30 个组件的设计系统
+# 清单都在里面），但 94MB 不该进仓。
+.tmp-newmax-asar/
+.tmp-*.mjs
+.tmp-*.txt
+.tmp-*.log
+
+# Local agent state, abandoned workflow scaffolds, and historical build/audit
+# material kept on this machine. These are not Leemo product inputs.
+.claude/worktrees/
+.claude/*.log
+.claude/*.patch
+.claude/settings.local.json
+.claude/office-backups/
+.kimi/
+.kimi-code/
+.tmp-claude-plugin-test-cache/
+comate/
+openspec/
+dist-package-r8-6/
+/latest
+/findings.md
+/progress.md
+/task_plan.md
+
+# Legacy Office import workspace. Release inputs live in
+# bundled-skills/office/release and are the only files shipped.
+/bundled-skills/office/skills/
+# Optional private release input. It may be present for a local product build,
+# but is never part of the public source tree.
+/bundled-skills/office/release/skills/
+/2026-*-local-command-*.txt

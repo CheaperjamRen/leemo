@@ -41,6 +41,10 @@ export interface ProviderOpts {
    *    - 'off': no o200k fallback; leave the vendor's zeros. Real passthrough
    *      still applies when an upstream usage frame is present. */
   usageBackfill?: "auto" | "off";
+  /** Responses-compatible services differ in how they carry stateless
+   * reasoning across tool rounds. OpenAI uses encrypted_content; MiMo returns
+   * replayable reasoning_text content. */
+  responsesDialect?: "openai" | "mimo";
 }
 
 /** Field-complete defaults; a bare `{}` from a caller resolves to these. */
@@ -50,6 +54,7 @@ export const DEFAULT_PROVIDER_OPTS: ProviderOpts = {
   maxTokensField: "max_tokens",
   thinkingCapability: true,
   usageBackfill: "auto",
+  responsesDialect: "openai",
 };
 
 /** Merge caller-supplied opts over the defaults (missing keys → defaults). */

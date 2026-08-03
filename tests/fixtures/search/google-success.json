@@ -1,0 +1,15 @@
+{
+  "kind": "customsearch#search",
+  "items": [
+    {
+      "title": "Google result",
+      "link": "https://example.com/google",
+      "snippet": "Plain snippet",
+      "htmlSnippet": "<b>Plain</b> snippet"
+    },
+    {
+      "title": "Missing link",
+      "snippet": "Must be dropped"
+    }
+  ]
+}

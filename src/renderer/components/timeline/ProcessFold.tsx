@@ -1,0 +1,245 @@
+import { useState, type ReactNode } from "react";
+import type { TimelineItem } from "../../stores/message-model";
+import ToolCard from "./ToolCard";
+import PlanCard from "./PlanCard";
+import ActivityCard from "./ActivityCard";
+import CompactDivider from "./CompactDivider";
+import ThinkingCard from "./ThinkingCard";
+import ApprovalBar from "../ApprovalBar";
+
+function renderProcess(item: TimelineItem, runId: string, density: ProcessDensity, stale: boolean) {
+  switch (item.kind) {
+    // A tool awaiting permission renders its approval card right here, so the
+    // question sits where the work is instead of at the end of the turn.
+    case "tool": return (
+      <div key={item.id} className="space-y-1.5">
+        <ToolCard item={item} stale={stale} />
+        {item.toolUseId !== undefined && (
+          <ApprovalBar
+            runId={runId}
+            toolUseId={item.toolUseId}
+            density={density === "buddy" ? "buddy" : "default"}
+          />
+        )}
+      </div>
+    );
+    case "plan": return <PlanCard key={item.id} item={item} />;
+    case "activity": return <ActivityCard key={item.id} item={item} stale={stale} />;
+    case "compact": return <CompactDivider key={item.id} item={item} />;
+    case "thinking": return <ThinkingCard key={item.id} item={item} />;
+    default: return null;
+  }
+}
+
+type ProcessDensity = "workbench" | "buddy";
+export type ProcessOutcome = "success" | "error" | "interrupted";
+
+function hasStaleWork(items: TimelineItem[]): boolean {
+  return items.some((item) =>
+    (item.kind === "tool" && item.status === "running")
+    || (item.kind === "activity" && item.tools.some((tool) => tool.status === "running"))
+    || (item.kind === "thinking" && item.streaming),
+  );
+}
+
+function buddySummary(
+  items: TimelineItem[],
+  activeTurn: boolean,
+  stale: boolean,
+  outcome?: ProcessOutcome,
+): string {
+  if (outcome === "interrupted") return "momo 已停下这一步";
+  if (outcome === "error") return "有一步没完成，点开看看";
+  const hasError = items.some((item) =>
+    (item.kind === "tool" && item.status === "error")
+    || (item.kind === "activity" && item.tools.some((tool) => tool.status === "error")),
+  );
+  if (hasError) return "有一步没完成，点开看看";
+  if (stale) return "上次停在这里";
+
+  if (!activeTurn) {
+    if (items.some((item) => item.kind === "activity")) return "momo 和小助手核对过";
+    if (items.some((item) => item.kind === "plan")) return "momo 梳理过步骤";
+    return "momo 刚把过程收好了";
+  }
+
+  const activeItem = [...items].reverse().find((item) =>
+    (item.kind === "tool" && item.status === "running")
+    || (item.kind === "activity" && item.tools.some((tool) => tool.status === "running"))
+    || (item.kind === "plan" && item.todos.some((todo) => todo.status === "active"))
+    || (item.kind === "thinking" && item.streaming),
+  );
+  if (!activeItem) return "momo 正在继续处理…";
+  if (activeItem.kind === "thinking") return "momo 正在想一想…";
+  if (activeItem.kind === "plan") return "momo 正在梳理步骤…";
+  if (activeItem.kind === "activity") return "momo 请了小助手一起核对…";
+  if (activeItem.kind === "tool") {
+    const name = activeItem.name.toLowerCase();
+    if (/read|grep|glob|notebook/.test(name)) return "momo 正在翻翻本子里的内容…";
+    if (/websearch|webfetch|browser|playwright|chrome/.test(name)) return "momo 正在查资料…";
+    if (/write|edit/.test(name)) return "momo 正在整理内容…";
+    if (/bash|powershell|shell|command/.test(name)) return "momo 正在运行检查…";
+    if (/task|agent/.test(name)) return "momo 请了小助手一起核对…";
+  }
+  return "momo 正在继续处理…";
+}
+
+function toolAction(name: string): string {
+  const lower = name.toLowerCase();
+  if (/websearch|webfetch|browser|playwright|chrome/.test(lower)) return "查询资料";
+  if (/grep|glob|search/.test(lower)) return "搜索内容";
+  if (/read|notebook/.test(lower)) return "读取资料";
+  if (/write|edit/.test(lower)) return "编辑文件";
+  if (/bash|powershell|shell|command/.test(lower)) return "执行命令";
+  if (/task|agent/.test(lower)) return "运行子任务";
+  return `运行 ${name}`;
+}
+
+function workbenchSummary(
+  items: TimelineItem[],
+  activeTurn: boolean,
+  stale: boolean,
+  outcome?: ProcessOutcome,
+): string {
+  const lastAction = [...items].reverse().find((item) =>
+    item.kind === "tool" || item.kind === "activity" || item.kind === "plan" || item.kind === "compact",
+  );
+  const pending = [...items].reverse().find((item) =>
+    (item.kind === "tool" && item.status === "running")
+    || (item.kind === "activity" && item.tools.some((tool) => tool.status === "running"))
+    || (item.kind === "plan" && item.todos.some((todo) => todo.status === "active")),
+  );
+  if (outcome === "interrupted" && pending) {
+    if (pending.kind === "tool") return `${toolAction(pending.name)}已停止`;
+    if (pending.kind === "activity") return "子任务已停止";
+    return "计划更新已停止";
+  }
+  if (outcome === "error" && pending) {
+    if (pending.kind === "tool") return `${toolAction(pending.name)}未完成`;
+    if (pending.kind === "activity") return "子任务未完成";
+    return "计划更新未完成";
+  }
+  const failed = [...items].reverse().find((item) =>
+    (item.kind === "tool" && item.status === "error")
+    || (item.kind === "activity" && item.tools.some((tool) => tool.status === "error")),
+  );
+  if (failed?.kind === "tool") return `${toolAction(failed.name)}未完成`;
+  if (failed?.kind === "activity") return "子任务未完成";
+  // With no concrete action status to preserve, the terminal event is the only
+  // trustworthy description of what happened to the process block.
+  if (!lastAction && outcome === "interrupted") return "处理过程已停止";
+  if (!lastAction && outcome === "error") return "处理过程未完成";
+  if (stale) return "上次停在这里";
+
+  if (activeTurn) {
+    const activeItem = [...items].reverse().find((item) =>
+      (item.kind === "tool" && item.status === "running")
+      || (item.kind === "activity" && item.tools.some((tool) => tool.status === "running"))
+      || (item.kind === "plan" && item.todos.some((todo) => todo.status === "active"))
+      || (item.kind === "thinking" && item.streaming),
+    );
+    if (activeItem?.kind === "tool") return `正在${toolAction(activeItem.name)}`;
+    if (activeItem?.kind === "activity") return "正在运行子任务";
+    if (activeItem?.kind === "plan") return "正在更新计划";
+    if (activeItem?.kind === "thinking") return "正在思考";
+    return "正在继续处理";
+  }
+
+  if (lastAction?.kind === "tool") return `${toolAction(lastAction.name)}已完成`;
+  if (lastAction?.kind === "activity") return "子任务已完成";
+  if (lastAction?.kind === "plan") return "计划已更新";
+  if (lastAction?.kind === "compact") return "上下文已整理";
+  return "处理过程已完成";
+}
+
+export default function ProcessFold({
+  items,
+  defaultCollapsed,
+  runId,
+  density = "workbench",
+  active = true,
+  archivedContent,
+  archivedCount = 0,
+  summaryOverride,
+  outcome,
+  stale: staleOverride,
+}: {
+  items: TimelineItem[];
+  defaultCollapsed: boolean;
+  runId: string;
+  density?: ProcessDensity;
+  active?: boolean;
+  archivedContent?: ReactNode;
+  archivedCount?: number;
+  summaryOverride?: string;
+  /** Trust the turn terminal event over a tool card's last local status. */
+  outcome?: ProcessOutcome;
+  /** Explicit false lets a terminal result win even if a tool-finished event
+   * was lost. Direct card fixtures can omit it and infer stale running work. */
+  stale?: boolean;
+}) {
+  const [collapsed, setCollapsed] = useState(defaultCollapsed);
+  const [prevDefault, setPrevDefault] = useState(defaultCollapsed);
+  if (defaultCollapsed !== prevDefault) {
+    setPrevDefault(defaultCollapsed);
+    setCollapsed(defaultCollapsed);
+  }
+  const totalSteps = items.length + archivedCount;
+  if (totalSteps === 0) return null;
+  const buddy = density === "buddy";
+  const stale = staleOverride ?? (!active && hasStaleWork(items));
+  const summary = summaryOverride ?? (buddy
+    ? buddySummary(items, active, stale, outcome)
+    : workbenchSummary(items, active, stale, outcome));
+  return (
+    <div
+      data-testid="process-fold"
+      className={buddy
+        ? "my-1 overflow-hidden rounded-[8px]"
+        : "my-1.5 overflow-hidden rounded-[12px] border border-[var(--leemo-line-2)] bg-[var(--leemo-card)] leemo-card-shadow"}
+    >
+      <button
+        type="button"
+        aria-label={buddy ? undefined : `momo 的干活过程：${summary}，${totalSteps} 步`}
+        onClick={() => setCollapsed((v) => !v)}
+        className={buddy
+          ? "flex w-full items-center gap-2 px-1.5 py-1.5 text-left text-[12px] text-[var(--leemo-ink-3)] transition-colors hover:text-[var(--leemo-ink-2)]"
+          : "flex w-full items-center gap-2.5 px-3 py-2 text-left transition-colors hover:bg-[var(--leemo-panel)]"}
+      >
+        {buddy ? (
+          <>
+            <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--leemo-amber)]" aria-hidden />
+            <span className="min-w-0 truncate">{summary}</span>
+          </>
+        ) : (
+          <>
+            <span className="grid h-[26px] w-[26px] shrink-0 place-items-center rounded-[8px] bg-[var(--leemo-amber-bg)] text-[var(--leemo-amber)] ring-1 ring-[var(--leemo-amber-line)]">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round"
+                className="h-[14px] w-[14px]" aria-hidden>
+                <path d="M4 5h11" /><path d="M4 12h16" /><path d="M4 19h8" />
+              </svg>
+            </span>
+            <span className="min-w-0 truncate text-[12.5px] font-medium text-[var(--leemo-ink)]">{summary}</span>
+            <span className="text-[11px] text-[var(--leemo-ink-3)]">{totalSteps} 步</span>
+            {archivedCount > 0 && (
+              <span className="text-[11px] text-[var(--leemo-ink-3)]">含 {archivedCount} 条确认记录</span>
+            )}
+          </>
+        )}
+        <span className="ml-auto flex shrink-0 items-center gap-1 text-[11.5px] text-[var(--leemo-ink-3)]">
+          {!buddy && (collapsed ? "展开" : "收起")}
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round"
+            className={`h-[13px] w-[13px] transition-transform ${collapsed ? "" : "rotate-180"}`} aria-hidden>
+            <path d="m6 9.2 6 6 6-6" />
+          </svg>
+        </span>
+      </button>
+      {!collapsed && (
+        <div className="space-y-1.5 border-t border-[var(--leemo-line-2)] bg-[var(--leemo-panel)]/40 px-3 py-2.5">
+          {items.map((item) => renderProcess(item, runId, density, stale))}
+          {archivedContent}
+        </div>
+      )}
+    </div>
+  );
+}

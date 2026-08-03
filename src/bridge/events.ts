@@ -43,10 +43,35 @@ export interface PathClaim {
   path: string;
   exists: boolean;
   withinCwd: boolean;
+  /** Present only when the surrounding prose asserted a completed write.
+   * Legacy records omitted this and may contain reference-only false alarms. */
+  writeClaim?: true;
 }
 
 export interface PathAudit {
   claimed: PathClaim[];
+}
+
+/** Renderer-safe memory identifiers. Paths and ledger internals never cross
+ * this boundary; a notebook scope is addressed only by its validated id. */
+export type MemoryScopeView =
+  | { type: "global" }
+  | { type: "notebook"; notebookId: string }
+  | { type: "workspace"; workspaceId: string };
+
+export type MemoryChangeAction =
+  | "remembered"
+  | "candidate"
+  | "confirmed"
+  | "updated"
+  | "removed"
+  | "pinned"
+  | "unpinned"
+  | "undone";
+
+export interface BrowserCaptureRef {
+  id: string;
+  mimeType: "image/png" | "image/jpeg";
 }
 
 // ---------------------------------------------------------------------------
@@ -59,12 +84,53 @@ export type LeemoEvent =
   | { type: "text.delta"; text: string }
   | { type: "thinking.delta"; text: string }
   | { type: "text.final"; text: string }
-  | { type: "tool.started"; toolUseId: string; name: string; input: unknown; subagent: boolean }
-  | { type: "tool.finished"; toolUseId: string; isError: boolean; contentSummary: string }
+  | { type: "tool.started"; toolUseId: string; name: string; input: unknown; subagent: boolean; parentToolUseId?: string }
+  | {
+      type: "tool.finished";
+      toolUseId: string;
+      isError: boolean;
+      contentSummary: string;
+      /** Opaque app-data filename for a browser screenshot. The image bytes
+       * stay out of renderer persistence and are fetched only when expanded. */
+      browserCapture?: BrowserCaptureRef;
+      parentToolUseId?: string;
+    }
   | { type: "subagent.activity"; parentToolUseId: string }
+  | { type: "subagent.output"; parentToolUseId: string; kind: "text" | "thinking"; text: string }
   | { type: "compact.boundary"; trigger: string; preTokens: number; postTokens?: number }
   | { type: "usage.final"; usage: UsageRecord }
-  | { type: "run.finished"; subtype: string; isError: boolean; finalText: string; pathAudit: PathAudit }
+  | {
+      type: "file.changed";
+      /** Friendly path shown to the user, relative to the current book/project. */
+      path: string;
+      /** Workspace-root-relative operand used by preview/reveal; never rendered. */
+      workspacePath?: string;
+      change: "added" | "modified" | "deleted";
+      /** Additional net changes intentionally left out of the expanded list. */
+      omitted?: number;
+    }
+  | {
+      type: "memory.changed";
+      changeId: string;
+      action: MemoryChangeAction;
+      label: string;
+      scope: MemoryScopeView;
+      /** Present only for an undo event. It points at the receipt that should
+       * change state instead of creating a second visible receipt. */
+      targetChangeId?: string;
+    }
+  /** `sessionId` (轮 2 卡 C) is the SDK session this round ran under. The
+   *  renderer persists it so a conversation re-claimed after a restart can be
+   *  resumed. Optional: pre-existing producers/fixtures omit it, and a stream
+   *  that never carried a session_id has none to report. */
+  | {
+      type: "run.finished";
+      subtype: string;
+      isError: boolean;
+      finalText: string;
+      pathAudit: PathAudit;
+      sessionId?: string;
+    }
   | { type: "error"; message: string };
 
 // ---------------------------------------------------------------------------
@@ -162,7 +228,68 @@ export function buildUsageRecord(usage: RawUsageLike, ctx: BuildUsageRecordCtx):
 // punctuation from each match. Kept intentionally simple (best-effort token
 // extraction, not a full grammar) — false negatives here just mean a claimed
 // path wasn't audited, not a wrong audit.
-const PATH_TOKEN_RE = /[A-Za-z]:[\\/][^\s`'"),;]+|(?:\.{1,2}\/)[^\s`'"),;]+|\/[^\s`'"),;]+/g;
+/**
+ * 轮 7 C6 —— URLs are not paths.
+ *
+ * Stripped BEFORE path matching because a URL contains two things that look
+ * exactly like paths: `https:` matches the Windows drive-letter shape (`s:` +
+ * `/`), and `//host/a/b` matches the POSIX absolute shape. Live-observed
+ * symptom: momo cites two sources and the user sees
+ *   `⚠ 声称写到工作区外：s://www.nobelprize.org/…、s://nerdsip.com/…`
+ * i.e. the most alarming element on screen is a parse artefact. Scrubbing first
+ * is simpler (and easier to reason about) than teaching one regex to know it is
+ * inside a URL.
+ */
+const URL_RE = /\b[a-z][a-z0-9+.-]*:\/\/\S+/gi;
+
+/**
+ * Path-like tokens in momo's prose. Three shapes, each anchored so it cannot
+ * start mid-token:
+ *   1. `C:\x` / `C:/x`      — drive-letter absolute. Lookbehind rejects a
+ *                             preceding letter/digit so `https:` cannot match.
+ *   2. `./x` / `../x`       — explicitly relative, only at a token boundary.
+ *   3. `/x/y`               — POSIX absolute, only at a token boundary.
+ *
+ * Shape 3's lookbehind is the other half of 轮 7 C6: without it, the `/` inside
+ * a plain relative path (`诊断/写文件测试.md`) matched, yielding the fragment
+ * `/写文件测试.md`, which resolves against the filesystem ROOT and was therefore
+ * reported as an escape — so a perfectly correct write raised a warning. Bare
+ * relative paths are otherwise not audited. Shape 2 covers an explicit token
+ * beginning with `.` or `..`; path expressions with traversal buried inside a
+ * longer relative token need a structured parser and stay unclassified rather
+ * than raising another fragment-based false warning.
+ *
+ * It is written as "not preceded by a word-ish char" (letters, digits, CJK, `_`,
+ * `.`, `-`) rather than "preceded by one of these openers": momo's prose wraps
+ * paths in backticks, quotes, brackets, CJK punctuation and plain spaces, and an
+ * opener allow-list silently stops auditing whenever it meets a new one — the
+ * failure direction there is a MISSED escape, which is the expensive one.
+ */
+const PATH_TOKEN_RE =
+  /(?<![A-Za-z0-9])[A-Za-z]:[\\/][^\s`'"),;]+|(?<![A-Za-z0-9一-鿿_.\\/\-])(?:\.{1,2}[\\/])[^\s`'"),;]+|(?<![A-Za-z0-9一-鿿_.\-])[\\/][^\s`'"),;]+/g;
+
+/** A path mention is not automatically a write claim. Plan mode often explains
+ * an internal plan-file path while explicitly saying it did not create the
+ * user's file; reference answers also say "see /path". Only completed write
+ * language should trigger the escape warning rendered as "声称写到工作区外". */
+const WRITE_CLAIM_RE =
+  /(?:已|已经|成功|刚刚|现已)?(?:写入|写到|写进|创建|新建|保存|生成|输出|导出|落盘|放在)|(?:文件|结果|产物|路径)(?:现在|位于|是在|在)|\b(?:wrote|written|created|saved|generated|output|exported|located\s+at)\b/i;
+
+/** Remove a nearby write verb when it is negated, hypothetical, planned, or an
+ * instruction. Keeping this separate from WRITE_CLAIM_RE makes the positive
+ * vocabulary auditable and prevents "不能创建 X" from matching "创建 X". */
+const NON_CLAIMED_WRITE_RE =
+  /(?:没有|并未|尚未|未曾|未能|不能|无法|不(?:会|能|允许)|禁止|只(?:能)?|请|需要|将(?:会)?|准备|计划|可以|应该|希望|尝试)[^，。！？；;\n]{0,24}(?:写入|写到|写进|创建|新建|保存|生成|输出|导出|落盘|编辑|修改)|\b(?:did\s+not|didn't|has\s+not|hasn't|cannot|can't|could\s+not|won't|unable\s+to|read[- ]only|plan(?:s|ned)?\s+to|need(?:s)?\s+to|will|should|please)\b[^,.!?;\n]{0,36}\b(?:write|wrote|create|save|generate|output|export|edit)\w*/gi;
+
+function hasWriteClaimContext(text: string, matchIndex: number, matchLength: number): boolean {
+  // Long enough for "已创建以下文件：" followed by a short path list, but short
+  // enough that an unrelated earlier write does not bless every path in a long
+  // answer. Sentence punctuation remains in the window and limits regex spans.
+  const start = Math.max(0, matchIndex - 180);
+  const end = Math.min(text.length, matchIndex + matchLength + 80);
+  const context = text.slice(start, end).replace(NON_CLAIMED_WRITE_RE, " ");
+  return WRITE_CLAIM_RE.test(context);
+}
 
 function stripWrappers(token: string): string {
   return token.replace(/[.,;:!?]+$/, "");
@@ -182,8 +309,13 @@ export function auditClaimedPaths(
   const seen = new Set<string>();
   const claimed: PathClaim[] = [];
 
-  const matches = finalText.match(PATH_TOKEN_RE) ?? [];
-  for (const raw of matches) {
+  // 轮 7 C6: scrub URLs first — see URL_RE. Replaced with a space (not "") so
+  // removal cannot fuse two neighbouring tokens into one bogus path.
+  const scrubbed = finalText.replace(URL_RE, " ");
+  const matches = scrubbed.matchAll(PATH_TOKEN_RE);
+  for (const match of matches) {
+    const raw = match[0];
+    if (!hasWriteClaimContext(scrubbed, match.index, raw.length)) continue;
     const token = stripWrappers(raw);
     if (!token || seen.has(token)) continue;
     seen.add(token);
@@ -199,7 +331,7 @@ export function auditClaimedPaths(
     const resolvedCwd = path.resolve(cwd);
     const withinCwd = resolved === resolvedCwd || resolved.startsWith(resolvedCwd + path.sep);
 
-    claimed.push({ path: token, exists, withinCwd });
+    claimed.push({ path: token, exists, withinCwd, writeClaim: true });
   }
 
   return { claimed };
@@ -215,6 +347,9 @@ export interface NormalizeCtx {
   cwd: string;
   pricing?: ModelPricing;
   existsSyncFn?: (p: string) => boolean;
+  /** Trusted Playwright output directory. Only screenshot paths contained by
+   * this directory may become renderer-visible opaque capture ids. */
+  browserOutputDir?: string;
 }
 
 // Structural shapes read off incoming messages. Kept local/minimal (not
@@ -231,6 +366,7 @@ interface ContentBlock {
   content?: unknown;
   is_error?: boolean;
   text?: string;
+  thinking?: string;
 }
 interface IncomingMsg extends SdkMessageLike {
   subtype?: string;
@@ -249,13 +385,90 @@ interface IncomingMsg extends SdkMessageLike {
   };
 }
 
-function contentSummaryOf(content: unknown): string {
-  if (typeof content === "string") return content;
-  try {
-    return JSON.stringify(content);
-  } catch {
-    return String(content);
+const MAX_TOOL_SUMMARY_CHARS = 12_000;
+const MAX_TOOL_SUMMARY_STRING_CHARS = 8_000;
+
+function shortenSummaryString(value: string): string {
+  if (/^data:[^;,]+;base64,/i.test(value)) {
+    return `[data URI omitted: ${value.length} characters]`;
   }
+  if (value.length <= MAX_TOOL_SUMMARY_STRING_CHARS) return value;
+  const omitted = value.length - MAX_TOOL_SUMMARY_STRING_CHARS;
+  return `${value.slice(0, MAX_TOOL_SUMMARY_STRING_CHARS)}… [tool output truncated: ${omitted} characters omitted]`;
+}
+
+function summarySafeValue(value: unknown, seen: WeakSet<object>): unknown {
+  if (typeof value === "string") return shortenSummaryString(value);
+  if (value === null || typeof value !== "object") return value;
+  if (seen.has(value)) return "[circular value omitted]";
+  seen.add(value);
+
+  if (Array.isArray(value)) return value.map((item) => summarySafeValue(item, seen));
+
+  const record = value as Record<string, unknown>;
+  const out: Record<string, unknown> = {};
+  for (const [key, item] of Object.entries(record)) {
+    if (key === "data" && typeof item === "string" && (record.type === "base64" || item.length > 1_024)) {
+      out[key] = `[${item.length} base64 characters omitted]`;
+    } else {
+      out[key] = summarySafeValue(item, seen);
+    }
+  }
+  return out;
+}
+
+/** Tool cards and notebook archives need a compact diagnostic, not the raw
+ * binary response. Browser screenshot tools can otherwise persist an entire
+ * base64 PNG into every renderer store, SQLite row and portable conversation
+ * archive. Keep useful text, redact binary payloads and put a hard ceiling on
+ * unusually large results. The SDK/model still receives the original result. */
+function contentSummaryOf(content: unknown): string {
+  try {
+    const safe = summarySafeValue(content, new WeakSet());
+    const summary = typeof safe === "string" ? safe : JSON.stringify(safe);
+    if (summary.length <= MAX_TOOL_SUMMARY_CHARS) return summary;
+    const suffix = "… [tool output truncated]";
+    return `${summary.slice(0, MAX_TOOL_SUMMARY_CHARS - suffix.length)}${suffix}`;
+  } catch {
+    return shortenSummaryString(String(content));
+  }
+}
+
+function browserCaptureOf(
+  content: unknown,
+  browserOutputDir: string | undefined,
+  cwd: string,
+): BrowserCaptureRef | undefined {
+  if (!browserOutputDir || !Array.isArray(content)) return undefined;
+  let mimeType: "image/png" | "image/jpeg" | undefined;
+  let text = "";
+  for (const item of content) {
+    if (!item || typeof item !== "object") continue;
+    const block = item as Record<string, unknown>;
+    if (block.type === "text" && typeof block.text === "string") text += `${block.text}\n`;
+    if (block.type !== "image") continue;
+    const direct = block.mimeType;
+    const source = block.source && typeof block.source === "object"
+      ? block.source as Record<string, unknown>
+      : undefined;
+    const candidate = typeof direct === "string" ? direct : source?.media_type;
+    if (candidate === "image/png" || candidate === "image/jpeg") mimeType = candidate;
+  }
+  const linked = /\[Screenshot[^\]]*\]\(([^)]+)\)/i.exec(text)?.[1];
+  if (!linked) return undefined;
+  const root = path.resolve(browserOutputDir);
+  // Playwright resolves a caller-supplied relative `filename` from the MCP
+  // process cwd, not from its transient output directory. Resolve the result
+  // the same way, then keep the private capture channel limited to files that
+  // are actually inside Leemo's controlled output root. Named workspace
+  // screenshots remain ordinary artifacts and are reported by file tracking.
+  const capturePath = path.resolve(cwd, linked);
+  const relative = path.relative(root, capturePath);
+  if (!relative || relative.startsWith("..") || path.isAbsolute(relative)) return undefined;
+  const id = path.basename(capturePath);
+  if (id !== relative || !/^[A-Za-z0-9._-]+\.(?:png|jpe?g)$/i.test(id)) return undefined;
+  mimeType ??= /\.jpe?g$/i.test(id) ? "image/jpeg" : "image/png";
+  return { id, mimeType };
 }
 
 /** Map one assistant/user message's content blocks to events. `parentToolUseId`
@@ -266,7 +479,9 @@ function contentSummaryOf(content: unknown): string {
  *  dual-naming quirk Phase 0 confirmed). */
 function* eventsFromContentBlocks(
   content: unknown,
-  parentToolUseId: string | null | undefined
+  parentToolUseId: string | null | undefined,
+  cwd: string,
+  browserOutputDir?: string,
 ): Generator<LeemoEvent> {
   const isSubagent = parentToolUseId != null && parentToolUseId !== "";
   if (isSubagent) {
@@ -277,20 +492,30 @@ function* eventsFromContentBlocks(
   for (const block of content as ContentBlock[]) {
     if (!block || typeof block !== "object") continue;
     if (block.type === "tool_use") {
-      yield {
+      const event: LeemoEvent = {
         type: "tool.started",
         toolUseId: block.id ?? "",
         name: block.name ?? "",
         input: block.input,
         subagent: isSubagent,
       };
+      if (isSubagent) event.parentToolUseId = parentToolUseId as string;
+      yield event;
     } else if (block.type === "tool_result") {
-      yield {
+      const event: LeemoEvent = {
         type: "tool.finished",
         toolUseId: block.tool_use_id ?? "",
         isError: block.is_error === true,
         contentSummary: contentSummaryOf(block.content),
       };
+      const browserCapture = browserCaptureOf(block.content, browserOutputDir, cwd);
+      if (browserCapture) event.browserCapture = browserCapture;
+      if (isSubagent) event.parentToolUseId = parentToolUseId as string;
+      yield event;
+    } else if (isSubagent && block.type === "thinking" && typeof block.thinking === "string") {
+      yield { type: "subagent.output", parentToolUseId: parentToolUseId as string, kind: "thinking", text: block.thinking };
+    } else if (isSubagent && block.type === "text" && typeof block.text === "string") {
+      yield { type: "subagent.output", parentToolUseId: parentToolUseId as string, kind: "text", text: block.text };
     }
     // block.type === 'text' (top-level assistant text block, not the
     // streamed stream_event delta) is intentionally NOT re-emitted as
@@ -316,6 +541,89 @@ function eventFromStreamEvent(msg: IncomingMsg): LeemoEvent | undefined {
   return undefined;
 }
 
+/** Translate execution-layer failures at the last boundary before they reach
+ * the renderer. Provider details remain actionable, but SDK/product internals
+ * must never become momo's voice or leak into the user-facing timeline. */
+export function toUserFacingRunError(error: unknown): string {
+  const raw = (error instanceof Error ? error.message : typeof error === "string" ? error : String(error ?? ""))
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!raw) return "任务运行失败，请重试。";
+
+  const unwrapped = raw
+    .replace(/^Claude Code returned an error result:\s*/i, "")
+    .trim();
+  const statusMatch = unwrapped.match(/(?:API\s+Error:\s*)?(\d{3})(?:\b|\D)/i);
+  const status = statusMatch?.[1];
+
+  if (status === "401" || status === "403") {
+    return `服务商拒绝了凭据（${status}）。请检查 API Key 或账号权限后重试。`;
+  }
+  if (status === "404") {
+    return "服务商找不到模型或接口（404）。请检查模型名称和接口地址后重试。";
+  }
+  if (status === "408" || /\b(?:ETIMEDOUT|timed?\s*out|timeout)\b/i.test(unwrapped)) {
+    return "服务商响应超时。请检查网络后重试，或换一个模型。";
+  }
+  if (status === "429" || /\brate[ -]?limit/i.test(unwrapped)) {
+    return "服务商请求过于频繁（429）。请稍后重试，或换一个模型。";
+  }
+  if (status) {
+    return `服务商返回错误（${status}）。请检查模型配置、接口地址或额度后重试。`;
+  }
+  if (/No conversation found with session ID/i.test(unwrapped)) {
+    return "上次会话上下文已失效，请重新发送；若仍失败，请新建对话。";
+  }
+  if (/Claude Code|Claude Agent SDK|CLAUDE_CODE_|ANTHROPIC_DEFAULT_/i.test(raw)) {
+    return "任务运行失败，请重试；若持续失败，请检查模型配置。";
+  }
+  if (/^API\s+Error\b/i.test(unwrapped)) {
+    return "服务商请求失败，请检查模型配置、接口地址或额度后重试。";
+  }
+  return Array.from(unwrapped).slice(0, 240).join("");
+}
+
+function* terminalEvents(
+  result: IncomingMsg | undefined,
+  ctx: NormalizeCtx,
+  sessionId: string | undefined,
+  streamError?: string,
+): Generator<LeemoEvent> {
+  const rawFinalText = result?.result ?? "";
+  const isError = streamError !== undefined || result?.is_error === true;
+  const rawError = streamError ?? (result?.is_error === true ? rawFinalText || "run failed" : undefined);
+  const errorMessage = rawError === undefined ? undefined : toUserFacingRunError(rawError);
+  // An execution error is status, not momo-authored content. Rendering the raw
+  // provider result as text.final creates a duplicate assistant bubble and
+  // makes SDK/provider wording look like momo said it.
+  const finalText = isError ? "" : rawFinalText;
+
+  if (errorMessage) yield { type: "error", message: errorMessage };
+  if (result?.usage) {
+    yield {
+      type: "usage.final",
+      usage: buildUsageRecord(result.usage, {
+        providerId: ctx.providerId,
+        modelId: ctx.modelId,
+        totalCostUsd: result.total_cost_usd,
+        durationMs: result.duration_ms,
+        pricing: ctx.pricing,
+      }),
+    };
+  }
+  if (finalText) yield { type: "text.final", text: finalText };
+
+  const finished: LeemoEvent = {
+    type: "run.finished",
+    subtype: streamError !== undefined ? "error" : result?.subtype ?? "",
+    isError,
+    finalText,
+    pathAudit: auditClaimedPaths(finalText, ctx.cwd, ctx.existsSyncFn),
+  };
+  if (sessionId) finished.sessionId = sessionId;
+  yield finished;
+}
+
 /**
  * Normalize a raw SDK message stream (B1's `ConversationHandle.send()` output
  * — passed through untouched) into `LeemoEvent`s the frontend renders
@@ -335,9 +643,19 @@ export async function* normalizeSdkStream(
   sdkMessages: AsyncIterable<SdkMessageLike>,
   ctx: NormalizeCtx
 ): AsyncIterable<LeemoEvent> {
+  // Last session id seen on ANY message this round. The result message normally
+  // carries it, but reading it off the whole stream keeps run.finished's
+  // sessionId correct even if a provider omits it there (轮 2 卡 C).
+  let sessionId: string | undefined;
+  // Agent SDK may emit an intermediate result while a background subagent is
+  // still attached to the SAME iterator. Only the final result at stream close
+  // ends the user turn; emitting run.finished early lets the next prompt race
+  // the still-running SDK session and misattributes the delayed child output.
+  let pendingResult: IncomingMsg | undefined;
   try {
     for await (const raw of sdkMessages) {
       const msg = raw as IncomingMsg;
+      if (typeof msg.session_id === "string" && msg.session_id) sessionId = msg.session_id;
 
       switch (msg.type) {
         case "system": {
@@ -366,41 +684,12 @@ export async function* normalizeSdkStream(
 
         case "assistant":
         case "user": {
-          yield* eventsFromContentBlocks(msg.message?.content, msg.parent_tool_use_id);
+          yield* eventsFromContentBlocks(msg.message?.content, msg.parent_tool_use_id, ctx.cwd, ctx.browserOutputDir);
           break;
         }
 
         case "result": {
-          const finalText = msg.result ?? "";
-          const isError = msg.is_error === true;
-
-          if (isError) {
-            yield { type: "error", message: finalText || "run failed" };
-          }
-
-          if (msg.usage) {
-            const usageRecord = buildUsageRecord(msg.usage, {
-              providerId: ctx.providerId,
-              modelId: ctx.modelId,
-              totalCostUsd: msg.total_cost_usd,
-              durationMs: msg.duration_ms,
-              pricing: ctx.pricing,
-            });
-            yield { type: "usage.final", usage: usageRecord };
-          }
-
-          if (finalText) {
-            yield { type: "text.final", text: finalText };
-          }
-
-          const pathAudit = auditClaimedPaths(finalText, ctx.cwd, ctx.existsSyncFn);
-          yield {
-            type: "run.finished",
-            subtype: msg.subtype ?? "",
-            isError,
-            finalText,
-            pathAudit,
-          };
+          pendingResult = msg;
           break;
         }
 
@@ -410,7 +699,13 @@ export async function* normalizeSdkStream(
           break;
       }
     }
+    if (pendingResult) yield* terminalEvents(pendingResult, ctx, sessionId);
   } catch (e) {
-    yield { type: "error", message: e instanceof Error ? e.message : String(e) };
+    yield* terminalEvents(
+      pendingResult,
+      ctx,
+      sessionId,
+      e instanceof Error ? e.message : String(e),
+    );
   }
 }

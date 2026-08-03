@@ -1,30 +1,94 @@
 {
   "name": "leemo",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "private": true,
   "type": "module",
+  "main": "dist-electron/main.mjs",
   "description": "Leemo — AI companion & workbench built on Claude Agent SDK",
+  "author": "Leemo",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/CheaperjamRen/leemo.git"
+  },
+  "homepage": "https://github.com/CheaperjamRen/leemo#readme",
+  "bugs": {
+    "url": "https://github.com/CheaperjamRen/leemo/issues"
+  },
+  "packageManager": "npm@11.13.0",
   "engines": {
-    "node": ">=18.0.0"
+    "node": ">=20.0.0"
   },
   "scripts": {
     "smoke": "node smoke/smoke-cc-sdk.mjs",
+    "smoke:workspace": "esbuild src/host/workspace.ts --bundle --platform=node --format=esm --outfile=dist-smoke/workspace.mjs --log-level=error && node scripts/smoke-workspace.mjs",
     "test": "vitest run",
-    "typecheck": "tsc -p tsconfig.vendor.json && tsc -p tsconfig.json",
-    "gateway:dev": "tsx src/gateway/dev.ts"
+    "typecheck": "tsc -p tsconfig.vendor.json && tsc -p tsconfig.json && tsc -p tsconfig.renderer.json",
+    "dev": "vite",
+    "build": "vite build",
+    "build:main": "node scripts/build-main.mjs",
+    "verify:bundled-skills": "node scripts/verify-bundled-skills.mjs",
+    "verify:office-bundle": "node scripts/verify-office-bundle.mjs",
+    "verify:office-bundle:optional": "node scripts/verify-office-bundle.mjs --optional",
+    "verify:office-runtime": "node scripts/verify-office-runtime.mjs",
+    "verify:english-learning": "node scripts/verify-english-learning.mjs",
+    "verify:computer-runtime": "node scripts/verify-computer-runtime.mjs",
+    "verify:computer-use": "node scripts/verify-computer-use.mjs",
+    "verify:packaged-computer-use": "node scripts/verify-packaged-computer-use.mjs",
+    "verify:local-provider": "node scripts/verify-local-provider.mjs",
+    "electron:dev": "node scripts/electron-dev.mjs",
+    "electron:pack:base": "npm run verify:bundled-skills && npm run verify:computer-runtime && npm run build && npm run build:main && electron-builder",
+    "electron:pack": "npm run verify:office-bundle:optional && npm run electron:pack:base",
+    "electron:pack:with-office": "npm run verify:office-bundle && npm run electron:pack:base",
+    "gateway:dev": "tsx src/gateway/dev.ts",
+    "bridge:dev": "tsx src/host/dev.ts"
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "0.3.210",
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "@playwright/mcp": "0.0.78",
+    "better-sqlite3": "^13.0.1",
     "gpt-tokenizer": "^3.4.0",
-    "json5": "^2.2.3",
-    "jsonrepair": "^3.15.0",
-    "uuid": "^14.0.1",
     "zod": "4.4.3"
   },
   "devDependencies": {
+    "@tailwindcss/vite": "^4.3.3",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
+    "@testing-library/user-event": "^14.6.1",
+    "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^26.1.1",
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
+    "@types/ws": "^8.18.1",
+    "@vitejs/plugin-react": "^4.7.0",
+    "docx": "^9.7.1",
+    "electron": "^43.2.0",
+    "electron-builder": "^26.15.3",
+    "esbuild": "^0.28.1",
+    "fast-xml-parser": "^5.10.1",
+    "fflate": "^0.8.3",
+    "jsdom": "^25.0.1",
+    "json5": "^2.2.3",
+    "jsonrepair": "^3.15.0",
+    "lucide-react": "^1.27.0",
+    "pdfjs-dist": "^5.4.394",
+    "pptxgenjs": "^4.0.1",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "react-markdown": "^10.1.0",
+    "remark-gfm": "^4.0.1",
+    "tailwindcss": "^4.3.3",
+    "ts-fsrs": "^5.4.1",
     "tsx": "^4.23.1",
     "typescript": "^5.9.3",
-    "vitest": "^4.1.10"
+    "uuid": "^14.0.1",
+    "vite": "^7.3.6",
+    "vitest": "^4.1.10",
+    "ws": "^8.21.1",
+    "zustand": "^5.0.14"
+  },
+  "overrides": {
+    "@hono/node-server": "2.0.12"
   }
 }

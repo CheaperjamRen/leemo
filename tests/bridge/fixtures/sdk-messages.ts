@@ -14,6 +14,7 @@ export interface TestMsg extends SdkMessageLike {
   message?: { role: string; content: unknown };
   result?: string;
   is_error?: boolean;
+  parent_tool_use_id?: string | null;
 }
 
 /** A one-turn stream: init → assistant text → success result, all sharing one

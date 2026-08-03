@@ -1,0 +1,20 @@
+{
+  "ResponseMetadata": {
+    "RequestId": "fixture-request"
+  },
+  "Result": {
+    "ResultCount": 2,
+    "WebResults": [
+      {
+        "Title": "豆包结果",
+        "Url": "https://example.com/doubao",
+        "Snippet": "可核验摘要",
+        "Content": "不应进入模型的全文"
+      },
+      {
+        "Title": "缺链接",
+        "Snippet": "必须丢弃"
+      }
+    ]
+  }
+}

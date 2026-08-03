@@ -1,0 +1,280 @@
+{
+  "version": 1,
+  "skills": {
+    "frontend-design": {
+      "displayName": "前端设计",
+      "description": "设计并实现有明确视觉方向、可用且不模板化的前端界面。",
+      "sourceLabel": "Anthropic 官方",
+      "sourceUrl": "https://github.com/anthropics/skills/tree/main/skills/frontend-design",
+      "repository": "anthropics/skills",
+      "revision": "b29e7cf65e5c",
+      "license": "Apache-2.0",
+      "category": "design",
+      "categoryLabel": "设计与创作"
+    },
+    "skill-creator": {
+      "displayName": "技能创建",
+      "description": "创建、改进并验证可真正改变 Agent 行为的技能。",
+      "sourceLabel": "Anthropic 官方",
+      "sourceUrl": "https://github.com/anthropics/skills/tree/main/skills/skill-creator",
+      "repository": "anthropics/skills",
+      "revision": "b29e7cf65e5c",
+      "license": "Apache-2.0",
+      "category": "developer",
+      "categoryLabel": "开发与扩展"
+    },
+    "web-artifacts-builder": {
+      "displayName": "网页应用构建",
+      "description": "构建包含多组件与交互的网页应用和 HTML 产物。",
+      "sourceLabel": "Anthropic 官方",
+      "sourceUrl": "https://github.com/anthropics/skills/tree/main/skills/web-artifacts-builder",
+      "repository": "anthropics/skills",
+      "revision": "b29e7cf65e5c",
+      "license": "Apache-2.0",
+      "category": "design",
+      "categoryLabel": "设计与创作"
+    },
+    "doc-coauthoring": {
+      "displayName": "文档共创",
+      "description": "通过梳理背景、迭代结构和读者验证共同完成文档。",
+      "sourceLabel": "Anthropic 官方",
+      "sourceUrl": "https://github.com/anthropics/skills/tree/main/skills/doc-coauthoring",
+      "repository": "anthropics/skills",
+      "revision": "b29e7cf65e5c",
+      "license": "Apache-2.0",
+      "category": "productivity",
+      "categoryLabel": "效率与协作"
+    },
+    "canvas-design": {
+      "displayName": "平面设计",
+      "description": "制作海报、视觉稿等静态平面设计，并检查最终成图。",
+      "sourceLabel": "Anthropic 官方",
+      "sourceUrl": "https://github.com/anthropics/skills/tree/main/skills/canvas-design",
+      "repository": "anthropics/skills",
+      "revision": "b29e7cf65e5c",
+      "license": "Apache-2.0",
+      "category": "design",
+      "categoryLabel": "设计与创作"
+    },
+    "theme-factory": {
+      "displayName": "主题设计",
+      "description": "为文档、网页和演示内容生成并应用一致的视觉主题。",
+      "sourceLabel": "Anthropic 官方",
+      "sourceUrl": "https://github.com/anthropics/skills/tree/main/skills/theme-factory",
+      "repository": "anthropics/skills",
+      "revision": "b29e7cf65e5c",
+      "license": "Apache-2.0",
+      "category": "design",
+      "categoryLabel": "设计与创作"
+    },
+    "brand-guidelines": {
+      "displayName": "品牌规范",
+      "description": "把品牌色、字体与视觉规范准确应用到各类产物。",
+      "sourceLabel": "Anthropic 官方",
+      "sourceUrl": "https://github.com/anthropics/skills/tree/main/skills/brand-guidelines",
+      "repository": "anthropics/skills",
+      "revision": "b29e7cf65e5c",
+      "license": "Apache-2.0",
+      "category": "design",
+      "categoryLabel": "设计与创作"
+    },
+    "algorithmic-art": {
+      "displayName": "算法艺术",
+      "description": "用可复现参数和交互控制创作 p5.js 算法艺术。",
+      "sourceLabel": "Anthropic 官方",
+      "sourceUrl": "https://github.com/anthropics/skills/tree/main/skills/algorithmic-art",
+      "repository": "anthropics/skills",
+      "revision": "b29e7cf65e5c",
+      "license": "Apache-2.0",
+      "category": "design",
+      "categoryLabel": "设计与创作"
+    },
+    "mcp-builder": {
+      "displayName": "MCP 构建",
+      "description": "设计、实现并评估可供 Agent 使用的 MCP 服务。",
+      "sourceLabel": "Anthropic 官方",
+      "sourceUrl": "https://github.com/anthropics/skills/tree/main/skills/mcp-builder",
+      "repository": "anthropics/skills",
+      "revision": "b29e7cf65e5c",
+      "license": "Apache-2.0",
+      "category": "developer",
+      "categoryLabel": "开发与扩展"
+    },
+    "webapp-testing": {
+      "displayName": "网页应用测试",
+      "description": "用浏览器操作和截图验证本地网页应用的功能与界面。",
+      "sourceLabel": "Anthropic 官方",
+      "sourceUrl": "https://github.com/anthropics/skills/tree/main/skills/webapp-testing",
+      "repository": "anthropics/skills",
+      "revision": "b29e7cf65e5c",
+      "license": "Apache-2.0",
+      "category": "developer",
+      "categoryLabel": "开发与扩展"
+    },
+    "slack-gif-creator": {
+      "displayName": "Slack 动图",
+      "description": "制作适合聊天场景、体积受控且播放流畅的 GIF 动图。",
+      "sourceLabel": "Anthropic 官方",
+      "sourceUrl": "https://github.com/anthropics/skills/tree/main/skills/slack-gif-creator",
+      "repository": "anthropics/skills",
+      "revision": "b29e7cf65e5c",
+      "license": "Apache-2.0",
+      "category": "content",
+      "categoryLabel": "内容创作"
+    },
+    "internal-comms": {
+      "displayName": "团队沟通",
+      "description": "起草周报、项目更新、FAQ 等清晰的团队沟通内容。",
+      "sourceLabel": "Anthropic 官方",
+      "sourceUrl": "https://github.com/anthropics/skills/tree/main/skills/internal-comms",
+      "repository": "anthropics/skills",
+      "revision": "b29e7cf65e5c",
+      "license": "Apache-2.0",
+      "category": "productivity",
+      "categoryLabel": "效率与协作"
+    },
+    "baoyu-format-markdown": {
+      "displayName": "Markdown 排版",
+      "description": "不改写原意，为 Markdown 补齐结构、重点与中英文排版。",
+      "sourceLabel": "社区精选",
+      "sourceUrl": "https://github.com/JimLiu/baoyu-skills/tree/main/skills/baoyu-format-markdown",
+      "repository": "JimLiu/baoyu-skills",
+      "revision": "6b7a2e417500561a5ecdd0b168332f4142584617",
+      "license": "MIT",
+      "category": "productivity",
+      "categoryLabel": "效率与协作"
+    },
+    "baoyu-markdown-to-html": {
+      "displayName": "Markdown 转网页",
+      "description": "把 Markdown 转成带主题、代码高亮和公式的 HTML。",
+      "sourceLabel": "社区精选",
+      "sourceUrl": "https://github.com/JimLiu/baoyu-skills/tree/main/skills/baoyu-markdown-to-html",
+      "repository": "JimLiu/baoyu-skills",
+      "revision": "6b7a2e417500561a5ecdd0b168332f4142584617",
+      "license": "MIT",
+      "category": "content",
+      "categoryLabel": "内容创作"
+    },
+    "baoyu-compress-image": {
+      "displayName": "图片压缩",
+      "description": "压缩图片并转换为 WebP、PNG 或 JPEG，减少文件体积。",
+      "sourceLabel": "社区精选",
+      "sourceUrl": "https://github.com/JimLiu/baoyu-skills/tree/main/skills/baoyu-compress-image",
+      "repository": "JimLiu/baoyu-skills",
+      "revision": "6b7a2e417500561a5ecdd0b168332f4142584617",
+      "license": "MIT",
+      "category": "content",
+      "categoryLabel": "内容创作"
+    },
+    "baoyu-url-to-markdown": {
+      "displayName": "网页转 Markdown",
+      "description": "抓取网页正文并整理成干净、可保存的 Markdown。",
+      "sourceLabel": "社区精选",
+      "sourceUrl": "https://github.com/JimLiu/baoyu-skills/tree/main/skills/baoyu-url-to-markdown",
+      "repository": "JimLiu/baoyu-skills",
+      "revision": "6b7a2e417500561a5ecdd0b168332f4142584617",
+      "license": "MIT",
+      "category": "research",
+      "categoryLabel": "研究与阅读"
+    },
+    "baoyu-image-gen": {
+      "displayName": "图片生成",
+      "description": "调用已配置的图片模型完成文生图、图生图和多轮修改。",
+      "sourceLabel": "社区精选",
+      "sourceUrl": "https://github.com/JimLiu/baoyu-skills/tree/main/skills/baoyu-image-gen",
+      "repository": "JimLiu/baoyu-skills",
+      "revision": "6b7a2e417500561a5ecdd0b168332f4142584617",
+      "license": "MIT",
+      "category": "content",
+      "categoryLabel": "内容创作"
+    },
+    "baoyu-slide-deck": {
+      "displayName": "幻灯片视觉稿",
+      "description": "规划内容与视觉风格，生成完整一致的幻灯片视觉稿。",
+      "sourceLabel": "社区精选",
+      "sourceUrl": "https://github.com/JimLiu/baoyu-skills/tree/main/skills/baoyu-slide-deck",
+      "repository": "JimLiu/baoyu-skills",
+      "revision": "6b7a2e417500561a5ecdd0b168332f4142584617",
+      "license": "MIT",
+      "category": "content",
+      "categoryLabel": "内容创作"
+    },
+    "baoyu-infographic": {
+      "displayName": "信息图",
+      "description": "根据信息结构选择版式，生成清晰专业的信息图。",
+      "sourceLabel": "社区精选",
+      "sourceUrl": "https://github.com/JimLiu/baoyu-skills/tree/main/skills/baoyu-infographic",
+      "repository": "JimLiu/baoyu-skills",
+      "revision": "6b7a2e417500561a5ecdd0b168332f4142584617",
+      "license": "MIT",
+      "category": "content",
+      "categoryLabel": "内容创作"
+    },
+    "baoyu-cover-image": {
+      "displayName": "封面图",
+      "description": "按文章主题与平台场景设计标题清晰的封面图。",
+      "sourceLabel": "社区精选",
+      "sourceUrl": "https://github.com/JimLiu/baoyu-skills/tree/main/skills/baoyu-cover-image",
+      "repository": "JimLiu/baoyu-skills",
+      "revision": "6b7a2e417500561a5ecdd0b168332f4142584617",
+      "license": "MIT",
+      "category": "content",
+      "categoryLabel": "内容创作"
+    },
+    "baoyu-article-illustrator": {
+      "displayName": "文章配图",
+      "description": "定位文章需要视觉解释的位置并生成风格一致的配图。",
+      "sourceLabel": "社区精选",
+      "sourceUrl": "https://github.com/JimLiu/baoyu-skills/tree/main/skills/baoyu-article-illustrator",
+      "repository": "JimLiu/baoyu-skills",
+      "revision": "6b7a2e417500561a5ecdd0b168332f4142584617",
+      "license": "MIT",
+      "category": "content",
+      "categoryLabel": "内容创作"
+    },
+    "baoyu-comic": {
+      "displayName": "知识漫画",
+      "description": "把知识内容改编成分镜清晰、风格一致的漫画。",
+      "sourceLabel": "社区精选",
+      "sourceUrl": "https://github.com/JimLiu/baoyu-skills/tree/main/skills/baoyu-comic",
+      "repository": "JimLiu/baoyu-skills",
+      "revision": "6b7a2e417500561a5ecdd0b168332f4142584617",
+      "license": "MIT",
+      "category": "content",
+      "categoryLabel": "内容创作"
+    },
+    "baoyu-xhs-images": {
+      "displayName": "小红书图文",
+      "description": "把内容整理成适合小红书阅读节奏的系列图文。",
+      "sourceLabel": "社区精选",
+      "sourceUrl": "https://github.com/JimLiu/baoyu-skills/tree/main/skills/baoyu-xhs-images",
+      "repository": "JimLiu/baoyu-skills",
+      "revision": "6b7a2e417500561a5ecdd0b168332f4142584617",
+      "license": "MIT",
+      "category": "content",
+      "categoryLabel": "内容创作"
+    },
+    "baoyu-post-to-wechat": {
+      "displayName": "发布到公众号",
+      "description": "通过浏览器把文章排版并发布到微信公众号后台。",
+      "sourceLabel": "社区精选",
+      "sourceUrl": "https://github.com/JimLiu/baoyu-skills/tree/main/skills/baoyu-post-to-wechat",
+      "repository": "JimLiu/baoyu-skills",
+      "revision": "6b7a2e417500561a5ecdd0b168332f4142584617",
+      "license": "MIT",
+      "category": "publishing",
+      "categoryLabel": "发布与运营"
+    },
+    "baoyu-post-to-x": {
+      "displayName": "发布到 X",
+      "description": "通过浏览器把文字、图片或长文发布到 X。",
+      "sourceLabel": "社区精选",
+      "sourceUrl": "https://github.com/JimLiu/baoyu-skills/tree/main/skills/baoyu-post-to-x",
+      "repository": "JimLiu/baoyu-skills",
+      "revision": "6b7a2e417500561a5ecdd0b168332f4142584617",
+      "license": "MIT",
+      "category": "publishing",
+      "categoryLabel": "发布与运营"
+    }
+  }
+}

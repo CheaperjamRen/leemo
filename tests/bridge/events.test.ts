@@ -165,6 +165,7 @@ describe("normalizeSdkStream — event-by-event mapping", () => {
       name: "Agent",
       subagent: true,
       input: { description: "sub-task" },
+      parentToolUseId: "toolu_parent_777",
     });
   });
 
@@ -189,6 +190,133 @@ describe("normalizeSdkStream — event-by-event mapping", () => {
     expect(finished[1].isError).toBe(true);
   });
 
+  it("keeps binary image payloads and oversized tool output out of persisted summaries", async () => {
+    const base64 = "A".repeat(120_000);
+    const messages = [{
+      type: "user",
+      session_id: "s-binary",
+      message: {
+        role: "user",
+        content: [{
+          type: "tool_result",
+          tool_use_id: "screenshot-1",
+          content: [
+            { type: "text", text: `saved ${"x".repeat(20_000)}` },
+            { type: "image", source: { type: "base64", media_type: "image/png", data: base64 } },
+          ],
+        }],
+      },
+    }] as TestMsgB2[];
+
+    const events = await drain(
+      normalizeSdkStream(fakeStream(messages), { providerId: "deepseek", modelId: "deepseek-chat", cwd: CWD }),
+    );
+    const finished = events.find((event) => event.type === "tool.finished");
+
+    expect(finished).toMatchObject({ type: "tool.finished", toolUseId: "screenshot-1", isError: false });
+    if (!finished || finished.type !== "tool.finished") throw new Error("missing tool.finished");
+    expect(finished.contentSummary).toContain("[120000 base64 characters omitted]");
+    expect(finished.contentSummary).not.toContain(base64.slice(0, 2_000));
+    expect(finished.contentSummary.length).toBeLessThanOrEqual(12_020);
+    expect(finished.contentSummary).toMatch(/output truncated/);
+  });
+
+  it("projects a browser screenshot as a bounded capture id without persisting image bytes", async () => {
+    const browserOutputDir = path.join(CWD, ".leemo-browser-output");
+    const capturePath = path.join(browserOutputDir, "page-2026-08-03T01-56-47-363Z.png");
+    const base64 = "A".repeat(20_000);
+    const messages = [{
+      type: "user",
+      session_id: "s-browser-capture",
+      message: {
+        role: "user",
+        content: [{
+          type: "tool_result",
+          tool_use_id: "screenshot-visible",
+          content: [
+            { type: "text", text: `### Result\n- [Screenshot of viewport](${capturePath})` },
+            { type: "image", source: { type: "base64", media_type: "image/png", data: base64 } },
+          ],
+        }],
+      },
+    }] as TestMsgB2[];
+
+    const events = await drain(normalizeSdkStream(fakeStream(messages), {
+      providerId: "deepseek",
+      modelId: "deepseek-chat",
+      cwd: CWD,
+      browserOutputDir,
+    }));
+    const finished = events.find((event) => event.type === "tool.finished");
+
+    expect(finished).toMatchObject({
+      type: "tool.finished",
+      browserCapture: { id: "page-2026-08-03T01-56-47-363Z.png", mimeType: "image/png" },
+    });
+    expect(JSON.stringify(finished)).not.toContain(base64.slice(0, 2_000));
+    expect(JSON.stringify(finished)).not.toContain(browserOutputDir);
+  });
+
+  it("projects Playwright's link-only screenshot result without requiring an inline image block", async () => {
+    const browserOutputDir = path.join(CWD, ".leemo-browser-output");
+    const capturePath = path.join(browserOutputDir, "page-link-only.jpeg");
+    const messages = [{
+      type: "user",
+      session_id: "s-browser-link-only",
+      message: {
+        role: "user",
+        content: [{
+          type: "tool_result",
+          tool_use_id: "screenshot-link-only",
+          content: [
+            { type: "text", text: `[Screenshot of viewport](${capturePath})` },
+          ],
+        }],
+      },
+    }] as TestMsgB2[];
+
+    const events = await drain(normalizeSdkStream(fakeStream(messages), {
+      providerId: "deepseek",
+      modelId: "deepseek-chat",
+      cwd: CWD,
+      browserOutputDir,
+    }));
+
+    expect(events.find((event) => event.type === "tool.finished")).toMatchObject({
+      type: "tool.finished",
+      browserCapture: { id: "page-link-only.jpeg", mimeType: "image/jpeg" },
+    });
+  });
+
+  it("does not expose a named workspace screenshot through the private capture channel", async () => {
+    const browserOutputDir = path.join(CWD, ".leemo-browser-output");
+    const messages = [{
+      type: "user",
+      session_id: "s-browser-workspace-shot",
+      message: {
+        role: "user",
+        content: [{
+          type: "tool_result",
+          tool_use_id: "workspace-screenshot",
+          content: [
+            { type: "text", text: "[Screenshot of viewport](./named-proof.png)" },
+          ],
+        }],
+      },
+    }] as TestMsgB2[];
+
+    const events = await drain(normalizeSdkStream(fakeStream(messages), {
+      providerId: "deepseek",
+      modelId: "deepseek-chat",
+      cwd: CWD,
+      browserOutputDir,
+    }));
+    const finished = events.find((event) => event.type === "tool.finished");
+
+    expect(finished).toMatchObject({ type: "tool.finished", toolUseId: "workspace-screenshot" });
+    expect(finished).not.toHaveProperty("browserCapture");
+  });
+
   it("subagent.activity carries the parentToolUseId", async () => {
     const msgs = fullTurnStream({
       sessionId: "s1",
@@ -206,6 +334,48 @@ describe("normalizeSdkStream — event-by-event mapping", () => {
     expect(activity).toHaveLength(2);
     expect(activity[0].parentToolUseId).toBe("toolu_parent_777");
     expect(activity[1].parentToolUseId).toBe("toolu_parent_777");
+  });
+
+  it("forwards subagent text and thinking under the exact parent tool", async () => {
+    const msgs = [{
+      type: "assistant",
+      session_id: "s1",
+      parent_tool_use_id: "agent-parent-1",
+      message: {
+        role: "assistant",
+        content: [
+          { type: "thinking", thinking: "先定位失败测试" },
+          { type: "text", text: "发现是路径断言写错了。" },
+        ],
+      },
+    }] as TestMsgB2[];
+
+    const events = await drain(
+      normalizeSdkStream(fakeStream(msgs), { providerId: "deepseek", modelId: "deepseek-chat", cwd: CWD }),
+    );
+
+    expect(events).toEqual([
+      { type: "subagent.activity", parentToolUseId: "agent-parent-1" },
+      { type: "subagent.output", parentToolUseId: "agent-parent-1", kind: "thinking", text: "先定位失败测试" },
+      { type: "subagent.output", parentToolUseId: "agent-parent-1", kind: "text", text: "发现是路径断言写错了。" },
+    ]);
+  });
+
+  it("keeps the parent id on subagent tool start and finish events", async () => {
+    const msgs = fullTurnStream({
+      sessionId: "s1",
+      toolUseId: "top",
+      subagentToolUseId: "agent-parent-2",
+      finalText: "ok",
+    });
+    const events = await drain(
+      normalizeSdkStream(fakeStream(msgs), { providerId: "deepseek", modelId: "deepseek-chat", cwd: CWD }),
+    );
+    const childStart = events.find((event) => event.type === "tool.started" && event.subagent);
+    const childFinish = events.find((event) => event.type === "tool.finished" && event.parentToolUseId);
+
+    expect(childStart).toMatchObject({ parentToolUseId: "agent-parent-2" });
+    expect(childFinish).toMatchObject({ parentToolUseId: "agent-parent-2" });
   });
 
   it("compact.boundary passes pre_tokens/post_tokens/trigger through as numbers, unmodified", async () => {
@@ -269,6 +439,55 @@ describe("normalizeSdkStream — event-by-event mapping", () => {
     expect(runFinished.isError).toBe(false);
   });
 
+  // 轮 2 卡 C — the renderer needs the session id to persist it, and the only
+  // channel that already crosses per round is run.finished. Adding an optional
+  // field there beats opening a new event/channel.
+  it("run.finished carries the round's sessionId so the renderer can persist it", async () => {
+    const msgs = fullTurnStream({
+      sessionId: "sess-persist-me",
+      toolUseId: "t1",
+      subagentToolUseId: "t2",
+      finalText: "ok",
+    });
+    const events = await drain(
+      normalizeSdkStream(fakeStream(msgs), { providerId: "deepseek", modelId: "deepseek-chat", cwd: CWD })
+    );
+    const runFinished = events.find((e) => e.type === "run.finished") as {
+      type: "run.finished";
+      sessionId?: string;
+    };
+    expect(runFinished.sessionId).toBe("sess-persist-me");
+  });
+
+  it("falls back to the session id seen earlier in the stream when the result message omits it", async () => {
+    const msgs: TestMsgB2[] = [
+      { type: "system", subtype: "init", session_id: "sess-from-init" },
+      { type: "result", subtype: "success", result: "done", is_error: false },
+    ];
+    const events = await drain(
+      normalizeSdkStream(fakeStream(msgs), { providerId: "deepseek", modelId: "deepseek-chat", cwd: CWD })
+    );
+    const runFinished = events.find((e) => e.type === "run.finished") as {
+      type: "run.finished";
+      sessionId?: string;
+    };
+    expect(runFinished.sessionId).toBe("sess-from-init");
+  });
+
+  it("omits sessionId entirely when no message in the stream carried one", async () => {
+    const msgs: TestMsgB2[] = [
+      { type: "result", subtype: "success", result: "done", is_error: false },
+    ];
+    const events = await drain(
+      normalizeSdkStream(fakeStream(msgs), { providerId: "deepseek", modelId: "deepseek-chat", cwd: CWD })
+    );
+    const runFinished = events.find((e) => e.type === "run.finished") as {
+      type: "run.finished";
+      sessionId?: string;
+    };
+    expect(runFinished.sessionId).toBeUndefined();
+  });
+
   it("usage.final wraps a UsageRecord built from result.usage", async () => {
     const msgs = fullTurnStream({
       sessionId: "s1",
@@ -310,7 +529,72 @@ describe("normalizeSdkStream — event-by-event mapping", () => {
     expect(errorEvent.message).toBe("execution failed: boom");
   });
 
-  it("an exception thrown BY the underlying iterable surfaces as a single error event with e.message, not a rejected promise", async () => {
+  it("turns an SDK-branded provider failure into one Leemo-facing error", async () => {
+    async function* failedProviderStream(): AsyncIterable<TestMsgB2> {
+      yield resultError("s-provider-error", "API Error: 400 upstream provider error (400)");
+      throw new Error(
+        "Claude Code returned an error result: API Error: 400 upstream provider error (400)",
+      );
+    }
+
+    const events = await drain(
+      normalizeSdkStream(failedProviderStream(), {
+        providerId: "custom-provider",
+        modelId: "mock-beta",
+        cwd: CWD,
+      }),
+    );
+
+    const visibleContent = events.filter((event) => event.type === "error" || event.type === "text.final");
+    expect(visibleContent).toEqual([{
+      type: "error",
+      message: "服务商返回错误（400）。请检查模型配置、接口地址或额度后重试。",
+    }]);
+    expect(JSON.stringify(events)).not.toMatch(/Claude Code|API Error/i);
+    expect(events.at(-1)).toMatchObject({
+      type: "run.finished",
+      subtype: "error",
+      isError: true,
+      finalText: "",
+    });
+  });
+
+  it("does not finish at an intermediate result while a background subagent stream is still open", async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    async function* backgroundAgentStream(): AsyncIterable<TestMsgB2> {
+      yield { type: "result", subtype: "success", result: "子 agent 已派出，等它完成", is_error: false };
+      await gate;
+      yield { type: "result", subtype: "success", result: "子 agent 最终结论", is_error: false };
+    }
+
+    const iterator = normalizeSdkStream(backgroundAgentStream(), {
+      providerId: "deepseek", modelId: "deepseek-chat", cwd: CWD,
+    })[Symbol.asyncIterator]();
+    let settled = false;
+    const first = iterator.next().then((value) => { settled = true; return value; });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(settled).toBe(false);
+
+    release();
+    const events: LeemoEvent[] = [];
+    const firstValue = await first;
+    if (!firstValue.done) events.push(firstValue.value);
+    while (true) {
+      const next = await iterator.next();
+      if (next.done) break;
+      events.push(next.value);
+    }
+
+    expect(events.filter((event) => event.type === "run.finished")).toEqual([
+      expect.objectContaining({ type: "run.finished", finalText: "子 agent 最终结论" }),
+    ]);
+    expect(events.filter((event) => event.type === "text.final")).toEqual([
+      { type: "text.final", text: "子 agent 最终结论" },
+    ]);
+  });
+
+  it("an exception thrown BY the underlying iterable surfaces as error + terminal event, not a stuck run", async () => {
     const boom = new Error("upstream socket reset");
     async function* throwingStream(): AsyncIterable<TestMsgB2> {
       yield { type: "system", subtype: "init", session_id: "s-throw", model: "x" };
@@ -320,8 +604,8 @@ describe("normalizeSdkStream — event-by-event mapping", () => {
       normalizeSdkStream(throwingStream(), { providerId: "deepseek", modelId: "deepseek-chat", cwd: CWD })
     );
     expect(events[0]).toEqual({ type: "conversation.started", sessionId: "s-throw" });
-    const errorEvent = events[events.length - 1] as { type: "error"; message: string };
-    expect(errorEvent).toEqual({ type: "error", message: "upstream socket reset" });
+    expect(events.at(-2)).toEqual({ type: "error", message: "upstream socket reset" });
+    expect(events.at(-1)).toMatchObject({ type: "run.finished", isError: true, subtype: "error" });
   });
 
   it("an exception of a non-Error shape (e.g. a thrown string) still yields a string message via String(e), never throws", async () => {
@@ -332,7 +616,10 @@ describe("normalizeSdkStream — event-by-event mapping", () => {
     const events = await drain(
       normalizeSdkStream(throwingStream(), { providerId: "deepseek", modelId: "deepseek-chat", cwd: CWD })
     );
-    expect(events).toEqual([{ type: "error", message: "raw string rejection" }]);
+    expect(events).toEqual([
+      { type: "error", message: "raw string rejection" },
+      expect.objectContaining({ type: "run.finished", isError: true, subtype: "error" }),
+    ]);
   });
 
   it("malformed stream_event (unexpected delta shape) is skipped defensively, not thrown", async () => {
@@ -355,7 +642,10 @@ describe("normalizeSdkStream — event-by-event mapping", () => {
     const existing = path.join(CWD, "sdk-messages.ts"); // real file in fixtures/
     const missing = path.join(CWD, "does-not-exist-xyz.ts");
     const outside = process.platform === "win32" ? "E:\\Users\\ghost\\made-up-dir" : "/root/made-up-dir";
-    const finalText = `See \`${existing}\` and \`${missing}\` and \`${outside}\`.`;
+    // Keep an explicit write claim next to every path. Worktree roots can be
+    // long enough that one verb at the start falls outside the auditor's
+    // deliberately bounded context window for the final path.
+    const finalText = `已写入 \`${existing}\`。已写入 \`${missing}\`。已写入 \`${outside}\`。`;
     const msgs = fullTurnStream({ sessionId: "s1", toolUseId: "t1", subagentToolUseId: "t2", finalText });
 
     const events = await drain(
@@ -370,8 +660,8 @@ describe("normalizeSdkStream — event-by-event mapping", () => {
     const missingClaim = claims.find((c) => c.path === missing);
     const outsideClaim = claims.find((c) => c.path === outside);
 
-    expect(existingClaim).toEqual({ path: existing, exists: true, withinCwd: true });
-    expect(missingClaim).toEqual({ path: missing, exists: false, withinCwd: true });
+    expect(existingClaim).toEqual({ path: existing, exists: true, withinCwd: true, writeClaim: true });
+    expect(missingClaim).toEqual({ path: missing, exists: false, withinCwd: true, writeClaim: true });
     expect(outsideClaim?.exists).toBe(false);
     expect(outsideClaim?.withinCwd).toBe(false);
   });
@@ -490,23 +780,88 @@ describe("buildUsageRecord — direct unit tests (no stream)", () => {
 
 describe("auditClaimedPaths — unit tests with injected existsSyncFn", () => {
   it("flags an existing path within cwd as exists:true, withinCwd:true", () => {
-    const audit = auditClaimedPaths("see `/work/proj/readme.md`", "/work/proj", (p) => p === "/work/proj/readme.md");
-    expect(audit.claimed).toEqual([{ path: "/work/proj/readme.md", exists: true, withinCwd: true }]);
+    const audit = auditClaimedPaths("已写入 `/work/proj/readme.md`", "/work/proj", (p) => p === "/work/proj/readme.md");
+    expect(audit.claimed).toEqual([{ path: "/work/proj/readme.md", exists: true, withinCwd: true, writeClaim: true }]);
   });
 
   it("flags a non-existent path within cwd as exists:false, withinCwd:true", () => {
-    const audit = auditClaimedPaths("see `/work/proj/ghost.md`", "/work/proj", () => false);
-    expect(audit.claimed).toEqual([{ path: "/work/proj/ghost.md", exists: false, withinCwd: true }]);
+    const audit = auditClaimedPaths("已写入 `/work/proj/ghost.md`", "/work/proj", () => false);
+    expect(audit.claimed).toEqual([{ path: "/work/proj/ghost.md", exists: false, withinCwd: true, writeClaim: true }]);
   });
 
   it("flags a path outside cwd as withinCwd:false (Phase 0 escape signal), regardless of existsSyncFn", () => {
-    const audit = auditClaimedPaths("see `/etc/passwd`", "/work/proj", () => true);
-    expect(audit.claimed).toEqual([{ path: "/etc/passwd", exists: true, withinCwd: false }]);
+    const audit = auditClaimedPaths("已写入 `/etc/passwd`", "/work/proj", () => true);
+    expect(audit.claimed).toEqual([{ path: "/etc/passwd", exists: true, withinCwd: false, writeClaim: true }]);
   });
 
   it("extracts Windows-style absolute paths too", () => {
     const audit = auditClaimedPaths("wrote to `E:\\Leemo\\out.txt`", "E:\\Leemo", (p) => p === "E:\\Leemo\\out.txt");
     expect(audit.claimed.some((c) => c.path === "E:\\Leemo\\out.txt" && c.withinCwd === true)).toBe(true);
+  });
+
+  // ── 轮 7 C6: two false positives observed on the real product ─────────────
+  //
+  // Both made a SUCCESSFUL turn display an alarming amber warning, which is
+  // worse than no warning at all: it trains the user to ignore the one signal
+  // that is supposed to mean "momo wrote somewhere it shouldn't".
+  it("does NOT treat cited URLs as claimed paths (轮 7 C6)", () => {
+    // Verbatim shape from the live run: momo answers with two source links and
+    // the user saw `⚠ 声称写到工作区外：s://www.nobelprize.org/…`, because
+    // `[A-Za-z]:` matched the `s:` of `https:`.
+    const text =
+      "来源：\n- https://www.nobelprize.org/prizes/about/prize-announcement-dates/\n- http://nerdsip.com/events/nobel-prize/";
+    const audit = auditClaimedPaths(text, "C:\\Users\\R\\Leemo", () => false);
+    expect(audit.claimed).toEqual([]);
+  });
+
+  it("does NOT flag the tail of a plain relative path as an escape (轮 7 C6)", () => {
+    // Live shape: momo correctly wrote `诊断/写文件测试-X.md` inside cwd, but the
+    // bare-slash branch captured the fragment `/写文件测试-X.md`, which resolves
+    // against the filesystem ROOT ⇒ reported as outside the workspace.
+    const audit = auditClaimedPaths(
+      "写完啦 ✅ 文件在 诊断/写文件测试-WT1.md，内容就是那一行。",
+      "C:\\Users\\R\\Leemo",
+      () => true,
+    );
+    expect(audit.claimed).toEqual([]);
+  });
+
+  it("does NOT interpret a display ellipsis as ../ traversal", () => {
+    // Packaged r9b live shape: momo shortened a real in-workspace path with
+    // `...\\home\\Leemo\\...`; the relative-path branch started at the last
+    // two dots and turned that harmless display abbreviation into `..\\home`.
+    const audit = auditClaimedPaths(
+      "文件已创建，当前目录为 ...\\home\\Leemo\\r9-continuity-s6jjyjo。",
+      "C:\\Users\\R\\AppData\\Local\\Temp\\leemo-e2e\\home\\Leemo\\r9-continuity-s6jjyjo",
+      () => true,
+    );
+    expect(audit.claimed).toEqual([]);
+  });
+
+  it("does NOT turn a plan-mode restriction or denied write into a write claim", () => {
+    const text =
+      "当前处于 plan mode，只能编辑计划文件 `E:\\Leemo\\.leemo-workspace\\data\\providers\\deepseek\\plans\\draft.md`，不能创建其他文件。我没有创建目标文件。";
+    const audit = auditClaimedPaths(text, "C:\\Users\\R\\Leemo\\诊断", () => false);
+    expect(audit.claimed).toEqual([]);
+  });
+
+  it("still catches a real escape stated as an absolute path", () => {
+    // The guarantee must survive the two fixes above — this is the Phase 0
+    // failure mode (model invents an absolute path outside cwd) and it is the
+    // entire reason the auditor exists.
+    const audit = auditClaimedPaths(
+      "已写入 /Users/AZ/advent.2024/probe.txt",
+      "C:\\Users\\R\\Leemo",
+      () => true,
+    );
+    expect(audit.claimed).toEqual([
+      { path: "/Users/AZ/advent.2024/probe.txt", exists: true, withinCwd: false, writeClaim: true },
+    ]);
+  });
+
+  it("still catches an escape stated with ../", () => {
+    const audit = auditClaimedPaths("写到 ../secret.txt 了", "C:\\Users\\R\\Leemo", () => true);
+    expect(audit.claimed.some((c) => c.path === "../secret.txt" && c.withinCwd === false)).toBe(true);
   });
 
   it("text with no path-like tokens yields an empty claimed list", () => {

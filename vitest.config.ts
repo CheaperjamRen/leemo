@@ -1,20 +1,35 @@
 import { defineConfig } from "vitest/config";
+import react from "@vitejs/plugin-react";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-// Mirror tsconfig paths so vitest resolves the same aliases as tsc.
-// forward slashes → cross-platform safe on Windows.
 const root = path.dirname(fileURLToPath(import.meta.url)).replace(/\\/g, "/");
 
 export default defineConfig({
-  resolve: {
-    alias: [
-      { find: /^@\//, replacement: `${root}/src/gateway/vendor/llms/src/` },
-      { find: /^@vendor\//, replacement: `${root}/src/gateway/vendor/` },
-      { find: /^@gateway\//, replacement: `${root}/src/gateway/` },
-    ],
-  },
   test: {
-    include: ["tests/**/*.test.ts"],
+    projects: [
+      {
+        // Existing node suite — behavior UNCHANGED (same include + aliases).
+        test: { name: "node", include: ["tests/**/*.test.ts"], environment: "node" },
+        resolve: {
+          alias: [
+            { find: /^@\//, replacement: `${root}/src/gateway/vendor/llms/src/` },
+            { find: /^@vendor\//, replacement: `${root}/src/gateway/vendor/` },
+            { find: /^@gateway\//, replacement: `${root}/src/gateway/` },
+          ],
+        },
+      },
+      {
+        // New renderer suite — jsdom.
+        plugins: [react()],
+        test: {
+          name: "renderer",
+          include: ["src/renderer/**/*.test.{ts,tsx}"],
+          environment: "jsdom",
+          setupFiles: ["src/renderer/test/setup.ts"],
+        },
+        resolve: { alias: [{ find: /^@renderer\//, replacement: `${root}/src/renderer/` }] },
+      },
+    ],
   },
 });

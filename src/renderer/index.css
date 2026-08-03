@@ -1,0 +1,25 @@
+@import "tailwindcss";
+@import "./design/tokens.css";
+@import "./design/effects.css";
+
+body {
+  margin: 0;
+  background: var(--leemo-bg);
+  color: var(--leemo-ink);
+  font-family: "PingFang SC", "Microsoft YaHei", system-ui, -apple-system, "Segoe UI", sans-serif;
+  letter-spacing: 0;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+button:not(:disabled),
+summary {
+  cursor: pointer;
+}

@@ -2,7 +2,7 @@ import { describe, it, expect, afterEach, vi } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { createBridge } from "../../src/bridge/pool";
+import { createBridge, PROCESS_TREE_STOP_RESULT_KEY } from "../../src/bridge/pool";
 import type { QueryParams, SdkMessageLike } from "../../src/bridge/pool";
 import { deepseekDirect, relay2Gateway, glmDirect } from "./fixtures/providers";
 import { oneTurnStream, type TestMsg } from "./fixtures/sdk-messages";
@@ -347,6 +347,92 @@ describe("pool — interrupt aborts the active round", () => {
     expect(second.length).toBeGreaterThan(0);
     expect(calls[1].options.resume).toBe("sess-r");
   });
+
+  it("is reusable immediately when an interrupted producer ignores abort, without late state or session clobber", async () => {
+    let releaseOld!: () => void;
+    let releaseNew!: () => void;
+    let markOldStarted!: () => void;
+    let markNewStarted!: () => void;
+    const oldGate = new Promise<void>((resolve) => { releaseOld = resolve; });
+    const newGate = new Promise<void>((resolve) => { releaseNew = resolve; });
+    const oldStarted = new Promise<void>((resolve) => { markOldStarted = resolve; });
+    const newStarted = new Promise<void>((resolve) => { markNewStarted = resolve; });
+    const calls: FakeCall[] = [];
+    const queryFn = async function* (params: QueryParams): AsyncIterable<SdkMessageLike> {
+      const index = calls.length;
+      calls.push({ prompt: params.prompt, options: params.options ?? {} });
+      if (index === 0) {
+        const messages = oneTurnStream("sess-old", "late old result");
+        yield messages[0];
+        markOldStarted();
+        // Model a provider/SDK iterator that does not settle when aborted.
+        await oldGate;
+        for (const message of messages.slice(1)) yield message;
+        return;
+      }
+      if (index === 1) {
+        const messages = oneTurnStream("sess-new", "new result");
+        yield messages[0];
+        markNewStarted();
+        await newGate;
+        for (const message of messages.slice(1)) yield message;
+        return;
+      }
+      for (const message of oneTurnStream("sess-new", "third result")) yield message;
+    };
+    const bridge = createBridge({ queryFn, dataDir: freshDataDir() });
+    const convo = bridge.createConversation({
+      provider: deepseekDirect,
+      modelId: "deepseek-v4pro",
+    });
+
+    const oldDrain = drain(convo.send("first"));
+    await oldStarted;
+    convo.interrupt();
+    expect(convo.state).toBe("idle");
+
+    const newDrain = drain(convo.send("second"));
+    await newStarted;
+    expect(convo.state).toBe("running");
+
+    releaseOld();
+    await oldDrain;
+    expect(convo.state).toBe("running");
+    expect(() => convo.send("must still reject overlap")).toThrow("in progress");
+
+    releaseNew();
+    await newDrain;
+    expect(convo.state).toBe("idle");
+    await drain(convo.send("third"));
+    expect(calls[2].options.resume).toBe("sess-new");
+  });
+
+  it("latches an unconfirmed process-tree stop so repeated Stop cannot unlock the conversation", async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const queryFn = async function* (params: QueryParams): AsyncIterable<SdkMessageLike> {
+      const signal = params.options?.abortController?.signal;
+      signal?.addEventListener("abort", () => {
+        (signal as AbortSignal & { [PROCESS_TREE_STOP_RESULT_KEY]?: boolean })[PROCESS_TREE_STOP_RESULT_KEY] = false;
+      }, { once: true });
+      yield { type: "system", subtype: "init", session_id: "stop-failed" } as SdkMessageLike;
+      await gate;
+    };
+    const bridge = createBridge({ queryFn, dataDir: freshDataDir() });
+    const convo = bridge.createConversation({ provider: deepseekDirect, modelId: "deepseek-v4pro" });
+    const iterator = convo.send("first")[Symbol.asyncIterator]();
+    await iterator.next();
+
+    expect(convo.interrupt()).toBe(false);
+    expect(convo.state).toBe("running");
+    expect(convo.interrupt()).toBe(false);
+    expect(convo.state).toBe("running");
+    expect(() => convo.send("must stay locked")).toThrow("in progress");
+
+    release();
+    await iterator.next();
+    expect(convo.state).toBe("running");
+  });
 });
 
 // ---- dispose ---------------------------------------------------------------
@@ -429,14 +515,38 @@ describe("pool — mid-conversation model change takes effect next round", () =>
     await drain(convo.send("round 1"));
     expect(calls[0].options.env!.ANTHROPIC_MODEL).toBe("deepseek-v4pro");
 
-    convo.setModel("deepseek-v4flash");
+    convo.setModel(deepseekDirect, "deepseek-v4flash");
     await drain(convo.send("round 2"));
     expect(calls[1].options.env!.ANTHROPIC_MODEL).toBe("deepseek-v4flash");
-    expect(calls[1].options.env!.CLAUDE_CODE_SUBAGENT_MODEL).toBe(
-      "deepseek-v4flash"
-    );
+    expect(calls[1].options.env).not.toHaveProperty("CLAUDE_CODE_SUBAGENT_MODEL");
     // Round 1's captured env is untouched (no retroactive mutation).
     expect(calls[0].options.env!.ANTHROPIC_MODEL).toBe("deepseek-v4pro");
+  });
+
+  it("switches provider and model together while preserving the resume chain", async () => {
+    const { queryFn, calls } = makeFakeQuery({
+      scripts: [
+        oneTurnStream("sess-switch", "deepseek answer"),
+        oneTurnStream("sess-switch", "glm answer"),
+      ],
+    });
+    const dataDir = freshDataDir();
+    const bridge = createBridge({ queryFn, dataDir });
+    const convo = bridge.createConversation({ provider: deepseekDirect, modelId: "deepseek-v4pro" });
+    await drain(convo.send("round 1"));
+
+    convo.setModel(glmDirect, "glm-4.7");
+    await drain(convo.send("round 2"));
+
+    expect(calls[1].options.env).toMatchObject({
+      ANTHROPIC_BASE_URL: glmDirect.baseUrl,
+      ANTHROPIC_AUTH_TOKEN: glmDirect.apiKey,
+      ANTHROPIC_MODEL: "glm-4.7",
+    });
+    expect(calls[1].options.resume).toBe("sess-switch");
+    expect(calls[1].options.env!.CLAUDE_CONFIG_DIR).toBe(
+      path.join(dataDir, "providers", deepseekDirect.id),
+    );
   });
 });
 
@@ -492,6 +602,309 @@ describe("pool — queryFn error propagation", () => {
       "upstream exploded mid-stream"
     );
     // finally ran despite the throw → conversation is reusable.
+    expect(convo.state).toBe("idle");
+  });
+});
+
+// ---- 轮 2 卡 C: caller-supplied id + resume start point ----------------------
+//
+// A conversation id is minted by the host and stored in SQLite by the renderer,
+// but the host's Map is pure memory: after a restart the renderer holds ids no
+// live Conversation answers to. The fix lets the host RE-CLAIM a persisted id
+// and hand the pool the persisted session id as the round-1 resume start.
+
+describe("pool — caller-supplied conversation id (卡 C)", () => {
+  it("adopts cfg.id verbatim instead of minting a new uuid", () => {
+    const { queryFn } = makeFakeQuery({ scripts: [oneTurnStream("s", "x")] });
+    const bridge = createBridge({ queryFn, dataDir: freshDataDir() });
+    const convo = bridge.createConversation({
+      provider: deepseekDirect,
+      modelId: "deepseek-v4pro",
+      id: "persisted-cid-42",
+    });
+    expect(convo.id).toBe("persisted-cid-42");
+  });
+
+  it("still mints a uuid when cfg.id is omitted (unchanged default)", () => {
+    const { queryFn } = makeFakeQuery({ scripts: [oneTurnStream("s", "x")] });
+    const bridge = createBridge({ queryFn, dataDir: freshDataDir() });
+    const a = bridge.createConversation({ provider: deepseekDirect, modelId: "deepseek-v4pro" });
+    const b = bridge.createConversation({ provider: deepseekDirect, modelId: "deepseek-v4pro" });
+    expect(a.id).not.toBe(b.id);
+    expect(a.id).toMatch(/^[0-9a-f-]{36}$/);
+  });
+});
+
+describe("pool — cfg.resume seeds round 1 (卡 C)", () => {
+  it("carries cfg.resume on the FIRST round, then the newly captured session", async () => {
+    const { queryFn, calls } = makeFakeQuery({
+      scripts: [oneTurnStream("sess-new", "one"), oneTurnStream("sess-new", "two")],
+    });
+    const bridge = createBridge({ queryFn, dataDir: freshDataDir() });
+    const convo = bridge.createConversation({
+      provider: deepseekDirect,
+      modelId: "deepseek-v4pro",
+      resume: "sess-from-sqlite",
+    });
+    await drain(convo.send("round 1"));
+    await drain(convo.send("round 2"));
+
+    expect(calls[0].options.resume).toBe("sess-from-sqlite");
+    expect(calls[1].options.resume).toBe("sess-new");
+  });
+});
+
+// ---- resume degradation (卡 C §7) ------------------------------------------
+//
+// The session transcript can be gone (cleared workspace, pruned by the SDK).
+// A claimed conversation's FIRST round must then degrade to a fresh session
+// rather than leave the user unable to send. The retry is only legal when the
+// failing round emitted NOTHING — a mid-stream retry would re-execute tools.
+
+describe("pool — resume failure degrades instead of killing the chat", () => {
+  /** queryFn that rejects ONE specific (stale) session id before emitting
+   *  anything, and otherwise plays a normal stream. Models the real SDK failure
+   *  when the resumed transcript no longer exists on disk. */
+  function makeResumeRejectingQuery(staleSessionId: string, script: TestMsg[]) {
+    const calls: FakeCall[] = [];
+    const queryFn = async function* (params: QueryParams): AsyncIterable<SdkMessageLike> {
+      calls.push({ prompt: params.prompt, options: params.options ?? {} });
+      if (params.options?.resume === staleSessionId) {
+        throw new Error(`No conversation found with session ID: ${staleSessionId}`);
+      }
+      for (const m of script) yield m;
+    };
+    return { queryFn, calls };
+  }
+
+  it("retries once WITHOUT resume when round 1 of a claimed conversation fails before emitting anything", async () => {
+    const { queryFn, calls } = makeResumeRejectingQuery("sess-that-no-longer-exists", oneTurnStream("sess-fresh", "hi again"));
+    const bridge = createBridge({ queryFn, dataDir: freshDataDir() });
+    const convo = bridge.createConversation({
+      provider: deepseekDirect,
+      modelId: "deepseek-v4pro",
+      resume: "sess-that-no-longer-exists",
+    });
+
+    const msgs = await drain(convo.send("still there?"));
+
+    expect(calls).toHaveLength(2);
+    expect(calls[0].options.resume).toBe("sess-that-no-longer-exists");
+    expect(calls[1].options.resume).toBeUndefined();
+    // The user's message still went through — amnesia beats a dead send button.
+    expect(msgs.map((m) => m.type)).toContain("result");
+    expect(convo.state).toBe("idle");
+  });
+
+  it("carries the RETRY's session id into the next round", async () => {
+    const { queryFn, calls } = makeResumeRejectingQuery("sess-gone", oneTurnStream("sess-fresh", "x"));
+    const bridge = createBridge({ queryFn, dataDir: freshDataDir() });
+    const convo = bridge.createConversation({
+      provider: deepseekDirect,
+      modelId: "deepseek-v4pro",
+      resume: "sess-gone",
+    });
+    await drain(convo.send("one"));
+    await drain(convo.send("two"));
+    expect(calls[2].options.resume).toBe("sess-fresh");
+  });
+
+  it("does NOT retry when the round already emitted an event (tools must not re-run)", async () => {
+    const calls: FakeCall[] = [];
+    const queryFn = async function* (params: QueryParams): AsyncIterable<SdkMessageLike> {
+      calls.push({ prompt: params.prompt, options: params.options ?? {} });
+      yield { type: "system", subtype: "init", session_id: "sess-partial" } as TestMsg;
+      throw new Error("died after the tool already ran");
+    };
+    const bridge = createBridge({ queryFn, dataDir: freshDataDir() });
+    const convo = bridge.createConversation({
+      provider: deepseekDirect,
+      modelId: "deepseek-v4pro",
+      resume: "sess-old",
+    });
+    await expect(drain(convo.send("go"))).rejects.toThrow("died after the tool already ran");
+    expect(calls).toHaveLength(1);
+    expect(convo.state).toBe("idle");
+  });
+
+  it("does NOT retry a conversation that was never claimed (no cfg.resume)", async () => {
+    const calls: FakeCall[] = [];
+    const queryFn = async function* (params: QueryParams): AsyncIterable<SdkMessageLike> {
+      calls.push({ prompt: params.prompt, options: params.options ?? {} });
+      throw new Error("upstream down");
+    };
+    const bridge = createBridge({ queryFn, dataDir: freshDataDir() });
+    const convo = bridge.createConversation({
+      provider: deepseekDirect,
+      modelId: "deepseek-v4pro",
+    });
+    await expect(drain(convo.send("go"))).rejects.toThrow("upstream down");
+    expect(calls).toHaveLength(1);
+  });
+
+  it("does NOT retry on round 2+, even after a claimed round 1 (the grant is one-shot)", async () => {
+    let call = 0;
+    const calls: FakeCall[] = [];
+    const queryFn = async function* (params: QueryParams): AsyncIterable<SdkMessageLike> {
+      calls.push({ prompt: params.prompt, options: params.options ?? {} });
+      if (call++ === 0) {
+        for (const m of oneTurnStream("sess-live", "ok")) yield m;
+        return;
+      }
+      throw new Error("round 2 upstream failure");
+    };
+    const bridge = createBridge({ queryFn, dataDir: freshDataDir() });
+    const convo = bridge.createConversation({
+      provider: deepseekDirect,
+      modelId: "deepseek-v4pro",
+      resume: "sess-old",
+    });
+    await drain(convo.send("one"));
+    await expect(drain(convo.send("two"))).rejects.toThrow("round 2 upstream failure");
+    expect(calls).toHaveLength(2);
+  });
+
+  it("does NOT retry when the failure came from the user interrupting", async () => {
+    const calls: FakeCall[] = [];
+    const queryFn = async function* (params: QueryParams): AsyncIterable<SdkMessageLike> {
+      calls.push({ prompt: params.prompt, options: params.options ?? {} });
+      const ac = params.options?.abortController;
+      await new Promise<void>((resolve) => {
+        if (!ac || ac.signal.aborted) return resolve();
+        ac.signal.addEventListener("abort", () => resolve(), { once: true });
+      });
+      throw new Error("AbortError");
+    };
+    const bridge = createBridge({ queryFn, dataDir: freshDataDir() });
+    const convo = bridge.createConversation({
+      provider: deepseekDirect,
+      modelId: "deepseek-v4pro",
+      resume: "sess-old",
+    });
+    const it = convo.send("go")[Symbol.asyncIterator]();
+    const pull = it.next();
+    await new Promise((r) => setTimeout(r, 5));
+    convo.interrupt();
+    await expect(pull).rejects.toThrow("AbortError");
+    // A user-initiated abort must not silently start a second, session-less run.
+    expect(calls).toHaveLength(1);
+  });
+
+  // ── The shape the REAL SDK actually produces ──────────────────────────────
+  //
+  // Probed live against DeepSeek with a bogus resume id (.leemo-workspace probe,
+  // see r2-c report): the stream does NOT throw before emitting. It yields ONE
+  // message — result / error_during_execution, "No conversation found with
+  // session ID: <id>" — and only then throws. A literal "failed before emitting
+  // anything" rule therefore never fires in production, which would leave the
+  // whole degradation path dead and the user unable to send.
+  //
+  // The invariant that actually matters is "nothing happened yet", not "no
+  // message arrived": a terminal error result is not an effect. Any message
+  // that is NOT an immediate error result (system:init, an assistant turn, a
+  // tool_use…) proves the round is live and permanently disarms the retry, so a
+  // round that ran tools can still never be replayed.
+  it("degrades on the REAL failure shape: an immediate error result, then a throw", async () => {
+    const calls: FakeCall[] = [];
+    const queryFn = async function* (params: QueryParams): AsyncIterable<SdkMessageLike> {
+      calls.push({ prompt: params.prompt, options: params.options ?? {} });
+      if (params.options?.resume === "sess-gone") {
+        yield {
+          type: "result",
+          subtype: "error_during_execution",
+          is_error: true,
+          result: "No conversation found with session ID: sess-gone",
+        } as TestMsg;
+        throw new Error("Claude Code returned an error result: No conversation found with session ID: sess-gone");
+      }
+      for (const m of oneTurnStream("sess-fresh", "hi again")) yield m;
+    };
+    const bridge = createBridge({ queryFn, dataDir: freshDataDir() });
+    const convo = bridge.createConversation({
+      provider: deepseekDirect,
+      modelId: "deepseek-v4pro",
+      resume: "sess-gone",
+    });
+
+    const msgs = await drain(convo.send("还记得吗"));
+
+    expect(calls).toHaveLength(2);
+    expect(calls[1].options.resume).toBeUndefined();
+    // The dead round's error result must NOT reach the renderer, or the user
+    // sees a red error card followed by the real answer.
+    expect(msgs.some((m) => (m as TestMsg).is_error === true)).toBe(false);
+    expect(msgs.map((m) => m.type)).toEqual(["system", "assistant", "result"]);
+  });
+
+  it("degrades when the dead round ENDS cleanly after its error result (no throw)", async () => {
+    const calls: FakeCall[] = [];
+    const queryFn = async function* (params: QueryParams): AsyncIterable<SdkMessageLike> {
+      calls.push({ prompt: params.prompt, options: params.options ?? {} });
+      if (params.options?.resume === "sess-gone") {
+        yield { type: "result", subtype: "error_during_execution", is_error: true, result: "No conversation found" } as TestMsg;
+        return;
+      }
+      for (const m of oneTurnStream("sess-fresh", "ok")) yield m;
+    };
+    const bridge = createBridge({ queryFn, dataDir: freshDataDir() });
+    const convo = bridge.createConversation({
+      provider: deepseekDirect, modelId: "deepseek-v4pro", resume: "sess-gone",
+    });
+    const msgs = await drain(convo.send("hi"));
+    expect(calls).toHaveLength(2);
+    expect(msgs.some((m) => (m as TestMsg).is_error === true)).toBe(false);
+  });
+
+  it("passes an error result straight through for a conversation that was never claimed", async () => {
+    // No degrade grant → no buffering, no swallowing: unchanged behaviour for
+    // every ordinary round in the app.
+    const queryFn = async function* (): AsyncIterable<SdkMessageLike> {
+      yield { type: "result", subtype: "error_during_execution", is_error: true, result: "upstream 500" } as TestMsg;
+    };
+    const bridge = createBridge({ queryFn, dataDir: freshDataDir() });
+    const convo = bridge.createConversation({ provider: deepseekDirect, modelId: "deepseek-v4pro" });
+    const msgs = await drain(convo.send("hi"));
+    expect(msgs).toHaveLength(1);
+    expect((msgs[0] as TestMsg).is_error).toBe(true);
+  });
+
+  it("does NOT swallow an error result that arrives AFTER the round did real work", async () => {
+    const calls: FakeCall[] = [];
+    const queryFn = async function* (params: QueryParams): AsyncIterable<SdkMessageLike> {
+      calls.push({ prompt: params.prompt, options: params.options ?? {} });
+      yield { type: "system", subtype: "init", session_id: "sess-live" } as TestMsg;
+      yield {
+        type: "assistant",
+        session_id: "sess-live",
+        message: { role: "assistant", content: [{ type: "tool_use", id: "t1", name: "Write", input: {} }] },
+      } as TestMsg;
+      yield { type: "result", subtype: "error_during_execution", is_error: true, result: "died late" } as TestMsg;
+    };
+    const bridge = createBridge({ queryFn, dataDir: freshDataDir() });
+    const convo = bridge.createConversation({
+      provider: deepseekDirect, modelId: "deepseek-v4pro", resume: "sess-old",
+    });
+    const msgs = await drain(convo.send("go"));
+    // A tool already ran: replaying the prompt would run it twice.
+    expect(calls).toHaveLength(1);
+    expect(msgs.map((m) => m.type)).toEqual(["system", "assistant", "result"]);
+    expect((msgs[2] as TestMsg).is_error).toBe(true);
+  });
+
+  it("propagates the retry's own failure (no infinite fallback loop)", async () => {
+    const calls: FakeCall[] = [];
+    const queryFn = async function* (params: QueryParams): AsyncIterable<SdkMessageLike> {
+      calls.push({ prompt: params.prompt, options: params.options ?? {} });
+      throw new Error("endpoint is simply down");
+    };
+    const bridge = createBridge({ queryFn, dataDir: freshDataDir() });
+    const convo = bridge.createConversation({
+      provider: deepseekDirect,
+      modelId: "deepseek-v4pro",
+      resume: "sess-old",
+    });
+    await expect(drain(convo.send("go"))).rejects.toThrow("endpoint is simply down");
+    expect(calls).toHaveLength(2);
     expect(convo.state).toBe("idle");
   });
 });

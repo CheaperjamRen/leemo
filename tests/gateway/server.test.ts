@@ -133,7 +133,8 @@ afterEach(async () => {
 async function makeRegistryAndGateway(
   mockUrl: string,
   logs: string[],
-  model = "deepseek-chat"
+  model = "deepseek-chat",
+  apiFormat: "openai" | "openai-responses" = "openai",
 ) {
   const registry = new ProviderRegistry({
     records: [
@@ -142,7 +143,7 @@ async function makeRegistryAndGateway(
         baseUrl: mockUrl,
         apiKey: REAL_KEY,
         model,
-        apiFormat: "openai",
+        apiFormat,
         opts: {},
       },
     ],
@@ -156,6 +157,54 @@ async function makeRegistryAndGateway(
 // ---- tests -----------------------------------------------------------------
 
 describe("gateway shell (G3)", () => {
+  it("serves a process-owned local hook on its exact path without provider auth", async () => {
+    const inputs: unknown[] = [];
+    const registry = new ProviderRegistry({ records: [] });
+    const hookPath = "/__leemo/hooks/tool-governance-test";
+    const hookOutput = {
+      hookSpecificOutput: {
+        hookEventName: "PreToolUse",
+        permissionDecision: "allow",
+        updatedInput: { file_path: "默认工作区/报告.md", content: "body" },
+      },
+    };
+    const gw = await startGateway(registry, {
+      hook: {
+        path: hookPath,
+        handle: (input) => {
+          inputs.push(input);
+          return hookOutput;
+        },
+      },
+    });
+    cleanups.push(() => gw.close());
+    const url = `http://127.0.0.1:${gw.port}`;
+    const input = {
+      hook_event_name: "PreToolUse",
+      tool_name: "Write",
+      tool_input: { file_path: "报告.md", content: "body" },
+      cwd: "/tmp/workspace",
+    };
+
+    const response = await fetch(`${url}${hookPath}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+    });
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual(hookOutput);
+    expect(inputs).toEqual([input]);
+
+    const wrongPath = await fetch(`${url}${hookPath}-other`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+    });
+    expect(wrongPath.status).toBe(404);
+    expect(inputs).toHaveLength(1);
+  });
+
   it("routes a placeholder token to the provider and returns an Anthropic message; real key ONLY in the upstream header (both header forms)", async () => {
     for (const headerForm of ["authorization", "x-api-key"] as const) {
       const logs: string[] = [];
@@ -182,8 +231,8 @@ describe("gateway shell (G3)", () => {
       // upstream got the REAL key in its Authorization header
       expect(mock.captured).toHaveLength(1);
       expect(mock.captured[0].authorization).toBe(`Bearer ${REAL_KEY}`);
-      // upstream got the provider's real model (not the claude- disguise)
-      expect(mock.captured[0].body.model).toBe("deepseek-chat");
+      // upstream got the exact task/conversation model with one disguise prefix removed
+      expect(mock.captured[0].body.model).toBe("sonnet-4-20250514");
       // response is a real Anthropic message, and carries NO real key
       const msg = JSON.parse(text);
       expect(msg.type).toBe("message");
@@ -191,6 +240,36 @@ describe("gateway shell (G3)", () => {
       // gateway logs (if any) carry NO real key
       expect(logs.join("\n")).not.toContain(REAL_KEY);
     }
+  });
+
+  it("routes Responses-native providers through /responses and translates the result", async () => {
+    const logs: string[] = [];
+    const mock = await startMock((_req, res) => sendJson(res, 200, {
+      id: "resp_mock",
+      model: "gpt-5.6-sol",
+      status: "completed",
+      output: [{ type: "message", content: [{ type: "output_text", text: "hello from Responses" }] }],
+      usage: { input_tokens: 7, output_tokens: 3 },
+    }));
+    cleanups.push(mock.close);
+    const { url } = await makeRegistryAndGateway(mock.url, logs, "gpt-5.6-sol", "openai-responses");
+
+    const resp = await fetch(`${url}/v1/messages`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: "Bearer leemo-gw:p1" },
+      body: JSON.stringify({
+        model: "claude-gpt-5.6-sol",
+        max_tokens: 64,
+        messages: [{ role: "user", content: "hi" }],
+      }),
+    });
+    const body = await resp.json() as any;
+
+    expect(resp.status).toBe(200);
+    expect(mock.captured[0].path).toBe("/responses");
+    expect(mock.captured[0].body).toMatchObject({ model: "gpt-5.6-sol", max_output_tokens: 64, store: false });
+    expect(body.content).toEqual([{ type: "text", text: "hello from Responses" }]);
+    expect(body.usage).toMatchObject({ input_tokens: 7, output_tokens: 3 });
   });
 
   it("beta=true query does not break routing (still classified as messages)", async () => {

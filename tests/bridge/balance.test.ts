@@ -121,6 +121,73 @@ describe("fetchBalance — unsupported providers", () => {
     expect(info.supported).toBe(false);
     expect(called).toBe(false);
   });
+
+  it("通义/百炼 has no public balance API → supported:false, no call", async () => {
+    let called = false;
+    const fetchFn = (async () => {
+      called = true;
+      return { ok: true, status: 200, json: async () => ({}) } as unknown as Response;
+    }) as unknown as typeof fetch;
+    const info = await fetchBalance(
+      { id: "qwen", kind: "qwen", apiFormat: "anthropic", baseUrl: "https://dashscope.aliyuncs.com/apps/anthropic", apiKey: "sk-test-qwen" },
+      { fetchFn }
+    );
+    expect(info.supported).toBe(false);
+    expect(called).toBe(false);
+  });
+});
+
+describe("fetchBalance — dispatch is per FAMILY, not per instance (轮 3 卡 F)", () => {
+  it("a SECOND deepseek instance still reaches the deepseek fetcher", async () => {
+    // Regression guard: before 卡 F this dispatched on `id`, so a user's second
+    // account (`deepseek-work`) silently lost balance support.
+    const fetchFn = fakeFetchReturning({
+      is_available: true,
+      balance_infos: [
+        { currency: "CNY", total_balance: "12.34", granted_balance: "0.00", topped_up_balance: "12.34" },
+      ],
+    });
+    const info = await fetchBalance(
+      {
+        id: "deepseek-work",
+        kind: "deepseek",
+        apiFormat: "anthropic",
+        baseUrl: "https://api.deepseek.com",
+        apiKey: "sk-test-deepseek-second-account",
+      },
+      { fetchFn }
+    );
+    expect(info.supported).toBe(true);
+    expect(info.totalCny).toBe(12.34);
+  });
+
+  it("an unsupported family is unsupported for EVERY instance of it", async () => {
+    let called = false;
+    const fetchFn = (async () => {
+      called = true;
+      return { ok: true, status: 200, json: async () => ({}) } as unknown as Response;
+    }) as unknown as typeof fetch;
+    const info = await fetchBalance(
+      { id: "glm-personal", kind: "glm", apiFormat: "anthropic", baseUrl: "https://open.bigmodel.cn/api/anthropic", apiKey: "sk-test-glm-2" },
+      { fetchFn }
+    );
+    expect(info.supported).toBe(false);
+    expect(called).toBe(false);
+  });
+
+  it("falls back to id when kind is absent (pre-卡F callers keep working)", async () => {
+    const fetchFn = fakeFetchReturning({
+      is_available: true,
+      balance_infos: [
+        { currency: "CNY", total_balance: "5.00", granted_balance: "0.00", topped_up_balance: "5.00" },
+      ],
+    });
+    const info = await fetchBalance(
+      { id: "deepseek", apiFormat: "anthropic", baseUrl: "https://api.deepseek.com", apiKey: "sk-test-legacy" },
+      { fetchFn }
+    );
+    expect(info.supported).toBe(true);
+  });
 });
 
 describe("fetchBalance — Kimi", () => {

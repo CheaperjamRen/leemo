@@ -1,0 +1,17 @@
+{
+  "errCode": 0,
+  "data": {
+    "references": [
+      {
+        "title": "秘塔来源",
+        "url": "https://example.com/metaso",
+        "snippet": "来源摘要",
+        "content": "不应进入模型的全文"
+      },
+      {
+        "title": "缺链接的来源"
+      }
+    ],
+    "text": "上游生成的整段答案"
+  }
+}

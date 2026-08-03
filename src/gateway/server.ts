@@ -18,6 +18,7 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
 import { anthropicToOpenAI, openaiToAnthropicResponse, openaiToAnthropicStream } from "./core/translate";
+import { anthropicToResponses, responsesToAnthropicResponse, responsesToAnthropicStream } from "./core/responses";
 import { countTokens, classifyEndpoint } from "./core/tokens";
 import type { AnthropicChatRequest } from "./core/normalize";
 import { ProviderRegistry, type ResolvedProvider } from "./registry";
@@ -25,6 +26,16 @@ import { ProviderRegistry, type ResolvedProvider } from "./registry";
 export interface GatewayHandle {
   port: number;
   close: () => Promise<void>;
+}
+
+export interface GatewayHookRoute {
+  /** Exact, process-owned route. Callers should include an unguessable token. */
+  path: string;
+  handle: (input: unknown) => unknown | Promise<unknown>;
+}
+
+export interface GatewayOptions {
+  hook?: GatewayHookRoute;
 }
 
 const PLACEHOLDER_PREFIX = "leemo-gw:";
@@ -144,20 +155,28 @@ async function handleMessages(
   }
 
   const wantStream = anthropicReq.stream === true;
+  const useResponses = provider.apiFormat === "openai-responses";
 
   // ---- translate anthropic → openai (G2 core) ----
   let openaiBody;
   let stripped;
   try {
-    const out = await anthropicToOpenAI(anthropicReq, provider.opts);
+    const out = useResponses
+      ? anthropicToResponses(anthropicReq, provider.opts)
+      : await anthropicToOpenAI(anthropicReq, provider.opts);
     openaiBody = out.result;
     stripped = out.stripped;
   } catch (e) {
     sendError(res, 400, "invalid_request_error", `request translation failed: ${errMessage(e)}`);
     return;
   }
-  // upstream must receive the provider's REAL model, not the claude- disguise.
-  openaiBody.model = provider.model;
+  // buildConversationEnv disguises every raw model as `claude-<raw>` so the
+  // Claude SDK accepts third-party ids. Restore the exact conversation/role
+  // choice here; the registry model is only a compatibility fallback.
+  const disguisedModel = anthropicReq.model?.trim();
+  openaiBody.model = disguisedModel?.startsWith("claude-") && disguisedModel.length > "claude-".length
+    ? disguisedModel.slice("claude-".length)
+    : provider.model;
   if (stripped.length) {
     registry.logger.info(`stripped ${stripped.length} server tool(s): ${stripped.map((t) => t.name ?? t.type ?? "?").join(", ")}`);
   }
@@ -173,15 +192,15 @@ async function handleMessages(
     }
   });
 
-  const upstreamUrl = `${provider.baseUrl.replace(/\/+$/, "")}/chat/completions`;
+  const upstreamUrl = `${provider.baseUrl.replace(/\/+$/, "")}/${useResponses ? "responses" : "chat/completions"}`;
   let upstream: Response;
   try {
+    const upstreamHeaders = new Headers(provider.headers);
+    upstreamHeaders.set("Content-Type", "application/json");
+    upstreamHeaders.set("Authorization", `Bearer ${provider.apiKey}`);
     upstream = await fetch(upstreamUrl, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${provider.apiKey}`,
-      },
+      headers: upstreamHeaders,
       body: JSON.stringify(openaiBody),
       signal: ac.signal,
     });
@@ -222,7 +241,9 @@ async function handleMessages(
       return;
     }
     try {
-      const anthropicMsg = await openaiToAnthropicResponse(openaiJson);
+      const anthropicMsg = useResponses
+        ? responsesToAnthropicResponse(openaiJson)
+        : await openaiToAnthropicResponse(openaiJson);
       if (!res.headersSent) sendJson(res, 200, anthropicMsg);
     } catch (e) {
       if (!res.headersSent) sendError(res, 502, "api_error", `response translation failed: ${errMessage(e)}`);
@@ -237,10 +258,12 @@ async function handleMessages(
   }
   let converted: ReadableStream<Uint8Array>;
   try {
-    converted = await openaiToAnthropicStream(upstream.body as unknown as ReadableStream<Uint8Array>, {
-      request: anthropicReq,
-      opts: provider.opts,
-    });
+    converted = useResponses
+      ? responsesToAnthropicStream(upstream.body as unknown as ReadableStream<Uint8Array>, { signal: ac.signal })
+      : await openaiToAnthropicStream(upstream.body as unknown as ReadableStream<Uint8Array>, {
+          request: anthropicReq,
+          opts: provider.opts,
+        });
   } catch (e) {
     if (!res.headersSent) sendError(res, 502, "api_error", `stream translation failed: ${errMessage(e)}`);
     return;
@@ -304,7 +327,10 @@ function handleModels(res: ServerResponse, registry: ProviderRegistry): void {
   sendJson(res, 200, { data, has_more: false, first_id: data[0]?.id ?? null, last_id: data[data.length - 1]?.id ?? null });
 }
 
-export async function startGateway(registry: ProviderRegistry): Promise<GatewayHandle> {
+export async function startGateway(
+  registry: ProviderRegistry,
+  options: GatewayOptions = {},
+): Promise<GatewayHandle> {
   const server = createServer((req, res) => {
     const url = req.url ?? "/";
     const method = (req.method ?? "GET").toUpperCase();
@@ -312,6 +338,17 @@ export async function startGateway(registry: ProviderRegistry): Promise<GatewayH
 
     const run = async (): Promise<void> => {
       try {
+        if (options.hook !== undefined && method === "POST" && url === options.hook.path) {
+          let input: unknown;
+          try {
+            input = JSON.parse(await readBody(req)) as unknown;
+          } catch {
+            sendError(res, 400, "invalid_request_error", "invalid JSON body");
+            return;
+          }
+          sendJson(res, 200, (await options.hook.handle(input)) ?? {});
+          return;
+        }
         if (face.kind === "health" && method === "GET") {
           sendJson(res, 200, { status: "ok" });
           return;

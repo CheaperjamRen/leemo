@@ -25,9 +25,16 @@
  *  full shape (models/modelCapabilities/envTemplate etc. are irrelevant here). */
 export interface BalanceProviderLike {
   id: string;
-  apiFormat: "anthropic" | "openai";
+  apiFormat: "anthropic" | "openai" | "openai-responses";
   baseUrl: string;
   apiKey: string;
+  /** Provider FAMILY (轮 3 卡 F). Dispatch keys off this, falling back to `id`.
+   *
+   *  Since 卡 F, `id` is an INSTANCE id: a user's second DeepSeek account is
+   *  `deepseek-work`, which matches no fetcher — so dispatching on `id` alone
+   *  would silently drop balance support for every non-canonical instance.
+   *  Optional so existing callers (where id === kind) keep working unchanged. */
+  kind?: string;
 }
 
 export interface BalanceDeps {
@@ -170,7 +177,13 @@ async function fetchKimiBalance(
 /** Providers with NO documented public balance API. Explicit allow-listing
  *  (rather than "default to supported") means adding a new provider id never
  *  silently gains balance support — someone has to research it first. */
-const UNSUPPORTED: ReadonlySet<string> = new Set(["glm"]);
+const UNSUPPORTED: ReadonlySet<string> = new Set([
+  "glm",
+  // 通义/百炼 (轮 3 卡 F): no documented public balance endpoint — the console
+  // shows credit, the API does not expose it. Listed explicitly so a future
+  // reader sees this was researched, not overlooked.
+  "qwen",
+]);
 
 const FETCHERS: Record<string, (p: BalanceProviderLike, f: typeof fetch) => Promise<BalanceInfo>> = {
   deepseek: fetchDeepSeekBalance,
@@ -188,10 +201,12 @@ export async function fetchBalance(
   provider: BalanceProviderLike,
   deps: BalanceDeps
 ): Promise<BalanceInfo> {
-  if (UNSUPPORTED.has(provider.id)) {
+  // Family, not instance: `deepseek-work` must reach the deepseek fetcher.
+  const family = provider.kind ?? provider.id;
+  if (UNSUPPORTED.has(family)) {
     return { supported: false };
   }
-  const fetcher = FETCHERS[provider.id];
+  const fetcher = FETCHERS[family];
   if (!fetcher) {
     return { supported: false };
   }

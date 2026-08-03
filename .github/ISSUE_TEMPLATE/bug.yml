@@ -1,0 +1,68 @@
+name: Bug report
+description: Report a reproducible problem in a Leemo user journey.
+title: "[Bug]: "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: Do not include API keys, tokens, private files, or personal data.
+  - type: textarea
+    id: journey
+    attributes:
+      label: User journey
+      description: What were you trying to complete, and from which screen?
+      placeholder: I opened a notebook, attached a PDF, and asked momo to...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected result
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual result
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Reproduction steps
+      placeholder: |
+        1. Open...
+        2. Click...
+        3. Restart...
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version or commit
+      placeholder: 0.0.1 or git commit SHA
+    validations:
+      required: true
+  - type: input
+    id: windows
+    attributes:
+      label: Windows version
+      placeholder: Windows 11 24H2
+    validations:
+      required: true
+  - type: dropdown
+    id: restart
+    attributes:
+      label: Does it still happen after restarting Leemo?
+      options:
+        - Yes
+        - No
+        - Not tested
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Additional evidence
+      description: Add redacted logs or screenshots if they materially help.
+

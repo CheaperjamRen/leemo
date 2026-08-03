@@ -12,7 +12,9 @@ import {
   type UsageSummaryQuery,
   type BridgeInvokeMap,
   type BridgeEventMap,
+  type BridgeEventEnvelope,
   type CreateConversationRequest,
+  type SendRequest,
   type ConversationRef,
 } from "../../src/bridge/contract";
 
@@ -119,6 +121,83 @@ describe("contract — policy-driven approval types (07/21 B3 revision)", () => 
     expect(base.permissionMode).toBeUndefined();
     expect(overridden.permissionMode).toBe("bypassPermissions");
   });
+
+  it("CreateConversationRequest accepts OPTIONAL momo persona context (轮2卡A)", () => {
+    // Additive-only, per the Batch -1 precedent: every field is optional, so
+    // existing callers (wiki popup, fixtures, tests) keep compiling untouched.
+    const bare: CreateConversationRequest = { providerId: "deepseek", modelId: "deepseek-chat" };
+    const withPersona: CreateConversationRequest = {
+      providerId: "deepseek",
+      modelId: "deepseek-chat",
+      mode: "buddy",
+      personaText: "你是 momo。",
+      talkStyle: 2,
+      webSearchEnabled: false,
+    };
+    expect(bare.personaText).toBeUndefined();
+    expect(bare.mode).toBeUndefined();
+    expect(withPersona.mode).toBe("buddy");
+    expect(withPersona.talkStyle).toBe(2);
+    expect(withPersona.webSearchEnabled).toBe(false);
+    // personaText carries the RESOLVED card body, never a card id: the host has
+    // no persona-card registry, so an id would be unresolvable there.
+    expect(withPersona.personaText).toContain("momo");
+  });
+
+  it("CreateConversationRequest accepts OPTIONAL conversationId + resumeSessionId (轮2卡C)", () => {
+    // Restart continuity: the renderer re-claims a persisted conversation id
+    // (host Maps are memory-only) and hands back the persisted session id as
+    // the resume start point. Both optional — an ordinary create omits them.
+    const fresh: CreateConversationRequest = { providerId: "deepseek", modelId: "deepseek-chat" };
+    const reclaimed: CreateConversationRequest = {
+      providerId: "deepseek",
+      modelId: "deepseek-chat",
+      conversationId: "cid-from-sqlite",
+      resumeSessionId: "sess-from-sqlite",
+    };
+    expect(fresh.conversationId).toBeUndefined();
+    expect(fresh.resumeSessionId).toBeUndefined();
+    expect(reclaimed.conversationId).toBe("cid-from-sqlite");
+    expect(reclaimed.resumeSessionId).toBe("sess-from-sqlite");
+  });
+
+  it("SendRequest carries an optional renderer message id for memory provenance", () => {
+    const legacy: SendRequest = { conversationId: "c-1", prompt: "继续" };
+    const traced: SendRequest = {
+      conversationId: "c-1",
+      prompt: "记住我偏好先给结论",
+      sourceMessageId: "u7",
+    };
+    expect(legacy.sourceMessageId).toBeUndefined();
+    expect(traced.sourceMessageId).toBe("u7");
+  });
+
+  it("CreateConversationRequest constrains mode and talkStyle to their unions", () => {
+    // @ts-expect-error mode is the closed 搭子/工作台 pair.
+    const badMode: CreateConversationRequest = { providerId: "d", modelId: "m", mode: "kiosk" };
+    // @ts-expect-error talkStyle is the three-stop slider (1|2|3).
+    const badStyle: CreateConversationRequest = { providerId: "d", modelId: "m", talkStyle: 4 };
+    expect(badMode.mode).toBe("kiosk");
+    expect(badStyle.talkStyle).toBe(4);
+  });
+
+  it("CreateConversationRequest accepts main/wiki purpose metadata only", () => {
+    const main: CreateConversationRequest = {
+      providerId: "deepseek",
+      modelId: "deepseek-chat",
+      purpose: "main",
+    };
+    const wiki: CreateConversationRequest = {
+      providerId: "deepseek",
+      modelId: "deepseek-chat",
+      purpose: "wiki",
+    };
+    // @ts-expect-error purpose is a closed two-value metadata field.
+    const invalid: CreateConversationRequest = { providerId: "deepseek", modelId: "deepseek-chat", purpose: "other" };
+    expect(main.purpose).toBe("main");
+    expect(wiki.purpose).toBe("wiki");
+    expect(invalid).toBeDefined();
+  });
 });
 
 describe("contract — local no-key provider + NewMax capability axes (07/21)", () => {
@@ -188,6 +267,11 @@ describe("contract — channel table is frozen + payload types correspond 1:1", 
     expect(BRIDGE_CHANNELS.approvalRequest).toBe("bridge:approvalRequest");
     expect(BRIDGE_CHANNELS.askUser).toBe("bridge:askUser");
     expect(BRIDGE_CHANNELS.usageSummary).toBe("bridge:usageSummary");
+    expect(BRIDGE_CHANNELS.listWhitelist).toBe("bridge:listWhitelist");
+    expect(BRIDGE_CHANNELS.revokeWhitelist).toBe("bridge:revokeWhitelist");
+    expect(BRIDGE_CHANNELS.listMemory).toBe("bridge:listMemory");
+    expect(BRIDGE_CHANNELS.undoMemory).toBe("bridge:undoMemory");
+    expect(BRIDGE_CHANNELS.pickSkillSource).toBe("bridge:pickSkillSource");
   });
 
   it("every BRIDGE_CHANNELS value is a key in exactly one of the invoke/event maps", () => {
@@ -199,12 +283,50 @@ describe("contract — channel table is frozen + payload types correspond 1:1", 
       "bridge:send",
       "bridge:interrupt",
       "bridge:setModel",
+      "bridge:updateContext",
       "bridge:disposeConversation",
       "bridge:listProviders",
       "bridge:fetchBalance",
       "bridge:usageSummary",
+      "bridge:listWhitelist",
+      "bridge:revokeWhitelist",
       "bridge:approvalDecision",
       "bridge:askUserAnswer",
+      // 轮 2 卡 E
+      "bridge:listSkills",
+      "bridge:openSkillsDir",
+      "bridge:syncEnabledSkills",
+      "bridge:inspectSkillSource",
+      "bridge:pickSkillSource",
+      "bridge:installSkill",
+      "bridge:listCommunitySkills",
+      "bridge:installCommunitySkill",
+      "bridge:scanInstalledSkill",
+      "bridge:removeSkill",
+      // 轮 10 — governed memory management
+      "bridge:listMemory",
+      "bridge:updateMemory",
+      "bridge:deleteMemory",
+      "bridge:pinMemory",
+      "bridge:memoryHistory",
+      "bridge:undoMemory",
+      "bridge:openMemoryDir",
+      // 轮 4 卡 H — 搜索源 key
+      "bridge:getSearchSources",
+      "bridge:saveSearchKey",
+      "bridge:searchAcademic",
+      // 轮 7 — MCP + built-in browser
+      "bridge:listMcpServers",
+      "bridge:saveMcpServer",
+      "bridge:deleteMcpServer",
+      "bridge:testMcpServer",
+      "bridge:readBrowserCapture",
+      // 轮 3 卡 F — provider configuration
+      "bridge:getProviderConfig",
+      "bridge:saveProvider",
+      "bridge:deleteProvider",
+      "bridge:testConnection",
+      "bridge:listRemoteModels",
     ]);
     const eventKeys = new Set<keyof BridgeEventMap>([
       "bridge:event",
@@ -230,5 +352,34 @@ describe("contract — channel table is frozen + payload types correspond 1:1", 
     // CreateConversationRequest has no `apiKey` field — enforced structurally by
     // the type; asserted here for the reader.
     expect("apiKey" in req).toBe(false);
+  });
+
+  it("envelopes bridge:event once while keeping LeemoEvent semantic payloads bare", () => {
+    const envelope: BridgeEventEnvelope = {
+      conversationId: "conv-1",
+      event: { type: "text.delta", text: "hello" },
+    };
+    const payload: BridgeEventMap["bridge:event"] = envelope;
+    // @ts-expect-error bridge:event no longer accepts a naked LeemoEvent.
+    const legacyPayload: BridgeEventMap["bridge:event"] = { type: "text.delta", text: "hello" };
+    expect(payload.conversationId).toBe("conv-1");
+    expect(payload.event).toEqual({ type: "text.delta", text: "hello" });
+    expect(legacyPayload).toBeDefined();
+  });
+
+  it("adds whitelist list/revoke mappings with the existing RiskLevel", () => {
+    const listRequest: BridgeInvokeMap["bridge:listWhitelist"]["request"] = undefined;
+    const listResponse: BridgeInvokeMap["bridge:listWhitelist"]["response"] = [
+      { toolName: "Bash", risk: "dangerous" },
+    ];
+    const revokeRequest: BridgeInvokeMap["bridge:revokeWhitelist"]["request"] = {
+      toolName: "Bash",
+      risk: "dangerous",
+    };
+    const revokeResponse: BridgeInvokeMap["bridge:revokeWhitelist"]["response"] = undefined;
+    expect(listRequest).toBeUndefined();
+    expect(listResponse).toEqual([{ toolName: "Bash", risk: "dangerous" }]);
+    expect(revokeRequest).toEqual({ toolName: "Bash", risk: "dangerous" });
+    expect(revokeResponse).toBeUndefined();
   });
 });

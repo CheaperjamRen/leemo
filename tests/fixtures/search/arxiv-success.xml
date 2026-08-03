@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom" xmlns:atom="http://www.w3.org/2005/Atom" xmlns:arxiv="http://arxiv.org/schemas/atom">
+  <title>arXiv Query: search_query=all:active recall</title>
+  <entry>
+    <id>http://arxiv.org/abs/2401.12345v2</id>
+    <updated>2026-07-30T12:34:56Z</updated>
+    <published>2026-07-29T01:02:03Z</published>
+    <title>
+      Active Recall &amp; Spaced Repetition
+    </title>
+    <summary>
+      We compare &lt;retrieval&gt; practice
+      with passive review.
+    </summary>
+    <author><name>Alice Example</name></author>
+    <author><name>Bob Example</name></author>
+    <category term="cs.HC" scheme="http://arxiv.org/schemas/atom" />
+    <category term="cs.AI" scheme="http://arxiv.org/schemas/atom" />
+    <link href="https://arxiv.org/abs/2401.12345v2" rel="alternate" type="text/html" />
+    <link title="pdf" href="https://arxiv.org/pdf/2401.12345v2" rel="related" type="application/pdf" />
+  </entry>
+  <atom:entry>
+    <atom:id>https://arxiv.org/abs/2402.00001</atom:id>
+    <atom:title>Minimal Paper</atom:title>
+    <atom:summary>Short abstract.</atom:summary>
+    <atom:author><atom:name>Carol Example</atom:name></atom:author>
+    <atom:link href="https://arxiv.org/abs/2402.00001" rel="alternate" />
+  </atom:entry>
+</feed>
