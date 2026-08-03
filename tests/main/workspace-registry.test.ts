@@ -7,6 +7,7 @@ import {
   createWorkspaceRegistry,
   registerPickedWorkspace,
 } from "../../src/main/workspace-registry";
+import { expectSameExistingPath } from "../helpers/path-identity";
 
 const cleanup: string[] = [];
 
@@ -42,14 +43,15 @@ function fixture() {
 describe("WorkspaceRegistry", () => {
   it("always exposes the Leemo home workspace without persisting it as a recent external folder", () => {
     const f = fixture();
-    expect(f.registry.list()).toEqual([{
+    const [home] = f.registry.list();
+    expect(home).toMatchObject({
       id: HOME_WORKSPACE_ID,
       name: "Leemo",
-      displayPath: fs.realpathSync(f.homeRoot),
       kind: "home",
       available: true,
       lastOpenedAt: 0,
-    }]);
+    });
+    expectSameExistingPath(home?.displayPath, f.homeRoot);
     expect(fs.existsSync(f.registryFile)).toBe(false);
   });
 
@@ -63,11 +65,11 @@ describe("WorkspaceRegistry", () => {
     expect(first.id).not.toContain("毕业设计");
     expect(first).toMatchObject({
       name: "毕业设计",
-      displayPath: fs.realpathSync(f.externalRoot),
       kind: "external",
       available: true,
       lastOpenedAt: 100,
     });
+    expectSameExistingPath(first.displayPath, f.externalRoot);
     expect(f.registry.list().filter((entry) => entry.kind === "external")).toHaveLength(1);
     expect(fs.existsSync(path.join(f.externalRoot, ".leemo"))).toBe(false);
   });
@@ -95,7 +97,7 @@ describe("WorkspaceRegistry", () => {
     expect(() => f.registry.resolve(entry.id)).toThrow(/找不到这个工作区/);
 
     fs.renameSync(moved, f.externalRoot);
-    expect(f.registry.resolve(entry.id).root).toBe(fs.realpathSync(f.externalRoot));
+    expectSameExistingPath(f.registry.resolve(entry.id).root, f.externalRoot);
   });
 
   it("forget removes only the recent record and never deletes user files", () => {

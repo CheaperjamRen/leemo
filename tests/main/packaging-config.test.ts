@@ -47,13 +47,10 @@ describe("electron-builder 配置（原生件必须摊在 asar 外）", () => {
 
   it("复用 npm 已安装的 Electron 运行时，不在打包时重复联网下载", () => {
     expect(yml).toMatch(/electronDist:\s*node_modules\/electron\/dist/);
-    const dist = path.join(root, "node_modules", "electron", "dist");
-    expect(fs.existsSync(path.join(dist, "electron.exe"))).toBe(true);
-    const installedVersion = fs.readFileSync(path.join(dist, "version"), "utf8").trim();
     const packageJson = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8")) as {
-      devDependencies?: Record<string, string>;
+      scripts?: Record<string, string>;
     };
-    expect(installedVersion).toBe(packageJson.devDependencies?.electron?.replace(/^\D+/, ""));
+    expect(packageJson.scripts?.["electron:pack:base"]).toContain("verify:electron-runtime");
   });
 
   it("原生 CLI 的平台包在 asarUnpack 里", () => {

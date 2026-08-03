@@ -8,6 +8,7 @@ import {
   LEEMO_DOCUMENT_TOOL_NAMES,
 } from "../../src/bridge/document-mcp";
 import { LEEMO_DOCUMENT_CREATE_TOOL_NAMES } from "../../src/renderer/bridge/tool-names";
+import { expectSameExistingPath } from "../helpers/path-identity";
 
 const temporaryDirectories: string[] = [];
 
@@ -56,7 +57,8 @@ describe("document MCP", () => {
     });
 
     const output = path.join(cwd, "简历-修改版.docx");
-    expect(edited).toMatchObject({ isError: false, actualPath: output });
+    expect(edited).toMatchObject({ isError: false });
+    expectSameExistingPath(edited.actualPath, output);
     expect(edited.text).toContain("已修改 Word 文档副本");
     expect(edited.text).toContain("1 处");
     expect(fs.readFileSync(source)).toEqual(sourceBytes);
@@ -76,7 +78,8 @@ describe("document MCP", () => {
     const request = { file_path: "原稿.docx", replacements: [{ find: "原文", replace: "新文" }] };
 
     const explicit = await documents.runEditWordDocument({ ...request, output_path: "版本/第二版.docx" });
-    expect(explicit).toMatchObject({ isError: false, actualPath: path.join(cwd, "版本", "第二版.docx") });
+    expect(explicit).toMatchObject({ isError: false });
+    expectSameExistingPath(explicit.actualPath, path.join(cwd, "版本", "第二版.docx"));
     for (const output_path of [
       "原稿.docx",
       "已存在.docx",
@@ -127,7 +130,8 @@ describe("document MCP", () => {
       overwrite: false,
     });
     const expectedPath = path.join(root, "默认工作区", "英语周报.docx");
-    expect(created).toMatchObject({ isError: false, actualPath: expectedPath });
+    expect(created).toMatchObject({ isError: false });
+    expectSameExistingPath(created.actualPath, expectedPath);
     expect(fs.existsSync(expectedPath)).toBe(true);
 
     const read = await documents.runReadDocument({ file_path: path.join("默认工作区", "英语周报.docx") });

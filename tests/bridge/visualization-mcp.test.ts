@@ -8,6 +8,7 @@ import {
 } from "../../src/bridge/visualization-mcp";
 import type { VisualizationInput } from "../../src/bridge/visualization-spec";
 import { deriveArtifact } from "../../src/renderer/stores/artifacts";
+import { expectSameExistingPath } from "../helpers/path-identity";
 
 const temporaryDirectories: string[] = [];
 
@@ -52,7 +53,8 @@ describe("visualization MCP", () => {
     const result = await visualizations.runCreateVisualization(draft({ file_path: "复习趋势" }));
     const expectedPath = path.join(cwd, "复习趋势.html");
 
-    expect(result).toMatchObject({ isError: false, actualPath: expectedPath });
+    expect(result).toMatchObject({ isError: false });
+    expectSameExistingPath(result.actualPath, expectedPath);
     expect(result.text).toContain("已创建可视化成果");
     expect(result.text).not.toContain("<!doctype html>");
     expect(fs.readFileSync(expectedPath, "utf8")).toContain("data-kind=\"bar\"");
@@ -87,7 +89,7 @@ describe("visualization MCP", () => {
 
     expect(result.isError).toBe(false);
     expect(artifact).not.toBeNull();
-    expect(path.resolve(root, artifact!.path)).toBe(result.actualPath);
+    expectSameExistingPath(result.actualPath, path.resolve(root, artifact!.path));
   });
 
   it("routes a root artifact into the default workspace", async () => {
@@ -100,7 +102,8 @@ describe("visualization MCP", () => {
 
     const result = await visualizations.runCreateVisualization(draft({ file_path: "计划/本周.html" }));
     const expectedPath = path.join(root, "默认工作区", "计划", "本周.html");
-    expect(result).toMatchObject({ isError: false, actualPath: expectedPath });
+    expect(result).toMatchObject({ isError: false });
+    expectSameExistingPath(result.actualPath, expectedPath);
     expect(fs.existsSync(expectedPath)).toBe(true);
   });
 
