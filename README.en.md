@@ -1,136 +1,80 @@
 <div align="center">
   <img src=".github/assets/leemo-icon.svg" width="88" alt="Leemo" />
   <h1>Leemo</h1>
-  <p><strong>A local-first desktop AI agent that can think things through with you, work across files and tools, and carry the context forward.</strong></p>
+  <p><strong>An AI companion that can actually get things done on your computer.</strong></p>
+  <p>Think things through together, then turn them into real work.</p>
   <p>
+    <a href="https://github.com/CheaperjamRen/leemo/releases/latest"><strong>Download for Windows</strong></a> ·
     <a href="README.md">简体中文</a> ·
-    <a href="https://github.com/CheaperjamRen/leemo/releases/latest">Download for Windows</a> ·
-    <a href="#quick-start">Quick start</a> ·
-    <a href="#contributing">Contributing</a>
+    <a href="https://github.com/CheaperjamRen/leemo/issues">Report an issue</a>
   </p>
   <p>
-    <img alt="Windows" src="https://img.shields.io/badge/Windows-10%2F11-2f6feb?style=flat-square" />
-    <img alt="Early preview" src="https://img.shields.io/badge/status-early_preview-c2752c?style=flat-square" />
-    <a href="https://github.com/CheaperjamRen/leemo/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/CheaperjamRen/leemo/actions/workflows/ci.yml/badge.svg" /></a>
-    <a href="LICENSE"><img alt="Apache 2.0" src="https://img.shields.io/badge/license-Apache--2.0-3d6b57?style=flat-square" /></a>
+    <img alt="Windows 10/11" src="https://img.shields.io/badge/Windows-10%20%2F%2011-2563eb?style=flat-square" />
+    <img alt="Preview" src="https://img.shields.io/badge/release-preview-ea7c2b?style=flat-square" />
+    <a href="LICENSE"><img alt="Apache 2.0" src="https://img.shields.io/badge/license-Apache--2.0-3f7663?style=flat-square" /></a>
   </p>
 </div>
 
 ![Leemo companion mode](.github/assets/leemo-buddy.png)
 
-Leemo brings `momo`, a conversational companion, and a local workbench into one desktop app. You can talk through an idea or a decision, then open a real folder as a notebook and let the same agent read, search, edit, run tools, and preserve the context under an explicit permission boundary.
+Leemo brings `momo`, a companion that gets to know you, and a capable local AI agent into one desktop app.
 
-Leemo is not intended to be another chat wrapper. Its goal is to make a capable desktop agent approachable to people who do not live in a terminal, without taking away model choice, ownership of local files, or understandable control over actions.
+Start with a half-formed idea, then let momo continue inside a real folder. Or hand over a document, a goal, or a task and let Leemo research, organize, create useful output, and pick up the context again when you return days later.
 
-> [!IMPORTANT]
-> Leemo is an early, Windows-first preview. Download the installer from [Releases](https://github.com/CheaperjamRen/leemo/releases/latest), or run it from source. The installer does not yet have a commercial code-signing certificate, so Windows SmartScreen may warn; verify its SHA-256 against the release notes before running it.
+## One momo, two ways to work
 
-## What you can do with Leemo
+### Companion mode
 
-- **Think with momo**: untangle ideas, compare options, and work through learning or career decisions. momo can have a point of view without silently changing your request.
-- **Give the agent a real workspace**: create a notebook or attach an existing folder. Conversations, files, and project memory stay with that notebook.
-- **Finish local work**: read, search, create, and edit files; run commands; manage multi-step work; and review a compact file-change receipt when the job is done.
-- **Work with the web and research sources**: use web search, arXiv, Doubao Search, Metaso, Google, and controlled browser automation.
-- **Keep work moving on schedule**: create one-off, daily, or weekly local tasks, inspect their runs, and decide what to do with jobs missed while the computer was off.
-- **Extend the agent**: manage local Skills, custom MCP servers, and model providers. Skills can be enabled per user without depending on a Leemo-operated cloud marketplace.
-- **Carry long-term context responsibly**: global profile and notebook memory are separated, reviewable, editable, replaceable, and deletable. Ordinary output does not get dumped into memory.
+For conversation, clearer thinking, difficult choices, learning, career questions, and everyday decisions. momo can offer a real point of view without rewriting your request or pushing ordinary work back onto you.
 
-## Core design
+### Workbench mode
 
-| Area | How Leemo approaches it |
-| --- | --- |
-| Companion and workbench | One momo, one tool layer, and one memory model; conversation and execution are not separate products |
-| Notebooks | A real local folder is the project boundary, whether created in Leemo or attached from disk |
-| Models | 26 preset connections across official APIs, Coding/Token Plans, aggregators, and local runtimes |
-| Protocols | Native Anthropic, OpenAI Chat Completions, and OpenAI Responses routing, plus custom compatible endpoints |
-| Permissions | Clear read-only, accept-edits, ask-first, and full-access modes without silently widening dangerous approvals |
-| Memory | Local ledgers, global/notebook scopes, temporal and source metadata, and user-visible editing and deletion |
-| Skills / MCP | Curated local Skills, installation and toggles, source metadata, and custom stdio/SSE MCP servers |
-| Documents | PDF reading, Markdown preview/editing, Word/PPTX/Excel creation and reading, and precise copy-based Word edits |
+For getting the work done. Open any local folder as a notebook and momo can read material, create and edit files, search the web, and use tools within the permission level you choose. Conversations, artifacts, and project context stay connected to that notebook.
 
-Preset entries include DeepSeek, GLM, Kimi, Qwen, OpenAI, Anthropic, Google Gemini, MiniMax, Doubao, MiMo, NVIDIA API Catalog, SiliconFlow, OpenRouter, TokenFlux, ModelScope, Groq, Huawei Cloud MaaS, Ollama, LM Studio, and several Coding/Token Plans. Available models, credentials, and network requirements remain provider-specific.
+## What Leemo can do
 
-A preset means Leemo provides the corresponding configuration and protocol path. It does not mean all 26 services consume live quota in every release test; availability still depends on the provider, account permissions, and current network.
+- **Work with local material**: read, search, organize, and edit files, then turn conversation into useful artifacts.
+- **Read and create documents**: work with PDF, Markdown, Word, Excel, and PowerPoint files.
+- **Research and keep moving**: use web search, academic sources, and browser tools to turn an answer into the next action.
+- **Handle multi-step work**: run tools, track tasks and progress, and show a compact receipt of what changed.
+- **Run on your schedule**: create one-off, daily, or weekly tasks and review their results and run history.
+- **Remember what matters**: separate long-term preferences, current circumstances, and notebook-specific context. Memory stays reviewable, editable, and deletable.
+- **Use the models you prefer**: connect popular model providers, aggregators, or local runtimes, or enter your own endpoint.
+- **Extend the agent**: add workflows, sources, and tools through Skills and MCP instead of waiting for a fixed feature list.
 
-## Quick start
+## Download and install
 
-### Requirements
+Leemo currently supports Windows 10/11 x64.
 
-- Windows 10/11 x64
-- Node.js 20 or newer
-- npm
-- At least one model API key, plan credential, or local model server
+1. Open the [latest release](https://github.com/CheaperjamRen/leemo/releases/latest).
+2. Download and run `Leemo-Setup-*.exe`.
+3. Launch Leemo and follow the model setup flow.
 
-### Run from source
+Leemo is still in preview and the installer does not yet carry a commercial code-signing certificate. If Windows SmartScreen displays a warning, make sure the installer came from this repository's Release page and compare its SHA-256 with the value published there.
 
-```powershell
-git clone https://github.com/CheaperjamRen/leemo.git
-cd leemo
-npm ci
-npm run electron:dev
-```
+## Your first session
 
-On first launch:
+1. Open **Settings → Models** and choose the model service you use.
+2. Enter the required credentials and model information, then select **Test connection**.
+3. Return to companion mode, or enter the workbench and create or open a notebook.
+4. Choose the permission level that fits the task. You can ask Leemo to confirm important actions or grant full access when you want the least friction.
 
-1. Open **Settings → Models** and choose a provider or custom compatible endpoint.
-2. Enter credentials, discover or enter a model, and run the lightweight connection test.
-3. Return to companion mode, or create/open a notebook in the workbench.
+Leemo includes setup paths for popular choices such as DeepSeek, Kimi, Zhipu GLM, Qwen, OpenAI, Anthropic, Gemini, MiniMax, Doubao, MiMo, NVIDIA, SiliconFlow, OpenRouter, TokenFlux, Ollama, and LM Studio.
 
-Development builds also support an optional `.env` bootstrap. See [`.env.example`](.env.example), and never commit real credentials.
+## Local first, under your control
 
-### Build a Windows installer
+- A notebook is the real local folder you choose, not a proprietary container.
+- Model credentials are encrypted with the operating system's secure storage and are not passed through the interface process as plaintext.
+- File changes, command execution, and external access follow the permission level you select.
+- Memory is not an invisible black box: you can review what momo remembers, correct it, or remove it.
+- Cloud models, search services, and third-party tools receive the content required to complete the actions you request. Local-first does not mean every inference runs locally.
 
-```powershell
-npm run electron:pack
-```
+## Feedback and contributions
 
-Artifacts are written to `dist-package/`. The public build includes Leemo's base document tools and does not require a private advanced Office bundle. See [`bundled-skills/office/README.md`](bundled-skills/office/README.md) for the optional, locally supplied extension boundary.
+Found a problem or have a product suggestion? Open a [GitHub Issue](https://github.com/CheaperjamRen/leemo/issues). Do not include API keys, private files, or other sensitive information in a public report. See the [security policy](SECURITY.md) for security-related reports.
 
-## Data and privacy
-
-- Notebooks, artifacts, and project memory live in user-selected local folders. Application state lives in Leemo's local app-data directory.
-- Model credentials are handled in the Electron main process and encrypted with the operating system's secure storage. Plaintext credentials are never returned over renderer IPC.
-- When you invoke a cloud model, search provider, or third-party MCP server, the necessary content is sent to that service. Local-first does not mean all inference is offline.
-- Skills and MCP servers can run code or access external services. Install trusted sources and choose a permission mode appropriate for the task.
-
-Do not post credentials or private files in a public report. See [`SECURITY.md`](SECURITY.md).
-
-## Architecture
-
-```mermaid
-flowchart LR
-  UI["Electron + React UI"] --> IPC["Typed IPC boundary"]
-  IPC --> Host["Agent Host"]
-  Host --> Workspace["Notebooks / memory / SQLite"]
-  Host --> Tools["Tools / Skills / MCP"]
-  Host --> Gateway["Leemo Gateway"]
-  Gateway --> Providers["Anthropic / OpenAI / Responses-compatible models"]
-```
-
-Main stack: Electron, React, TypeScript, Vite, Zustand, SQLite, Claude Agent SDK, Model Context Protocol, and Vitest.
-
-## Roadmap
-
-**Must work first**: the general desktop-agent baseline across conversation, files, search, browser use, model routing, permissions, Skills/MCP, scheduled tasks, and restart continuity.
-
-**Then go deeper**: English learning, paper reading with visual explanations, university and career planning, and resume/JD workflows.
-
-**Explicitly not now**: an operated Skill marketplace, a heavy cloud platform, or enterprise operations. We will validate the core experience before expanding the surface area.
-
-Commits, tests, and GitHub Issues are the source of truth. The README will not use a feature count to hide an unfinished user journey.
-
-## Contributing
-
-Bug reports, product-friction findings, provider integrations, verifiable Skills, and small complete improvements are welcome. Read [`CONTRIBUTING.md`](CONTRIBUTING.md) and [`AGENTS.md`](AGENTS.md) before starting.
-
-```powershell
-npm run typecheck
-npm test
-npm run verify:bundled-skills
-npm run build
-npm run build:main
-```
+To contribute code, start with the [contributing guide](CONTRIBUTING.md).
 
 ## License
 
-Leemo-owned source code is available under the [Apache License 2.0](LICENSE). Third-party dependencies, runtimes, and Skills retain their own licenses or terms. See [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md).
+Leemo-owned source code is available under the [Apache License 2.0](LICENSE). Third-party components retain their own licenses or terms; see [third-party notices](THIRD_PARTY_NOTICES.md).

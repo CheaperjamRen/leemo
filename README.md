@@ -1,136 +1,80 @@
 <div align="center">
   <img src=".github/assets/leemo-icon.svg" width="88" alt="Leemo" />
   <h1>Leemo</h1>
-  <p><strong>本地优先的桌面 AI Agent：既能陪你把事情想清楚，也能操作文件、浏览器和工具，把事情真正做完。</strong></p>
+  <p><strong>一个真正能在你电脑上做事的 AI 搭子。</strong></p>
+  <p>陪你想清楚，也替你动手完成。</p>
   <p>
+    <a href="https://github.com/CheaperjamRen/leemo/releases/latest"><strong>下载 Windows 版</strong></a> ·
     <a href="README.en.md">English</a> ·
-    <a href="https://github.com/CheaperjamRen/leemo/releases/latest">下载 Windows 版</a> ·
-    <a href="#快速开始">快速开始</a> ·
-    <a href="#参与贡献">参与贡献</a>
+    <a href="https://github.com/CheaperjamRen/leemo/issues">反馈问题</a>
   </p>
   <p>
-    <img alt="Windows" src="https://img.shields.io/badge/Windows-10%2F11-2f6feb?style=flat-square" />
-    <img alt="Early preview" src="https://img.shields.io/badge/status-early_preview-c2752c?style=flat-square" />
-    <a href="https://github.com/CheaperjamRen/leemo/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/CheaperjamRen/leemo/actions/workflows/ci.yml/badge.svg" /></a>
-    <a href="LICENSE"><img alt="Apache 2.0" src="https://img.shields.io/badge/license-Apache--2.0-3d6b57?style=flat-square" /></a>
+    <img alt="Windows 10/11" src="https://img.shields.io/badge/Windows-10%20%2F%2011-2563eb?style=flat-square" />
+    <img alt="Preview" src="https://img.shields.io/badge/release-preview-ea7c2b?style=flat-square" />
+    <a href="LICENSE"><img alt="Apache 2.0" src="https://img.shields.io/badge/license-Apache--2.0-3f7663?style=flat-square" /></a>
   </p>
 </div>
 
 ![Leemo 搭子态](.github/assets/leemo-buddy.png)
 
-Leemo 把聊天搭子 `momo` 和本地工作台放在同一个桌面应用里。你可以自然地聊想法、做决定，也可以把一个真实文件夹作为「本子」交给它，让它在明确的权限边界内阅读资料、搜索信息、修改文件、运行工具并留下可继续的上下文。
+Leemo 把能理解你的 `momo` 和能操作本地文件、网页与工具的 AI Agent 放进了同一个桌面应用。
 
-Leemo 的目标不是再做一个聊天壳，而是让不熟悉命令行的用户也能获得完整桌面 Agent 的执行力，同时保留可选择的模型、本地文件所有权和可理解的授权过程。
+你可以先和 momo 聊一个模糊的想法，再让它打开真实文件夹继续工作；也可以直接交给它一份资料、一个目标或一件待办，让它查找信息、整理文件、生成成果，并在几天后回来时接着上次的进度继续。
 
-> [!IMPORTANT]
-> Leemo 目前是 Windows 优先的早期预览版。可从 [Releases](https://github.com/CheaperjamRen/leemo/releases/latest) 下载安装包，也可以从源码运行。安装包尚未购买商业代码签名证书，Windows SmartScreen 可能提示风险；请核对 Release 页面公布的 SHA-256 后再运行。
+## 一个 momo，两种状态
 
-## 你可以用 Leemo 做什么
+### 搭子态
 
-- **和 momo 商量事情**：梳理想法、比较方案、做学习或求职决策；momo 可以有判断，但不会擅自改写你的任务。
-- **让 Agent 进入真实工作区**：新建本子或直接打开已有文件夹，对话、文件和项目记忆跟着本子走。
-- **完成本地任务**：读取、搜索、创建和修改文件，运行命令，管理多步任务，并在完成后给出轻量文件变更回执。
-- **连接网页与资料源**：支持联网搜索、arXiv、豆包搜索、秘塔搜索、Google，以及可控的浏览器自动化。
-- **按时继续工作**：创建一次、每天或每周的本地定时任务，查看运行记录，并处理关机期间错过的任务。
-- **扩展自己的 Agent**：管理本地 Skills、自定义 MCP 服务和模型服务商；技能可以按需启停，不需要依赖 Leemo 自营云市场。
-- **保留长期上下文**：全局画像与本子记忆分层保存，支持查看、编辑、删除、替代和撤销，不把普通产物混进记忆区。
+适合聊天、梳理想法、比较选择，以及讨论学习、求职和生活中的问题。momo 会给出自己的判断，但不会擅自曲解你的要求，也不会把普通任务推回给你。
 
-## 核心设计
+### 工作台
 
-| 能力 | Leemo 的做法 |
-| --- | --- |
-| 搭子与工作台 | 同一个 momo、同一套工具与记忆；聊天和执行不再是两个割裂产品 |
-| 本子 | 真实本地文件夹就是项目边界，可新建，也可挂载已有目录 |
-| 模型 | 26 个预设接入，覆盖官方 API、Coding/Token Plan、聚合服务与本地模型 |
-| 协议 | 原生 Anthropic、OpenAI Chat Completions 与 OpenAI Responses 路由，可接自定义兼容端点 |
-| 权限 | 只读、接受编辑、逐次确认与完全访问等清晰档位；危险动作不被普通授权误放大 |
-| 记忆 | 本地账本、全局/本子分层、时间与来源治理，用户始终可见、可改、可删 |
-| Skills / MCP | 精选技能、本地安装、启停、来源信息、自定义 stdio/SSE MCP |
-| 文档 | PDF 阅读、Markdown 预览与编辑、Word/PPTX/Excel 创建和读取、精确 Word 副本修改 |
+适合真正把事情做完。把任意本地文件夹作为「本子」打开，momo 就能在你选择的权限范围内阅读资料、创建和修改文件、搜索网络、调用工具，并把对话、成果和项目上下文留在这个本子里。
 
-预设模型入口包括 DeepSeek、GLM、Kimi、通义千问、OpenAI、Anthropic、Google Gemini、MiniMax、豆包、MiMo、NVIDIA API Catalog、硅基流动、OpenRouter、TokenFlux、ModelScope、Groq、华为云 MaaS、Ollama、LM Studio，以及多家 Coding/Token Plan。模型列表、鉴权方式和网络要求由各服务商决定。
+## Leemo 能帮你做什么
 
-预设入口代表 Leemo 已提供相应配置与协议路径，不代表 26 家服务都在每次发布中消耗真实额度逐一验活；真实可用性仍取决于服务商、账号权限和当前网络。
+- **处理本地资料**：阅读、搜索、整理和修改文件，把聊天结果落成真正可用的产物。
+- **阅读与创作文档**：处理 PDF、Markdown、Word、Excel 和 PowerPoint 等常见文档。
+- **查资料并继续行动**：使用联网搜索、学术资料源和浏览器，把答案变成下一步工作。
+- **完成多步骤任务**：运行工具、管理待办、追踪进度，并用轻量回执告诉你做了什么。
+- **按时替你执行**：创建一次、每天或每周运行的任务，随时查看结果与运行记录。
+- **记住真正重要的事**：区分你的长期偏好、近期状态和不同本子的上下文；记忆可查看、修改和删除。
+- **使用你喜欢的模型**：连接常见模型服务、聚合平台或本地模型，也可以填写自己的服务地址。
+- **按需扩展能力**：通过 Skills 和 MCP 增加新的工作流、资料源与工具，不被固定功能列表限制。
 
-## 快速开始
+## 下载与安装
 
-### 环境要求
+Leemo 目前提供 Windows 10/11 x64 版本。
 
-- Windows 10/11 x64
-- Node.js 20 或更新版本
-- npm
-- 至少一个可用的模型 API Key、套餐凭据或本地模型服务
+1. 打开 [最新版本页面](https://github.com/CheaperjamRen/leemo/releases/latest)。
+2. 下载 `Leemo-Setup-*.exe` 并运行安装。
+3. 启动 Leemo，按照引导完成模型连接。
 
-### 从源码运行
+Leemo 仍处于预览阶段，安装包暂未购买商业代码签名证书。如果 Windows SmartScreen 弹出提醒，请从本仓库的 Release 页面下载，并核对页面公布的 SHA-256 校验值。
 
-```powershell
-git clone https://github.com/CheaperjamRen/leemo.git
-cd leemo
-npm ci
-npm run electron:dev
-```
+## 第一次使用
 
-首次打开后：
+1. 打开「设置 → 模型」，选择你正在使用的模型服务。
+2. 填写凭据和模型信息，然后点击「测试连接」。
+3. 回到搭子态开始聊天，或者进入工作台新建、打开一个本子。
+4. 根据任务选择权限档位；需要省心时可以开启完全访问，也可以让 Leemo 在关键操作前询问你。
 
-1. 进入「设置 → 模型」，选择服务商或自定义兼容端点。
-2. 填写凭据、拉取或填写模型，并运行轻量连接测试。
-3. 回到搭子态直接聊天，或在工作台新建/打开一个本子。
+Leemo 已为 DeepSeek、Kimi、智谱 GLM、通义千问、OpenAI、Anthropic、Gemini、MiniMax、豆包、MiMo、NVIDIA、硅基流动、OpenRouter、TokenFlux、Ollama、LM Studio 等常见选择准备了配置入口。
 
-开发环境也支持 `.env` 作为可选的启动配置，字段示例见 [`.env.example`](.env.example)。不要提交真实凭据。
+## 本地优先，控制权归你
 
-### 构建 Windows 安装包
+- 本子就是你选择的真实本地文件夹，不会被锁在 Leemo 的私有格式里。
+- 模型凭据由系统安全存储加密，不会在界面进程中以明文传递。
+- 文件修改、命令执行和外部访问遵循你选择的权限设置。
+- 记忆不是不可见的黑盒：你可以查看 momo 记住了什么，也可以纠正或删除。
+- 使用云模型、搜索服务或第三方工具时，完成任务所需的内容会发送给相应服务；本地优先不等于所有推理都在本地完成。
 
-```powershell
-npm run electron:pack
-```
+## 反馈与参与
 
-产物写入 `dist-package/`。公开构建包含 Leemo 的基础文档能力，不依赖高级 Office 私有包；可选离线 Office 扩展的维护边界见 [`bundled-skills/office/README.md`](bundled-skills/office/README.md)。
+遇到问题或有产品建议，欢迎提交 [GitHub Issue](https://github.com/CheaperjamRen/leemo/issues)。请不要在公开反馈中附带 API Key、私人文件或其他敏感信息；安全问题请参阅 [安全说明](SECURITY.md)。
 
-## 数据与隐私
-
-- 本子、成果和项目记忆保存在用户选择的本地文件夹中；应用状态保存在 Leemo 的本地应用数据目录。
-- 模型凭据只在 Electron 主进程处理，并使用系统安全存储加密；不会通过渲染层 IPC 返回明文。
-- 当你调用云模型、搜索源或第三方 MCP 时，必要内容会发送到你选择的服务。Leemo 是本地优先，不等于所有推理都离线。
-- Skills 和 MCP 可以执行代码或访问外部服务。只安装你信任的来源，并根据任务选择合适的权限档。
-
-安全问题请不要公开附带凭据或私人文件，参见 [`SECURITY.md`](SECURITY.md)。
-
-## 技术结构
-
-```mermaid
-flowchart LR
-  UI["Electron + React 界面"] --> IPC["类型化 IPC 边界"]
-  IPC --> Host["Agent Host"]
-  Host --> Workspace["本子 / 记忆 / SQLite"]
-  Host --> Tools["工具 / Skills / MCP"]
-  Host --> Gateway["Leemo Gateway"]
-  Gateway --> Providers["Anthropic / OpenAI / Responses 兼容模型"]
-```
-
-主要技术栈：Electron、React、TypeScript、Vite、Zustand、SQLite、Claude Agent SDK、Model Context Protocol、Vitest。
-
-## 当前路线
-
-**现在必须做好**：通用桌面 Agent 的对话、文件、搜索、浏览器、模型、权限、Skills/MCP、定时任务和跨重启连续性。
-
-**随后做深**：英语学习、论文阅读与可视化讲解、大学与职业规划、简历/JD 等场景化能力。
-
-**暂不扩张**：自营 Skill 商店、重云端平台和企业级运维。先让核心体验可验证，再由真实用户反馈决定投入。
-
-具体状态以提交、测试和 GitHub Issues 为准；README 不用功能数量掩盖尚未打通的用户路径。
-
-## 参与贡献
-
-欢迎提交 bug、产品体验问题、Provider 适配、可验证的 Skills 与小而完整的改进。开始前请阅读 [`CONTRIBUTING.md`](CONTRIBUTING.md) 和 [`AGENTS.md`](AGENTS.md)。
-
-```powershell
-npm run typecheck
-npm test
-npm run verify:bundled-skills
-npm run build
-npm run build:main
-```
+希望参与开发，可以从 [贡献指南](CONTRIBUTING.md) 开始。
 
 ## 许可证
 
-Leemo 自有源码采用 [Apache License 2.0](LICENSE)。第三方依赖、运行时和 Skills 保留各自许可证或使用条款，详见 [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md)。
+Leemo 自有源码采用 [Apache License 2.0](LICENSE)。第三方组件保留各自的许可证或使用条款，详见 [第三方声明](THIRD_PARTY_NOTICES.md)。
