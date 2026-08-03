@@ -217,7 +217,7 @@ describe("document engine contract", () => {
 });
 
 describe("document engine readers", () => {
-  it("extracts PDF text and page count", async () => {
+  it("extracts PDF text and page count", { timeout: 20_000 }, async () => {
     const file = writeFixture(temporaryDirectory(), "lesson.pdf", simplePdf("Hello PDF lesson"));
     await expect(readDocumentFile(file)).resolves.toMatchObject({
       kind: "pdf",

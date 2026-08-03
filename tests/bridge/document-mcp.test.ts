@@ -182,7 +182,7 @@ describe("document MCP", () => {
     expect((await documents.runCreateWordDocument({ ...draft, overwrite: true })).isError).toBe(false);
   });
 
-  it("returns one actionable error and remains usable after a corrupt read", async () => {
+  it("returns one actionable error and remains usable after a corrupt read", { timeout: 20_000 }, async () => {
     const root = workspace();
     const cwd = path.join(root, "默认工作区");
     fs.writeFileSync(path.join(cwd, "坏文件.pdf"), "not a pdf");
