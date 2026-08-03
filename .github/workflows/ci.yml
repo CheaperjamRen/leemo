@@ -20,7 +20,10 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          # Keep native better-sqlite3 tests on the same supported runtime used
+          # by development and packaging. Under Node 20 its worker exits before
+          # Vitest can report a test failure on the hosted Windows image.
+          node-version: 24
           cache: npm
 
       - name: Install dependencies
