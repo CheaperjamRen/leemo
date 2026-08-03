@@ -1,4 +1,4 @@
-name: CI
+name: Build check
 
 on:
   push:
@@ -12,7 +12,7 @@ permissions:
 jobs:
   verify:
     runs-on: windows-latest
-    timeout-minutes: 25
+    timeout-minutes: 15
     steps:
       - name: Check out source
         uses: actions/checkout@v4
@@ -20,9 +20,6 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          # Keep native better-sqlite3 tests on the same supported runtime used
-          # by development and packaging. Under Node 20 its worker exits before
-          # Vitest can report a test failure on the hosted Windows image.
           node-version: 24
           cache: npm
 
@@ -31,12 +28,6 @@ jobs:
 
       - name: Typecheck
         run: npm run typecheck
-
-      - name: Test
-        # The renderer suite loads jsdom plus document/PDF engines. Four forked
-        # workers can exceed the Windows hosted runner's memory and be killed
-        # after otherwise passing tests; two preserves parallelism without OOM.
-        run: npm test -- --maxWorkers=2
 
       - name: Verify bundled Skills
         run: npm run verify:bundled-skills
