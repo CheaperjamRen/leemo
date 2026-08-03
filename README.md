@@ -66,7 +66,7 @@ momo 可以有观点、指出问题，也会尊重你的最终决定。它记住
 Leemo 目前支持 Windows 10/11 x64。
 
 1. 打开 [最新版本页面](https://github.com/CheaperjamRen/leemo/releases/latest)。
-2. 下载 `Leemo Setup 0.1.0.exe`。
+2. 下载 `Leemo-Setup-0.1.0.exe`。
 3. 双击安装，启动 Leemo，然后按引导连接你正在使用的 AI 服务。
 
 Leemo 目前处于预览阶段，安装包暂未购买商业代码签名证书。如果 Windows SmartScreen 弹出提醒，请确认文件来自本仓库的 Release 页面，并核对 Release 中公布的 SHA-256。
