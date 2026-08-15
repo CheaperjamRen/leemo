@@ -52,7 +52,7 @@ momo 也许会提出不同意见，最后仍按你的决定行动。
 
 <p align="center"><em>快捷记录界面设计预览</em></p>
 
-![快捷记录界面设计预览](.github/assets/readme/quick-capture-design.png)
+![快捷唤起便签界面](.github/assets/readme/quick-capture-design.png)
 
 ## 打开一个本子，把事情做完
 
