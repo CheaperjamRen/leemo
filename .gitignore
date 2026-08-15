@@ -50,3 +50,18 @@ dist-package-r8-6/
 # but is never part of the public source tree.
 /bundled-skills/office/release/skills/
 /2026-*-local-command-*.txt
+
+# Local product-design sessions, generated visual QA, research notes, and
+# personal working material. Keep these on the development machine; the public
+# repository retains only the curated documents under docs/specs.
+/CLAUDE.md
+/docs/design-audition/
+/docs/handoffs/
+/docs/NewmaxAI逆向报告/
+/docs/plans/
+/docs/product-inputs/
+/docs/reports/
+/docs/research/
+/docs/resume/
+/docs/sdd/
+/docs/superpowers/

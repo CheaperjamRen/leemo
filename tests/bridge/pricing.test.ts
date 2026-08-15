@@ -3,8 +3,8 @@ import { resolvePricing, type ModelPricing } from "../../src/bridge/pricing";
 
 // B2 Step 2 — pricing table lookups.
 //
-// Prices baked into src/bridge/pricing.ts are cited (value + official URL +
-// query date) in docs/sdd/br-b2-report.md. This suite pins behavior
+// Prices baked into src/bridge/pricing.ts retain short official source pointers.
+// This suite pins behavior
 // (hit/miss/override), not the exact numbers — the numbers are allowed to
 // drift as Phase 1 replaces this placeholder table with the live Provider
 // catalog; what must not drift is resolvePricing's contract.

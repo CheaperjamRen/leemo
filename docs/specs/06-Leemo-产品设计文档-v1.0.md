@@ -258,7 +258,7 @@ CC 内置 **WebSearch 是 Anthropic 服务端工具**：BASE_URL 指向第三方
 - **5 核心验证 × 3 端点**（DeepSeek / GLM / Kimi，key 已备）：①流式增量 ②内置工具调用（真实读写文件）③多轮对话 ④子 agent（Task）⑤上下文压缩（超长对话触发 compaction）。
 - **PASS 判定（DeepSeek 满血制）**：DeepSeek 五项全过 = PASS；GLM/Kimi 记录矩阵，允许子 agent/压缩两项降级；若 DeepSeek 不过，候选顺序 GLM → Kimi 顶上重判。
 - **4 探测项（不卡门，只记录）**：①SDK session resume 在第三方端点可靠性 ②AnySearch 国内直连+匿名搜索 ③用户中转站是否原生提供 Anthropic 协议（one-api/new-api 系常见）④canUseTool 回调在第三方端点行为。
-- **产出**：`smoke/smoke-cc-sdk.mjs`（provider × 验证项矩阵跑）+ `docs/reports/phase0-report.md`（结果矩阵 + 日志摘录）。验收 = 设计负责人复跑脚本核对（可复现证据，承宪法 F3）。
+- **产出**：`smoke/smoke-cc-sdk.mjs`（provider × 验证项矩阵跑）+ 本地验证报告（结果矩阵 + 日志摘录，不进入公开源码树）。验收 = 设计负责人复跑脚本核对（可复现证据，承宪法 F3）。
 - 时间盒 3-5 天不变。
 
 ---

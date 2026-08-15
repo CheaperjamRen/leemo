@@ -60,7 +60,7 @@ The LLM API transformation server acts as a middleware to standardize requests a
 - **Test:**
   ```sh
   npm test
-  # See CLAUDE.md for details
+  # See the repository documentation for details
   ```
 - **Path alias:**
   - `@` is mapped to the `src` directory, use `import xxx from '@/xxx'`.

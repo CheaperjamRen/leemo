@@ -3,7 +3,7 @@
 // 为什么自建而不是装第三方搜索 MCP：失败降级、防幻觉话术、fallback 链这三件
 // 事必须在我们手里。第三方 MCP 挂了或改了行为，我们既控不住也测不到。
 //
-// 探针台账见 docs/sdd/probe-r4-h-search.md。几条实测结论直接约束了这里的设计：
+// 几条真实探针结论直接约束了这里的设计：
 //   ① AnySearch 只吃 POST /v1/search（GET 全 404，Phase 0 因此误判"无此 API"）。
 //   ② 带 key 反而更差（3 条 vs 匿名 10 条、内容跑偏）⇒ 有 key 的源只能追加、不前插。
 //   ③ 服务端不认 exclude_content/count/top_k ⇒ content 只能客户端裁。

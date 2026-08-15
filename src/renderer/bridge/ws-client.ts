@@ -23,8 +23,8 @@ function isPushFrame(frame: any): frame is PushFrame {
 const RECONNECT_DELAY_MS = 1000;
 
 /** Renderer-side BridgeClient impl backed by a raw WebSocket to the host
- *  (src/host/ws-server.ts). Wire protocol: see docs/superpowers/plans/
- *  2026-07-24-power-on-vertical-slice.md ("Wire 协议"). Not a production
+ *  (src/host/ws-server.ts). The typed messages below define the wire protocol.
+ *  Not a production
  *  reconnect strategy — Electron IPC replaces this transport later; the
  *  single one-shot reconnect exists only so a dev-mode host restart doesn't
  *  strand the renderer forever. */

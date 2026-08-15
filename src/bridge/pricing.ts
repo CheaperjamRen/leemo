@@ -4,8 +4,7 @@
 // Provider 目录会把真实价目喂给 overrides，这张内置表只是首发兜底）。
 //
 // Every price below was looked up against the vendor's own official pricing
-// page/docs (not a third-party aggregator) and is cited with URL + query
-// date in docs/sdd/br-b2-report.md. Models whose real price could not be
+// page/docs (not a third-party aggregator). Models whose real price could not be
 // confidently confirmed (e.g. a relay/中转站's resale rate, which is NOT the
 // upstream vendor's list price) are simply absent from this table — callers
 // get `undefined` and events.ts's buildUsageRecord falls through to
@@ -27,9 +26,8 @@ export interface ModelPricing {
 /** Key = `${providerId}:${modelId}`. */
 type PricingTable = Record<string, ModelPricing>;
 
-// Built-in placeholder table. See docs/sdd/br-b2-report.md for the full
-// value+URL+date citation per row; short pointers kept inline below so the
-// source is visible without cross-referencing.
+// Built-in placeholder table. Short official source pointers are kept inline
+// below so the source remains visible without a separate audit artifact.
 const BUILTIN_PRICING: PricingTable = {
   // DeepSeek: .env DEEPSEEK_MODEL=deepseek-chat, which currently aliases to
   // deepseek-v4-flash (non-thinking). Official pricing page:

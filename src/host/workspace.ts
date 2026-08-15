@@ -3,7 +3,7 @@
 // The user-visible workspace is <home>/Leemo — the SAME directory as momo's
 // memory bank, on purpose: 本子、默认工作区和 Leemo internals all live under it.
 //
-// THREE LOAD-BEARING DECISIONS (see docs/sdd/progress.md 轮 3 卡 G):
+// THREE LOAD-BEARING DECISIONS:
 //  1. A notebook IS a directory. Its id always remains the directory name, so
 //     file ownership never drifts when the user edits a display title. A small
 //     root-owned sidecar stores presentation-only title/archive state; it never

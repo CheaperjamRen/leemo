@@ -6,9 +6,8 @@
 // hover per 02 v2.0). Also builds UsageRecord (cost/estimated bookkeeping) and
 // runs the anti-hallucination claimed-path audit (08 §三纪律③).
 //
-// SDK message shapes below are NOT invented: they are transcribed from
-// docs/sdd/br-b2-brief.md's authoritative table, itself sourced from
-// smoke/checks.mjs (Phase 0 real harness, ground truth) plus
+// SDK message shapes below are NOT invented: they are sourced from
+// smoke/checks.mjs (the real harness) plus
 // node_modules/@anthropic-ai/claude-agent-sdk/sdk.d.ts and
 // @anthropic-ai/sdk's beta/messages/messages.d.ts. The ONE unverified piece
 // is stream_event's internal delta shape (risk ① below) — handled
@@ -21,9 +20,7 @@ import type { SdkMessageLike } from "./pool";
 import type { ModelPricing } from "./pricing";
 
 // ---------------------------------------------------------------------------
-// UsageRecord — field face must be able to fill 08 §四's double-log table
-// (proxy_request_logs). See docs/sdd/br-b2-report.md for the field-by-field
-// comparison against that NewMax-derived schema.
+// UsageRecord keeps the fields required by the persisted request log and UI.
 // ---------------------------------------------------------------------------
 
 export interface UsageRecord {

@@ -21,7 +21,7 @@ export interface NotebooksState {
   error: string | null;
   /** Re-read the directories. Explicit rather than fs.watch: Windows watch
    *  events are noisy/duplicated, and every mutation here already knows to
-   *  refresh (see docs/sdd/progress.md 轮 3 卡 G 抉择②). */
+   *  refresh. */
   refresh(): Promise<void>;
   /** Create the real directory. Rejects (does not silently no-op) so the caller
    *  can show why — duplicate name, illegal characters. */

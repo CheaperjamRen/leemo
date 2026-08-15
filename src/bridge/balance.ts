@@ -4,8 +4,7 @@
 // 7-day usage summaries are OUT OF SCOPE here — that needs SQLite (Phase 1);
 // its IPC contract types are reserved in B3's contract.ts, not built here.
 //
-// Per-provider support matrix (researched against each vendor's own official
-// docs — see docs/sdd/br-b2-report.md for URL + query date per provider):
+// Per-provider support matrix, verified against each vendor's official docs:
 //   - deepseek: MANDATORY, real endpoint, implemented below.
 //   - kimi:     documented official endpoint, implemented below.
 //   - glm:      NO documented public balance API (only an unofficial,
@@ -132,8 +131,7 @@ async function fetchDeepSeekBalance(
 // example response) — parsed as-is, no Number() coercion needed.
 // Moonshot bills in CNY (platform.moonshot.cn is the CN-billed platform) —
 // available_balance is a yuan amount, NOT USD. Must map to totalCny, never
-// totalUsd (an earlier draft mislabeled this, inflating the displayed
-// balance ~6.8x — see docs/sdd/br-b2-report.md §修复轮).
+// totalUsd (an earlier draft mislabeled this, inflating the displayed balance).
 // ---------------------------------------------------------------------------
 
 interface KimiBalanceResponse {

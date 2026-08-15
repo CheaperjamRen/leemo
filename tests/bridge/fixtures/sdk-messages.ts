@@ -45,9 +45,8 @@ export function oneTurnStream(sessionId: string, text: string): TestMsg[] {
 // ---------------------------------------------------------------------------
 // B2 fixtures — richer shapes for src/bridge/events.ts normalization tests.
 //
-// Shapes below are transcribed from the brief's authoritative table
-// (docs/sdd/br-b2-brief.md), itself sourced from smoke/checks.mjs (Phase 0
-// real harness) + node_modules/@anthropic-ai/claude-agent-sdk/sdk.d.ts +
+// Shapes below are sourced from smoke/checks.mjs (the real harness) +
+// node_modules/@anthropic-ai/claude-agent-sdk/sdk.d.ts +
 // @anthropic-ai/sdk's beta/messages/messages.d.ts. Nothing here is invented:
 // every field name/nesting matches one of those two sources.
 // ---------------------------------------------------------------------------

@@ -16,8 +16,7 @@
 //      result rather than hanging the tool.
 //
 // SDK API face was verified against node_modules/@anthropic-ai/claude-agent-sdk/
-// sdk.d.ts (NOT inferred) — see docs/sdd/br-b3-report.md for the quoted
-// signatures. Key facts the brief guessed differently:
+// sdk.d.ts (NOT inferred). Key facts:
 //   • CanUseTool options carries a REQUIRED `signal` (not `signal?`) plus
 //     `toolUseID` + `requestId` (both required) and many optional UI hints; the
 //     return type is `Promise<PermissionResult | null>` (null is reserved for

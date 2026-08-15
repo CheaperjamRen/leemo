@@ -18,9 +18,8 @@ import {
 
 // B2 Step 1 — SDK message stream → LeemoEvent normalization.
 //
-// Every fixture message shape here is transcribed from the brief's
-// authoritative table (docs/sdd/br-b2-brief.md), itself sourced from
-// smoke/checks.mjs (Phase 0 real harness) + the SDK d.ts files. Assertions
+// Every fixture message shape here is sourced from smoke/checks.mjs (the real
+// harness) + the SDK d.ts files. Assertions
 // check real field values (not truthiness) so this suite actually pins the
 // mapping, not just "some event came out".
 
