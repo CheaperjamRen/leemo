@@ -6,16 +6,13 @@ export default function PinnedPlan() {
   const [open, setOpen] = useState(false);
   const plan = useConversations((s) => {
     const timeline = s.activeId ? s.timelines[s.activeId] : undefined;
-    if (!timeline) return undefined;
+    const activeRunId = s.activeId ? s.runIds[s.activeId] : null;
+    if (!timeline || !activeRunId) return undefined;
     for (let i = timeline.length - 1; i >= 0; i--) {
       const it = timeline[i];
-      if (it.kind !== "plan") continue;
-      const finished = timeline.some((candidate) =>
-        "runId" in candidate
-        && candidate.runId === it.runId
-        && (candidate.kind === "result" || candidate.kind === "error"),
-      );
-      return finished ? undefined : it as Extract<TimelineItem, { kind: "plan" }>;
+      if (it.kind === "plan" && it.runId === activeRunId) {
+        return it as Extract<TimelineItem, { kind: "plan" }>;
+      }
     }
     return undefined;
   });

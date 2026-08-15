@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
-import { AlertTriangle, Copy, Eye, FolderOpen, Pencil, RefreshCw, X } from "lucide-react";
+import { AlertTriangle, Copy, ExternalLink, Eye, FolderOpen, Pencil, RefreshCw, X } from "lucide-react";
 import { usePreviewContent, useUi, useWorkspace, useWorkspaces } from "../bridge/context";
 import { wrapVisualizationHtml } from "../utils/wrap-visualization-html";
 import { previewDraftKey, type PreviewEntry } from "../stores/preview-content";
@@ -7,10 +7,48 @@ import type { PreviewErrorKind } from "../stores/preview-content";
 import SelectionMenu from "./SelectionMenu";
 import MarkdownContent from "./MarkdownContent";
 import MarkdownEditor from "./MarkdownEditor";
+import { makePdfFileId } from "./pdf-reader-state";
 
 // pdfjs 是个大包，而且在 jsdom 里跑不起来（要 Canvas/Worker）。lazy 之后：不点 PDF
 // 就不下载它，组件测试也不会因为顶层 import 就炸。
 const PdfView = lazy(() => import("./PdfView"));
+
+function previewKind(path: string): "markdown" | "pdf" | "html" | "other" {
+  const lower = path.toLowerCase();
+  if (lower.endsWith(".md") || lower.endsWith(".markdown") || lower.endsWith(".mdx")) return "markdown";
+  if (lower.endsWith(".pdf")) return "pdf";
+  if (lower.endsWith(".html") || lower.endsWith(".htm")) return "html";
+  return "other";
+}
+
+/** Resolve a Markdown href against the current workspace-relative document. */
+export function resolveMarkdownWorkspaceLink(sourcePath: string, href: string): string | null {
+  const rawPath = href.split(/[?#]/, 1)[0]?.trim();
+  if (!rawPath) return null;
+
+  let decoded: string;
+  try {
+    decoded = decodeURIComponent(rawPath).replaceAll("\\", "/");
+  } catch {
+    return null;
+  }
+  if (/^[a-z][a-z\d+.-]*:/i.test(decoded) || decoded.startsWith("//")) return null;
+
+  const parts = decoded.startsWith("/")
+    ? []
+    : sourcePath.replaceAll("\\", "/").split("/").slice(0, -1).filter(Boolean);
+  for (const part of decoded.split("/")) {
+    if (!part || part === ".") continue;
+    if (part === "..") {
+      if (parts.length === 0) return null;
+      parts.pop();
+      continue;
+    }
+    if (/[\u0000-\u001f\u007f]/.test(part)) return null;
+    parts.push(part);
+  }
+  return parts.join("/") || null;
+}
 
 function Notice({ children, testId }: { children: React.ReactNode; testId: string }) {
   return (
@@ -95,8 +133,22 @@ export default function PreviewPane({ onRewriteSelection }: PreviewPaneProps) {
   const workspace = useWorkspace();
   const activeWorkspaceId = useWorkspaces((s) => s.activeId);
   const workspaceTransitioning = useUi((s) => s.workspaceTransitioning);
+  const activeScopeSurface = useUi((s) =>
+    s.scopeSessions[s.activeScopeKey]?.surfacePreference ?? "split");
+  const sidebarPreference = useUi((s) => s.workbenchSidebarPreference);
+  const activeWorkbenchTool = useUi((s) => s.activeWorkbenchTool);
+  const setScopeSurface = useUi((s) => s.setScopeSurface);
+  const setWorkbenchSidebarPreference = useUi((s) => s.setWorkbenchSidebarPreference);
+  const closeWorkbenchTool = useUi((s) => s.closeWorkbenchTool);
+  const toggleWorkbenchTool = useUi((s) => s.toggleWorkbenchTool);
   const selectionRootRef = useRef<HTMLDivElement>(null);
+  const pdfFocusSnapshotRef = useRef<{
+    surface: "split" | "conversation" | "file";
+    sidebar: "auto" | "compact" | "pinned";
+    tool: "files" | "overview" | "search" | null;
+  } | null>(null);
   const [viewModes, setViewModes] = useState<Record<string, "preview" | "edit">>({});
+  const [copyRestrictedPdfPath, setCopyRestrictedPdfPath] = useState<string | null>(null);
   const [pendingClose, setPendingClose] = useState<{ path: string; title: string } | null>(null);
   const [closingSave, setClosingSave] = useState(false);
 
@@ -123,6 +175,30 @@ export default function PreviewPane({ onRewriteSelection }: PreviewPaneProps) {
     ? viewModes[activeDraftKey] ?? (activeDraft ? "edit" : "preview")
     : "preview";
   const editingMarkdown = canEditMarkdown && activeViewMode === "edit" && Boolean(activeDraft);
+  const activePdf = entry?.payload?.kind === "binary" && activeTab?.kind === "pdf";
+
+  const setPdfFocused = (focused: boolean) => {
+    if (focused) {
+      if (!pdfFocusSnapshotRef.current) {
+        pdfFocusSnapshotRef.current = {
+          surface: activeScopeSurface,
+          sidebar: sidebarPreference,
+          tool: activeWorkbenchTool,
+        };
+      }
+      setWorkbenchSidebarPreference("compact");
+      closeWorkbenchTool();
+      setScopeSurface("file");
+      return;
+    }
+    const snapshot = pdfFocusSnapshotRef.current;
+    pdfFocusSnapshotRef.current = null;
+    setScopeSurface(snapshot?.surface ?? "split");
+    if (snapshot) {
+      setWorkbenchSidebarPreference(snapshot.sidebar);
+      if (snapshot.tool) toggleWorkbenchTool(snapshot.tool);
+    }
+  };
 
   const startEditing = () => {
     if (workspaceTransitioning || !activeTab || !activeTextPayload || activeTextPayload.truncated || !workspace?.writeMarkdownFile) return;
@@ -133,6 +209,18 @@ export default function PreviewPane({ onRewriteSelection }: PreviewPaneProps) {
   const showMarkdownPreview = () => {
     if (!activeDraftKey) return;
     setViewModes((current) => ({ ...current, [activeDraftKey]: "preview" }));
+  };
+
+  const openMarkdownLink = (href: string) => {
+    if (!activeTab) return;
+    const targetPath = resolveMarkdownWorkspaceLink(activeTab.path, href);
+    if (!targetPath) return;
+    if (href.split(/[?#]/, 1)[0]?.endsWith("/")) {
+      void workspace?.reveal(targetPath, activeWorkspaceId);
+      return;
+    }
+    const title = targetPath.split("/").filter(Boolean).at(-1) ?? targetPath;
+    openPreview(targetPath, title, previewKind(targetPath));
   };
 
   const closeTabNow = (path: string) => {
@@ -208,7 +296,25 @@ export default function PreviewPane({ onRewriteSelection }: PreviewPaneProps) {
     if (payload.kind === "binary") {
       return (
         <Suspense fallback={<Notice testId="preview-pdf-loading">正在载入 PDF 阅读器…</Notice>}>
-          <PdfView base64={payload.base64} title={activeTab.title} />
+          <PdfView
+            base64={payload.base64}
+            title={activeTab.title}
+            fileId={makePdfFileId({
+              workspaceId: activeWorkspaceId,
+              path: activeTab.path,
+              size: payload.size,
+              mtimeMs: payload.mtimeMs,
+            })}
+            focused={activeScopeSurface === "file"}
+            onFocusChange={setPdfFocused}
+            onOpenExternal={() => workspace?.openFile?.(activeTab.path, activeWorkspaceId)}
+            onReveal={() => workspace?.reveal(activeTab.path, activeWorkspaceId)}
+            onCopyPermissionChange={(restricted) => {
+              setCopyRestrictedPdfPath((current) => restricted
+                ? activeTab.path
+                : current === activeTab.path ? null : current);
+            }}
+          />
         </Suspense>
       );
     }
@@ -237,33 +343,6 @@ export default function PreviewPane({ onRewriteSelection }: PreviewPaneProps) {
       const visibleText = activeDraft?.text ?? payload.text;
       return (
         <>
-          {canEditMarkdown && (
-            <div className="flex h-10 shrink-0 items-center justify-end border-b border-[var(--leemo-line)] px-2">
-              <div className="inline-flex h-7 items-center rounded-[6px] bg-[var(--leemo-panel)] p-0.5 text-[11px]">
-                <button
-                  type="button"
-                  aria-label={`阅读 ${activeTab.title}`}
-                  aria-pressed={activeViewMode === "preview"}
-                  onClick={showMarkdownPreview}
-                  className={`inline-flex h-6 items-center gap-1 rounded-[5px] px-2 transition-colors ${activeViewMode === "preview" ? "bg-[var(--leemo-bg)] text-[var(--leemo-ink)] shadow-sm" : "text-[var(--leemo-ink-3)] hover:text-[var(--leemo-ink-2)]"}`}
-                >
-                  <Eye className="h-3 w-3" aria-hidden />
-                  阅读
-                </button>
-                <button
-                  type="button"
-                  aria-label={`编辑 ${activeTab.title}`}
-                  aria-pressed={activeViewMode === "edit"}
-                  disabled={workspaceTransitioning}
-                  onClick={startEditing}
-                  className={`inline-flex h-6 items-center gap-1 rounded-[5px] px-2 transition-colors ${activeViewMode === "edit" ? "bg-[var(--leemo-bg)] text-[var(--leemo-ink)] shadow-sm" : "text-[var(--leemo-ink-3)] hover:text-[var(--leemo-ink-2)]"}`}
-                >
-                  <Pencil className="h-3 w-3" aria-hidden />
-                  编辑
-                </button>
-              </div>
-            </div>
-          )}
           {editingMarkdown && activeDraft ? (
             <MarkdownEditor
               title={activeTab.title}
@@ -277,7 +356,7 @@ export default function PreviewPane({ onRewriteSelection }: PreviewPaneProps) {
               className="prose-leemo max-w-none px-4 py-3 text-sm text-[var(--leemo-ink)]"
               data-testid="preview-markdown"
             >
-              <MarkdownContent text={visibleText} variant="preview" />
+              <MarkdownContent text={visibleText} variant="preview" onOpenLocalLink={openMarkdownLink} />
             </div>
           )}
           {!editingMarkdown && truncatedNote}
@@ -333,23 +412,92 @@ export default function PreviewPane({ onRewriteSelection }: PreviewPaneProps) {
     if (!entry || entry.status === "loading") {
       return <Notice testId="preview-loading">正在读 {activeTab.title}…</Notice>;
     }
-    return renderPayload();
+    const payload = renderPayload();
+    if (activePdf) return payload;
+
+    const parentPath = activeTab.path
+      .replace(/\\/g, "/")
+      .split("/")
+      .slice(0, -1)
+      .join(" / ");
+    return (
+      <>
+        <div
+          className="flex h-11 shrink-0 items-center gap-3 border-b border-[var(--leemo-line)] bg-[var(--leemo-card)] px-3"
+          data-testid="preview-document-header"
+        >
+          <div className="flex min-w-0 flex-1 items-center gap-1.5 text-[11px]">
+            {parentPath && <span className="max-w-[42%] truncate text-[var(--leemo-ink-3)]" title={parentPath}>{parentPath}</span>}
+            {parentPath && <span className="text-[var(--leemo-ink-3)]">/</span>}
+            <span className="truncate font-medium text-[var(--leemo-ink-2)]" title={activeTab.title}>{activeTab.title}</span>
+          </div>
+          {canEditMarkdown && (
+            <div className="inline-flex h-7 shrink-0 items-center rounded-[7px] border border-[var(--leemo-line)] bg-[var(--leemo-panel)] p-0.5 text-[11px]">
+              <button
+                type="button"
+                aria-label={`阅读 ${activeTab.title}`}
+                aria-pressed={activeViewMode === "preview"}
+                onClick={showMarkdownPreview}
+                className={`inline-flex h-6 items-center gap-1 rounded-[5px] px-2 transition-colors ${activeViewMode === "preview" ? "bg-[var(--leemo-bg)] text-[var(--leemo-ink)] shadow-sm" : "text-[var(--leemo-ink-3)] hover:text-[var(--leemo-ink-2)]"}`}
+              >
+                <Eye className="h-3 w-3" aria-hidden />
+                阅读
+              </button>
+              <button
+                type="button"
+                aria-label={`编辑 ${activeTab.title}`}
+                aria-pressed={activeViewMode === "edit"}
+                disabled={workspaceTransitioning}
+                onClick={startEditing}
+                className={`inline-flex h-6 items-center gap-1 rounded-[5px] px-2 transition-colors ${activeViewMode === "edit" ? "bg-[var(--leemo-bg)] text-[var(--leemo-ink)] shadow-sm" : "text-[var(--leemo-ink-3)] hover:text-[var(--leemo-ink-2)]"}`}
+              >
+                <Pencil className="h-3 w-3" aria-hidden />
+                编辑
+              </button>
+            </div>
+          )}
+          {workspace?.openFile && (
+            <button
+              type="button"
+              className="leemo-icon-btn h-7 w-7 shrink-0"
+              aria-label={`用默认应用打开 ${activeTab.title}`}
+              title="用默认应用打开"
+              onClick={() => void workspace.openFile?.(activeTab.path, activeWorkspaceId)}
+            >
+              <ExternalLink className="h-3.5 w-3.5" aria-hidden />
+            </button>
+          )}
+          {workspace?.reveal && (
+            <button
+              type="button"
+              className="leemo-icon-btn h-7 w-7 shrink-0"
+              aria-label={`在文件夹中显示 ${activeTab.title}`}
+              title="在文件夹中显示"
+              onClick={() => void workspace.reveal(activeTab.path, activeWorkspaceId)}
+            >
+              <FolderOpen className="h-3.5 w-3.5" aria-hidden />
+            </button>
+          )}
+        </div>
+        {payload}
+      </>
+    );
   };
 
   return (
     <div className="relative flex min-h-0 flex-1 flex-col" data-testid="preview-pane">
       {/* Tab bar */}
-      <div className="flex shrink-0 items-center gap-1 overflow-x-auto border-b border-[var(--leemo-line)] bg-[var(--leemo-panel)] px-2 py-1">
+      <div className="flex h-9 shrink-0 items-end gap-0.5 overflow-x-auto border-b border-[var(--leemo-line)] bg-[var(--leemo-panel)] px-2 pt-1">
         {previewTabs.map((tab) => {
           const draft = drafts[previewDraftKey(activeWorkspaceId, tab.path)];
           const dirty = draft && draft.status !== "clean";
           return (
             <div
               key={tab.path}
-              className={`group flex items-center gap-1 rounded px-2 py-1 text-xs ${
+              className={`group flex h-8 items-center gap-1 rounded-t-[6px] border-x border-t px-2 text-[11px] ${
                 tab.path === previewActivePath
-                  ? "bg-[var(--leemo-bg)] text-[var(--leemo-ink)]"
-                  : "text-[var(--leemo-ink-3)] hover:bg-[var(--leemo-side-hover)] cursor-pointer"
+                  ? "border-[var(--leemo-line)] bg-[var(--leemo-bg)] text-[var(--leemo-ink)]"
+                  : "cursor-pointer border-transparent text-[var(--leemo-ink-3)] hover:bg-[var(--leemo-side-hover)]"
               }`}
               onClick={() => openPreview(tab.path, tab.title, tab.kind)}
             >
@@ -373,7 +521,7 @@ export default function PreviewPane({ onRewriteSelection }: PreviewPaneProps) {
       <div
         ref={selectionRootRef}
         data-preview-selection-root="true"
-        className={`relative flex min-h-0 flex-1 flex-col ${editingMarkdown ? "overflow-hidden" : "overflow-auto"}`}
+        className={`relative flex min-h-0 flex-1 flex-col ${editingMarkdown || activePdf ? "overflow-hidden" : "overflow-auto"}`}
       >
         {previewTabs.length === 0 ? (
           <div className="flex h-full items-center justify-center p-8 text-center text-sm text-[var(--leemo-ink-3)]">
@@ -382,7 +530,7 @@ export default function PreviewPane({ onRewriteSelection }: PreviewPaneProps) {
         ) : (
           renderContent()
         )}
-        {!editingMarkdown && (
+        {!editingMarkdown && copyRestrictedPdfPath !== previewActivePath && (
           <SelectionMenu
             workspaceId={activeWorkspaceId}
             filePath={previewActivePath}

@@ -39,6 +39,8 @@ export const DEFAULT_WORKSPACE_DIR = "默认工作区";
 export type {
   LeemoEvent,
   UsageRecord,
+  UsageModelRecord,
+  RunOutcome,
   PathAudit,
   PathClaim,
   MemoryChangeAction,
@@ -93,6 +95,7 @@ export type {
 export type {
   RiskLevel,
   ApprovalTier,
+  ApprovalTaskScope,
   ApprovalRequest,
   ApprovalDecision,
   WhitelistEntry,
@@ -137,6 +140,13 @@ import type { ModelCapabilities } from "./providers";
  *    LM Studio, user 7/21). Points at a loopback/LAN baseUrl; nothing to
  *    authenticate. Pairs with `capabilities.local`. */
 export type ProviderAuthMode = "api-key" | "plan-key" | "oauth-subscription" | "none";
+
+/** Renderer-safe state for a login-based model subscription. Account details
+ *  and tokens stay process-in; the UI only needs to know what action is next. */
+export interface ProviderLoginStatus {
+  state: "connected" | "disconnected" | "unavailable";
+  message?: string;
+}
 
 /** Upstream wire contract. The legacy `openai` value intentionally keeps its
  * Chat Completions meaning so existing encrypted configs remain valid. */
@@ -450,7 +460,7 @@ export interface ListRemoteModelsResult {
 
 /** Which window a usage summary covers, optionally scoped to one provider. */
 export interface UsageSummaryQuery {
-  range: "today" | "last7d";
+  range: "today" | "last7d" | "last30d";
   providerId?: string;
 }
 
@@ -460,8 +470,24 @@ export interface UsageSummaryQuery {
 export interface UsageSummaryByProvider {
   providerId: string;
   costUsd?: string;
+  callCount?: number;
   inputTokens: number;
   outputTokens: number;
+  cacheReadTokens?: number;
+  cacheCreationTokens?: number;
+}
+
+/** Per-model roll-up. This is the detail row used by the settings table; the
+ * provider id stays explicit because model aliases are not globally unique. */
+export interface UsageSummaryByModel {
+  providerId: string;
+  modelId: string;
+  costUsd?: string;
+  callCount: number;
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheCreationTokens: number;
 }
 
 /** Per-day roll-up row (for the 7-day view). */
@@ -474,7 +500,13 @@ export interface UsageSummaryByDay {
 /** The aggregate a `bridge:usageSummary` invoke returns (Phase 1). */
 export interface UsageSummary {
   totalCostUsd?: string;
+  callCount?: number;
+  inputTokens?: number;
+  outputTokens?: number;
+  cacheReadTokens?: number;
+  cacheCreationTokens?: number;
   byProvider: UsageSummaryByProvider[];
+  byModel?: UsageSummaryByModel[];
   byDay?: UsageSummaryByDay[];
 }
 
@@ -628,6 +660,41 @@ export interface SkillSecurityFindingView {
   line?: number;
 }
 
+/** A bounded, one-shot interpretation used only when deterministic task text
+ * parsing cannot distinguish plan, deadline and reminder roles. Credentials
+ * never cross this contract. */
+export type ResolvedTaskField =
+  | {
+      kind: "planned" | "due" | "reminder";
+      date: string;
+      time?: string;
+      source: string;
+    }
+  | {
+      kind: "reminderOffset";
+      minutesBefore: number;
+      source: string;
+    }
+  | {
+      kind: "recurrence";
+      rule: "daily" | "weekly" | "monthly" | "weekdays";
+      source: string;
+    };
+
+export interface ResolveTaskTimesRequest {
+  providerId: string;
+  modelId: string;
+  /** Only the ambiguous task lines selected by the user; never a whole note library. */
+  texts: string[];
+  /** Renderer-local clock context for relative Chinese dates such as “下周五”. */
+  localNow: string;
+  timeZone?: string;
+}
+
+export type ResolveTaskTimesResponse =
+  | { ok: true; items: Array<{ index: number; fields: ResolvedTaskField[] }> }
+  | { ok: false; message: string };
+
 export interface SkillSourceCandidateView {
   name: string;
   description: string;
@@ -671,30 +738,62 @@ export interface SkillInstallOutcome {
   receipt: string;
 }
 
+export interface CommunitySkillMemberView {
+  id: string;
+  name: string;
+  /** Curated, user-facing title. `name` stays the upstream Skill identity. */
+  displayName?: string;
+  description: string;
+}
+
 export interface CommunitySkillView {
   id: string;
   name: string;
+  /** Curated, user-facing title. `name` stays searchable as the upstream name. */
+  displayName?: string;
   description: string;
+  /** A family is installed as one verified package while each member remains
+   * independently switchable after installation. Omitted means one Skill. */
+  kind?: "skill" | "family";
+  memberCount?: number;
+  members?: CommunitySkillMemberView[];
   category: SkillCategory;
   categoryLabel: string;
+  /** A small, host-owned discovery collection. It controls presentation only;
+   * installation trust still comes from the pinned manifest and file hashes. */
+  featured: boolean;
   author: string;
   repository: string;
   revision: string;
   license: string;
   sourceUrl: string;
+  /** The verified files are installed, but this package has an external
+   * first-run prerequisite. It remains installable and is not "unavailable". */
+  setupRequired?: boolean;
+  setupMessage?: string;
   installed: boolean;
   /** Leemo's published catalog is pre-scanned. This is evidence, not a claim
    * that a Skill can never do anything surprising when the model uses it. */
   scanStatus: "scanned";
 }
 
+export interface CommunitySkillDetailsView {
+  /** The pinned upstream SKILL.md content. Renderers must treat it as inert
+   * Markdown; raw HTML remains disabled by the shared Markdown renderer. */
+  markdown: string;
+}
+
 export interface SkillInfo {
   /** Stable preference key. Older custom skills may omit it; the host derives
    * one from their qualified name before returning the catalog. */
   id?: string;
-  /** Bare name = SKILL.md frontmatter `name`. The ONLY field the UI renders.
-   *  Guaranteed free of ':' (host drops any skill that smuggles one in). */
+  /** Bare name = SKILL.md frontmatter `name`. It remains the runtime identity
+   *  and fallback UI label. Guaranteed free of ':' (host drops any skill that
+   *  smuggles one in). */
   name: string;
+  /** Optional catalog-owned title. It is never used as a runtime command or
+   * qualified Skill identity; user-installed Skills leave it absent. */
+  displayName?: string;
   /** Optional bare command understood by the underlying Skill runtime. It is
    * intentionally hidden from catalog cards; for example the friendly
    * "Excel 表格" card invokes the bundled `xlsx` skill. */
@@ -714,6 +813,14 @@ export interface SkillInfo {
   category?: SkillCategory;
   /** Optional user-facing label for an open category id. */
   categoryLabel?: string;
+  /** Optional product collection used to group related Skills without changing
+   * their independent runtime identities or preference keys. */
+  collectionId?: string;
+  /** User-facing collection title. Internal plugin/package names stay hidden. */
+  collectionLabel?: string;
+  /** Whole-package size for shared-runtime collections. It lets the renderer
+   * explain one atomic remove action without exposing package internals. */
+  collectionMemberCount?: number;
   /** Runtime capabilities needed before the workflow can execute honestly. */
   requirements?: SkillRequirement[];
   /** First-run policy. User skills default to enabled when absent. */
@@ -721,6 +828,10 @@ export interface SkillInfo {
   /** False means the UI disables invocation and explains why up front. */
   available?: boolean;
   unavailableReason?: string;
+  /** A non-blocking first-run prerequisite. Unlike `available: false`, this
+   * never disables the Skill; the UI explains it once at collection level. */
+  setupRequired?: boolean;
+  setupMessage?: string;
   /** Product-facing provenance. `source` above remains the runtime ownership
    * axis; trust/source labels are what the management page communicates. */
   trust?: SkillTrust;
@@ -762,11 +873,32 @@ export interface WorkspaceFileRef {
 export interface SendRequest {
   conversationId: string;
   prompt: string;
+  /** Active persistent objective for this conversation. The host adds it to
+   * this turn's model input; paused goals are omitted by the renderer. */
+  goalText?: string;
   attachments?: AttachmentRef[];
   workspaceFiles?: WorkspaceFileRef[];
+  /** Stable ids for global notes explicitly attached to this turn. The host
+   * re-reads their latest bodies; note text never travels from the renderer. */
+  noteReferences?: string[];
+  /** Per-turn helper dispatch preference. Omitted means the normal automatic
+   * behavior; false removes the dispatch tools for this round only. */
+  allowSubagents?: boolean;
   /** Renderer timeline id of the user message that started this round. Stored
    * only as memory provenance; never shown to the model or user. */
   sourceMessageId?: string;
+}
+
+/** Add a user correction to the currently running task. Engines with native
+ * steering apply it immediately; engines without it may honestly queue it for
+ * the next turn. */
+export interface GuideRequest {
+  conversationId: string;
+  prompt: string;
+}
+
+export interface GuideResponse {
+  delivery: "applied" | "queued";
 }
 
 /** Change-provider/model-for-next-round request (env-level; not retroactive). */
@@ -817,6 +949,13 @@ export interface FetchBalanceRequest {
 export interface BridgeEventEnvelope {
   conversationId: string;
   event: LeemoEvent;
+}
+
+/** Host-owned permission expiry. AskUser remains a separate interaction with
+ * its own semantics and is deliberately not covered by this event. */
+export interface ApprovalExpired {
+  id: string;
+  conversationId: string;
 }
 
 // ===========================================================================
@@ -888,6 +1027,7 @@ export const BRIDGE_CHANNELS = {
   // invoke — conversation lifecycle
   createConversation: "bridge:createConversation",
   send: "bridge:send",
+  guide: "bridge:guide",
   interrupt: "bridge:interrupt",
   setModel: "bridge:setModel",
   updateContext: "bridge:updateContext",
@@ -899,7 +1039,11 @@ export const BRIDGE_CHANNELS = {
   getProviderConfig: "bridge:getProviderConfig",
   saveProvider: "bridge:saveProvider",
   deleteProvider: "bridge:deleteProvider",
+  getProviderLoginStatus: "bridge:getProviderLoginStatus",
+  loginProvider: "bridge:loginProvider",
+  logoutProvider: "bridge:logoutProvider",
   testConnection: "bridge:testConnection",
+  resolveTaskTimes: "bridge:resolveTaskTimes",
   listRemoteModels: "bridge:listRemoteModels",
   usageSummary: "bridge:usageSummary", // Phase 1 (reserved)
   listWhitelist: "bridge:listWhitelist",
@@ -922,6 +1066,7 @@ export const BRIDGE_CHANNELS = {
   pickSkillSource: "bridge:pickSkillSource",
   installSkill: "bridge:installSkill",
   listCommunitySkills: "bridge:listCommunitySkills",
+  getCommunitySkillDetails: "bridge:getCommunitySkillDetails",
   installCommunitySkill: "bridge:installCommunitySkill",
   scanInstalledSkill: "bridge:scanInstalledSkill",
   removeSkill: "bridge:removeSkill",
@@ -939,6 +1084,7 @@ export const BRIDGE_CHANNELS = {
   // event — main → renderer push
   event: "bridge:event",
   approvalRequest: "bridge:approvalRequest",
+  approvalExpired: "bridge:approvalExpired",
   askUser: "bridge:askUser",
 } as const;
 
@@ -950,7 +1096,13 @@ export type SearchSourceId =
   | "metaso"
   | "tavily"
   | "bocha"
-  | "google";
+  | "google"
+  | "exa"
+  | "brave"
+  | "serpapi"
+  | "serper"
+  | "bing"
+  | "firecrawl";
 
 export type SearchCredentialField = "apiKey" | "engineId";
 
@@ -996,6 +1148,8 @@ export interface SearchSourceStatus {
   configuredFields: SearchCredentialField[];
   /** 一句话说明它在链里的位置与取舍，给设置页当说明文字用。 */
   note: string;
+  /** 上游已退役或没有稳定公开 API 时明确阻塞；不提供伪配置入口。 */
+  blockedReason?: string;
 }
 
 // ===========================================================================
@@ -1074,6 +1228,7 @@ export interface BrowserCapturePayload {
 export interface BridgeInvokeMap {
   "bridge:createConversation": { request: CreateConversationRequest; response: ConversationRef };
   "bridge:send": { request: SendRequest; response: void };
+  "bridge:guide": { request: GuideRequest; response: GuideResponse };
   "bridge:interrupt": { request: ConversationRef; response: void };
   "bridge:setModel": { request: SetModelRequest; response: void };
   "bridge:updateContext": { request: UpdateContextRequest; response: void };
@@ -1091,8 +1246,14 @@ export interface BridgeInvokeMap {
    *  its unconfigured offer (`configured:false`) rather than vanishing — the
    *  preset list is a constant, not user data. */
   "bridge:deleteProvider": { request: { providerId: string }; response: void };
+  /** Login-based subscriptions expose only a coarse state. Account data and
+   *  OAuth material never cross IPC. */
+  "bridge:getProviderLoginStatus": { request: { providerId: string }; response: ProviderLoginStatus };
+  "bridge:loginProvider": { request: { providerId: string }; response: ProviderLoginStatus };
+  "bridge:logoutProvider": { request: { providerId: string }; response: ProviderLoginStatus };
   /** Real upstream round-trip with human-readable failure classification. */
   "bridge:testConnection": { request: ConnectionTestRequest; response: ConnectionTestResult };
+  "bridge:resolveTaskTimes": { request: ResolveTaskTimesRequest; response: ResolveTaskTimesResponse };
   /** Ask the vendor what models exist (each family's discovery URL differs). */
   "bridge:listRemoteModels": { request: ListRemoteModelsRequest; response: ListRemoteModelsResult };
   /** Phase 1 (reserved — unimplemented first release). */
@@ -1145,6 +1306,10 @@ export interface BridgeInvokeMap {
     response: SkillInstallOutcome;
   };
   "bridge:listCommunitySkills": { request: void; response: CommunitySkillView[] };
+  "bridge:getCommunitySkillDetails": {
+    request: { id: string };
+    response: CommunitySkillDetailsView;
+  };
   "bridge:installCommunitySkill": {
     request: { id: string };
     response: SkillInstallOutcome;
@@ -1190,6 +1355,7 @@ export interface BridgeInvokeMap {
 export interface BridgeEventMap {
   "bridge:event": BridgeEventEnvelope;
   "bridge:approvalRequest": ApprovalRequest;
+  "bridge:approvalExpired": ApprovalExpired;
   "bridge:askUser": AskUserPayload;
 }
 

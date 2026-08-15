@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, it, expect, vi } from "vitest";
 import type { TimelineItem } from "../../stores/message-model";
@@ -43,9 +43,98 @@ describe("MessageFooter", () => {
     expect(screen.queryByText(/2\.4k|2400/)).not.toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: /查看用量/ }));
+    const details = screen.getByRole("dialog", { name: "用量详情" });
+    expect(details).toHaveAttribute("data-anchored-layer");
     expect(screen.getByText(/输入 2\.4k/)).toBeInTheDocument();
     expect(screen.getByText(/缓存 300/)).toBeInTheDocument();
     expect(screen.getByText(/未估价/)).toBeInTheDocument();
+  });
+
+  it("shows per-model usage only inside the compact usage popover", async () => {
+    const user = userEvent.setup();
+    const detailed: Usage = {
+      ...usage,
+      usage: {
+        ...usage.usage,
+        modelBreakdown: [
+          {
+            providerId: "anthropic-subscription",
+            modelId: "claude-sonnet-4-5",
+            servingProvider: "anthropic",
+            inputTokens: 2_000,
+            outputTokens: 400,
+            cacheReadTokens: 300,
+            cacheCreationTokens: 0,
+            costUsd: "0.020000",
+          },
+          {
+            providerId: "anthropic-subscription",
+            modelId: "claude-haiku-4-5",
+            servingProvider: "anthropic",
+            inputTokens: 400,
+            outputTokens: 200,
+            cacheReadTokens: 0,
+            cacheCreationTokens: 0,
+            costUsd: "0.002000",
+          },
+        ],
+      },
+    };
+    render(<MessageFooter result={ok} usage={detailed} />);
+    expect(screen.queryByText(/claude-sonnet-4-5/)).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /查看用量/ }));
+    expect(screen.getByText(/claude-sonnet-4-5/)).toBeInTheDocument();
+    expect(screen.getByText(/claude-haiku-4-5/)).toBeInTheDocument();
+  });
+
+  it("does not repeat the aggregate row when one model is the entire usage breakdown", async () => {
+    const user = userEvent.setup();
+    const singleModel: Usage = {
+      ...usage,
+      usage: {
+        ...usage.usage,
+        providerId: "deepseek",
+        modelId: "deepseek-v4-flash",
+        modelBreakdown: [{
+          providerId: "deepseek",
+          modelId: "deepseek-v4-flash",
+          servingProvider: "firstParty",
+          inputTokens: 2_400,
+          outputTokens: 600,
+          cacheReadTokens: 300,
+          cacheCreationTokens: 0,
+          costUsd: "0.020000",
+        }],
+      },
+    };
+
+    render(<MessageFooter result={ok} usage={singleModel} />);
+    await user.click(screen.getByRole("button", { name: /查看用量/ }));
+
+    const details = screen.getByRole("dialog", { name: "用量详情" });
+    expect(within(details).getAllByText(/deepseek-v4-flash/)).toHaveLength(1);
+    expect(within(details).getByText("firstParty")).toBeInTheDocument();
+  });
+
+  it("confirms a successful copy instead of leaving the user guessing", async () => {
+    const user = userEvent.setup();
+    const writeText = vi.fn(async () => undefined);
+    const previousClipboard = Object.getOwnPropertyDescriptor(navigator, "clipboard");
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText },
+    });
+
+    try {
+      render(<MessageFooter result={ok} />);
+      await user.click(screen.getByRole("button", { name: "复制回答" }));
+      expect(writeText).toHaveBeenCalledWith("草稿好了。");
+      expect(await screen.findByText("已复制")).toBeInTheDocument();
+    } finally {
+      if (previousClipboard) Object.defineProperty(navigator, "clipboard", previousClipboard);
+      else Reflect.deleteProperty(navigator, "clipboard");
+    }
   });
 
   it("an interrupted result shows 已停止 and no copy button (finding #2: no empty copy)", () => {
@@ -150,7 +239,7 @@ describe("MessageFooter", () => {
     expect(screen.getByText("已忘掉：旧的求职状态")).toBeInTheDocument();
   });
 
-  it("keeps file changes to one quiet expandable line", async () => {
+  it("shows a compact delivery receipt with real file actions", async () => {
     const user = userEvent.setup();
     const onOpenFile = vi.fn();
     const onRevealFile = vi.fn();
@@ -163,16 +252,13 @@ describe("MessageFooter", () => {
       />,
     );
 
-    const receipt = screen.getByRole("button", { name: "查看文件变化" });
-    expect(receipt).toHaveTextContent("修改了 2 个文件");
-    expect(screen.queryByText("课程笔记/第一章.md")).not.toBeInTheDocument();
-    expect(container.querySelectorAll("[data-file-change-receipt]")).toHaveLength(1);
-    expect(container.querySelector("[data-file-change-card]")).toBeNull();
-
-    await user.click(receipt);
+    expect(screen.getByText("本轮交付 2 个文件")).toBeInTheDocument();
     expect(screen.getByText("课程笔记/第一章.md")).toBeInTheDocument();
     expect(screen.getByText("复习计划.md")).toBeInTheDocument();
     expect(screen.getByText("新建")).toBeInTheDocument();
+    expect(container.querySelectorAll("[data-file-delivery-receipt]")).toHaveLength(1);
+    expect(screen.getByLabelText("本轮交付文件").parentElement).toHaveClass("text-[12px]");
+    expect(screen.getByRole("button", { name: "预览 课程笔记/第一章.md" })).toHaveClass("text-[12.5px]");
 
     await user.click(screen.getByRole("button", { name: "预览 课程笔记/第一章.md" }));
     expect(onOpenFile).toHaveBeenCalledWith(files.changes[0]);
@@ -191,19 +277,26 @@ describe("MessageFooter", () => {
       />,
     );
 
-    await user.click(screen.getByRole("button", { name: "查看文件变化" }));
     expect(screen.getByText("旧稿.md")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "预览 旧稿.md" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "在文件夹中显示 旧稿.md" })).not.toBeInTheDocument();
   });
 
-  it("states the real total while keeping oversized receipts bounded", async () => {
-    const user = userEvent.setup();
-    render(<MessageFooter result={ok} files={{ ...files, omitted: 18 }} />);
+  it("states the real total while keeping oversized receipts to three visible file rows", () => {
+    const manyFiles: Files = {
+      ...files,
+      changes: [
+        ...files.changes,
+        { path: "讲义/第三章.md", change: "added" },
+        { path: "讲义/第四章.md", change: "added" },
+        { path: "讲义/第五章.md", change: "added" },
+      ],
+      omitted: 2,
+    };
+    const { container } = render(<MessageFooter result={ok} files={manyFiles} />);
 
-    const receipt = screen.getByRole("button", { name: "查看文件变化" });
-    expect(receipt).toHaveTextContent("修改了 20 个文件");
-    await user.click(receipt);
-    expect(screen.getByText("另有 18 个文件未展开")).toBeInTheDocument();
+    expect(screen.getByText("本轮交付 7 个文件")).toBeInTheDocument();
+    expect(container.querySelectorAll("[data-delivery-file-row]")).toHaveLength(3);
+    expect(screen.getByText("另有 4 个文件")).toBeInTheDocument();
   });
 });

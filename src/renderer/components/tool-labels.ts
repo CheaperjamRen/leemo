@@ -49,6 +49,19 @@ export function toolResultLabel(
   return "已完成网页操作";
 }
 
+/** Stable product language for terminal tool outcomes. SDK detail strings can
+ * vary by provider; the timeline should not collapse a user denial or a
+ * cancellation into a red execution failure. */
+export function toolOutcomeLabel(
+  outcome: "completed" | "failed" | "denied" | "cancelled" | "interrupted" | undefined,
+  fallback: string,
+): string {
+  if (outcome === "denied") return "未获允许";
+  if (outcome === "cancelled") return "已取消";
+  if (outcome === "interrupted") return "已停止";
+  return fallback;
+}
+
 /** User-facing action phrase. Internal SDK/MCP identifiers stay in transport
  * data and never become the product language shown on an approval card. */
 export function toolActionLabel(toolName: string): string {
@@ -57,6 +70,27 @@ export function toolActionLabel(toolName: string): string {
   if (!isMcpToolName(toolName)) return "使用工具";
 
   const action = mcpActionName(toolName);
+  if (toolName === "mcp__leemo-work-overview__set_work_overview") return "更新工作概览";
+  if (toolName.startsWith("mcp__leemo-scheduler__")) {
+    if (action === "list_scheduled_tasks") return "查看定时任务";
+    if (action === "create_scheduled_task") return "创建定时任务";
+    if (action === "update_scheduled_task") return "修改定时任务";
+    if (action === "set_scheduled_task_status") return "暂停或恢复定时任务";
+    if (action === "delete_scheduled_task") return "删除定时任务";
+    if (action === "run_scheduled_task_now") return "立即运行定时任务";
+  }
+  if (toolName.startsWith("mcp__leemo-workboard__")) {
+    if (action === "list_notes") return "查看便签";
+    if (action === "create_note") return "保存便签";
+    if (action === "update_note") return "修改便签";
+    if (action === "delete_note") return "删除便签";
+    if (action === "list_tasks") return "查看待办";
+    if (action === "create_task") return "创建待办";
+    if (action === "create_tasks") return "批量创建待办";
+    if (action === "update_task") return "修改待办";
+    if (action === "set_task_completed") return "更新待办状态";
+    if (action === "delete_task") return "删除待办";
+  }
   if (toolName.startsWith("mcp__computer__")) {
     if (["ui_snapshot", "screenshot_control", "ui_read", "ui_find", "ui_read_table"].includes(action)) return "查看电脑界面";
     if (["ui_click", "mouse_control", "ui_select"].includes(action)) return "在电脑应用中点击";

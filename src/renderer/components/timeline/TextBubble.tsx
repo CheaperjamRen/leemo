@@ -11,12 +11,20 @@ function formatTime(createdAt: number): string {
   }).format(new Date(createdAt));
 }
 
-export default function TextBubble({ item }: { item: Extract<TimelineItem, { kind: "text" }> }) {
+export default function TextBubble({
+  item,
+  density = "workbench",
+}: {
+  item: Extract<TimelineItem, { kind: "text" }>;
+  density?: "workbench" | "buddy";
+}) {
   if (item.role === "user") {
     return (
       <div className="flex justify-end">
-        <div className="flex max-w-[560px] flex-col items-end gap-1">
-          <div className="w-fit max-w-full rounded-[12px] bg-[var(--leemo-bg-deep)] px-3.5 py-2 text-[13.5px] leading-[1.75] text-[var(--leemo-ink)] ring-1 ring-[var(--leemo-line-2)]">
+        <div className="flex max-w-[min(520px,65%)] flex-col items-end gap-1">
+          <div
+            className={`w-fit max-w-full rounded-[12px] px-3.5 py-2 leading-[1.65] text-[var(--leemo-ink)] ring-1 ${density === "buddy" ? "leemo-buddy-user-bubble text-[15.5px]" : "bg-[var(--leemo-bg-deep)] text-[14.5px] ring-[var(--leemo-line-2)]"}`}
+          >
             {item.attachments && item.attachments.length > 0 && (
               <div className={`flex flex-wrap gap-1.5 ${item.text ? "mb-1.5" : ""}`}>
                 {item.attachments.map((attachment, index) => (
@@ -41,10 +49,16 @@ export default function TextBubble({ item }: { item: Extract<TimelineItem, { kin
       </div>
     );
   }
+  const isBuddy = density === "buddy";
   return (
-    <div className="flex items-start gap-2.5">
-      <MomoAvatar size={26} />
-      <div className="max-w-[600px] pt-[3px] text-[13.5px] leading-[1.8] text-[var(--leemo-ink)]">
+    <div className={`flex items-start ${isBuddy ? "gap-3" : "gap-2.5"}`}>
+      <MomoAvatar size={isBuddy ? 30 : 22} />
+      <div
+        data-testid={isBuddy ? "buddy-momo-bubble" : undefined}
+        className={isBuddy
+          ? "leemo-buddy-momo-bubble max-w-[620px] rounded-[13px] px-4 py-2.5 text-[15.5px] leading-[1.7] text-[var(--leemo-ink)]"
+          : "max-w-[620px] pt-[1px] text-[14.5px] leading-[1.7] text-[var(--leemo-ink)]"}
+      >
         <MarkdownContent text={item.text} variant="answer" />
         {item.streaming && (
           <span aria-hidden

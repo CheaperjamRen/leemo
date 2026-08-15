@@ -1,0 +1,501 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Leemo · 工作台</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M12 2c.6 5.5 4.5 9.4 10 10-5.5.6-9.4 4.5-10 10-.6-5.5-4.5-9.4-10-10C7.5 11.4 11.4 7.5 12 2Z' fill='%23C07E1F'/%3E%3C/svg%3E">
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  :root{
+    /* ── 基调：冷灰精密 ── */
+    --bg:            #FFFFFF;
+    --side:          #F6F6F7;
+    --side-hover:    #ECECEF;
+    --panel:         #F8F8F9;
+    --line:          #E7E7EA;
+    --line-2:        #EFEFF1;
+    --ink:           #1C1C21;
+    --ink-2:         #565860;
+    --ink-3:         #9A9BA4;
+    --ink-4:         #C4C5CC;
+    /* ── momo 的暖，只从细节渗出 ── */
+    --amber:         #C07E1F;
+    --amber-ink:     #8A6210;
+    --amber-bg:      #FDF9EE;
+    --amber-line:    #EEDFC0;
+    --ok:            #4E9B6E;
+    /* ── 本子封面色 ── */
+    --book-blue:     #6480A8;
+    --book-green:    #6F9C7B;
+    --book-red:      #B0776E;
+    --user-av:       #7E8899;
+    /* ── momo 形象色 ── */
+    --momo-body:     #FFF8EA;
+    --momo-line:     #E7D9BC;
+    --momo-face:     #3B2F24;
+    --momo-blush:    #F2AC72;
+    --momo-spark:    #E9A23B;
+    --momo-hi:       #FFFDF7;
+  }
+
+  html,body{height:100%;}
+  body{
+    font-family:"PingFang SC","Hiragino Sans GB","Microsoft YaHei",system-ui,-apple-system,"Segoe UI",sans-serif;
+    background:var(--bg);
+    color:var(--ink);
+    -webkit-font-smoothing:antialiased;
+    text-rendering:optimizeLegibility;
+  }
+  .mono{font-family:ui-monospace,"SF Mono","Cascadia Mono",Consolas,"Courier New",monospace;}
+  ::selection{background:var(--amber-line);color:var(--amber-ink);}
+
+  /* ── 细滚动条，hover 才现形 ── */
+  .scroll{scrollbar-width:thin;scrollbar-color:transparent transparent;}
+  .scroll::-webkit-scrollbar{width:8px;height:8px;}
+  .scroll::-webkit-scrollbar-thumb{background:transparent;border-radius:8px;background-clip:content-box;border:2px solid transparent;}
+  .scroll:hover{scrollbar-color:rgba(0,0,0,.14) transparent;}
+  .scroll:hover::-webkit-scrollbar-thumb{background:rgba(0,0,0,.14);background-clip:content-box;border:2px solid transparent;}
+
+  /* ── 入场 ── */
+  @keyframes rise{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+  .rise{opacity:0;animation:rise .55s cubic-bezier(.22,.8,.32,1) forwards;}
+
+  /* ── 动效 ── */
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .spin{animation:spin .9s linear infinite;}
+  @keyframes caret{0%,45%{opacity:1}50%,100%{opacity:0}}
+  .caret{animation:caret 1.1s steps(1) infinite;}
+  @keyframes pulse-dot{0%,100%{transform:scale(1);opacity:1}50%{transform:scale(1.5);opacity:.5}}
+  .pulse-dot{transform-box:fill-box;transform-origin:center;animation:pulse-dot 1.6s ease-in-out infinite;}
+  @keyframes tw{0%,100%{transform:scale(1) rotate(0deg);opacity:.85}50%{transform:scale(1.25) rotate(10deg);opacity:1}}
+  .twinkle{transform-box:fill-box;transform-origin:center;animation:tw 3.6s ease-in-out infinite;}
+  @keyframes blink{0%,91.5%,100%{transform:scaleY(1)}94.5%{transform:scaleY(.06)}97.5%{transform:scaleY(1)}}
+  .momo-eyes{transform-box:fill-box;transform-origin:center;animation:blink 4.6s ease-in-out infinite;}
+
+  /* ── 组件 ── */
+  .nav-row{transition:background .15s ease,color .15s ease;}
+  .nav-row:hover{background:var(--side-hover);}
+  .icon-btn{
+    display:grid;place-items:center;height:1.9rem;width:1.9rem;border-radius:.45rem;
+    color:var(--ink-3);transition:background .15s ease,color .15s ease;
+  }
+  .icon-btn:hover{background:var(--side-hover);color:var(--ink-2);}
+  .tool-row{transition:border-color .15s ease,background .15s ease;}
+  .tool-row:hover{border-color:var(--line);background:var(--bg);}
+  .foot{opacity:0;transition:opacity .2s ease;}
+  .msg:hover .foot{opacity:1;}
+
+  @media (prefers-reduced-motion:reduce){
+    .rise,.spin,.caret,.pulse-dot,.twinkle,.momo-eyes{animation:none !important;opacity:1 !important;}
+  }
+</style>
+</head>
+<body class="h-screen overflow-hidden">
+
+  <!-- 图标库（内联 SVG symbol） -->
+  <svg width="0" height="0" class="absolute" aria-hidden="true">
+    <defs>
+      <symbol id="i-chat" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M20.5 11.6a8 8 0 0 1-8 7.9c-1.4 0-2.8-.35-3.9-.98L4 19.6l1.05-4.55A8 8 0 1 1 20.5 11.6Z"/>
+      </symbol>
+      <symbol id="i-board" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="3.5" y="4" width="17" height="16" rx="2.5"/><path d="M9.2 4v9.5"/><path d="M14.8 4v13.5"/>
+      </symbol>
+      <symbol id="i-plus" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 5.5v13"/><path d="M5.5 12h13"/>
+      </symbol>
+      <symbol id="i-book" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M5 4.2A2.2 2.2 0 0 1 7.2 2H19v17.5H7.2A2.2 2.2 0 0 0 5 21.7V4.2Z"/><path d="M5 19.5a2.2 2.2 0 0 1 2.2-2.2H19"/>
+      </symbol>
+      <symbol id="i-chev-d" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <path d="m6 9.2 6 6 6-6"/>
+      </symbol>
+      <symbol id="i-chev-r" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <path d="m9.2 6 6 6-6 6"/>
+      </symbol>
+      <symbol id="i-msg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M20.5 11.6a8 8 0 0 1-8 7.9c-1.4 0-2.8-.35-3.9-.98L4 19.6l1.05-4.55A8 8 0 1 1 20.5 11.6Z"/>
+      </symbol>
+      <symbol id="i-leaf" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M5 19.5C5 10 12.5 4.5 20 4.5c0 8-4.5 15-13.5 15H5Z"/><path d="M5 19.5c2.8-5.8 6.4-9 10.8-10.8"/>
+      </symbol>
+      <symbol id="i-gear" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="3.1"/><path d="M19.3 14.9a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1.08-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1.08 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h.08a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v.08a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.61 1Z"/>
+      </symbol>
+      <symbol id="i-doc" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M13.5 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8.5L13.5 3Z"/><path d="M13.5 3v5.5H19"/><path d="M9 13.2h6"/><path d="M9 16.6h4"/>
+      </symbol>
+      <symbol id="i-search" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="11" cy="11" r="6.5"/><path d="m19.8 19.8-3.6-3.6"/>
+      </symbol>
+      <symbol id="i-pencil" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 20h8.5"/><path d="M16.6 3.6a2.1 2.1 0 0 1 3 3L7.4 18.8l-4 1 1-4 12.2-12.2Z"/>
+      </symbol>
+      <symbol id="i-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="m4.8 12.6 4.6 4.6 9.8-10.4"/>
+      </symbol>
+      <symbol id="i-circle" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7">
+        <circle cx="12" cy="12" r="7.5"/>
+      </symbol>
+      <symbol id="i-spinner" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+        <path d="M12 3.5a8.5 8.5 0 1 1-8.5 8.5"/>
+      </symbol>
+      <symbol id="i-list" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M8.5 6h12"/><path d="M8.5 12h12"/><path d="M8.5 18h12"/><path d="m3.2 5.4 1 1 2-2.2"/><path d="m3.2 11.4 1 1 2-2.2"/><path d="m3.2 17.4 1 1 2-2.2"/>
+      </symbol>
+      <symbol id="i-shield" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 2.8 5 5.7v5.5c0 4.3 2.9 7.4 7 9 4.1-1.6 7-4.7 7-9V5.7l-7-2.9Z"/><path d="m9 11.6 2.2 2.2 4-4.2"/>
+      </symbol>
+      <symbol id="i-arrow-up" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 19V5"/><path d="m5 12 7-7 7 7"/>
+      </symbol>
+      <symbol id="i-at" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="3.6"/><path d="M15.6 8.4v4.9a2.55 2.55 0 0 0 5.1 0V12a8.7 8.7 0 1 1-3.6-7"/>
+      </symbol>
+      <symbol id="i-slash" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="4" y="4" width="16" height="16" rx="4.5"/><path d="m14.3 8.6-4.6 6.8"/>
+      </symbol>
+      <symbol id="i-clip" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+        <path d="m20 11.6-7.6 7.6a5.1 5.1 0 0 1-7.2-7.2l8.2-8.2a3.45 3.45 0 0 1 4.9 4.9l-8.2 8.2a1.8 1.8 0 0 1-2.6-2.6l7.6-7.6"/>
+      </symbol>
+      <symbol id="i-share" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 14.5v-11"/><path d="m7 7.5 5-5 5 5"/><path d="M5 12.5V18a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-5.5"/>
+      </symbol>
+      <symbol id="i-star" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+        <path d="m12 3.6 2.55 5.2 5.75.85-4.15 4.05.98 5.7L12 16.7l-5.13 2.7.98-5.7-4.15-4.05 5.75-.85L12 3.6Z"/>
+      </symbol>
+      <symbol id="i-dots" viewBox="0 0 24 24" fill="currentColor">
+        <circle cx="5.5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="18.5" cy="12" r="1.6"/>
+      </symbol>
+      <symbol id="i-collapse" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="3.5" y="4.5" width="17" height="15" rx="2.5"/><path d="M9.5 4.5v15"/><path d="m15.5 10-2 2 2 2"/>
+      </symbol>
+    </defs>
+  </svg>
+
+  <div class="flex h-screen">
+    <!-- ═══ 侧边栏 ═══ -->
+    <aside class="flex w-[260px] shrink-0 flex-col border-r border-[var(--line)] bg-[var(--side)]">
+      <div class="flex items-center gap-2 px-4 pb-2 pt-4">
+        <span class="grid h-[22px] w-[22px] place-items-center rounded-[6px] bg-[var(--ink)]">
+          <svg viewBox="0 0 24 24" class="h-[11px] w-[11px]"><path d="M12 2c.6 5.5 4.5 9.4 10 10-5.5.6-9.4 4.5-10 10-.6-5.5-4.5-9.4-10-10C7.5 11.4 11.4 7.5 12 2Z" style="fill:var(--momo-spark)"/></svg>
+        </span>
+        <span class="text-[13.5px] font-semibold tracking-[.02em] text-[var(--ink)]">Leemo</span>
+        <button class="icon-btn ml-auto" title="收起侧边栏" aria-label="收起侧边栏">
+          <svg class="h-[15px] w-[15px]"><use href="#i-collapse"/></svg>
+        </button>
+      </div>
+
+      <div class="px-3 pt-1">
+        <button class="flex w-full items-center gap-2 rounded-[8px] border border-[var(--line)] bg-white px-2.5 py-[7px] text-[12.5px] font-medium text-[var(--ink-2)] shadow-[0_1px_2px_rgba(0,0,0,.04)] transition-all hover:border-[var(--ink-4)] hover:text-[var(--ink)]">
+          <svg class="h-[13px] w-[13px]"><use href="#i-plus"/></svg>新对话
+          <span class="ml-auto rounded border border-[var(--line)] bg-[var(--panel)] px-1.5 py-px text-[10.5px] font-normal text-[var(--ink-3)]">Ctrl K</span>
+        </button>
+      </div>
+
+      <nav class="scroll mt-4 flex-1 overflow-y-auto px-3 pb-3">
+        <p class="px-2 pb-1.5 text-[11px] font-medium tracking-[.12em] text-[var(--ink-3)]">本子</p>
+
+        <!-- 数据结构（展开） -->
+        <div>
+          <button class="nav-row flex w-full items-center gap-1.5 rounded-[7px] px-2 py-[6px] text-[13px] text-[var(--ink)]">
+            <svg class="h-[12px] w-[12px] text-[var(--ink-3)]"><use href="#i-chev-d"/></svg>
+            <svg class="h-[14px] w-[14px] text-[var(--book-blue)]"><use href="#i-book"/></svg>
+            <span class="font-medium">数据结构</span>
+            <span class="ml-auto text-[11px] text-[var(--ink-3)]">2</span>
+          </button>
+          <div class="ml-[15px] mt-[3px] space-y-[2px] border-l border-[var(--line)] pl-[9px]">
+            <a href="#" class="nav-row flex items-center gap-2 rounded-[7px] bg-[var(--side-hover)] px-2 py-[6px] text-[12.5px] font-medium text-[var(--ink)]">
+              <span class="relative flex h-[6px] w-[6px] shrink-0">
+                <span class="pulse-dot absolute inline-flex h-full w-full rounded-full bg-[var(--amber)]"></span>
+              </span>
+              第五章复习笔记整理
+            </a>
+            <a href="#" class="nav-row flex items-center gap-2 rounded-[7px] px-2 py-[6px] text-[12.5px] text-[var(--ink-2)]">
+              <svg class="h-[12px] w-[12px] shrink-0 text-[var(--ink-4)]"><use href="#i-msg"/></svg>
+              期中错题归因
+            </a>
+          </div>
+        </div>
+
+        <button class="nav-row mt-[3px] flex w-full items-center gap-1.5 rounded-[7px] px-2 py-[6px] text-[13px] text-[var(--ink-2)]">
+          <svg class="h-[12px] w-[12px] text-[var(--ink-3)]"><use href="#i-chev-r"/></svg>
+          <svg class="h-[14px] w-[14px] text-[var(--book-green)]"><use href="#i-book"/></svg>
+          高等数学
+          <span class="ml-auto text-[11px] text-[var(--ink-3)]">3</span>
+        </button>
+        <button class="nav-row mt-[3px] flex w-full items-center gap-1.5 rounded-[7px] px-2 py-[6px] text-[13px] text-[var(--ink-2)]">
+          <svg class="h-[12px] w-[12px] text-[var(--ink-3)]"><use href="#i-chev-r"/></svg>
+          <svg class="h-[14px] w-[14px] text-[var(--book-red)]"><use href="#i-book"/></svg>
+          毛概
+          <span class="ml-auto text-[11px] text-[var(--ink-3)]">1</span>
+        </button>
+
+        <p class="px-2 pb-1.5 pt-5 text-[11px] font-medium tracking-[.12em] text-[var(--ink-3)]">放养对话</p>
+        <a href="#" class="nav-row flex items-center gap-2 rounded-[7px] px-2 py-[6px] text-[12.5px] text-[var(--ink-2)]">
+          <svg class="h-[13px] w-[13px] shrink-0 text-[var(--ink-4)]"><use href="#i-leaf"/></svg>
+          社团招新的推文文案
+        </a>
+        <a href="#" class="nav-row mt-[3px] flex items-center gap-2 rounded-[7px] px-2 py-[6px] text-[12.5px] text-[var(--ink-2)]">
+          <svg class="h-[13px] w-[13px] shrink-0 text-[var(--ink-4)]"><use href="#i-leaf"/></svg>
+          周五晚上看什么电影
+        </a>
+      </nav>
+
+      <div class="flex items-center gap-2.5 border-t border-[var(--line)] px-4 py-3">
+        <span class="relative shrink-0">
+          <svg viewBox="0 0 120 120" class="h-[24px] w-[24px]" role="img" aria-label="momo">
+            <path d="M60 20C87 20 101 42 101 66c0 22-17 34-41 34s-41-12-41-34c0-24 14-46 41-46Z" style="fill:var(--momo-body);stroke:var(--momo-line);stroke-width:3"/>
+            <g class="momo-eyes">
+              <ellipse cx="45" cy="62" rx="5" ry="6.6" style="fill:var(--momo-face)"/>
+              <ellipse cx="75" cy="62" rx="5" ry="6.6" style="fill:var(--momo-face)"/>
+            </g>
+            <path d="M54 71.5c2 2.6 4 3.8 6 3.8s4-1.2 6-3.8" style="fill:none;stroke:var(--momo-face);stroke-width:3;stroke-linecap:round"/>
+          </svg>
+          <span class="absolute -bottom-[1px] -right-[1px] h-[7px] w-[7px] rounded-full bg-[var(--ok)] ring-2 ring-[var(--side)]"></span>
+        </span>
+        <span class="leading-tight">
+          <span class="block text-[12px] font-medium text-[var(--ink)]">momo</span>
+          <span class="block text-[10.5px] text-[var(--ink-3)]">随叫随到</span>
+        </span>
+        <button class="icon-btn ml-auto" title="设置" aria-label="设置">
+          <svg class="h-[15px] w-[15px]"><use href="#i-gear"/></svg>
+        </button>
+      </div>
+    </aside>
+
+    <!-- ═══ 主区 ═══ -->
+    <main class="flex min-w-0 flex-1 flex-col bg-[var(--bg)]">
+      <!-- 顶栏 -->
+      <header class="flex h-[52px] shrink-0 items-center gap-2 border-b border-[var(--line)] px-5">
+        <svg class="h-[14px] w-[14px] text-[var(--book-blue)]"><use href="#i-book"/></svg>
+        <span class="text-[12.5px] text-[var(--ink-3)]">数据结构</span>
+        <span class="text-[12.5px] text-[var(--ink-4)]">/</span>
+        <span class="text-[13px] font-medium text-[var(--ink)]">第五章复习笔记整理</span>
+
+        <div class="ml-auto flex items-center gap-2">
+          <nav class="flex items-center rounded-full border border-[var(--line)] bg-[var(--panel)] p-[3px]" aria-label="模式切换">
+            <a href="buddy-mode.html" class="flex items-center gap-1.5 rounded-full px-3 py-[5px] text-[12px] text-[var(--ink-3)] transition-colors hover:text-[var(--ink-2)]">
+              <svg class="h-[12px] w-[12px]"><use href="#i-chat"/></svg>搭子
+            </a>
+            <a href="workbench-mode.html" class="flex items-center gap-1.5 rounded-full bg-white px-3 py-[5px] text-[12px] font-medium text-[var(--ink)] shadow-[0_1px_4px_rgba(0,0,0,.10)] ring-1 ring-[var(--line)]">
+              <svg class="h-[12px] w-[12px] text-[var(--amber)]"><use href="#i-board"/></svg>工作台
+            </a>
+          </nav>
+          <span class="mx-1 h-4 w-px bg-[var(--line)]"></span>
+          <button class="icon-btn" title="分享" aria-label="分享"><svg class="h-[15px] w-[15px]"><use href="#i-share"/></svg></button>
+          <button class="icon-btn" title="收藏" aria-label="收藏"><svg class="h-[15px] w-[15px]"><use href="#i-star"/></svg></button>
+          <button class="icon-btn" title="更多" aria-label="更多"><svg class="h-[15px] w-[15px]"><use href="#i-dots"/></svg></button>
+        </div>
+      </header>
+
+      <!-- 对话流 -->
+      <div class="scroll flex-1 overflow-y-auto">
+        <div class="mx-auto w-full max-w-[760px] space-y-[14px] px-8 py-4">
+
+          <!-- 1 · 用户消息 -->
+          <section class="msg rise">
+            <div class="flex items-center gap-2.5">
+              <span class="grid h-[26px] w-[26px] place-items-center rounded-full bg-[var(--user-av)] text-[11px] font-medium text-white">满</span>
+              <span class="text-[12.5px] font-medium text-[var(--ink)]">林小满</span>
+              <span class="foot text-[11px] text-[var(--ink-3)]">09:12</span>
+            </div>
+            <div class="ml-[38px] mt-1.5 w-fit max-w-[560px] rounded-[10px] bg-[var(--panel)] px-3.5 py-2 text-[13.5px] leading-[1.75] text-[var(--ink)] ring-1 ring-[var(--line-2)]">
+              把第五章 PPT 里的重点整理成复习笔记，存到本子里
+            </div>
+          </section>
+
+          <!-- 2 · momo 简短回应 -->
+          <section class="msg rise" style="animation-delay:.08s">
+            <div class="flex items-center gap-2.5">
+              <svg viewBox="0 0 120 120" class="h-[26px] w-[26px] shrink-0" role="img" aria-label="momo">
+                <path d="M60 20C87 20 101 42 101 66c0 22-17 34-41 34s-41-12-41-34c0-24 14-46 41-46Z" style="fill:var(--momo-body);stroke:var(--momo-line);stroke-width:3"/>
+                <g class="momo-eyes">
+                  <ellipse cx="45" cy="62" rx="5" ry="6.6" style="fill:var(--momo-face)"/>
+                  <ellipse cx="75" cy="62" rx="5" ry="6.6" style="fill:var(--momo-face)"/>
+                </g>
+                <ellipse cx="32.5" cy="72.5" rx="5.6" ry="3.2" style="fill:var(--momo-blush)" opacity=".55"/>
+                <ellipse cx="87.5" cy="72.5" rx="5.6" ry="3.2" style="fill:var(--momo-blush)" opacity=".55"/>
+                <path d="M54 71.5c2 2.6 4 3.8 6 3.8s4-1.2 6-3.8" style="fill:none;stroke:var(--momo-face);stroke-width:3;stroke-linecap:round"/>
+              </svg>
+              <span class="text-[12.5px] font-medium text-[var(--ink)]">momo</span>
+              <span class="foot text-[11px] text-[var(--ink-3)]">09:12</span>
+            </div>
+            <p class="ml-[38px] mt-1 text-[13.5px] leading-[1.8] text-[var(--ink)]">好。我先把 PPT 通读一遍，挑出考点和例题，列个计划再动手。</p>
+            <p class="foot mono ml-[38px] mt-0.5 text-[10.5px] text-[var(--ink-3)]">↑ 0.9k ↓ 1.4k tokens · ¥0.004</p>
+          </section>
+
+          <!-- 3+4 · 计划卡 + 工具卡 -->
+          <section class="msg rise" style="animation-delay:.16s">
+            <div class="flex items-center gap-2.5">
+              <svg viewBox="0 0 120 120" class="h-[26px] w-[26px] shrink-0" role="img" aria-label="momo">
+                <path d="M60 20C87 20 101 42 101 66c0 22-17 34-41 34s-41-12-41-34c0-24 14-46 41-46Z" style="fill:var(--momo-body);stroke:var(--momo-line);stroke-width:3"/>
+                <g class="momo-eyes">
+                  <ellipse cx="45" cy="62" rx="5" ry="6.6" style="fill:var(--momo-face)"/>
+                  <ellipse cx="75" cy="62" rx="5" ry="6.6" style="fill:var(--momo-face)"/>
+                </g>
+                <ellipse cx="32.5" cy="72.5" rx="5.6" ry="3.2" style="fill:var(--momo-blush)" opacity=".55"/>
+                <ellipse cx="87.5" cy="72.5" rx="5.6" ry="3.2" style="fill:var(--momo-blush)" opacity=".55"/>
+                <path d="M54 71.5c2 2.6 4 3.8 6 3.8s4-1.2 6-3.8" style="fill:none;stroke:var(--momo-face);stroke-width:3;stroke-linecap:round"/>
+              </svg>
+              <span class="text-[12.5px] font-medium text-[var(--ink)]">momo</span>
+              <span class="text-[11px] text-[var(--ink-3)]">正在干活</span>
+            </div>
+
+            <div class="ml-[38px] mt-1.5 space-y-2">
+              <!-- 计划卡 -->
+              <div class="overflow-hidden rounded-[10px] border border-[var(--line)] bg-white shadow-[0_1px_2px_rgba(0,0,0,.03)]">
+                <div class="flex items-center gap-2 border-b border-[var(--line-2)] bg-[var(--panel)] px-3.5 py-[7px]">
+                  <svg class="h-[14px] w-[14px] text-[var(--ink-2)]"><use href="#i-list"/></svg>
+                  <span class="text-[12.5px] font-medium text-[var(--ink)]">计划</span>
+                  <span class="ml-auto text-[11px] text-[var(--ink-3)]">2 / 4</span>
+                  <svg class="h-[12px] w-[12px] text-[var(--ink-3)]"><use href="#i-chev-d"/></svg>
+                </div>
+                <ol class="px-1.5 py-1">
+                  <li class="flex items-center gap-2.5 rounded-[7px] px-2 py-[5px] text-[13px] text-[var(--ink-3)]">
+                    <svg class="h-[15px] w-[15px] shrink-0 text-[var(--ok)]"><use href="#i-check"/></svg>
+                    提取《第五章-树与二叉树.pptx》全文
+                    <span class="ml-auto text-[11px] text-[var(--ink-4)]">38 页</span>
+                  </li>
+                  <li class="flex items-center gap-2.5 rounded-[7px] px-2 py-[5px] text-[13px] text-[var(--ink-3)]">
+                    <svg class="h-[15px] w-[15px] shrink-0 text-[var(--ok)]"><use href="#i-check"/></svg>
+                    检索本子内相关笔记
+                    <span class="ml-auto text-[11px] text-[var(--ink-4)]">命中 4 条</span>
+                  </li>
+                  <li class="flex items-center gap-2.5 rounded-[7px] bg-[var(--amber-bg)] px-2 py-[5px] text-[13px] font-medium text-[var(--ink)] ring-1 ring-[var(--amber-line)]">
+                    <svg class="spin h-[15px] w-[15px] shrink-0 text-[var(--amber)]"><use href="#i-spinner"/></svg>
+                    归纳重点，生成复习笔记草稿
+                    <span class="ml-auto text-[11px] font-normal text-[var(--amber-ink)]">进行中</span>
+                  </li>
+                  <li class="flex items-center gap-2.5 rounded-[7px] px-2 py-[5px] text-[13px] text-[var(--ink-2)]">
+                    <svg class="h-[15px] w-[15px] shrink-0 text-[var(--ink-4)]"><use href="#i-circle"/></svg>
+                    写入「数据结构 / 笔记」文件夹
+                  </li>
+                </ol>
+              </div>
+
+              <!-- 工具卡 -->
+              <div class="space-y-1.5">
+                <button class="tool-row flex w-full items-center gap-2.5 rounded-[8px] border border-[var(--line-2)] bg-[var(--panel)] px-3 py-[6px] text-left">
+                  <svg class="h-[13px] w-[13px] shrink-0 text-[var(--ok)]"><use href="#i-check"/></svg>
+                  <svg class="h-[14px] w-[14px] shrink-0 text-[var(--ink-3)]"><use href="#i-doc"/></svg>
+                  <span class="text-[12.5px] text-[var(--ink-2)]">读取</span>
+                  <span class="mono truncate text-[12px] text-[var(--ink)]">第五章-树与二叉树.pptx</span>
+                  <span class="ml-auto shrink-0 text-[11px] text-[var(--ink-3)]">38 页 · 2,146 字</span>
+                  <svg class="h-[12px] w-[12px] shrink-0 text-[var(--ink-4)]"><use href="#i-chev-d"/></svg>
+                </button>
+                <button class="tool-row flex w-full items-center gap-2.5 rounded-[8px] border border-[var(--line-2)] bg-[var(--panel)] px-3 py-[6px] text-left">
+                  <svg class="h-[13px] w-[13px] shrink-0 text-[var(--ok)]"><use href="#i-check"/></svg>
+                  <svg class="h-[14px] w-[14px] shrink-0 text-[var(--ink-3)]"><use href="#i-search"/></svg>
+                  <span class="text-[12.5px] text-[var(--ink-2)]">搜索</span>
+                  <span class="truncate text-[12.5px] text-[var(--ink)]">本子内相关笔记</span>
+                  <span class="ml-auto shrink-0 text-[11px] text-[var(--ink-3)]">命中 4 条</span>
+                  <svg class="h-[12px] w-[12px] shrink-0 text-[var(--ink-4)]"><use href="#i-chev-d"/></svg>
+                </button>
+                <button class="tool-row flex w-full items-center gap-2.5 rounded-[8px] border border-[var(--line-2)] bg-[var(--panel)] px-3 py-[6px] text-left">
+                  <svg class="spin h-[13px] w-[13px] shrink-0 text-[var(--ink-3)]"><use href="#i-spinner"/></svg>
+                  <svg class="h-[14px] w-[14px] shrink-0 text-[var(--ink-3)]"><use href="#i-pencil"/></svg>
+                  <span class="text-[12.5px] text-[var(--ink-2)]">生成</span>
+                  <span class="truncate text-[12.5px] text-[var(--ink)]">复习笔记草稿</span>
+                  <span class="ml-auto shrink-0 text-[11px] text-[var(--ink-3)]">进行中…</span>
+                  <svg class="h-[12px] w-[12px] shrink-0 text-[var(--ink-4)]"><use href="#i-chev-d"/></svg>
+                </button>
+              </div>
+            </div>
+            <p class="foot mono ml-[38px] mt-1 text-[10.5px] text-[var(--ink-3)]">↑ 2.4k ↓ 0.6k tokens · ¥0.006</p>
+          </section>
+
+          <!-- 5 · 审批条 -->
+          <section class="msg rise" style="animation-delay:.24s">
+            <div class="flex items-center gap-2.5">
+              <svg viewBox="0 0 120 120" class="h-[26px] w-[26px] shrink-0" role="img" aria-label="momo">
+                <path d="M60 20C87 20 101 42 101 66c0 22-17 34-41 34s-41-12-41-34c0-24 14-46 41-46Z" style="fill:var(--momo-body);stroke:var(--momo-line);stroke-width:3"/>
+                <g class="momo-eyes">
+                  <ellipse cx="45" cy="62" rx="5" ry="6.6" style="fill:var(--momo-face)"/>
+                  <ellipse cx="75" cy="62" rx="5" ry="6.6" style="fill:var(--momo-face)"/>
+                </g>
+                <ellipse cx="32.5" cy="72.5" rx="5.6" ry="3.2" style="fill:var(--momo-blush)" opacity=".55"/>
+                <ellipse cx="87.5" cy="72.5" rx="5.6" ry="3.2" style="fill:var(--momo-blush)" opacity=".55"/>
+                <path d="M54 71.5c2 2.6 4 3.8 6 3.8s4-1.2 6-3.8" style="fill:none;stroke:var(--momo-face);stroke-width:3;stroke-linecap:round"/>
+              </svg>
+              <span class="text-[12.5px] font-medium text-[var(--ink)]">momo</span>
+              <span class="text-[11px] text-[var(--ink-3)]">需要你确认一下</span>
+            </div>
+
+            <div class="ml-[38px] mt-1.5 flex items-center gap-3.5 rounded-[10px] border border-[var(--amber-line)] bg-[var(--amber-bg)] px-4 py-2.5">
+              <span class="grid h-[30px] w-[30px] shrink-0 place-items-center rounded-[8px] border border-[var(--amber-line)] bg-white/80 text-[var(--amber)]">
+                <svg class="h-[16px] w-[16px]"><use href="#i-shield"/></svg>
+              </span>
+              <div class="min-w-0">
+                <p class="text-[13px] font-medium text-[var(--ink)]">momo 想写入文件</p>
+                <p class="mono mt-[3px] w-fit truncate rounded-[5px] border border-[var(--amber-line)] bg-white/80 px-1.5 py-px text-[11.5px] text-[var(--amber-ink)]">数据结构/笔记/第五章-复习笔记.md</p>
+                <p class="mt-[4px] text-[11.5px] text-[var(--ink-3)]">只写进本子的「笔记」文件夹，不碰其它内容</p>
+              </div>
+              <div class="ml-auto flex shrink-0 items-center gap-2">
+                <button class="rounded-[8px] px-3 py-[6px] text-[12.5px] text-[var(--ink-3)] transition-colors hover:bg-white/70 hover:text-[var(--ink)]">拒绝</button>
+                <button class="rounded-[8px] border border-[var(--line)] bg-white px-3 py-[6px] text-[12.5px] text-[var(--ink-2)] shadow-[0_1px_2px_rgba(0,0,0,.04)] transition-all hover:border-[var(--ink-4)] hover:text-[var(--ink)]">本对话总是允许</button>
+                <button class="rounded-[8px] bg-[var(--ink)] px-3.5 py-[6px] text-[12.5px] font-medium text-white shadow-[0_1px_3px_rgba(0,0,0,.18)] transition-colors hover:bg-black">允许一次</button>
+              </div>
+            </div>
+            <p class="foot mono ml-[38px] mt-1 text-[10.5px] text-[var(--ink-3)]">等待你的确认 · 这一步不产生用量</p>
+          </section>
+
+          <!-- 6 · 流式回复 -->
+          <section class="msg rise" style="animation-delay:.32s">
+            <div class="flex items-center gap-2.5">
+              <svg viewBox="0 0 120 120" class="h-[26px] w-[26px] shrink-0" role="img" aria-label="momo">
+                <path d="M60 20C87 20 101 42 101 66c0 22-17 34-41 34s-41-12-41-34c0-24 14-46 41-46Z" style="fill:var(--momo-body);stroke:var(--momo-line);stroke-width:3"/>
+                <g class="momo-eyes">
+                  <ellipse cx="45" cy="62" rx="5" ry="6.6" style="fill:var(--momo-face)"/>
+                  <ellipse cx="75" cy="62" rx="5" ry="6.6" style="fill:var(--momo-face)"/>
+                </g>
+                <ellipse cx="32.5" cy="72.5" rx="5.6" ry="3.2" style="fill:var(--momo-blush)" opacity=".55"/>
+                <ellipse cx="87.5" cy="72.5" rx="5.6" ry="3.2" style="fill:var(--momo-blush)" opacity=".55"/>
+                <path d="M54 71.5c2 2.6 4 3.8 6 3.8s4-1.2 6-3.8" style="fill:none;stroke:var(--momo-face);stroke-width:3;stroke-linecap:round"/>
+                <path class="twinkle" d="M97 21c.5 4.6 3.4 7.5 8 8-4.6.5-7.5 3.4-8 8-.5-4.6-3.4-7.5-8-8 4.6-.5 7.5-3.4 8-8Z" style="fill:var(--momo-spark)"/>
+              </svg>
+              <span class="text-[12.5px] font-medium text-[var(--ink)]">momo</span>
+              <span class="flex items-center gap-1.5 text-[11px] text-[var(--ink-3)]">
+                <svg class="spin h-[11px] w-[11px] text-[var(--amber)]"><use href="#i-spinner"/></svg>正在生成
+              </span>
+            </div>
+            <p class="ml-[38px] mt-1 max-w-[600px] text-[13.5px] leading-[1.8] text-[var(--ink)]">
+              草稿好了。第五章的主线是「遍历」——先序、中序、后序三种走法贯穿整章，我按考点轻重排了顺序，配了 6 道典型例题和一张易错点清单。你点「允许一次」，我就把它写进本子<span class="caret ml-[3px] inline-block h-[14px] w-[7px] translate-y-[2px] rounded-[1.5px] bg-[var(--ink)]"></span>
+            </p>
+            <p class="foot mono ml-[38px] mt-0.5 text-[10.5px] text-[var(--ink-3)]">生成中 · ↑ 2.1k ↓ 0.4k tokens · ¥0.005</p>
+          </section>
+
+        </div>
+      </div>
+
+      <!-- 输入框 -->
+      <div class="shrink-0 border-t border-[var(--line)] bg-white">
+        <div class="mx-auto w-full max-w-[760px] px-8 pb-3 pt-2.5">
+          <div class="rounded-[12px] border border-[var(--line)] bg-white shadow-[0_2px_10px_-4px_rgba(0,0,0,.08)] transition-all focus-within:border-[var(--ink-4)] focus-within:shadow-[0_4px_16px_-6px_rgba(0,0,0,.12)]">
+            <div class="px-3.5 pt-2">
+              <input type="text" placeholder="给 momo 派活，或接着问…" aria-label="给 momo 派活，或接着问"
+                class="w-full bg-transparent text-[13.5px] text-[var(--ink)] caret-[var(--amber)] outline-none placeholder:text-[var(--ink-3)]">
+            </div>
+            <div class="flex items-center gap-1 px-2.5 pb-1.5 pt-1.5">
+              <button class="icon-btn !h-7 !w-7" title="@ 引用本子或成果" aria-label="@ 引用">
+                <svg class="h-[15px] w-[15px]"><use href="#i-at"/></svg>
+              </button>
+              <button class="icon-btn !h-7 !w-7" title="/ 技能" aria-label="/ 技能">
+                <svg class="h-[15px] w-[15px]"><use href="#i-slash"/></svg>
+              </button>
+              <button class="icon-btn !h-7 !w-7" title="添加附件" aria-label="附件">
+                <svg class="h-[15px] w-[15px]"><use href="#i-clip"/></svg>
+              </button>
+              <span class="ml-auto mr-2 hidden text-[10.5px] text-[var(--ink-4)] sm:block">Enter 发送 · Shift + Enter 换行</span>
+              <button class="grid h-7 w-7 place-items-center rounded-[7px] bg-[var(--ink)] text-white shadow-sm transition-colors hover:bg-black" title="发送" aria-label="发送">
+                <svg class="h-[13px] w-[13px]"><use href="#i-arrow-up"/></svg>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+</body>
+</html>

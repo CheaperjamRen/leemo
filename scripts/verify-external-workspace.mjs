@@ -22,20 +22,27 @@ const PREFIX = "leemo-e2e-r11-external-";
 const PROJECT_DIR_NAME = "毕业设计项目";
 const ARTIFACT_NAME = "r11-project-artifact.md";
 const ARTIFACT_CONTENT = "# 外部项目产物\n\nR11_EXTERNAL_ARTIFACT_CONTENT\n";
+const REFERENCED_FILE_NAME = "课程计划.md";
+const REFERENCED_FILE_ORIGINAL = "# 课程计划\n\n先阅读论文。\n";
+const REFERENCED_FILE_UPDATED = "# 课程计划\n\n先阅读论文，再整理三条核心结论。\n";
+const REFERENCED_EDIT_TASK_MARKER = "请先读取我引用的课程计划";
 const PROJECT_MEMORY = "毕业设计项目使用 pnpm，并优先保持离线可运行";
 const FACTS_PATH = path.join(OUTPUT_DIR, "r11-external-workspace-facts.json");
 const PROJECT_SCREENSHOT = path.join(OUTPUT_DIR, "r11-external-workspace.png");
+const REFERENCED_EDIT_SCREENSHOT = path.join(OUTPUT_DIR, "r11-external-referenced-edit.png");
 const MEMORY_SCREENSHOT = path.join(OUTPUT_DIR, "r11-external-memory-720x640.png");
 const MISSING_SCREENSHOT = path.join(OUTPUT_DIR, "r11-external-missing-folder.png");
 
 const PROMPTS = {
   artifact: "R11_TASK_ARTIFACT：在当前项目根目录写入 r11-project-artifact.md，完成后简短回复。",
+  editReference: `${REFERENCED_EDIT_TASK_MARKER}，再把第二段改成“先阅读论文，再整理三条核心结论。”，最后重新读取确认。`,
   remember: `R11_TASK_REMEMBER：请记住当前项目约定：${PROJECT_MEMORY}。完成后简短回复。`,
   continue: "R11_TASK_CONTINUE：这是重启恢复测试，请只回复 R11_CONTINUE_OK。",
 };
 
 const FINAL = {
   artifact: "R11_ARTIFACT_OK",
+  editReference: "课程计划已更新，并重新读取确认。",
   remember: "R11_MEMORY_OK",
   continue: "R11_CONTINUE_OK",
 };
@@ -132,7 +139,7 @@ function writeToolCall(response, model, toolName, args, sequence) {
 }
 
 function latestTask(serialized) {
-  const latest = ["R11_TASK_ARTIFACT", "R11_TASK_REMEMBER", "R11_TASK_CONTINUE"]
+  const latest = ["R11_TASK_ARTIFACT", REFERENCED_EDIT_TASK_MARKER, "R11_TASK_REMEMBER", "R11_TASK_CONTINUE"]
     .map((marker) => ({ marker, index: serialized.lastIndexOf(marker) }))
     .sort((left, right) => right.index - left.index)[0];
   return latest && latest.index >= 0 ? latest.marker : undefined;
@@ -151,9 +158,9 @@ function streamRouter(response, body, state) {
     : [];
   const model = typeof body.model === "string" ? body.model : MODEL_ID;
   const call = (kind, args) => {
-    const toolName = kind === "Write"
-      ? tools.find((name) => name === "Write" || /(?:^|__)write$/i.test(name))
-      : tools.find((name) => name === "mcp__leemo-memory__remember" || /(?:^|__)remember$/i.test(name));
+    const toolName = kind === "remember"
+      ? tools.find((name) => name === "mcp__leemo-memory__remember" || /(?:^|__)remember$/i.test(name))
+      : tools.find((name) => name === kind || new RegExp(`(?:^|__)${kind}$`, "i").test(name));
     insist(toolName, `本机 mock 没收到 ${kind} 工具`);
     state.toolCalls.push({ expected: kind, toolName, args });
     writeToolCall(response, model, toolName, args, state.toolCalls.length);
@@ -164,6 +171,32 @@ function streamRouter(response, body, state) {
       if (!hasToolResult) call("Write", { file_path: ARTIFACT_NAME, content: ARTIFACT_CONTENT });
       else writeSuccess(response, model, FINAL.artifact);
       return;
+    case REFERENCED_EDIT_TASK_MARKER: {
+      const stage = state.referencedEditStage ?? 0;
+      if (stage === 0) {
+        insist(serialized.includes("LEEMO_ATTACHMENTS_JSON"), "引用文件没有进入模型上下文");
+        insist(serialized.includes(`\\\"workspacePath\\\": \\\"${REFERENCED_FILE_NAME}\\\"`), "引用文件没有保留当前本子相对路径");
+        state.referencedEditMetadataObserved = true;
+        state.referencedEditStage = 1;
+        call("Read", { file_path: REFERENCED_FILE_NAME });
+      } else if (stage === 1) {
+        insist(lastSerialized.includes("先阅读论文。"), "模型没有读到引用文件原文");
+        state.referencedEditStage = 2;
+        call("Edit", {
+          file_path: REFERENCED_FILE_NAME,
+          old_string: "先阅读论文。",
+          new_string: "先阅读论文，再整理三条核心结论。",
+        });
+      } else if (stage === 2) {
+        state.referencedEditStage = 3;
+        call("Read", { file_path: REFERENCED_FILE_NAME });
+      } else {
+        insist(lastSerialized.includes("先阅读论文，再整理三条核心结论。"), "模型没有读回修改后的文件内容");
+        state.referencedEditReadBack = true;
+        writeSuccess(response, model, FINAL.editReference);
+      }
+      return;
+    }
     case "R11_TASK_REMEMBER":
       if (!hasToolResult) call("remember", {
         topic: "项目约定",
@@ -268,6 +301,7 @@ async function run() {
       if (!firstLaunch) return [];
       firstLaunch = false;
       fs.mkdirSync(projectRoot, { recursive: true });
+      fs.writeFileSync(path.join(projectRoot, REFERENCED_FILE_NAME), REFERENCED_FILE_ORIGINAL, "utf8");
       return [`--leemo-e2e-workspace=${projectRoot}`];
     },
   });
@@ -300,6 +334,27 @@ async function run() {
     facts.screenshots.project = relativeOutput(PROJECT_SCREENSHOT);
 
     await newConversation(app.page);
+    const composer = app.page.locator('textarea[aria-label="输入消息"]');
+    await composer.fill(`${PROMPTS.editReference} @课程`);
+    const mentionMenu = app.page.getByRole("listbox", { name: "引用工作区文件" });
+    await mentionMenu.waitFor({ state: "visible" });
+    await app.page.getByRole("option", { name: new RegExp(REFERENCED_FILE_NAME.replace(".", "\\.")) }).click();
+    await app.page.getByRole("button", { name: `移除引用 ${REFERENCED_FILE_NAME}` }).waitFor({ state: "visible" });
+    await runVisiblePrompt(app.page, PROMPTS.editReference, FINAL.editReference);
+    const referencedFilePath = path.join(projectRoot, REFERENCED_FILE_NAME);
+    insist(fs.readFileSync(referencedFilePath, "utf8") === REFERENCED_FILE_UPDATED, "引用文件没有按要求原位修改");
+    insist(harness.state.referencedEditReadBack === true, "模型没有在修改后重新读取文件");
+    const fileReceipt = app.page.getByRole("button", { name: "查看文件变化" }).last();
+    await fileReceipt.waitFor({ state: "visible" });
+    insist((await fileReceipt.innerText()).includes("修改了 1 个文件"), "完成回执没有说清文件变化数量");
+    await fileReceipt.click();
+    await app.page.getByRole("button", { name: `预览 ${REFERENCED_FILE_NAME}` }).click();
+    await app.page.getByText("先阅读论文，再整理三条核心结论。", { exact: true }).waitFor({ state: "visible" });
+    await app.page.keyboard.press("Escape");
+    await app.page.screenshot({ path: REFERENCED_EDIT_SCREENSHOT, animations: "disabled" });
+    facts.screenshots.referencedEdit = relativeOutput(REFERENCED_EDIT_SCREENSHOT);
+
+    await newConversation(app.page);
     await runVisiblePrompt(app.page, PROMPTS.remember, FINAL.remember);
     await app.page.locator("[data-memory-receipt]").last().waitFor({ state: "visible" });
     const projectMemories = await listMemory(app.page, [{ type: "workspace", workspaceId: external.id }]);
@@ -325,8 +380,9 @@ async function run() {
     facts.viewports = await captureViewportMatrix(app.page);
 
     const archivesBeforeRestart = readConversationArchives(projectRoot);
-    insist(archivesBeforeRestart.length >= 2, "外部项目没有生成便携对话归档");
+    insist(archivesBeforeRestart.length >= 3, "外部项目没有生成便携对话归档");
     insist(archivesBeforeRestart.every((entry) => entry.meta.workspaceId === external.id), "归档缺少项目归属");
+    insist(!JSON.stringify(archivesBeforeRestart).includes(projectRoot), "便携对话归档泄露了本机绝对路径");
     const ledgerPath = path.join(projectRoot, ".leemo", "memory", "ledger.jsonl");
     insist(fs.readFileSync(ledgerPath, "utf8").includes(PROJECT_MEMORY), "项目记忆账本未落盘");
 
@@ -334,7 +390,8 @@ async function run() {
     app = await harness.restart("正常重启");
     await ensureWorkbench(app.page);
     await switchWorkspace(app.page, PROJECT_DIR_NAME);
-    insist((await app.page.locator('aside [data-conversation-id]').count()) >= 2, "重启后本子对话没有恢复");
+    insist((await app.page.locator('aside [data-conversation-id]').count()) >= 3, "重启后本子对话没有恢复");
+    insist(fs.readFileSync(path.join(projectRoot, REFERENCED_FILE_NAME), "utf8") === REFERENCED_FILE_UPDATED, "重启后引用文件修改丢失");
     await runVisiblePrompt(app.page, PROMPTS.continue, FINAL.continue);
     facts.checks.restartContinued = true;
 
@@ -356,7 +413,7 @@ async function run() {
     app = await harness.start("目录恢复");
     await ensureWorkbench(app.page);
     await switchWorkspace(app.page, PROJECT_DIR_NAME);
-    insist((await app.page.locator('aside [data-conversation-id]').count()) >= 2, "目录恢复后本子对话没有回来");
+    insist((await app.page.locator('aside [data-conversation-id]').count()) >= 3, "目录恢复后本子对话没有回来");
     const restoredEntries = (await workspaceList(app.page)).filter((entry) => entry.id === external.id);
     insist(restoredEntries.length === 1 && restoredEntries[0].available, "目录恢复后没有复用原项目 id");
     const restoredMemory = await listMemory(app.page, [{ type: "workspace", workspaceId: external.id }]);
@@ -369,10 +426,22 @@ async function run() {
     insist(fs.existsSync(path.join(projectRoot, ".leemo")), "移除最近记录删除了项目里的 Leemo 数据");
     insist(!(await workspaceList(app.page)).some((entry) => entry.id === external.id), "最近项目记录没有移除");
 
+    const referencedEditToolSequence = harness.state.toolCalls
+      .filter((call) => call.args?.file_path === REFERENCED_FILE_NAME)
+      .map((call) => call.expected);
+    insist(JSON.stringify(referencedEditToolSequence) === JSON.stringify(["Read", "Edit", "Read"]), "引用文件工具顺序不是 Read → Edit → Read");
+    insist(harness.state.referencedEditMetadataObserved === true, "模型请求没有经过引用元数据校验");
+    facts.externalApiCalls = 0;
+    facts.modelCostUsd = 0;
+    facts.referencedEditToolSequence = referencedEditToolSequence;
     facts.checks = {
       controlledPicker: true,
       artifactAtProjectRoot: true,
       artifactVisibleInTreeAndResults: true,
+      referencedFileReadEditedAndReadBack: true,
+      fileChangeReceiptOpenedPreview: true,
+      referencedEditSurvivedRestart: true,
+      portableArchiveContainsNoAbsolutePath: true,
       portableConversationArchive: true,
       projectMemoryIsolated: true,
       restartContinued: true,

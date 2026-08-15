@@ -317,7 +317,7 @@ async function dismissFreshOnboarding(page) {
 }
 
 async function openEnglishPage(page) {
-  const workbench = page.getByRole("button", { name: "工作台", exact: true });
+  const workbench = page.getByRole("button", { name: "切换到工作台", exact: true });
   if ((await workbench.getAttribute("aria-pressed")) !== "true") await workbench.click();
   await page.getByRole("button", { name: "英语学习", exact: true }).click();
   await page.getByRole("heading", { name: "英语学习", exact: true }).waitFor();

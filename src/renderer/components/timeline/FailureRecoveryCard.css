@@ -1,0 +1,281 @@
+.failure-recovery {
+  width: 100%;
+  max-width: 650px;
+  margin-inline: auto;
+  padding: 17px 18px 16px;
+  border: 1px solid color-mix(in srgb, var(--leemo-line) 88%, var(--leemo-amber-soft));
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--leemo-surface-card) 96%, var(--leemo-card));
+  box-shadow: 0 14px 32px -28px rgba(83, 55, 32, 0.42);
+  color: var(--leemo-ink);
+}
+
+.failure-recovery__badge {
+  display: inline-flex;
+  min-height: 22px;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--leemo-danger-soft) 84%, var(--leemo-surface-card));
+  color: var(--leemo-danger);
+  font-size: 11px;
+  font-weight: 650;
+  line-height: 1.2;
+}
+
+.failure-recovery h3 {
+  margin: 9px 0 2px;
+  color: color-mix(in srgb, var(--leemo-danger) 78%, var(--leemo-ink));
+  font-size: 17px;
+  font-weight: 650;
+  line-height: 1.35;
+}
+
+.failure-recovery__description {
+  margin: 0;
+  color: var(--leemo-ink-3);
+  font-size: 12.5px;
+  line-height: 1.55;
+}
+
+.failure-recovery__facts {
+  margin-top: 13px;
+  overflow: hidden;
+  border: 1px solid var(--leemo-line-soft);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--leemo-card) 92%, var(--leemo-bg));
+}
+
+.failure-recovery__fact {
+  display: grid;
+  min-height: 45px;
+  grid-template-columns: 24px 104px minmax(0, 1fr);
+  align-items: center;
+  padding: 8px 13px;
+  font-size: 12.5px;
+}
+
+.failure-recovery__fact + .failure-recovery__fact {
+  border-top: 1px solid var(--leemo-line-soft);
+}
+
+.failure-recovery__fact-icon {
+  display: grid;
+  width: 20px;
+  height: 20px;
+  place-items: center;
+  border-radius: 999px;
+}
+
+.failure-recovery__fact-icon svg {
+  width: 13px;
+  height: 13px;
+  stroke-width: 2.5;
+}
+
+.failure-recovery__fact--completed .failure-recovery__fact-icon {
+  background: var(--leemo-ok);
+  color: var(--leemo-surface-card);
+}
+
+.failure-recovery__fact--unfinished .failure-recovery__fact-icon {
+  color: var(--leemo-amber-strong);
+}
+
+.failure-recovery__fact-label {
+  color: var(--leemo-ink);
+  font-weight: 620;
+}
+
+.failure-recovery__fact-text {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--leemo-ink-3);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.failure-recovery__retained {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 13px 3px 11px;
+  color: var(--leemo-ink-3);
+  font-size: 11.5px;
+}
+
+.failure-recovery__retained svg {
+  width: 13px;
+  height: 13px;
+}
+
+.failure-recovery__details {
+  overflow: hidden;
+  border: 1px solid var(--leemo-line-soft);
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--leemo-card) 95%, var(--leemo-bg));
+}
+
+.failure-recovery__details-toggle {
+  display: flex;
+  width: 100%;
+  min-height: 41px;
+  align-items: center;
+  gap: 9px;
+  padding: 7px 13px;
+  color: var(--leemo-ink-2);
+  font-size: 12px;
+  font-weight: 560;
+  text-align: left;
+}
+
+.failure-recovery__details-toggle:hover {
+  background: color-mix(in srgb, var(--leemo-hover) 62%, transparent);
+}
+
+.failure-recovery__details-toggle svg {
+  width: 15px;
+  height: 15px;
+}
+
+.failure-recovery__details-toggle svg:last-child {
+  margin-left: auto;
+  transition: transform 150ms ease;
+}
+
+.failure-recovery__details-toggle svg:last-child.is-open {
+  transform: rotate(90deg);
+}
+
+.failure-recovery__raw {
+  max-height: 160px;
+  margin: 0;
+  overflow: auto;
+  border-top: 1px solid var(--leemo-line-soft);
+  padding: 10px 13px;
+  color: var(--leemo-ink-2);
+  font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+  font-size: 11px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.failure-recovery__action-error {
+  margin: 8px 2px 0;
+  color: var(--leemo-danger);
+  font-size: 11px;
+}
+
+.failure-recovery__actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 9px;
+  margin-top: 14px;
+}
+
+.failure-recovery__button {
+  display: inline-flex;
+  min-width: 124px;
+  height: 40px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--leemo-line-soft);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--leemo-surface-card) 96%, var(--leemo-card));
+  padding: 0 16px;
+  color: var(--leemo-ink-2);
+  font-size: 12.5px;
+  font-weight: 560;
+  transition: border-color 150ms ease, background 150ms ease, transform 150ms ease;
+}
+
+.failure-recovery__button:hover:not(:disabled) {
+  border-color: var(--leemo-line);
+  background: var(--leemo-hover);
+}
+
+.failure-recovery__button:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.failure-recovery__button:disabled {
+  cursor: wait;
+  opacity: 0.62;
+}
+
+.failure-recovery__button--primary {
+  border-color: var(--leemo-amber);
+  background: var(--leemo-amber);
+  color: var(--leemo-surface-card);
+  box-shadow: 0 7px 16px -11px color-mix(in srgb, var(--leemo-amber) 74%, transparent);
+}
+
+.failure-recovery__button--primary:hover:not(:disabled) {
+  border-color: var(--leemo-amber-strong);
+  background: var(--leemo-amber-strong);
+}
+
+.failure-recovery__button--icon {
+  width: 54px;
+  min-width: 54px;
+  padding: 0;
+}
+
+.failure-recovery__button--icon svg {
+  width: 18px;
+  height: 18px;
+}
+
+.failure-recovery__more-wrap {
+  position: relative;
+}
+
+.failure-recovery__menu {
+  position: absolute;
+  z-index: 20;
+  right: 0;
+  bottom: calc(100% + 7px);
+  width: max-content;
+  min-width: 158px;
+  padding: 5px;
+  border: 1px solid var(--leemo-line);
+  border-radius: 9px;
+  background: var(--leemo-card);
+  box-shadow: var(--leemo-shadow-popover);
+}
+
+.failure-recovery__menu button {
+  width: 100%;
+  border-radius: 6px;
+  padding: 7px 9px;
+  color: var(--leemo-ink-2);
+  font-size: 11.5px;
+  text-align: left;
+}
+
+.failure-recovery__menu button:hover {
+  background: var(--leemo-hover);
+}
+
+@media (max-width: 640px) {
+  .failure-recovery {
+    padding: 15px;
+    border-radius: 14px;
+  }
+
+  .failure-recovery__fact {
+    grid-template-columns: 24px 72px minmax(0, 1fr);
+  }
+
+  .failure-recovery__actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr auto;
+  }
+
+  .failure-recovery__button {
+    min-width: 0;
+    padding-inline: 10px;
+  }
+}

@@ -1,0 +1,40 @@
+{
+  "checks": {
+    "visibleCreate": true,
+    "automaticRun": true,
+    "didNotStealView": true,
+    "runRecorded": true,
+    "resultConversationVisible": true,
+    "restartRestored": true,
+    "terminalConversationPersisted": true,
+    "missedNeedsChoice": true,
+    "skipPersisted": true
+  },
+  "screenshots": {
+    "desktop": "docs/research/audit-shots/r11-scheduled-tasks.png",
+    "missed": "docs/research/audit-shots/r11-scheduled-tasks-missed-720x640.png"
+  },
+  "layouts": {
+    "desktop": {
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "horizontalOverflow": 0,
+      "mainInsideViewport": true,
+      "formInsideViewport": null
+    },
+    "compact": {
+      "viewport": {
+        "width": 720,
+        "height": 640
+      },
+      "horizontalOverflow": 0,
+      "mainInsideViewport": true,
+      "formInsideViewport": null
+    }
+  },
+  "rendererErrors": [],
+  "createdDueAt": 1785726720000,
+  "waitedForDueMs": 52867
+}

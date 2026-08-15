@@ -2,9 +2,11 @@ import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { verifySuperpowersBundle } from "./verify-superpowers-bundle.mjs";
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const bundleRoot = path.resolve(process.argv[2] ?? path.join(REPO_ROOT, "bundled-skills"));
+const defaultBundleRoot = path.join(REPO_ROOT, "bundled-skills");
+const bundleRoot = path.resolve(process.argv[2] ?? defaultBundleRoot);
 const GROUPS = [
   { directory: "default-enabled", reportKey: "defaultEnabled" },
   { directory: "optional", reportKey: "optional" },
@@ -186,6 +188,21 @@ function verify() {
     hash.update(data);
     hash.update("\0");
   }
+  const superpowersRoot = path.join(bundleRoot, "superpowers", "release");
+  let superpowers = null;
+  if (fs.existsSync(superpowersRoot)) {
+    const result = verifySuperpowersBundle(superpowersRoot);
+    superpowers = {
+      revision: result.revision,
+      skillCount: result.skillCount,
+      files: result.files,
+      bytes: result.bytes,
+      sha256: result.sha256,
+    };
+  } else if (bundleRoot === path.resolve(defaultBundleRoot)) {
+    fail(`Superpowers 离线包不存在：${superpowersRoot}`);
+  }
+
   return {
     bundleRoot,
     groups,
@@ -194,6 +211,7 @@ function verify() {
     files: files.length,
     bytes,
     sha256: hash.digest("hex"),
+    superpowers,
   };
 }
 

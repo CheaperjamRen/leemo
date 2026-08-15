@@ -1,0 +1,4 @@
+== RED-A (throwing stubs, HEAD=84efc29, vendor UNPATCHED) ==
+Test Files  13 failed | 1 passed (14)
+     Tests  51 failed | 2 passed (53)
+All 51 pitfall tests throw 'TODO ... not implemented'. Baseline captured before any impl.

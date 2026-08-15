@@ -10,7 +10,14 @@
   "executable": {
     "name": "Sbroenne.WindowsMcp.exe",
     "size": 59784950,
-    "sha256": "E1CADA4CDADCD712D586C96C146FA6D0ECCFF61BD7D7107AA0EC4961D758E76E"
+    "sha256": "A9360259E3CF945A342217D06C0B8636725AFF43B34C69E5C4D0F579F7D57290"
   },
-  "license": "MIT"
+  "license": "MIT",
+  "patches": [
+    {
+      "name": "per-monitor-v2-dpi-awareness",
+      "source": "../dpi-awareness.manifest",
+      "sha256": "8A69735F5C0D23067DA4144A03FEA9E0E4232A5BD443297E0E2A01D5B3EF4C3C"
+    }
+  ]
 }

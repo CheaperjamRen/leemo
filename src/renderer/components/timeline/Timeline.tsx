@@ -26,18 +26,19 @@ export default function Timeline() {
   const pendingByConversation = useApprovals((s) => s.pendingByConversation);
   const mode = useSettings((s) => s.mode);
   const messages = timeline ?? [];
-  const { containerRef, atBottom, scrollToBottom, onScroll } = useScrollFollow(messages);
+  const pendingInteraction = activeId ? pendingByConversation[activeId] : undefined;
+  const { containerRef, atBottom, scrollToBottom, onScroll } = useScrollFollow(messages, pendingInteraction?.id ?? null);
   const groups = messages.length === 0 ? [] : groupByRun(messages);
 
   // This conversation has a question waiting on the user, scrolled out of
   // view: swap BackToBottom's plain arrow for a labeled pill — the two are
   // mutually exclusive, never both shown (卡 D §6).
-  const hasPendingQuestion = activeId ? pendingByConversation[activeId]?.kind === "question" : false;
+  const hasPendingQuestion = pendingInteraction?.kind === "question";
 
   return (
-    <div className="relative flex-1 min-h-0 overflow-hidden">
+    <div className="leemo-workbench-timeline relative flex-1 min-h-0 overflow-hidden">
       <div ref={containerRef} onScroll={onScroll} className="h-full overflow-y-auto">
-        <div className="mx-auto w-full max-w-[720px] space-y-6 py-4">
+        <div data-testid="timeline-content" className="mx-auto w-full max-w-[820px] space-y-4 px-5 py-4 xl:max-w-[900px]">
           {groups.map((g) => (
             <TurnBlock
               key={g.runId}

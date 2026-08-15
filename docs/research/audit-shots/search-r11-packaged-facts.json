@@ -1,0 +1,167 @@
+{
+  "checkedAt": "2026-07-31T11:47:58.942Z",
+  "isolatedUserData": true,
+  "firstStartupMs": 1324,
+  "restartStartupMs": 1185,
+  "configuredWithoutEcho": true,
+  "disabledStatePersisted": true,
+  "keyNotEchoedAfterRestart": true,
+  "clearedAfterRestart": true,
+  "searchOff": {
+    "conversationId": "8f468891-83d8-443b-ade0-d1a64649b666",
+    "tools": [],
+    "result": {
+      "kind": "result",
+      "id": "m3",
+      "runId": "run-1",
+      "isError": false,
+      "interrupted": false,
+      "finalText": "R11_SEARCH_OFF_OK",
+      "pathAudit": {
+        "claimed": []
+      },
+      "createdAt": 1785498484774
+    }
+  },
+  "searchError": {
+    "conversationId": "8f468891-83d8-443b-ade0-d1a64649b666",
+    "tools": [
+      {
+        "name": "mcp__leemo-web-search__web_search",
+        "status": "error",
+        "summary": "web_search: empty query"
+      }
+    ],
+    "result": {
+      "kind": "result",
+      "id": "m8",
+      "runId": "run-2",
+      "isError": false,
+      "interrupted": false,
+      "finalText": "R11_SEARCH_ERROR_HANDLED",
+      "pathAudit": {
+        "claimed": []
+      },
+      "createdAt": 1785498486998
+    }
+  },
+  "searchSuccess": {
+    "conversationId": "8f468891-83d8-443b-ade0-d1a64649b666",
+    "tools": [
+      {
+        "name": "mcp__leemo-web-search__web_search",
+        "status": "ok"
+      }
+    ],
+    "result": {
+      "kind": "result",
+      "id": "m13",
+      "runId": "run-3",
+      "isError": false,
+      "interrupted": false,
+      "finalText": "R11_SEARCH_LIVE_OK source=anysearch hits=8",
+      "pathAudit": {
+        "claimed": []
+      },
+      "createdAt": 1785498491293
+    }
+  },
+  "liveSearch": {
+    "source": "anysearch",
+    "hits": 8
+  },
+  "readOnlyApprovalEvents": 0,
+  "idleProcessTree": {
+    "processCount": 4,
+    "workingSetBytes": 699256832
+  },
+  "package": {
+    "unpacked": {
+      "files": 315,
+      "bytes": 732054989
+    },
+    "installerBytes": 185222396,
+    "appAsarBytes": 72540879,
+    "rendererBytes": 717128,
+    "resourcesEntries": 4
+  },
+  "viewports": {
+    "1440x900": {
+      "settingsInsideViewport": true,
+      "panelScrollWidth": 816,
+      "panelClientWidth": 816,
+      "sourceGroups": [
+        "默认来源",
+        "中文增强",
+        "更多来源",
+        "学术检索"
+      ],
+      "webBeforeMcp": true,
+      "horizontalOverflow": [],
+      "composer": {
+        "textareaInsideViewport": true,
+        "surfaceInsideViewport": true,
+        "regionInsideViewport": true,
+        "sendInsideViewport": true
+      }
+    },
+    "1280x720": {
+      "settingsInsideViewport": true,
+      "panelScrollWidth": 816,
+      "panelClientWidth": 816,
+      "sourceGroups": [
+        "默认来源",
+        "中文增强",
+        "更多来源",
+        "学术检索"
+      ],
+      "webBeforeMcp": true,
+      "horizontalOverflow": [],
+      "composer": {
+        "textareaInsideViewport": true,
+        "surfaceInsideViewport": true,
+        "regionInsideViewport": true,
+        "sendInsideViewport": true
+      }
+    },
+    "1024x768": {
+      "settingsInsideViewport": true,
+      "panelScrollWidth": 752,
+      "panelClientWidth": 752,
+      "sourceGroups": [
+        "默认来源",
+        "中文增强",
+        "更多来源",
+        "学术检索"
+      ],
+      "webBeforeMcp": true,
+      "horizontalOverflow": [],
+      "composer": {
+        "textareaInsideViewport": true,
+        "surfaceInsideViewport": true,
+        "regionInsideViewport": true,
+        "sendInsideViewport": true
+      }
+    },
+    "720x640": {
+      "settingsInsideViewport": true,
+      "panelScrollWidth": 448,
+      "panelClientWidth": 448,
+      "sourceGroups": [
+        "默认来源",
+        "中文增强",
+        "更多来源",
+        "学术检索"
+      ],
+      "webBeforeMcp": true,
+      "horizontalOverflow": [],
+      "composer": {
+        "textareaInsideViewport": true,
+        "surfaceInsideViewport": true,
+        "regionInsideViewport": true,
+        "sendInsideViewport": true
+      }
+    }
+  },
+  "rendererErrors": []
+}

@@ -1,0 +1,276 @@
+{
+  "checks": {
+    "widePreviewRemainsSideBySide": true,
+    "nativeWindowClampsTo800x640": true,
+    "previewUsesSingleMainSurface": true,
+    "narrowPreviewOwnsInteraction": true,
+    "previewSwitchKeepsFocus": true,
+    "composerRestoresAfterClose": true
+  },
+  "layouts": {
+    "wideBaseline": {
+      "viewport": {
+        "width": 1027,
+        "height": 658
+      },
+      "horizontalOverflow": 0,
+      "surface": {
+        "left": 260,
+        "top": 52.000003814697266,
+        "right": 1027.4285888671875,
+        "bottom": 658.2857704162598,
+        "width": 767.4285888671875,
+        "height": 606.2857666015625
+      },
+      "preview": null,
+      "conversation": {
+        "left": 260,
+        "top": 52.000003814697266,
+        "right": 1027.4285888671875,
+        "bottom": 658.2857704162598,
+        "width": 767.4285888671875,
+        "height": 606.2857666015625,
+        "inert": false,
+        "ariaHidden": null
+      },
+      "composer": {
+        "left": 260,
+        "top": 507.4285888671875,
+        "right": 1027.4285888671875,
+        "bottom": 658.2857360839844,
+        "width": 767.4285888671875,
+        "height": 150.85714721679688,
+        "fullyVisible": true,
+        "containsFocus": false
+      }
+    },
+    "widePreview": {
+      "viewport": {
+        "width": 1027,
+        "height": 658
+      },
+      "horizontalOverflow": 0,
+      "surface": {
+        "left": 260,
+        "top": 52.000003814697266,
+        "right": 1027.4285888671875,
+        "bottom": 658.2857704162598,
+        "width": 767.4285888671875,
+        "height": 606.2857666015625
+      },
+      "preview": {
+        "left": 607.4285888671875,
+        "top": 52.000003814697266,
+        "right": 1027.4286193847656,
+        "bottom": 658.2857704162598,
+        "width": 420.0000305175781,
+        "height": 606.2857666015625,
+        "fullyVisible": true,
+        "focused": false
+      },
+      "conversation": {
+        "left": 260,
+        "top": 52.000003814697266,
+        "right": 607.4285888671875,
+        "bottom": 658.2857704162598,
+        "width": 347.4285888671875,
+        "height": 606.2857666015625,
+        "inert": false,
+        "ariaHidden": null
+      },
+      "composer": {
+        "left": 260,
+        "top": 507.4285888671875,
+        "right": 607.4285888671875,
+        "bottom": 658.2857360839844,
+        "width": 347.4285888671875,
+        "height": 150.85714721679688,
+        "fullyVisible": true,
+        "containsFocus": false
+      }
+    },
+    "narrowBaseline": {
+      "viewport": {
+        "width": 787,
+        "height": 578
+      },
+      "horizontalOverflow": 0,
+      "surface": {
+        "left": 180.00001525878906,
+        "top": 52.000003814697266,
+        "right": 787.4286041259766,
+        "bottom": 578.2857704162598,
+        "width": 607.4285888671875,
+        "height": 526.2857666015625
+      },
+      "preview": null,
+      "conversation": {
+        "left": 180.00001525878906,
+        "top": 52.000003814697266,
+        "right": 787.4286041259766,
+        "bottom": 578.2857704162598,
+        "width": 607.4285888671875,
+        "height": 526.2857666015625,
+        "inert": false,
+        "ariaHidden": null
+      },
+      "composer": {
+        "left": 180.00001525878906,
+        "top": 427.4285888671875,
+        "right": 787.4286041259766,
+        "bottom": 578.2857360839844,
+        "width": 607.4285888671875,
+        "height": 150.85714721679688,
+        "fullyVisible": true,
+        "containsFocus": false
+      }
+    },
+    "preview": {
+      "viewport": {
+        "width": 787,
+        "height": 578
+      },
+      "horizontalOverflow": 0,
+      "surface": {
+        "left": 180.00001525878906,
+        "top": 52.000003814697266,
+        "right": 787.4286041259766,
+        "bottom": 578.2857704162598,
+        "width": 607.4285888671875,
+        "height": 526.2857666015625
+      },
+      "preview": {
+        "left": 180.00001525878906,
+        "top": 52.000003814697266,
+        "right": 787.4286041259766,
+        "bottom": 578.2857704162598,
+        "width": 607.4285888671875,
+        "height": 526.2857666015625,
+        "fullyVisible": true,
+        "focused": true
+      },
+      "conversation": {
+        "left": 180.00001525878906,
+        "top": 52.000003814697266,
+        "right": 787.4286041259766,
+        "bottom": 578.2857704162598,
+        "width": 607.4285888671875,
+        "height": 526.2857666015625,
+        "inert": true,
+        "ariaHidden": "true"
+      },
+      "composer": {
+        "left": 180.00001525878906,
+        "top": 427.4285888671875,
+        "right": 787.4286041259766,
+        "bottom": 578.2857360839844,
+        "width": 607.4285888671875,
+        "height": 150.85714721679688,
+        "fullyVisible": true,
+        "containsFocus": false
+      }
+    },
+    "switchedPreview": {
+      "viewport": {
+        "width": 787,
+        "height": 578
+      },
+      "horizontalOverflow": 0,
+      "surface": {
+        "left": 180.00001525878906,
+        "top": 52.000003814697266,
+        "right": 787.4286041259766,
+        "bottom": 578.2857704162598,
+        "width": 607.4285888671875,
+        "height": 526.2857666015625
+      },
+      "preview": {
+        "left": 180.00001525878906,
+        "top": 52.000003814697266,
+        "right": 787.4286041259766,
+        "bottom": 578.2857704162598,
+        "width": 607.4285888671875,
+        "height": 526.2857666015625,
+        "fullyVisible": true,
+        "focused": true
+      },
+      "conversation": {
+        "left": 180.00001525878906,
+        "top": 52.000003814697266,
+        "right": 787.4286041259766,
+        "bottom": 578.2857704162598,
+        "width": 607.4285888671875,
+        "height": 526.2857666015625,
+        "inert": true,
+        "ariaHidden": "true"
+      },
+      "composer": {
+        "left": 180.00001525878906,
+        "top": 427.4285888671875,
+        "right": 787.4286041259766,
+        "bottom": 578.2857360839844,
+        "width": 607.4285888671875,
+        "height": 150.85714721679688,
+        "fullyVisible": true,
+        "containsFocus": false
+      }
+    },
+    "restored": {
+      "viewport": {
+        "width": 787,
+        "height": 578
+      },
+      "horizontalOverflow": 0,
+      "surface": {
+        "left": 180.00001525878906,
+        "top": 52.000003814697266,
+        "right": 787.4286041259766,
+        "bottom": 578.2857704162598,
+        "width": 607.4285888671875,
+        "height": 526.2857666015625
+      },
+      "preview": null,
+      "conversation": {
+        "left": 180.00001525878906,
+        "top": 52.000003814697266,
+        "right": 787.4286041259766,
+        "bottom": 578.2857704162598,
+        "width": 607.4285888671875,
+        "height": 526.2857666015625,
+        "inert": false,
+        "ariaHidden": null
+      },
+      "composer": {
+        "left": 180.00001525878906,
+        "top": 427.4285888671875,
+        "right": 787.4286041259766,
+        "bottom": 578.2857360839844,
+        "width": 607.4285888671875,
+        "height": 150.85714721679688,
+        "fullyVisible": true,
+        "containsFocus": true
+      }
+    }
+  },
+  "rendererErrors": [],
+  "wideRequestedBounds": {
+    "width": 1040,
+    "height": 720
+  },
+  "wideNativeBounds": {
+    "left": 91,
+    "top": 3,
+    "width": 1040,
+    "height": 720
+  },
+  "requestedBounds": {
+    "width": 640,
+    "height": 480
+  },
+  "nativeBounds": {
+    "left": 91,
+    "top": 3,
+    "width": 800,
+    "height": 640
+  }
+}

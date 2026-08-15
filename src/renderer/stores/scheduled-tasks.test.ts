@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { FixtureBridgeClient } from "../bridge/fixture-client";
+import { wireBridgeSubscriptions } from "../bridge/wiring";
 import { MemorySchedulerClient } from "../scheduler/client";
 import { createConversationsStore } from "./conversations";
-import { foldConversationEnvelope } from "./conversations";
 import { createNotificationsStore } from "./notifications";
 import { createScheduledTasksStore } from "./scheduled-tasks";
 import { createWorkspacesStore, HOME_WORKSPACE_ID } from "./workspaces";
@@ -25,8 +25,11 @@ describe("scheduled tasks store", () => {
     const notifications = createNotificationsStore();
     const scheduler = new MemorySchedulerClient();
     const store = createScheduledTasksStore(scheduler, { conversations, workspaces, notifications });
-    const unsubscribe = bridge.subscribe("bridge:event", (envelope) => {
-      conversations.setState((state) => foldConversationEnvelope(state, envelope, Date.now()));
+    const unsubscribe = wireBridgeSubscriptions(bridge, {
+      conversations,
+      approvals: { getState: () => ({ cancelForConversation: () => undefined }), setState: () => undefined } as never,
+      wikiEntries: { getState: () => ({ active: null, receiveEvent: () => undefined }) } as never,
+      notifications,
     });
 
     expect(await store.getState().create({
@@ -44,7 +47,7 @@ describe("scheduled tasks store", () => {
     expect(store.getState().runs[0]).toMatchObject({ status: "succeeded", taskId });
     expect(store.getState().tasks[0].conversationId).toBeTruthy();
     expect(notifications.getState().items[0]).toMatchObject({
-      text: "定时任务「给我一份 10 分钟英语练习」已完成",
+      text: "「给我一份 10 分钟英语练习」已完成",
       kind: "task-done",
     });
     unsubscribe();

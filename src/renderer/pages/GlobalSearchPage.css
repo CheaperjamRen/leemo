@@ -1,0 +1,295 @@
+.leemo-global-search {
+  background: color-mix(in srgb, var(--leemo-card) 90%, var(--leemo-panel));
+}
+
+.leemo-global-search__header {
+  padding: 14px 16px 12px;
+  background: color-mix(in srgb, var(--leemo-panel) 88%, white);
+}
+
+.leemo-global-search__field {
+  display: flex;
+  min-height: 42px;
+  align-items: center;
+  gap: 9px;
+  padding: 0 10px 0 12px;
+  border: 1px solid color-mix(in srgb, var(--leemo-line) 90%, transparent);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--leemo-card) 92%, transparent);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.72),
+    0 1px 2px rgba(15, 27, 46, 0.028);
+  transition: border-color 150ms ease, box-shadow 150ms ease, background-color 150ms ease;
+}
+
+.leemo-global-search__field:focus-within {
+  border-color: color-mix(in srgb, var(--leemo-amber) 54%, var(--leemo-line));
+  background: var(--leemo-card);
+  box-shadow:
+    0 0 0 3px color-mix(in srgb, var(--leemo-amber) 10%, transparent),
+    0 2px 8px rgba(15, 27, 46, 0.045);
+}
+
+.leemo-global-search__field > svg {
+  width: 16px;
+  height: 16px;
+  flex: none;
+  color: var(--leemo-ink-3);
+  stroke-width: 1.8;
+}
+
+.leemo-global-search__field > input {
+  min-width: 0;
+  flex: 1;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--leemo-ink);
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.leemo-global-search__field > input::placeholder {
+  color: var(--leemo-ink-3);
+}
+
+.leemo-global-search__field > button,
+.leemo-global-search__close {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  flex: none;
+  place-items: center;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--leemo-ink-3);
+  transition: color 140ms ease, background-color 140ms ease, transform 140ms ease;
+}
+
+.leemo-global-search__field > button:hover,
+.leemo-global-search__close:hover {
+  background: var(--leemo-side-hover);
+  color: var(--leemo-ink);
+}
+
+.leemo-global-search__field > button:active,
+.leemo-global-search__close:active {
+  transform: scale(0.95);
+}
+
+.leemo-global-search__field > button > svg,
+.leemo-global-search__close > svg {
+  width: 14px;
+  height: 14px;
+}
+
+.leemo-global-search__controls {
+  display: grid;
+  gap: 9px;
+  margin-top: 12px;
+}
+
+.leemo-search-scope,
+.leemo-search-filters {
+  display: grid;
+  align-items: center;
+  padding: 2px;
+  border: 1px solid color-mix(in srgb, var(--leemo-line) 88%, transparent);
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--leemo-side) 72%, var(--leemo-card));
+}
+
+.leemo-search-scope {
+  width: fit-content;
+  grid-template-columns: repeat(2, minmax(72px, auto));
+}
+
+.leemo-search-filters {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  overflow: hidden;
+}
+
+.leemo-search-scope-button,
+.leemo-search-filter {
+  min-width: 0;
+  height: 30px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--leemo-ink-2);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1;
+  white-space: nowrap;
+  transition: color 140ms ease, background-color 140ms ease, box-shadow 140ms ease;
+}
+
+.leemo-search-scope-button:hover,
+.leemo-search-filter:hover {
+  color: var(--leemo-ink);
+  background: color-mix(in srgb, var(--leemo-card) 68%, transparent);
+}
+
+.leemo-search-scope-button[aria-pressed="true"],
+.leemo-search-filter[aria-pressed="true"] {
+  color: var(--leemo-ink);
+  background: var(--leemo-card);
+  box-shadow:
+    0 1px 3px rgba(15, 27, 46, 0.07),
+    inset 0 0 0 1px color-mix(in srgb, var(--leemo-line) 72%, transparent);
+}
+
+.leemo-search-filter[aria-pressed="true"] {
+  color: var(--leemo-amber);
+}
+
+.leemo-global-search__results {
+  display: flex;
+  flex-direction: column;
+  padding: 0 16px 14px;
+}
+
+.leemo-global-search__count {
+  margin: 0;
+  padding: 11px 2px 9px;
+  border-bottom: 1px solid var(--leemo-line-soft);
+  color: var(--leemo-ink-3);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.leemo-global-search__empty {
+  display: grid;
+  min-height: 180px;
+  flex: 1;
+  place-content: center;
+  justify-items: center;
+  gap: 9px;
+  color: var(--leemo-ink-3);
+  text-align: center;
+}
+
+.leemo-global-search__empty > svg {
+  width: 22px;
+  height: 22px;
+  opacity: 0.58;
+  stroke-width: 1.6;
+}
+
+.leemo-global-search__empty > p {
+  margin: 0;
+  font-size: 12px;
+}
+
+.leemo-global-search__empty small {
+  display: block;
+  margin-top: 3px;
+  font-size: 11px;
+  font-weight: 400;
+  color: color-mix(in srgb, var(--leemo-ink-3) 78%, transparent);
+}
+
+.leemo-global-search__list {
+  min-height: 0;
+}
+
+.leemo-search-result {
+  position: relative;
+  display: flex;
+  width: 100%;
+  align-items: flex-start;
+  gap: 11px;
+  padding: 12px 8px;
+  border: 0;
+  border-bottom: 1px solid var(--leemo-line-soft);
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  transition: background-color 140ms ease, box-shadow 140ms ease, transform 140ms ease;
+}
+
+.leemo-search-result::before {
+  content: "";
+  position: absolute;
+  inset-block: 9px;
+  left: 0;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: var(--leemo-amber);
+  opacity: 0;
+  transform: scaleY(0.72);
+  transition: opacity 140ms ease, transform 140ms ease;
+}
+
+.leemo-search-result:hover,
+.leemo-search-result:focus-visible {
+  outline: 0;
+  background: color-mix(in srgb, var(--leemo-side-hover) 72%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--leemo-line) 62%, transparent);
+}
+
+.leemo-search-result:hover::before,
+.leemo-search-result:focus-visible::before {
+  opacity: 1;
+  transform: scaleY(1);
+}
+
+.leemo-search-result:active {
+  transform: translateY(1px);
+}
+
+.leemo-search-result__icon {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  flex: none;
+  place-items: center;
+  border: 1px solid color-mix(in srgb, var(--leemo-line) 80%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--leemo-panel) 82%, white);
+  color: var(--leemo-ink-2);
+}
+
+.leemo-search-result__icon > svg {
+  width: 15px;
+  height: 15px;
+  stroke-width: 1.75;
+}
+
+.leemo-search-result__title,
+.leemo-search-result__snippet {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.leemo-search-result__title {
+  color: var(--leemo-ink);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+
+.leemo-search-result__snippet {
+  margin-top: 3px;
+  color: var(--leemo-ink-3);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .leemo-global-search__field,
+  .leemo-global-search__field > button,
+  .leemo-global-search__close,
+  .leemo-search-scope-button,
+  .leemo-search-filter,
+  .leemo-search-result,
+  .leemo-search-result::before {
+    transition: none;
+  }
+}

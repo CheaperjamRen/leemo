@@ -50,6 +50,19 @@ function CaptureStores({ onReady }: { onReady: (stores: BridgeStores) => void })
 }
 
 describe("WorkspaceSwitcher", () => {
+  it("opens the compact book menu into the workbench instead of clipping it outside the sidebar", async () => {
+    render(
+      <BridgeProvider workspace={workspace()}>
+        <WorkspaceSwitcher compact />
+      </BridgeProvider>,
+    );
+
+    await userEvent.click(await screen.findByRole("button", { name: "选择本子，当前 Leemo 工作台" }));
+
+    expect(screen.getByRole("menu", { name: "本子" })).toHaveAttribute("data-anchored-layer");
+    expect(screen.getByRole("menu", { name: "本子" })).toHaveStyle({ position: "fixed" });
+  });
+
   it("presents managed folders and opened folders as one book list", async () => {
     render(
       <BridgeProvider workspace={workspace({

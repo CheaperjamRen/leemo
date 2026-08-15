@@ -12,7 +12,8 @@ import { HOME_WORKSPACE_ID } from "../stores/workspaces";
 import type { PreviewContentState } from "../stores/preview-content";
 import { previewDraftKey } from "../stores/preview-content";
 import type { FileTreeState } from "../stores/file-tree";
-import type { BridgeEventEnvelope, ApprovalRequest, AskUserPayload } from "../../bridge/contract";
+import type { NotificationsState } from "../stores/notifications";
+import type { BridgeEventEnvelope, ApprovalExpired, ApprovalRequest, AskUserPayload } from "../../bridge/contract";
 
 export interface BridgeStores {
   conversations: StoreApi<ConversationsState>;
@@ -31,14 +32,18 @@ export interface BridgeStores {
   previewContent?: StoreApi<PreviewContentState>;
   /** Keep the visible workspace tree aligned with successful file changes. */
   fileTree?: StoreApi<FileTreeState>;
+  /** Shared history + toast sink for work that finishes outside the visible
+   * conversation. Optional for isolated bridge tests and lightweight embeds. */
+  notifications?: StoreApi<NotificationsState>;
 }
 
 /**
  * Unified Bridge subscription wiring (Batch 0c).
  *
- * Establishes three subscriptions:
+ * Establishes four subscriptions:
  * - bridge:event → route by conversationId (main → conversations, wiki shadow → wikiEntries)
  * - bridge:approvalRequest → fold to approvals with runId lookup
+ * - bridge:approvalExpired → settle an unanswered permission card
  * - bridge:askUser → fold to approvals with runId lookup
  *
  * Returns aggregate unsubscribe function for cleanup.
@@ -56,7 +61,18 @@ export function wireBridgeSubscriptions(
     workspaces,
     previewContent,
     fileTree,
+    notifications,
   } = stores;
+
+  function conversationLabel(conversationId: string): string {
+    const title = conversations.getState().byId[conversationId]?.title?.trim();
+    return title || "后台任务";
+  }
+
+  function isBackgroundConversation(conversationId: string): boolean {
+    const state = conversations.getState();
+    return Boolean(state.byId[conversationId]) && state.activeId !== conversationId;
+  }
 
   function refreshChangedFile(
     conversationId: string,
@@ -170,6 +186,27 @@ export function wireBridgeSubscriptions(
         const approvalsState = approvals.getState();
         approvalsState.cancelForConversation(conversationId);
       }
+      if (
+        !isWikiShadow
+        && event.subtype !== "interrupted"
+        && isBackgroundConversation(conversationId)
+      ) {
+        notifications?.getState().push({
+          text: event.isError
+            ? `「${conversationLabel(conversationId)}」没有完成`
+            : `「${conversationLabel(conversationId)}」已完成`,
+          kind: event.isError ? "generic" : "task-done",
+          conversationId,
+        });
+      }
+      // The fold above clears this conversation's run id synchronously. Queue
+      // dispatch lives in the store so it keeps working when another
+      // conversation is visible; the subscription only supplies the terminal
+      // signal. A rejected pre-ack send remains at the queue head for recovery.
+      if (!isWikiShadow && !event.isError && event.subtype === "success") {
+        const flushQueuedTurns = conversations.getState().flushQueuedTurns;
+        if (flushQueuedTurns) void flushQueuedTurns(conversationId);
+      }
     }
   });
 
@@ -190,6 +227,7 @@ export function wireBridgeSubscriptions(
         toolName: request.toolName,
         inputSummary: request.inputSummary,
         risk: request.risk,
+        taskScope: request.taskScope,
         toolUseId: request.toolUseId,
         receivedAt: Date.now(),
       };
@@ -202,6 +240,17 @@ export function wireBridgeSubscriptions(
         },
       };
     });
+    if (isBackgroundConversation(conversationId)) {
+      notifications?.getState().push({
+        text: `「${conversationLabel(conversationId)}」需要你确认`,
+        kind: "approval-needed",
+        conversationId,
+      });
+    }
+  });
+
+  const unsubApprovalExpired = client.subscribe("bridge:approvalExpired", (payload: ApprovalExpired) => {
+    approvals.getState().expire(payload.id);
   });
 
   // bridge:askUser subscription
@@ -230,12 +279,20 @@ export function wireBridgeSubscriptions(
         },
       };
     });
+    if (isBackgroundConversation(conversationId)) {
+      notifications?.getState().push({
+        text: `「${conversationLabel(conversationId)}」在等你回答`,
+        kind: "approval-needed",
+        conversationId,
+      });
+    }
   });
 
   // Return aggregate unsubscribe
   return () => {
     unsubEvent();
     unsubApproval();
+    unsubApprovalExpired();
     unsubAskUser();
   };
 }

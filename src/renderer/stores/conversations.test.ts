@@ -25,6 +25,7 @@ function makeClient(ids = ["conv-a", "conv-b", "conv-c", "conv-d", "conv-e", "co
     invoke: vi.fn(async (channel: string, request: unknown) => {
       calls.push({ channel, request });
       if (channel === "bridge:createConversation") return { conversationId: ids[nextId++] };
+      if (channel === "bridge:guide") return { delivery: "applied" };
       if (
         channel === "bridge:updateContext" &&
         failingUpdates.has((request as { conversationId: string }).conversationId)
@@ -105,6 +106,47 @@ describe("conversations store", () => {
       channel: "bridge:createConversation",
       request: expect.not.objectContaining({ notebookId: expect.anything() }),
     });
+  });
+
+  it("persists an explicit unread toggle and lets opening clear it again", async () => {
+    const bridge = makeClient(["manual-unread"]);
+    const persistence = {
+      saveConversation: vi.fn(async () => undefined),
+    };
+    const store = createConversationsStore(bridge.client, {
+      resolveConversationDefaults: () => DEFAULTS,
+      persistence: persistence as never,
+    });
+    const id = await store.getState().createConversation({ source: "buddy" });
+
+    await store.getState().setConversationUnread(id, true);
+    expect(store.getState().byId[id]?.unread).toBe(true);
+    expect(persistence.saveConversation).toHaveBeenLastCalledWith(
+      expect.objectContaining({ id, unread: true }),
+      [],
+    );
+
+    store.getState().switchActive(id);
+    expect(store.getState().byId[id]?.unread).toBe(false);
+    expect(persistence.saveConversation).toHaveBeenLastCalledWith(
+      expect.objectContaining({ id, unread: false }),
+      [],
+    );
+  });
+
+  it("does not claim an unread toggle succeeded when persistence rejects", async () => {
+    const bridge = makeClient(["manual-unread-fail"]);
+    const persistence = {
+      saveConversation: vi.fn(async () => { throw new Error("磁盘不可写"); }),
+    };
+    const store = createConversationsStore(bridge.client, {
+      resolveConversationDefaults: () => DEFAULTS,
+      persistence: persistence as never,
+    });
+    const id = await store.getState().createConversation({ source: "buddy" });
+
+    await expect(store.getState().setConversationUnread(id, true)).rejects.toThrow("磁盘不可写");
+    expect(store.getState().byId[id]?.unread).toBe(false);
   });
 
   it("restores the last opened unarchived conversation in the exact book scope", () => {
@@ -755,6 +797,85 @@ describe("conversations store", () => {
     ]);
   });
 
+  it("applies the composer's real plan mode before sending the turn", async () => {
+    const { bridge, store, a } = await registerTwo();
+
+    await store.getState().send(a, "先给方案，不要改文件", undefined, undefined, {
+      permissionMode: "plan",
+    });
+
+    const updateIndex = bridge.calls.findIndex((call) => call.channel === "bridge:updateContext");
+    const sendIndex = bridge.calls.findIndex((call) => call.channel === "bridge:send");
+    expect(bridge.calls[updateIndex]).toEqual({
+      channel: "bridge:updateContext",
+      request: { conversationId: a, permissionMode: "plan" },
+    });
+    expect(updateIndex).toBeGreaterThanOrEqual(0);
+    expect(sendIndex).toBeGreaterThan(updateIndex);
+  });
+
+  it("persists a conversation goal and sends it only while the goal is active", async () => {
+    const { bridge, store, a, b } = await registerTwo();
+    const goals = store.getState() as ReturnType<typeof store.getState> & {
+      setGoal: (conversationId: string, text: string) => Promise<void>;
+      toggleGoalPaused: (conversationId: string) => Promise<void>;
+    };
+
+    await goals.setGoal(a, "完成主界面视觉复现");
+    await goals.setGoal(b, "整理下一轮内测清单");
+    await goals.toggleGoalPaused(b);
+
+    expect(store.getState().byId[a]).toMatchObject({
+      goal: { text: "完成主界面视觉复现", status: "active" },
+    });
+    expect(store.getState().byId[b]).toMatchObject({
+      goal: { text: "整理下一轮内测清单", status: "paused" },
+    });
+
+    await store.getState().send(a, "继续实现");
+    await store.getState().send(b, "先处理别的事情");
+
+    const sends = bridge.calls.filter((call) => call.channel === "bridge:send");
+    expect(sends.at(-2)).toMatchObject({ request: { goalText: "完成主界面视觉复现" } });
+    expect(sends.at(-1)).not.toHaveProperty("request.goalText");
+  });
+
+  it("forwards note reference ids without adding note bodies to the visible timeline", async () => {
+    const { bridge, store, a } = await registerTwo();
+
+    await store.getState().send(a, "帮我比较这两条", undefined, undefined, {
+      noteReferences: ["note-1", "note-2"],
+    });
+
+    expect(bridge.calls.filter((call) => call.channel === "bridge:send").at(-1)).toEqual({
+      channel: "bridge:send",
+      request: {
+        conversationId: a,
+        prompt: "帮我比较这两条",
+        sourceMessageId: "u0",
+        noteReferences: ["note-1", "note-2"],
+      },
+    });
+    expect(store.getState().timelines[a].at(-1)).toMatchObject({ text: "帮我比较这两条" });
+  });
+
+  it("adds guidance to the active run without replacing its run id", async () => {
+    const { bridge, store, a } = await registerTwo();
+    await store.getState().send(a, "先整理资料");
+    const runId = store.getState().runIds[a];
+
+    await expect(store.getState().guide(a, "补充：先看第三章")).resolves.toEqual({ delivery: "applied" });
+
+    expect(store.getState().runIds[a]).toBe(runId);
+    expect(store.getState().timelines[a].at(-1)).toMatchObject({
+      kind: "text", role: "user", text: "补充：先看第三章", runId,
+    });
+    expect(bridge.calls.at(-1)).toEqual({
+      channel: "bridge:guide",
+      request: { conversationId: a, prompt: "补充：先看第三章" },
+    });
+  });
+
   it("forwards real attachment refs but persists only safe display metadata", async () => {
     const { bridge, store, a } = await registerTwo();
     const attachments = [{
@@ -799,6 +920,32 @@ describe("conversations store", () => {
       }],
     });
     expect(JSON.stringify(store.getState().timelines[a].at(-1))).not.toMatch(/[A-Z]:\\/i);
+  });
+
+  it("can keep an app-generated prompt out of the visible conversation", async () => {
+    const { bridge, store, a } = await registerTwo();
+
+    await store.getState().send(
+      a,
+      "<records>今天处理了简历和两条任务记录</records>",
+      undefined,
+      undefined,
+      { displayText: "回顾今天" },
+    );
+
+    expect(bridge.calls.filter((call) => call.channel === "bridge:send").at(-1)).toEqual({
+      channel: "bridge:send",
+      request: {
+        conversationId: a,
+        prompt: "<records>今天处理了简历和两条任务记录</records>",
+        sourceMessageId: "u0",
+      },
+    });
+    expect(store.getState().timelines[a].at(-1)).toMatchObject({
+      kind: "text",
+      role: "user",
+      text: "回顾今天",
+    });
   });
 
   it("rolls back the optimistic turn when the host rejects the send", async () => {
@@ -881,6 +1028,124 @@ describe("conversations store", () => {
     expect(store.getState().pendingSends[a]).toEqual(firstPending);
     expect(store.getState().timelines[a]).toEqual(firstTimeline);
     expect(bridge.calls.filter((call) => call.channel === "bridge:send")).toHaveLength(1);
+  });
+
+  it("queues the complete next turn in memory without interrupting the active run", async () => {
+    const { bridge, store, a } = await registerTwo();
+    await store.getState().send(a, "第一轮还在执行");
+    const attachments = [{
+      name: "岗位截图.png",
+      path: "C:\\Temp\\岗位截图.png",
+      size: 2048,
+      mimeType: "image/png",
+    }];
+    const workspaceFiles = [{
+      name: "简历.md",
+      workspaceId: "workspace-job",
+      workspacePath: "求职/简历.md",
+    }];
+
+    const queuedId = store.getState().enqueueTurn(
+      a,
+      "下一轮按岗位要求改简历",
+      attachments,
+      workspaceFiles,
+      { noteReferences: ["note-job"], allowSubagents: false },
+    );
+
+    expect(store.getState().queuedTurns[a]).toEqual([{
+      id: queuedId,
+      text: "下一轮按岗位要求改简历",
+      attachments,
+      workspaceFiles,
+      noteReferences: ["note-job"],
+      allowSubagents: false,
+    }]);
+    expect(bridge.calls.filter((call) => call.channel === "bridge:send")).toHaveLength(1);
+  });
+
+  it("flushes a background conversation queue after every terminal event and preserves all turn inputs", async () => {
+    const { bridge, store, a, b } = await registerTwo();
+    await store.getState().send(a, "A 第一轮");
+    store.getState().switchActive(b);
+    const attachments = [{ name: "JD.pdf", path: "C:\\Temp\\JD.pdf", size: 512, mimeType: "application/pdf" }];
+    const workspaceFiles = [{ name: "简历.md", workspaceId: "workspace-job", workspacePath: "求职/简历.md" }];
+    store.getState().enqueueTurn(a, "A 第二轮", attachments, workspaceFiles, {
+      noteReferences: ["note-1"],
+      allowSubagents: false,
+    });
+
+    bridge.emit({ conversationId: a, event: {
+      type: "run.finished", subtype: "success", isError: false, finalText: "A done", pathAudit: { claimed: [] },
+    } });
+
+    await vi.waitFor(() => expect(bridge.calls.filter((call) => call.channel === "bridge:send")).toHaveLength(2));
+    expect(bridge.calls.filter((call) => call.channel === "bridge:send").at(-1)).toEqual({
+      channel: "bridge:send",
+      request: {
+        conversationId: a,
+        prompt: "A 第二轮",
+        sourceMessageId: "u2",
+        attachments,
+        workspaceFiles,
+        noteReferences: ["note-1"],
+        allowSubagents: false,
+      },
+    });
+    expect(store.getState().queuedTurns[a]).toEqual([]);
+    expect(store.getState().activeId).toBe(b);
+  });
+
+  it("advances exactly one queued turn after each terminal event", async () => {
+    const { bridge, store, a } = await registerTwo();
+    await store.getState().send(a, "第一轮");
+    store.getState().enqueueTurn(a, "第二轮");
+    store.getState().enqueueTurn(a, "第三轮");
+
+    bridge.emit({ conversationId: a, event: {
+      type: "run.finished", subtype: "success", isError: false, finalText: "first done", pathAudit: { claimed: [] },
+    } });
+    await vi.waitFor(() => expect(bridge.calls.filter((call) => call.channel === "bridge:send")).toHaveLength(2));
+    expect(store.getState().queuedTurns[a]?.map((turn) => turn.text)).toEqual(["第三轮"]);
+
+    bridge.emit({ conversationId: a, event: {
+      type: "run.finished", subtype: "success", isError: false, finalText: "second done", pathAudit: { claimed: [] },
+    } });
+    await vi.waitFor(() => expect(bridge.calls.filter((call) => call.channel === "bridge:send")).toHaveLength(3));
+    expect(store.getState().queuedTurns[a]).toEqual([]);
+  });
+
+  it("keeps a failed auto-send at the queue head with a readable error", async () => {
+    const { bridge, store, a } = await registerTwo();
+    await store.getState().send(a, "第一轮");
+    store.getState().enqueueTurn(a, "下一轮仍要保留");
+    vi.mocked(bridge.client.invoke).mockRejectedValueOnce(new Error("附件已经被移动"));
+
+    bridge.emit({ conversationId: a, event: {
+      type: "run.finished", subtype: "success", isError: false, finalText: "first done", pathAudit: { claimed: [] },
+    } });
+
+    await vi.waitFor(() => expect(store.getState().queuedTurns[a]?.[0]?.errorMessage).toBe("附件已经被移动"));
+    expect(store.getState().queuedTurns[a]?.[0]).toMatchObject({ text: "下一轮仍要保留" });
+  });
+
+  it("turns only a pure-text queued turn into native guidance", async () => {
+    const { bridge, store, a } = await registerTwo();
+    await store.getState().send(a, "第一轮");
+    const pureId = store.getState().enqueueTurn(a, "优先保留原文件");
+
+    await expect(store.getState().guideQueuedTurn(a, pureId)).resolves.toEqual({ delivery: "applied" });
+    expect(store.getState().queuedTurns[a]).toEqual([]);
+    expect(bridge.calls.filter((call) => call.channel === "bridge:guide").at(-1)).toEqual({
+      channel: "bridge:guide",
+      request: { conversationId: a, prompt: "优先保留原文件" },
+    });
+
+    const richId = store.getState().enqueueTurn(a, "结合附件继续", [{
+      name: "资料.pdf", path: "C:\\Temp\\资料.pdf", size: 1,
+    }]);
+    await expect(store.getState().guideQueuedTurn(a, richId)).rejects.toThrow("含附件、文件或便签的消息不能转为引导");
+    expect(store.getState().queuedTurns[a]).toHaveLength(1);
   });
 
   it("allows only one restored-conversation claim while the first send is awaiting the host", async () => {
@@ -999,6 +1264,52 @@ describe("conversations store", () => {
       type: "run.finished", subtype: "interrupted", isError: false, finalText: "", pathAudit: { claimed: [] },
     } });
     expect(store.getState().pendingSends[a]).toBeUndefined();
+  });
+
+  it("offers retry only for failures the host classified as retryable", async () => {
+    const { bridge, store, a } = await registerTwo();
+    await store.getState().send(a, "先试一次");
+    bridge.emit({ conversationId: a, event: {
+      type: "run.finished",
+      subtype: "error_during_execution",
+      outcome: "overloaded",
+      retryable: true,
+      statusCode: 529,
+      isError: true,
+      finalText: "服务商当前过载（529）。自动重试仍未恢复，请稍后重试或换一个模型。",
+      pathAudit: { claimed: [] },
+    } });
+    expect(store.getState().pendingSends[a]?.errorMessage).toMatch(/过载/);
+
+    await store.getState().send(a, "不允许写入");
+    bridge.emit({ conversationId: a, event: {
+      type: "run.finished",
+      subtype: "error_during_execution",
+      outcome: "permission-denied",
+      retryable: false,
+      isError: true,
+      finalText: "这项操作没有获得允许。",
+      pathAudit: { claimed: [] },
+    } });
+    expect(store.getState().pendingSends[a]).toBeUndefined();
+  });
+
+  it("preserves the turn's disabled-helper choice when retrying a failed run", async () => {
+    const { bridge, store, a } = await registerTwo();
+    await store.getState().send(a, "这轮不要召集助手", undefined, undefined, {
+      allowSubagents: false,
+    });
+    bridge.emit({ conversationId: a, event: { type: "error", message: "服务暂时不可用" } });
+    bridge.emit({ conversationId: a, event: {
+      type: "run.finished", subtype: "error", isError: true, finalText: "", pathAudit: { claimed: [] },
+    } });
+
+    await store.getState().retry(a);
+
+    const sends = bridge.calls.filter((call) => call.channel === "bridge:send");
+    expect(sends).toHaveLength(2);
+    expect(sends[0].request).toMatchObject({ allowSubagents: false });
+    expect(sends[1].request).toMatchObject({ allowSubagents: false });
   });
 
   it("retries with the complete draft through the conversation's newly selected model", async () => {
@@ -1330,21 +1641,40 @@ describe("conversations store", () => {
       expect(s.openTabs).toEqual([]);
     });
 
-    it("clears stale streaming markers because no run survives a restart", () => {
+    it("settles stale running markers and adds one truthful restart interruption receipt", () => {
       const { client } = makeClient();
       const store = createConversationsStore(client, { resolveConversationDefaults: () => DEFAULTS });
       store.getState().hydrate([{
-        meta: metaA,
+        meta: { ...metaA, sessionId: "session-before-exit" },
         timeline: [
           { kind: "text", id: "m-stream", runId: "run-8", role: "momo", text: "写到一半", streaming: true },
           { kind: "thinking", id: "t-stream", runId: "run-8", text: "还在处理", streaming: true },
+          { kind: "tool", id: "tool-running", runId: "run-8", toolUseId: "tool-8", name: "Read", input: {}, status: "running" },
+          {
+            kind: "activity", id: "agent-running", runId: "run-8", parentToolUseId: "agent-8",
+            status: "running", childToolUseIds: ["child-8"],
+            tools: [{ toolUseId: "child-8", name: "Search", status: "running" }], transcript: [],
+          },
+          { kind: "retry", id: "retry-running", runId: "run-8", attempt: 2, maxAttempts: 5, summary: "正在重连 2/5", detail: "network", state: "retrying" },
         ],
       }]);
 
-      expect(store.getState().timelines[metaA.id]).toEqual([
+      const restored = store.getState().timelines[metaA.id];
+      expect(restored).toEqual(expect.arrayContaining([
         expect.objectContaining({ id: "m-stream", streaming: false }),
         expect.objectContaining({ id: "t-stream", streaming: false }),
-      ]);
+        expect.objectContaining({ id: "tool-running", status: "error" }),
+        expect.objectContaining({ id: "agent-running", status: "error", tools: [expect.objectContaining({ status: "error" })] }),
+        expect.objectContaining({ id: "retry-running", state: "failed" }),
+        expect.objectContaining({
+          kind: "error",
+          runId: "run-8",
+          message: "上次任务因 Leemo 退出而中断",
+        }),
+      ]));
+      expect(restored.filter((item) => item.kind === "error" && item.message === "上次任务因 Leemo 退出而中断")).toHaveLength(1);
+      expect(store.getState().runIds[metaA.id]).toBeNull();
+      expect(store.getState().byId[metaA.id].sessionId).toBe("session-before-exit");
     });
 
     it("preserves a memory receipt and its undone state across restart hydration", () => {

@@ -20,6 +20,16 @@ function workspace(impl?: (path: string) => Promise<PreviewPayload>) {
 }
 
 describe("preview-content store", () => {
+  it("keeps a ready browser-fixture preview instead of replacing it with a workspace error", async () => {
+    const store = createPreviewContentStore(undefined, {
+      initialEntries: { "demo.md": { status: "ready", payload: TEXT } },
+    });
+
+    await store.getState().load("demo.md");
+
+    expect(store.getState().byPath["demo.md"]).toEqual({ status: "ready", payload: TEXT });
+  });
+
   it("goes loading → ready and keeps the payload under its path", async () => {
     const { client } = workspace();
     const store = createPreviewContentStore(client);

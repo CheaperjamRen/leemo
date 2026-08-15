@@ -8,13 +8,14 @@ dist/
 dist-electron/
 dist-package/
 dist-smoke/
-dist-verify/
 /dist-rc*/
 /dist-visual-rc*/
 /verify-*.log
 *.log
 .playwright-mcp/
 .leemo-workspace/
+.tmp/
+.tmp-*/
 
 # 轮 7 —— 逆向/调试临时产物。留在磁盘上给下一手用（NewMax 解包产物是批次 E 视觉
 # 与 C1「可搜索的设置」的关键参考：42 个设置分区的 i18n 表、30 个组件的设计系统

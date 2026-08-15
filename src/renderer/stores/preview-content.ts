@@ -62,7 +62,11 @@ export interface PreviewContentState {
 
 export function createPreviewContentStore(
   workspace?: WorkspaceClient,
-  options: { resolveWorkspaceId?: () => string } = {},
+  options: {
+    resolveWorkspaceId?: () => string;
+    /** Browser-only visual fixtures. Production never supplies these. */
+    initialEntries?: Record<string, PreviewEntry>;
+  } = {},
 ): StoreApi<PreviewContentState> {
   // 同一路径的并发读收敛成一次：标签切换 + 首次挂载很容易同时触发。
   const inFlight = new Map<string, Promise<void>>();
@@ -71,12 +75,14 @@ export function createPreviewContentStore(
   let observedWorkspaceId: string | undefined;
 
   return createStore<PreviewContentState>((set, get) => ({
-    byPath: {},
+    byPath: options.initialEntries ?? {},
     drafts: {},
 
     load: async (path, opts = {}) => {
       if (!path) return;
       if (!workspace) {
+        const fixtureEntry = get().byPath[path];
+        if (!opts.force && fixtureEntry?.status === "ready") return;
         // 浏览器 dev 里根本没有文件系统。说清楚是"这个环境读不了"，而不是让用户
         // 对着一个空白面板猜文件是不是坏了。
         set((s) => ({

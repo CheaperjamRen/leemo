@@ -7,6 +7,9 @@ const root = path.dirname(fileURLToPath(import.meta.url)).replace(/\\/g, "/");
 
 export default defineConfig({
   test: {
+    // jsdom plus the document/PDF engines is memory-heavy on Windows. Keep the
+    // standard local command and CI on the same stable concurrency budget.
+    maxWorkers: 2,
     projects: [
       {
         // Existing node suite — behavior UNCHANGED (same include + aliases).

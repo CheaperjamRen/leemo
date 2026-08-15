@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { Check, ChevronDown, Folder, FolderOpen, House, Plus, X } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { ArchiveRestore, Check, ChevronDown, Folder, FolderOpen, House, Plus, X } from "lucide-react";
 import {
   useConversations,
   useFileTree,
@@ -9,6 +9,8 @@ import {
   useWorkspaces,
 } from "../bridge/context";
 import { HOME_WORKSPACE_ID } from "../stores/workspaces";
+import { scopeKeyForSelection } from "../stores/workbench-scope";
+import AnchoredLayer from "./AnchoredLayer";
 
 type BookAction =
   | { kind: "select-global" }
@@ -24,7 +26,7 @@ interface PendingBookDecision {
   dirtyCount: number;
 }
 
-export default function WorkspaceSwitcher(): React.JSX.Element {
+export default function WorkspaceSwitcher({ compact = false }: { compact?: boolean }): React.JSX.Element {
   const workspaces = useWorkspaces((state) => state.list);
   const activeWorkspaceId = useWorkspaces((state) => state.activeId);
   const workspaceStatus = useWorkspaces((state) => state.status);
@@ -33,14 +35,16 @@ export default function WorkspaceSwitcher(): React.JSX.Element {
   const openFolder = useWorkspaces((state) => state.openFolder);
   const selectWorkspace = useWorkspaces((state) => state.select);
   const forgetWorkspace = useWorkspaces((state) => state.forget);
+  const setWorkspaceArchived = useWorkspaces((state) => state.setArchived);
   const notebooks = useNotebooks((state) => state.list);
   const activeNotebookId = useNotebooks((state) => state.activeId);
   const notebookError = useNotebooks((state) => state.error);
   const setNotebook = useNotebooks((state) => state.setActive);
   const createNotebook = useNotebooks((state) => state.createNotebook);
+  const setNotebookArchived = useNotebooks((state) => state.setNotebookArchived);
   const activateScope = useConversations((state) => state.activateScope);
   const refreshTree = useFileTree((state) => state.refresh);
-  const closeAllPreviewTabs = useUi((state) => state.closeAllPreviewTabs);
+  const activateWorkbenchScope = useUi((state) => state.activateWorkbenchScope);
   const transitioning = useUi((state) => state.workspaceTransitioning);
   const setTransitioning = useUi((state) => state.setWorkspaceTransitioning);
   const drafts = usePreviewContent((state) => state.drafts);
@@ -53,13 +57,17 @@ export default function WorkspaceSwitcher(): React.JSX.Element {
   const [newBookName, setNewBookName] = useState("");
   const [pendingDecision, setPendingDecision] = useState<PendingBookDecision | null>(null);
   const [decisionError, setDecisionError] = useState<string | null>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
 
   const activeWorkspace = workspaces.find((entry) => entry.id === activeWorkspaceId)
     ?? workspaces[0];
   const activeManagedBook = activeWorkspaceId === HOME_WORKSPACE_ID
     ? notebooks.find((entry) => entry.id === activeNotebookId)
     : undefined;
-  const externalBooks = workspaces.filter((entry) => entry.kind === "external");
+  const managedBooks = notebooks.filter((entry) => !entry.archived);
+  const externalBooks = workspaces.filter((entry) => entry.kind === "external" && !entry.archived);
+  const archivedManagedBooks = notebooks.filter((entry) => entry.archived);
+  const archivedExternalBooks = workspaces.filter((entry) => entry.kind === "external" && entry.archived);
   const currentLabel = activeWorkspace?.kind === "external"
     ? activeWorkspace.name
     : activeManagedBook?.title ?? "Leemo 工作台";
@@ -98,8 +106,7 @@ export default function WorkspaceSwitcher(): React.JSX.Element {
     }
   }, [pendingDecision, transitioning]);
 
-  const resetBookPreview = async (): Promise<void> => {
-    closeAllPreviewTabs();
+  const refreshBookFiles = async (): Promise<void> => {
     clearPreviewContent();
     await refreshTree();
   };
@@ -113,7 +120,8 @@ export default function WorkspaceSwitcher(): React.JSX.Element {
       if (!await ensureHomeWorkspace()) return false;
       setNotebook(null);
       activateScope(HOME_WORKSPACE_ID, null);
-      await resetBookPreview();
+      activateWorkbenchScope(scopeKeyForSelection({ workspaceId: HOME_WORKSPACE_ID, notebookId: null }));
+      await refreshBookFiles();
       setOpen(false);
       return true;
     }
@@ -122,7 +130,8 @@ export default function WorkspaceSwitcher(): React.JSX.Element {
       if (!await ensureHomeWorkspace()) return false;
       setNotebook(action.id);
       activateScope(HOME_WORKSPACE_ID, action.id);
-      await resetBookPreview();
+      activateWorkbenchScope(scopeKeyForSelection({ workspaceId: HOME_WORKSPACE_ID, notebookId: action.id }));
+      await refreshBookFiles();
       setOpen(false);
       return true;
     }
@@ -131,7 +140,8 @@ export default function WorkspaceSwitcher(): React.JSX.Element {
       if (!await selectWorkspace(action.id)) return false;
       setNotebook(null);
       activateScope(action.id, null);
-      await resetBookPreview();
+      activateWorkbenchScope(scopeKeyForSelection({ workspaceId: action.id, notebookId: null }));
+      await refreshBookFiles();
       setOpen(false);
       return true;
     }
@@ -142,7 +152,8 @@ export default function WorkspaceSwitcher(): React.JSX.Element {
         if (!await ensureHomeWorkspace()) return false;
         setNotebook(id);
         activateScope(HOME_WORKSPACE_ID, id);
-        await resetBookPreview();
+        activateWorkbenchScope(scopeKeyForSelection({ workspaceId: HOME_WORKSPACE_ID, notebookId: id }));
+        await refreshBookFiles();
         setCreating(false);
         setNewBookName("");
         setOpen(false);
@@ -157,7 +168,8 @@ export default function WorkspaceSwitcher(): React.JSX.Element {
       if (id === null) return false;
       setNotebook(null);
       activateScope(id, null);
-      await resetBookPreview();
+      activateWorkbenchScope(scopeKeyForSelection({ workspaceId: id, notebookId: null }));
+      await refreshBookFiles();
       setOpen(true);
       return true;
     }
@@ -167,7 +179,8 @@ export default function WorkspaceSwitcher(): React.JSX.Element {
     if (wasActive) {
       setNotebook(null);
       activateScope(HOME_WORKSPACE_ID, null);
-      await resetBookPreview();
+      activateWorkbenchScope(scopeKeyForSelection({ workspaceId: HOME_WORKSPACE_ID, notebookId: null }));
+      await refreshBookFiles();
     }
     return true;
   };
@@ -251,30 +264,44 @@ export default function WorkspaceSwitcher(): React.JSX.Element {
   };
 
   return (
-    <div className="relative min-w-0 flex-1">
+    <div className={`relative ${compact ? "shrink-0" : "min-w-0 flex-1"}`}>
       <button
+        ref={triggerRef}
         type="button"
         aria-label={`选择本子，当前 ${currentLabel}`}
         aria-expanded={open}
         disabled={transitioning}
         onClick={() => setOpen((value) => !value)}
         title={currentPath}
-        className="flex h-8 max-w-full items-center gap-1.5 rounded-md px-1.5 text-left text-sm font-medium text-[var(--leemo-ink)] transition-colors hover:bg-[var(--leemo-side-hover)]"
+        className={compact
+          ? "grid h-5 w-5 place-items-center rounded text-[var(--leemo-ink-3)] transition-colors hover:bg-[var(--leemo-side-hover)] hover:text-[var(--leemo-ink)]"
+          : "flex h-8 max-w-full items-center gap-1.5 rounded-md px-1.5 text-left text-sm font-medium text-[var(--leemo-ink)] transition-colors hover:bg-[var(--leemo-side-hover)]"}
       >
-        <Folder aria-hidden="true" size={15} strokeWidth={1.8} className="shrink-0 text-[var(--leemo-ink-2)]" />
-        <span className="min-w-0 truncate">{currentLabel}</span>
-        <ChevronDown aria-hidden="true" size={13} className="shrink-0 text-[var(--leemo-ink-3)]" />
+        {compact ? (
+          <Plus aria-hidden="true" size={14} strokeWidth={1.8} />
+        ) : (
+          <>
+            <Folder aria-hidden="true" size={15} strokeWidth={1.8} className="shrink-0 text-[var(--leemo-ink-2)]" />
+            <span className="min-w-0 truncate">{currentLabel}</span>
+            <ChevronDown aria-hidden="true" size={13} className="shrink-0 text-[var(--leemo-ink-3)]" />
+          </>
+        )}
       </button>
 
-      {open && (
-        <div
-          role="menu"
-          aria-label="本子"
-          className="absolute left-0 top-10 z-40 w-[300px] max-w-[calc(100vw-24px)] rounded-lg border border-[var(--leemo-line)] bg-white p-1.5 shadow-[0_18px_50px_rgba(32,32,31,0.16)]"
-        >
+      <AnchoredLayer
+        open={open}
+        anchor={triggerRef}
+        preferred="bottom-start"
+        gap={6}
+        padding={10}
+        onDismiss={() => setOpen(false)}
+        role="menu"
+        ariaLabel="本子"
+        className="w-[300px] max-w-[calc(100vw-24px)] rounded-lg border border-[var(--leemo-line)] bg-[var(--leemo-card)] p-1.5 shadow-[0_18px_50px_rgba(32,32,31,0.16)]"
+      >
           <div className="flex items-center justify-between px-2 pb-1.5 pt-1">
             <p className="text-[10px] font-medium text-[var(--leemo-ink-3)]">本子</p>
-            <span className="text-[10px] text-[var(--leemo-ink-3)]">{notebooks.length + externalBooks.length} 个</span>
+            <span className="text-[10px] text-[var(--leemo-ink-3)]">{managedBooks.length + externalBooks.length} 个</span>
           </div>
 
           {(activeWorkspaceId !== HOME_WORKSPACE_ID || activeNotebookId !== null) && (
@@ -296,7 +323,7 @@ export default function WorkspaceSwitcher(): React.JSX.Element {
           )}
 
           <div className="max-h-64 overflow-y-auto">
-            {notebooks.map((entry) => {
+            {managedBooks.map((entry) => {
               const active = activeWorkspaceId === HOME_WORKSPACE_ID && entry.id === activeNotebookId;
               return (
                 <button
@@ -356,8 +383,37 @@ export default function WorkspaceSwitcher(): React.JSX.Element {
               );
             })}
 
-            {notebooks.length + externalBooks.length === 0 && (
+            {managedBooks.length + externalBooks.length === 0 && (
               <p className="px-2 py-5 text-center text-xs text-[var(--leemo-ink-3)]">还没有本子</p>
+            )}
+            {archivedManagedBooks.length + archivedExternalBooks.length > 0 && (
+              <div className="mt-1 border-t border-[var(--leemo-line-soft)] pt-1">
+                <p className="px-2 py-1 text-[10px] font-medium text-[var(--leemo-ink-3)]">已归档</p>
+                {archivedManagedBooks.map((entry) => (
+                  <button
+                    key={`archived-managed:${entry.id}`}
+                    type="button"
+                    role="menuitem"
+                    onClick={() => void setNotebookArchived(entry.id, false)}
+                    className="flex h-8 w-full items-center gap-2 rounded-md px-2 text-left text-xs text-[var(--leemo-ink-2)] hover:bg-[var(--leemo-work-hover)]"
+                  >
+                    <ArchiveRestore className="h-3.5 w-3.5" aria-hidden />
+                    <span className="min-w-0 flex-1 truncate">恢复 {entry.title}</span>
+                  </button>
+                ))}
+                {archivedExternalBooks.map((entry) => (
+                  <button
+                    key={`archived-external:${entry.id}`}
+                    type="button"
+                    role="menuitem"
+                    onClick={() => void setWorkspaceArchived(entry.id, false)}
+                    className="flex h-8 w-full items-center gap-2 rounded-md px-2 text-left text-xs text-[var(--leemo-ink-2)] hover:bg-[var(--leemo-work-hover)]"
+                  >
+                    <ArchiveRestore className="h-3.5 w-3.5" aria-hidden />
+                    <span className="min-w-0 flex-1 truncate">恢复 {entry.name}</span>
+                  </button>
+                ))}
+              </div>
             )}
           </div>
 
@@ -423,8 +479,7 @@ export default function WorkspaceSwitcher(): React.JSX.Element {
               {notebookError ?? workspaceError}
             </p>
           )}
-        </div>
-      )}
+      </AnchoredLayer>
 
       {transitioning && !pendingDecision && (
         <div role="status" aria-label="正在切换本子" className="fixed inset-0 z-[89] cursor-wait" />

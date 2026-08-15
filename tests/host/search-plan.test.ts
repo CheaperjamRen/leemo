@@ -19,7 +19,7 @@ function entry(
       category: "cn_official" as const,
       apiFormat: opts.apiFormat ?? ("anthropic" as const),
       baseUrl: `https://${id}.example.com/anthropic`,
-      apiKey: opts.apiKey ?? "sk-test-key",
+      apiKey: opts.apiKey ?? "test-key-key",
       models: opts.models ?? [`${id}-model`],
       modelCapabilities: {},
       envTemplate: {},
@@ -47,7 +47,7 @@ describe("buildSearchPlan —— 层序（只有这一家自己的路）", () =>
     const plan = buildSearchPlan([entry("deepseek", { nativeSearch: PASSTHROUGH })], "deepseek", noopFetch);
     expect(plan.passthrough).toMatchObject({
       baseUrl: "https://deepseek.example.com/anthropic",
-      apiKey: "sk-test-key",
+      apiKey: "test-key-key",
     });
   });
 

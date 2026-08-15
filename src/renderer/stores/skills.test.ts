@@ -14,6 +14,60 @@ function skill(name: string, description = `${name} 的说明`): SkillInfo {
   };
 }
 
+const SUPERPOWERS_NAMES = [
+  "brainstorming",
+  "dispatching-parallel-agents",
+  "executing-plans",
+  "finishing-a-development-branch",
+  "receiving-code-review",
+  "requesting-code-review",
+  "subagent-driven-development",
+  "systematic-debugging",
+  "test-driven-development",
+  "using-git-worktrees",
+  "using-superpowers",
+  "verification-before-completion",
+  "writing-plans",
+  "writing-skills",
+] as const;
+
+function superpowersSkills(): SkillInfo[] {
+  return SUPERPOWERS_NAMES.map((name) => ({
+    id: `superpowers:${name}`,
+    name,
+    description: `${name} 的开发方法`,
+    qualifiedName: `superpowers:${name}`,
+    source: "builtin",
+    category: "developer",
+    defaultEnabled: false,
+    available: true,
+    collectionId: "superpowers",
+    collectionLabel: "Superpowers 开发方法套件",
+  }));
+}
+
+const XHS_NAMES = ["xhs-auth", "xhs-content-ops", "xhs-explore", "xhs-interact", "xhs-publish"] as const;
+
+function xhsFamilySkills(): SkillInfo[] {
+  return XHS_NAMES.map((name) => ({
+    id: `managed:${name}`,
+    name,
+    description: `${name} 的小红书能力`,
+    qualifiedName: `leemo-community-xhs:${name}`,
+    source: "user",
+    category: "social-publishing",
+    trust: "community",
+    sourceKind: "github",
+    sourceLabel: "社区精选",
+    scanStatus: "scanned",
+    canRemove: true,
+    canUpdate: false,
+    collectionId: "family:xiaohongshu-toolkit",
+    collectionLabel: "小红书工具组",
+    collectionMemberCount: 5,
+  }));
+}
+
 function makeClient(list: SkillInfo[] = [], opts: { failList?: boolean; failSync?: boolean } = {}) {
   const calls: { channel: string; req: unknown }[] = [];
   const client = {
@@ -171,6 +225,161 @@ describe("skills store — built-in defaults and persisted overrides", () => {
   });
 });
 
+describe("skills store — collection controls", () => {
+  const unrelated: SkillInfo = {
+    id: "daily-plan",
+    name: "每日计划",
+    description: "安排当天的重点",
+    qualifiedName: "leemo-library:daily-plan",
+    source: "builtin",
+    category: "learning",
+    defaultEnabled: true,
+    available: true,
+  };
+
+  it("updates the whole collection in one store transaction and one host sync", async () => {
+    const list = [...superpowersSkills(), unrelated];
+    const { client, calls } = makeClient(list);
+    const saved: Record<string, boolean> = {};
+    const store = createSkillsStore(client, {
+      get: (id) => saved[id],
+      set: (id, enabled) => { saved[id] = enabled; },
+      restore: (id, previous) => {
+        if (previous === undefined) delete saved[id];
+        else saved[id] = previous;
+      },
+    });
+    await store.getState().refresh();
+
+    let transactions = 0;
+    const unsubscribe = store.subscribe(() => { transactions += 1; });
+    store.getState().setCollectionEnabled("superpowers", true);
+    expect(transactions).toBe(1);
+    unsubscribe();
+
+    await vi.waitFor(() => {
+      expect(calls.filter((call) => call.channel === "bridge:syncEnabledSkills")).toHaveLength(1);
+    });
+    expect(store.getState().disabled).toEqual([]);
+    expect(Object.fromEntries(SUPERPOWERS_NAMES.map((name) => [
+      `superpowers:${name}`,
+      saved[`superpowers:${name}`],
+    ]))).toEqual(Object.fromEntries(SUPERPOWERS_NAMES.map((name) => [`superpowers:${name}`, true])));
+    expect(calls.find((call) => call.channel === "bridge:syncEnabledSkills")?.req).toEqual({
+      enabledQualifiedNames: [
+        ...SUPERPOWERS_NAMES.map((name) => `superpowers:${name}`),
+        "leemo-library:daily-plan",
+      ],
+    });
+  });
+
+  it("rolls back only members that the user did not change while a suite sync was pending", async () => {
+    const list = [...superpowersSkills(), unrelated];
+    const saved: Record<string, boolean> = Object.fromEntries(
+      SUPERPOWERS_NAMES.map((name, index) => [`superpowers:${name}`, index === 0]),
+    );
+    let rejectSuiteSync!: (reason?: unknown) => void;
+    const suiteSync = new Promise<never>((_resolve, reject) => { rejectSuiteSync = reject; });
+    let syncCalls = 0;
+    const syncRequests: string[][] = [];
+    const client = {
+      invoke: vi.fn(async (channel: string, request: unknown) => {
+        if (channel === "bridge:listSkills") return list;
+        if (channel === "bridge:listCommunitySkills") return [];
+        if (channel === "bridge:syncEnabledSkills") {
+          syncCalls += 1;
+          syncRequests.push([...(request as { enabledQualifiedNames: string[] }).enabledQualifiedNames]);
+          if (syncCalls === 1) return suiteSync;
+          return { updatedConversations: 1 };
+        }
+        return undefined;
+      }),
+      subscribe: vi.fn(() => () => {}),
+    } as unknown as BridgeClient;
+    const store = createSkillsStore(client, {
+      get: (id) => saved[id],
+      set: (id, enabled) => { saved[id] = enabled; },
+      restore: (id, previous) => {
+        if (previous === undefined) delete saved[id];
+        else saved[id] = previous;
+      },
+    });
+    await store.getState().refresh();
+
+    store.getState().setCollectionEnabled("superpowers", true);
+    store.getState().toggle("superpowers:brainstorming");
+    rejectSuiteSync(new Error("suite sync failed"));
+
+    await vi.waitFor(() => expect(store.getState().error).toBe("suite sync failed"));
+    expect(store.getState().disabled).toEqual(SUPERPOWERS_NAMES.map((name) => `superpowers:${name}`));
+    expect(Object.values(saved)).toEqual(Array.from({ length: 14 }, () => false));
+    expect(syncCalls).toBe(3);
+    expect(syncRequests.at(-1)).toEqual(["leemo-library:daily-plan"]);
+  });
+
+  it("reports one failed reconciliation without recursively retrying", async () => {
+    const list = superpowersSkills();
+    const saved: Record<string, boolean> = {};
+    let syncCalls = 0;
+    const client = {
+      invoke: vi.fn(async (channel: string) => {
+        if (channel === "bridge:listSkills") return list;
+        if (channel === "bridge:listCommunitySkills") return [];
+        if (channel === "bridge:syncEnabledSkills") {
+          syncCalls += 1;
+          throw new Error(syncCalls === 1 ? "suite sync failed" : "reconcile failed");
+        }
+        return undefined;
+      }),
+      subscribe: vi.fn(() => () => {}),
+    } as unknown as BridgeClient;
+    const store = createSkillsStore(client, {
+      get: (id) => saved[id],
+      set: (id, enabled) => { saved[id] = enabled; },
+      restore: (id, previous) => {
+        if (previous === undefined) delete saved[id];
+        else saved[id] = previous;
+      },
+    });
+    await store.getState().refresh();
+
+    store.getState().setCollectionEnabled("superpowers", true);
+
+    await vi.waitFor(() => expect(store.getState().error).toContain("恢复后的技能状态仍未同步"));
+    expect(store.getState().error).toContain("suite sync failed");
+    expect(store.getState().error).toContain("reconcile failed");
+    expect(store.getState().disabled).toEqual(SUPERPOWERS_NAMES.map((name) => `superpowers:${name}`));
+    expect(saved).toEqual({});
+    expect(syncCalls).toBe(2);
+  });
+
+  it("restores one enabled and thirteen disabled members without rewriting defaults", async () => {
+    const list = superpowersSkills();
+    const saved: Record<string, boolean> = Object.fromEntries(
+      SUPERPOWERS_NAMES.map((name, index) => [`superpowers:${name}`, index === 0]),
+    );
+    const write = vi.fn((id: string, enabled: boolean) => { saved[id] = enabled; });
+    const { client, calls } = makeClient(list);
+    const preferences = {
+      get: (id: string) => saved[id],
+      set: write,
+      restore: vi.fn(),
+    };
+    const firstRun = createSkillsStore(client, preferences);
+    await firstRun.getState().refresh();
+    await firstRun.getState().refresh();
+
+    const restarted = createSkillsStore(client, preferences);
+    await restarted.getState().refresh();
+
+    const expectedDisabled = SUPERPOWERS_NAMES.slice(1).map((name) => `superpowers:${name}`);
+    expect(firstRun.getState().disabled).toEqual(expectedDisabled);
+    expect(restarted.getState().disabled).toEqual(expectedDisabled);
+    expect(write).not.toHaveBeenCalled();
+    expect(calls.some((call) => call.channel === "bridge:syncEnabledSkills")).toBe(false);
+  });
+});
+
 describe("skills store — toggle (disabled list stores BARE names, user's view)", () => {
   it("disables an enabled skill and re-enables it on a second toggle", async () => {
     const { client } = makeClient([skill("pdf")]);
@@ -243,6 +452,7 @@ describe("skills store — managed installation journey", () => {
     description: "用追问检验方案是否真的站得住。",
     category: "workbench",
     categoryLabel: "通用工作台",
+    featured: true,
     author: "Matt Pocock",
     repository: "mattpocock/skills",
     revision: "abc123",
@@ -492,6 +702,55 @@ describe("skills store — managed installation journey", () => {
     expect(calls.at(-1)).toEqual({
       channel: "bridge:syncEnabledSkills",
       req: { enabledQualifiedNames: ["leemo:existing"] },
+    });
+  });
+
+  it("removes a shared-runtime family once and clears every member preference", async () => {
+    const existing = skill("existing");
+    let list = [existing, ...xhsFamilySkills()];
+    const calls: { channel: string; req: unknown }[] = [];
+    const client = {
+      invoke: vi.fn(async (channel: string, req: unknown) => {
+        calls.push({ channel, req });
+        if (channel === "bridge:listSkills") return list;
+        if (channel === "bridge:listCommunitySkills") return [];
+        if (channel === "bridge:removeSkill") {
+          list = [existing];
+          return undefined;
+        }
+        if (channel === "bridge:syncEnabledSkills") return { updatedConversations: 1 };
+        return undefined;
+      }),
+      subscribe: vi.fn(() => () => {}),
+    } as unknown as BridgeClient;
+    const saved: Record<string, boolean> = {
+      existing: false,
+      ...Object.fromEntries(XHS_NAMES.map((name) => [`managed:${name}`, true])),
+    };
+    const restore = vi.fn((id: string, previous: boolean | undefined) => {
+      if (previous === undefined) delete saved[id];
+      else saved[id] = previous;
+    });
+    const store = createSkillsStore(client, {
+      get: (id) => saved[id],
+      set: (id, enabled) => { saved[id] = enabled; },
+      restore,
+    });
+    await store.getState().refresh();
+
+    await expect(store.getState().removeSkill("managed:xhs-auth")).resolves.toBe(true);
+
+    expect(calls.filter((call) => call.channel === "bridge:removeSkill")).toEqual([{
+      channel: "bridge:removeSkill",
+      req: { id: "managed:xhs-auth" },
+    }]);
+    expect(store.getState().list.map((candidate) => candidate.name)).toEqual(["existing"]);
+    expect(store.getState().receipt).toBe("已卸载 小红书工具组");
+    expect(restore.mock.calls).toEqual(XHS_NAMES.map((name) => [`managed:${name}`, undefined]));
+    expect(saved).toEqual({ existing: false });
+    expect(calls.at(-1)).toEqual({
+      channel: "bridge:syncEnabledSkills",
+      req: { enabledQualifiedNames: [] },
     });
   });
 });

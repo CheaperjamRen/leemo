@@ -3,6 +3,7 @@ import { createConversationsStore, type ConversationMeta } from "../stores/conve
 import { createWikiEntriesStore, type WikiEntry } from "../stores/wiki-entries";
 import type { TimelineItem } from "../stores/message-model";
 import { createSettingsStore } from "../stores/settings";
+import { createUiStore } from "../stores/ui";
 import { createWorkspacesStore, HOME_WORKSPACE } from "../stores/workspaces";
 import type { BridgeClient } from "../bridge/client";
 import type { PersistenceClient } from "./client";
@@ -117,6 +118,48 @@ describe("startPersistenceSync", () => {
     await stores.conversations.getState().send(cid, "hi");
     await Promise.resolve();
     expect(errors.length).toBeGreaterThan(0);
+    stop();
+  });
+
+  it("merges workbench layout changes into the settings snapshot without dropping settings", () => {
+    const stores = makeStores();
+    const settings = createSettingsStore({ mode: "workbench" });
+    const ui = createUiStore();
+    const persist = mockPersist();
+    const stop = startPersistenceSync({ ...stores, settings, ui }, persist, { schedule: immediate });
+
+    ui.setState({ workbenchSidebarWidth: 320, workbenchSidebarPreference: "pinned" });
+
+    expect(persist.saveSettings).toHaveBeenCalledTimes(1);
+    expect(persist.saveSettings).toHaveBeenLastCalledWith(expect.objectContaining({
+      mode: "workbench",
+      workbenchUi: expect.objectContaining({ sidebarWidth: 320, sidebarPreference: "pinned" }),
+    }));
+    stop();
+  });
+
+  it("persists scoped workbench sessions alongside the ordinary settings map", () => {
+    const stores = makeStores();
+    const settings = createSettingsStore({ mode: "workbench" });
+    const ui = createUiStore();
+    const persist = mockPersist();
+    const stop = startPersistenceSync({ ...stores, settings, ui }, persist, { schedule: immediate });
+
+    ui.getState().activateWorkbenchScope("notebook:math");
+    ui.getState().openScopeConversation("math-conversation");
+
+    expect(persist.saveSettings).toHaveBeenLastCalledWith(expect.objectContaining({
+      mode: "workbench",
+      workbenchUi: expect.objectContaining({
+        activeScopeKey: "notebook:math",
+        scopeSessions: expect.objectContaining({
+          "notebook:math": expect.objectContaining({
+            openConversationIds: ["math-conversation"],
+            activeConversationId: "math-conversation",
+          }),
+        }),
+      }),
+    }));
     stop();
   });
 

@@ -83,3 +83,96 @@ export function resolveCliBinary(args: ResolveCliArgs): string | undefined {
   }
   return undefined;
 }
+
+/** Official @openai/codex optional-package alias for one supported target. */
+export function codexPlatformPackage(platform: string, arch: string): string | undefined {
+  if (!["win32", "darwin", "linux"].includes(platform)) return undefined;
+  if (arch !== "x64" && arch !== "arm64") return undefined;
+  return `@openai/codex-${platform}-${arch}`;
+}
+
+/** Rust target directory used inside the Codex platform package's vendor tree. */
+export function codexTargetTriple(platform: string, arch: string): string | undefined {
+  const cpu = arch === "x64" ? "x86_64" : arch === "arm64" ? "aarch64" : undefined;
+  if (!cpu) return undefined;
+  if (platform === "win32") return `${cpu}-pc-windows-msvc`;
+  if (platform === "darwin") return `${cpu}-apple-darwin`;
+  if (platform === "linux") return `${cpu}-unknown-linux-musl`;
+  return undefined;
+}
+
+export function codexBinaryName(platform: string): string {
+  return platform === "win32" ? "codex.exe" : "codex";
+}
+
+export interface ResolveExternalCodexArgs {
+  platform: string;
+  arch: string;
+  env: Readonly<Record<string, string | undefined>>;
+  probe: CliBinaryProbe;
+}
+
+function envValue(
+  env: Readonly<Record<string, string | undefined>>,
+  name: string,
+): string | undefined {
+  const match = Object.entries(env).find(([key]) => key.toUpperCase() === name.toUpperCase());
+  return match?.[1];
+}
+
+/**
+ * Locate a Codex executable that the user installed independently.
+ *
+ * Subscription support is deliberately an adapter over that installation: it
+ * must never make the Leemo package carry another large native runtime. On
+ * Windows npm exposes a .cmd/.ps1 shim that cannot be spawned without a shell,
+ * so we also resolve the real platform binary behind the shim directory.
+ */
+export function resolveExternalCodexBinary(args: ResolveExternalCodexArgs): string | undefined {
+  const { platform, arch, env, probe } = args;
+  const pkg = codexPlatformPackage(platform, arch);
+  const target = codexTargetTriple(platform, arch);
+  if (!pkg || !target) return undefined;
+
+  const override = envValue(env, "LEEMO_CODEX_PATH")?.trim();
+  const pathEntries = (envValue(env, "PATH") ?? "")
+    .split(platform === "win32" ? ";" : ":")
+    .map((entry) => entry.trim().replace(/^"|"$/g, ""))
+    .filter(Boolean);
+  const npmRoots = [
+    envValue(env, "NPM_CONFIG_PREFIX")?.trim(),
+    platform === "win32" && envValue(env, "APPDATA")
+      ? probe.join(envValue(env, "APPDATA")!, "npm")
+      : undefined,
+    ...pathEntries,
+  ].filter((root): root is string => Boolean(root));
+  const uniqueNpmRoots = [...new Set(npmRoots)];
+  const suffix = [pkg, "vendor", target, "bin", codexBinaryName(platform)];
+  const candidates = [
+    ...(override ? [override] : []),
+    ...pathEntries.map((root) => probe.join(root, codexBinaryName(platform))),
+    ...uniqueNpmRoots.flatMap((root) => [
+      probe.join(root, "node_modules", ...suffix),
+      probe.join(root, "node_modules", "@openai", "codex", "node_modules", ...suffix),
+      ...(platform === "win32" ? [] : [
+        probe.join(root, "lib", "node_modules", ...suffix),
+        probe.join(root, "lib", "node_modules", "@openai", "codex", "node_modules", ...suffix),
+      ]),
+    ]),
+  ];
+  for (const candidate of candidates) {
+    // The Codex desktop package exposes a large executable under WindowsApps,
+    // but another desktop process receives Access denied when spawning it.
+    // Reject that known alias by path instead of running `codex --version`
+    // synchronously during Leemo startup and risking a multi-second first-paint
+    // delay. A separately installed CLI is discovered in the npm/PATH layouts
+    // below.
+    if (platform === "win32" && /(?:^|[\\/])WindowsApps(?:[\\/]|$)/i.test(candidate)) continue;
+    try {
+      if (probe.exists(candidate)) return candidate;
+    } catch {
+      // Continue through the alternate npm layouts.
+    }
+  }
+  return undefined;
+}

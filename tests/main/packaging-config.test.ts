@@ -53,9 +53,23 @@ describe("electron-builder 配置（原生件必须摊在 asar 外）", () => {
     expect(packageJson.scripts?.["electron:pack:base"]).toContain("verify:electron-runtime");
   });
 
+  it("只分发简中与英文 Chromium 语言包", () => {
+    expect(yml).toMatch(/electronLanguages:\s*\[[^\]]*zh-CN[^\]]*en-US[^\]]*\]/u);
+  });
+
   it("原生 CLI 的平台包在 asarUnpack 里", () => {
     expect(yml).toMatch(/asarUnpack:/);
     expect(yml).toMatch(/claude-agent-sdk-win32-x64/);
+  });
+
+  it("订阅型外部 CLI 只复用用户安装，不进入 Leemo 安装包", () => {
+    const packageJson = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8")) as {
+      dependencies?: Record<string, string>;
+    };
+    expect(packageJson.dependencies?.["@openai/codex"]).toBeUndefined();
+    expect(packageJson.dependencies?.["@google/gemini-cli"]).toBeUndefined();
+    expect(packageJson.dependencies?.["@agentclientprotocol/sdk"]).toBeUndefined();
+    expect(yml).not.toMatch(/@openai\/codex|gemini-cli|antigravity/i);
   });
 
   it("把 Office 源包放进 ASAR，首次启动再展开，不产生数百个 loose 文件", () => {
@@ -94,7 +108,22 @@ describe("electron-builder 配置（原生件必须摊在 asar 外）", () => {
 
   it("Windows 安装包使用 Leemo 自己的图标，而不是 Electron 默认图标", () => {
     expect(yml).toMatch(/icon:\s*build\/icon\.svg/);
-    expect(fs.existsSync(path.join(root, "build", "icon.svg"))).toBe(true);
+    const appIcon = path.join(root, "build", "icon.svg");
+    expect(fs.existsSync(appIcon)).toBe(true);
+    const svg = fs.readFileSync(appIcon, "utf8");
+    expect(svg).toContain("#0F1B2E");
+    expect(svg).toContain("#F8F1E4");
+    expect(svg).toContain("#D7822B");
+    expect(svg).not.toContain("#F2AE43");
+  });
+
+  it("随包提供真正的透明 PNG 托盘图标，而不是字符占位", () => {
+    const trayIcon = path.join(root, "build", "tray-icon.png");
+    expect(yml).toMatch(/extraResources:[\s\S]*from:\s*build\/tray-icon\.png[\s\S]*to:\s*tray-icon\.png/u);
+    expect(fs.existsSync(trayIcon)).toBe(true);
+    expect(fs.readFileSync(trayIcon).subarray(0, 8)).toEqual(
+      Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    );
   });
 });
 

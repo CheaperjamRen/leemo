@@ -733,7 +733,7 @@ describe("memory governance — privacy and context budgets", () => {
   const notebookScope = { type: "notebook", notebookId: "毕业设计" } as const;
 
   it.each([
-    "API key 是 sk-live-abcdefghijklmnopqrstuvwxyz123456",
+    "API key 是 test-live-abcdefghijklmnopqrstuvwxyz123456",
     "password=my-super-secret-password",
     "Authorization: Bearer eyJhbGciOiJIUzI1NiJ9.payload.signature",
     "我的验证码是 482913",
@@ -791,6 +791,67 @@ describe("memory governance — privacy and context budgets", () => {
       expect.objectContaining({ status: "uncertain" }),
     ]);
     expect(files.get(paths.currentView)).not.toContain("搬到上海");
+  });
+
+  it("promotes an uncertain momo inference only after the user confirms or corrects it", () => {
+    const harness = createHarness();
+    const candidate = harness.governance.remember({
+      scope: globalScope,
+      kind: "state",
+      topic: "搬家计划",
+      statement: "用户可能下个月搬到上海。",
+      sourceType: "native-auto",
+    });
+    const paths = harness.governance.ensureScope(globalScope);
+    harness.setNow(2_000);
+
+    const confirmed = harness.governance.update({
+      scope: globalScope,
+      id: candidate.record.id,
+      statement: "用户下个月准备搬到上海。",
+    });
+
+    expect(confirmed).toMatchObject({
+      action: "updated",
+      record: {
+        status: "current",
+        sourceType: "settings-edit",
+        statement: "用户下个月准备搬到上海。",
+        lastConfirmedAt: 2_000,
+        supersedes: candidate.record.id,
+      },
+    });
+    expect(harness.governance.list(globalScope).records).toEqual([
+      expect.objectContaining({
+        id: confirmed.record.id,
+        status: "current",
+        statement: "用户下个月准备搬到上海。",
+      }),
+    ]);
+    expect(harness.files.get(paths.currentView)).toContain("用户下个月准备搬到上海。");
+    expect(harness.files.get(paths.currentView)).not.toContain("用户可能下个月搬到上海。");
+  });
+
+  it("lets the user reject an uncertain momo inference without ever making it current", () => {
+    const harness = createHarness();
+    const candidate = harness.governance.remember({
+      scope: globalScope,
+      kind: "profile",
+      topic: "人格观察",
+      statement: "用户可能不喜欢与人合作。",
+      sourceType: "native-auto",
+    });
+    const paths = harness.governance.ensureScope(globalScope);
+    harness.setNow(2_000);
+
+    const removed = harness.governance.remove(globalScope, candidate.record.id);
+
+    expect(removed).toMatchObject({
+      action: "removed",
+      record: { status: "deleted", statement: "用户可能不喜欢与人合作。" },
+    });
+    expect(harness.governance.list(globalScope).records).toEqual([]);
+    expect(harness.files.get(paths.currentView)).not.toContain("用户可能不喜欢与人合作。");
   });
 
   it("orders pinned and stable facts before transient details", () => {
@@ -921,7 +982,7 @@ describe("memory governance — native auto-memory reconciliation", () => {
       "## 工作习惯",
       "- 用户偏好夜间专注工作。",
       "- 用户可能明年搬去上海。",
-      "- API key 是 sk-live-native-abcdefghijklmnopqrstuvwxyz",
+      "- API key 是 test-live-native-abcdefghijklmnopqrstuvwxyz",
       "",
     ].join("\n"));
 
@@ -953,11 +1014,11 @@ describe("memory governance — native auto-memory reconciliation", () => {
       "用户偏好夜间专注工作。",
       "用户可能明年搬去上海。",
     ]));
-    expect(all.some((record) => record.statement.includes("sk-live"))).toBe(false);
+    expect(all.some((record) => record.statement.includes("test-live"))).toBe(false);
     expect(currentView).toContain("用户是大学生。");
     expect(currentView).toContain("用户偏好夜间专注工作。");
     expect(currentView).not.toContain("用户可能明年搬去上海。");
-    expect(currentView).not.toContain("sk-live");
+    expect(currentView).not.toContain("test-live");
     expect(result.diagnostics).toEqual([expect.stringMatching(/敏感.*忽略/)]);
   });
 

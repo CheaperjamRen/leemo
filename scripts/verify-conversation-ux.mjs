@@ -5,7 +5,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { chromium } from "playwright";
 
-const outputDir = path.resolve(process.env.LEEMO_VERIFY_OUTPUT_DIR || "dist-verify/audit-shots");
+const outputDir = path.resolve("docs/research/audit-shots");
 const factsPath = path.join(outputDir, "conversation-ux-facts.json");
 fs.mkdirSync(outputDir, { recursive: true });
 
@@ -122,7 +122,7 @@ try {
   // The same running turn must read like an execution console in workbench,
   // not the old generic "process" heading. Switching modes must not lose the
   // pending decision or create a second conversation.
-  await fixturePage.getByRole("button", { name: "工作台", exact: true }).click();
+  await fixturePage.getByRole("button", { name: "切换到工作台", exact: true }).click();
   await fixturePage.locator('[data-shell="workbench"]').waitFor({ state: "visible" });
   await fixturePage.waitForTimeout(600);
   const activeWorkbenchFold = fixturePage.getByTestId("process-fold").last();
@@ -169,7 +169,7 @@ try {
   await fixturePage.getByText(/输入 2\.4k/).waitFor({ state: "visible" });
   await screenshot(fixturePage, "conversation-ux-buddy-finished.png");
 
-  await fixturePage.getByRole("button", { name: "工作台", exact: true }).click();
+  await fixturePage.getByRole("button", { name: "切换到工作台", exact: true }).click();
   await fixturePage.locator('[data-shell="workbench"]').waitFor({ state: "visible" });
   await fixturePage.waitForTimeout(600);
   const finishedWorkbenchFold = fixturePage.getByTestId("process-fold").filter({ hasText: "上下文已整理" }).first();

@@ -413,7 +413,7 @@ async function openSettingsTab(page, label) {
 
 async function ensureWorkbench(page) {
   if (await page.getByTestId("workbench-shell").isVisible().catch(() => false)) return;
-  await page.getByRole("button", { name: "工作台", exact: true }).click();
+  await page.getByRole("button", { name: "切换到工作台", exact: true }).click();
   await page.getByTestId("workbench-shell").waitFor({ state: "visible" });
 }
 
@@ -433,7 +433,7 @@ async function setUpProviderThroughUi(page, baseUrl) {
   const form = page.getByTestId("provider-config-form");
   await form.waitFor({ state: "visible" });
   await form.getByLabel("名称").fill(PROVIDER_NAME);
-  await form.getByRole("button", { name: "OpenAI 兼容", exact: true }).click();
+  await form.getByRole("button", { name: "OpenAI Chat", exact: true }).click();
   await form.getByLabel("Base URL").fill(baseUrl);
   await form.locator('input[aria-label="API Key"]').fill(TEST_KEY);
   await form.locator("summary", { hasText: "高级设置" }).click();
@@ -827,7 +827,7 @@ async function main() {
         completed: true,
       },
       nativeAttachmentPickerAutomated: false,
-      layoutFacts: "dist-verify/audit-shots/model-onboarding-r9-layout-facts.json",
+      layoutFacts: "docs/research/audit-shots/model-onboarding-r9-layout-facts.json",
       mockRequests: state.requests.length,
       streamAttempts: state.streamAttempts,
       apiKeyRendererVisible: false,

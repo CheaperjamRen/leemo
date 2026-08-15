@@ -1,8 +1,15 @@
 import { createStore, type StoreApi } from "zustand/vanilla";
-import type { AttachmentRef, BridgeEventEnvelope, PermissionMode, WorkspaceFileRef } from "../../bridge/contract";
+import type { AttachmentRef, BridgeEventEnvelope, GuideResponse, PermissionMode, WorkspaceFileRef } from "../../bridge/contract";
 import type { BridgeClient } from "../bridge/client";
 import { applyEvent, type TimelineItem, RENDERER_RUN_ID_INITIAL } from "./message-model";
 import { HOME_WORKSPACE_ID } from "./workspaces";
+
+export interface ConversationGoal {
+  text: string;
+  status: "active" | "paused";
+  createdAt: number;
+  updatedAt: number;
+}
 
 export interface ConversationMeta {
   id: string;
@@ -28,6 +35,9 @@ export interface ConversationMeta {
    *  instead of just re-opening an empty shell. Optional: conversations that
    *  never finished a round — and every row written before 卡 C — have none. */
   sessionId?: string | null;
+  /** One user-authored durable objective for this conversation. It is shown as
+   * a compact composer card and reaches the model only while active. */
+  goal?: ConversationGoal;
 }
 
 export interface ConversationDefaults {
@@ -44,8 +54,38 @@ export interface PendingSendDraft {
   text: string;
   attachments: AttachmentRef[];
   workspaceFiles?: WorkspaceFileRef[];
+  noteReferences?: string[];
   providerId: string;
   modelId: string;
+  allowSubagents?: boolean;
+  permissionMode?: PermissionMode;
+  /** Optional display-safe text for app-generated turns. The full prompt still
+   * reaches the host and remains available for retry, while the timeline keeps
+   * the user's mental model concise. */
+  displayText?: string;
+  errorMessage?: string;
+}
+
+export interface ConversationTurnOptions {
+  allowSubagents?: boolean;
+  displayText?: string;
+  noteReferences?: string[];
+  permissionMode?: PermissionMode;
+}
+
+/** A complete next-round turn waiting behind the current run. This queue is
+ * renderer-memory-only on purpose: it follows its conversation while the user
+ * switches views, but does not claim restart recovery that the host cannot yet
+ * guarantee. */
+export interface QueuedTurn {
+  id: string;
+  text: string;
+  attachments: AttachmentRef[];
+  workspaceFiles: WorkspaceFileRef[];
+  noteReferences?: string[];
+  allowSubagents?: boolean;
+  permissionMode?: PermissionMode;
+  displayText?: string;
   errorMessage?: string;
 }
 
@@ -130,6 +170,7 @@ export interface ConversationsState {
   /** Never persisted. A missing `errorMessage` means the acknowledged run is
    * still pending; a present one means the exact draft can be retried. */
   pendingSends: Record<string, PendingSendDraft | undefined>;
+  queuedTurns: Record<string, QueuedTurn[] | undefined>;
 
   createConversation: (opts: {
     source: "buddy" | "workbench";
@@ -148,7 +189,19 @@ export interface ConversationsState {
     text: string,
     attachments?: AttachmentRef[],
     workspaceFiles?: WorkspaceFileRef[],
+    options?: ConversationTurnOptions,
   ) => Promise<void>;
+  guide: (conversationId: string, text: string) => Promise<GuideResponse>;
+  enqueueTurn: (
+    conversationId: string,
+    text: string,
+    attachments?: AttachmentRef[],
+    workspaceFiles?: WorkspaceFileRef[],
+    options?: ConversationTurnOptions,
+  ) => string;
+  removeQueuedTurn: (conversationId: string, queuedTurnId: string) => void;
+  guideQueuedTurn: (conversationId: string, queuedTurnId: string) => Promise<GuideResponse>;
+  flushQueuedTurns: (conversationId: string) => Promise<void>;
   retry: (conversationId: string) => Promise<void>;
   dismissRetry: (conversationId: string) => void;
   interrupt: (conversationId: string) => Promise<void>;
@@ -160,6 +213,11 @@ export interface ConversationsState {
   openTab: (conversationId: string) => void;
   closeTab: (conversationId: string) => void;
   renameTitle: (conversationId: string, title: string) => void;
+  setGoal: (conversationId: string, text: string) => Promise<void>;
+  toggleGoalPaused: (conversationId: string) => Promise<void>;
+  clearGoal: (conversationId: string) => Promise<void>;
+  /** Explicitly set the durable reminder dot from the conversation menu. */
+  setConversationUnread: (conversationId: string, unread: boolean) => Promise<void>;
   pinConversation: (conversationId: string, pinned: boolean) => Promise<void>;
   archiveConversation: (conversationId: string, archived: boolean) => Promise<void>;
   moveConversation: (
@@ -250,6 +308,60 @@ function safeRetryError(message: unknown): string {
     : "任务运行失败，请重试。";
 }
 
+const RESTART_INTERRUPTION_MESSAGE = "上次任务因 Leemo 退出而中断";
+
+/** A renderer restart cannot keep a host run alive. Persisted running markers
+ * are useful history, but presenting them as live work is false. Settle every
+ * stale marker and append one explicit receipt for the last unterminated run. */
+function restoreTimelineAfterRestart(timeline: TimelineItem[]): TimelineItem[] {
+  const terminalRuns = new Set(
+    timeline.flatMap((item) =>
+      item.kind === "result" || item.kind === "error" ? [item.runId] : [],
+    ),
+  );
+  let interruptedRunId: string | undefined;
+  const markInterrupted = (runId: string): void => {
+    if (!terminalRuns.has(runId)) interruptedRunId = runId;
+  };
+
+  const restored = timeline.map((item): TimelineItem => {
+    if ((item.kind === "text" || item.kind === "thinking") && item.streaming) {
+      markInterrupted(item.runId);
+      return { ...item, streaming: false };
+    }
+    if (item.kind === "tool" && item.status === "running") {
+      markInterrupted(item.runId);
+      return { ...item, status: "error" };
+    }
+    if (item.kind === "activity") {
+      const hasRunningChild = item.tools.some((tool) => tool.status === "running");
+      if (item.status === "running" || hasRunningChild) {
+        markInterrupted(item.runId);
+        return {
+          ...item,
+          status: "error",
+          tools: item.tools.map((tool) => tool.status === "running" ? { ...tool, status: "error" } : tool),
+        };
+      }
+    }
+    if (item.kind === "retry" && item.state === "retrying") {
+      markInterrupted(item.runId);
+      return { ...item, state: "failed" };
+    }
+    return item;
+  });
+
+  if (!interruptedRunId) return restored;
+  const baseId = `restart-interrupted-${interruptedRunId}`;
+  let receiptId = baseId;
+  let suffix = 1;
+  while (restored.some((item) => item.id === receiptId)) receiptId = `${baseId}-${++suffix}`;
+  return [
+    ...restored,
+    { kind: "error", id: receiptId, runId: interruptedRunId, message: RESTART_INTERRUPTION_MESSAGE },
+  ];
+}
+
 /** Free, local title derivation for the first turn. It removes request boilerplate
  * and path noise instead of billing the user's model for a second hidden call.
  * Manual rename remains the authority after this one automatic pass. */
@@ -325,7 +437,7 @@ export function foldConversationEnvelope(
       [conversationId]: { ...pending, errorMessage: safeRetryError(event.message) },
     };
   } else if (finished && ownsPending && pending) {
-    if (event.isError && event.subtype !== "interrupted") {
+    if (event.isError && event.subtype !== "interrupted" && event.retryable !== false) {
       pendingSends = {
         ...state.pendingSends,
         [conversationId]: {
@@ -367,6 +479,7 @@ export function createConversationsStore(
   deps: ConversationsStoreDeps,
 ): StoreApi<ConversationsState> {
   let runSeq = 0;
+  let queueSeq = 0;
   const now = deps.now ?? Date.now;
   const reportPersistenceError = deps.onPersistenceError
     ?? ((error: unknown) => console.error("[leemo:conversation-lifecycle]", error));
@@ -389,6 +502,7 @@ export function createConversationsStore(
   // cross the async gap before runId exists, or a new send can begin while a
   // lifecycle write is still pending.
   const conversationLocks = new Set<string>();
+  const queueFlushLocks = new Set<string>();
 
   /** Make sure the host has a conversation answering to `conversationId`.
    *
@@ -400,6 +514,7 @@ export function createConversationsStore(
   async function ensureHostConversation(
     client: BridgeClient,
     meta: ConversationMeta,
+    permissionMode?: PermissionMode,
   ): Promise<void> {
     if (hostLive.has(meta.id)) return;
     await deps.ensureSkillsReady?.();
@@ -417,6 +532,7 @@ export function createConversationsStore(
       // 本子约定 would apply before the restart and not after.
       ...(meta.bookId ? { notebookId: meta.bookId } : {}),
       ...(persona ?? {}),
+      ...(permissionMode !== undefined ? { permissionMode } : {}),
       // Spread-on-defined keeps "no opinion" (key absent) distinct from "all
       // off" (empty array) all the way to the SDK.
       ...(enabledSkills !== undefined ? { enabledSkills } : {}),
@@ -432,6 +548,7 @@ export function createConversationsStore(
     timelines: {},
     runIds: {},
     pendingSends: {},
+    queuedTurns: {},
 
     createConversation: async ({ source, bookId, workspaceId: requestedWorkspaceId, activate = true }) => {
       await deps.ensureSkillsReady?.();
@@ -497,6 +614,7 @@ export function createConversationsStore(
       if (
         !initial.byId[conversationId]
         || (initial.timelines[conversationId]?.length ?? 0) > 0
+        || (initial.queuedTurns[conversationId]?.length ?? 0) > 0
         || (activeRun !== null && activeRun !== undefined)
         || conversationLocks.has(conversationId)
       ) {
@@ -513,6 +631,7 @@ export function createConversationsStore(
         if (
           !current.byId[conversationId]
           || (current.timelines[conversationId]?.length ?? 0) > 0
+          || (current.queuedTurns[conversationId]?.length ?? 0) > 0
           || (currentRun !== null && currentRun !== undefined)
         ) {
           return false;
@@ -524,16 +643,19 @@ export function createConversationsStore(
           const timelines = { ...state.timelines };
           const runIds = { ...state.runIds };
           const pendingSends = { ...state.pendingSends };
+          const queuedTurns = { ...state.queuedTurns };
           delete byId[conversationId];
           delete timelines[conversationId];
           delete runIds[conversationId];
           delete pendingSends[conversationId];
+          delete queuedTurns[conversationId];
           const order = state.order.filter((id) => id !== conversationId);
           return {
             byId,
             timelines,
             runIds,
             pendingSends,
+            queuedTurns,
             order,
             openTabs: state.openTabs.filter((id) => id !== conversationId),
             activeId: state.activeId === conversationId ? order[0] ?? null : state.activeId,
@@ -545,7 +667,7 @@ export function createConversationsStore(
       }
     },
 
-    send: async (conversationId, text, attachments, workspaceFiles) => {
+    send: async (conversationId, text, attachments, workspaceFiles, turnOptions) => {
       const initial = get();
       const known = initial.byId[conversationId];
       if (!known) throw unknownConversation(conversationId);
@@ -558,9 +680,16 @@ export function createConversationsStore(
       conversationLocks.add(conversationId);
 
       try {
+        const hostWasLive = hostLive.has(conversationId);
         // Claim BEFORE the optimistic timeline write: a failed claim must not
         // leave a user bubble sitting in a conversation that never sent.
-        await ensureHostConversation(client, known);
+        await ensureHostConversation(client, known, turnOptions?.permissionMode);
+        if (hostWasLive && turnOptions?.permissionMode !== undefined) {
+          await client.invoke("bridge:updateContext", {
+            conversationId,
+            permissionMode: turnOptions.permissionMode,
+          });
+        }
 
         // Re-read after the await — the claim is an async IPC hop, and events for
         // OTHER conversations (or this one) may have landed meanwhile.
@@ -593,18 +722,19 @@ export function createConversationsStore(
             workspacePath,
           })),
         ];
+        const visibleText = turnOptions?.displayText?.trim() || text;
         const userMessage: TimelineItem = {
           kind: "text",
           id: `u${timeline.length}`,
           runId,
           role: "user",
-          text,
+          text: visibleText,
           streaming: false,
           createdAt: timestamp,
           ...(displayFiles.length > 0 ? { attachments: displayFiles } : {}),
         };
         const title = meta.title === "新对话" && !meta.titleManuallyUpdated
-          ? deriveConversationTitle(text, displayFiles.map((file) => file.name))
+          ? deriveConversationTitle(visibleText, displayFiles.map((file) => file.name))
           : meta.title;
         // A user may deliberately start a different turn while the previous
         // failed turn is still offered for retry. The new draft temporarily owns
@@ -616,8 +746,20 @@ export function createConversationsStore(
           text,
           attachments: attachments?.map((attachment) => ({ ...attachment })) ?? [],
           workspaceFiles: workspaceFiles?.map((file) => ({ ...file })) ?? [],
+          ...(turnOptions?.noteReferences && turnOptions.noteReferences.length > 0
+            ? { noteReferences: [...turnOptions.noteReferences] }
+            : {}),
           providerId: meta.providerId,
           modelId: meta.modelId,
+          ...(turnOptions?.allowSubagents !== undefined
+            ? { allowSubagents: turnOptions.allowSubagents }
+            : {}),
+          ...(turnOptions?.permissionMode !== undefined
+            ? { permissionMode: turnOptions.permissionMode }
+            : {}),
+          ...(turnOptions?.displayText !== undefined
+            ? { displayText: turnOptions.displayText }
+            : {}),
         };
 
         set((current) => ({
@@ -631,12 +773,20 @@ export function createConversationsStore(
           pendingSends: { ...current.pendingSends, [conversationId]: pendingDraft },
         }));
         try {
+          const goalText = meta.goal?.status === "active" ? meta.goal.text.trim() : "";
           await client.invoke("bridge:send", {
             conversationId,
             prompt: text,
             sourceMessageId: userMessage.id,
             ...(attachments && attachments.length > 0 ? { attachments } : {}),
             ...(workspaceFiles && workspaceFiles.length > 0 ? { workspaceFiles } : {}),
+            ...(turnOptions?.noteReferences && turnOptions.noteReferences.length > 0
+              ? { noteReferences: turnOptions.noteReferences }
+              : {}),
+            ...(turnOptions?.allowSubagents !== undefined
+              ? { allowSubagents: turnOptions.allowSubagents }
+              : {}),
+            ...(goalText ? { goalText } : {}),
           });
         } catch (error) {
           // `bridge:send` is the acknowledgement boundary. When validation or IPC
@@ -672,11 +822,169 @@ export function createConversationsStore(
       }
     },
 
+    guide: async (conversationId, text) => {
+      const state = get();
+      const runId = state.runIds[conversationId];
+      const prompt = text.trim();
+      if (!state.byId[conversationId]) throw unknownConversation(conversationId);
+      if (!runId) throw new Error("当前没有正在执行的任务。");
+      if (!prompt) throw new Error("引导内容不能为空。");
+      const timeline = state.timelines[conversationId] ?? [];
+      const item: TimelineItem = {
+        kind: "text",
+        id: `g${timeline.length}`,
+        runId,
+        role: "user",
+        text: prompt,
+        streaming: false,
+        createdAt: now(),
+      };
+      set((current) => ({
+        timelines: {
+          ...current.timelines,
+          [conversationId]: [...(current.timelines[conversationId] ?? []), item],
+        },
+      }));
+      try {
+        return await client.invoke("bridge:guide", { conversationId, prompt });
+      } catch (error) {
+        set((current) => ({
+          timelines: {
+            ...current.timelines,
+            [conversationId]: (current.timelines[conversationId] ?? []).filter(
+              (candidate) => candidate.id !== item.id
+                || candidate.kind !== "text"
+                || candidate.runId !== runId,
+            ),
+          },
+        }));
+        throw error;
+      }
+    },
+
+    enqueueTurn: (conversationId, text, attachments, workspaceFiles, options) => {
+      if (!get().byId[conversationId]) throw unknownConversation(conversationId);
+      const prompt = text.trim();
+      const copiedAttachments = attachments?.map((attachment) => ({ ...attachment })) ?? [];
+      const copiedWorkspaceFiles = workspaceFiles?.map((file) => ({ ...file })) ?? [];
+      const copiedNotes = options?.noteReferences ? [...options.noteReferences] : undefined;
+      if (!prompt && copiedAttachments.length === 0 && copiedWorkspaceFiles.length === 0 && !copiedNotes?.length) {
+        throw new Error("消息不能为空。");
+      }
+      const id = `queued-${++queueSeq}`;
+      const queuedTurn: QueuedTurn = {
+        id,
+        text,
+        attachments: copiedAttachments,
+        workspaceFiles: copiedWorkspaceFiles,
+        ...(copiedNotes?.length ? { noteReferences: copiedNotes } : {}),
+        ...(options?.allowSubagents !== undefined ? { allowSubagents: options.allowSubagents } : {}),
+        ...(options?.permissionMode !== undefined ? { permissionMode: options.permissionMode } : {}),
+        ...(options?.displayText !== undefined ? { displayText: options.displayText } : {}),
+      };
+      set((state) => ({
+        queuedTurns: {
+          ...state.queuedTurns,
+          [conversationId]: [...(state.queuedTurns[conversationId] ?? []), queuedTurn],
+        },
+      }));
+      return id;
+    },
+
+    removeQueuedTurn: (conversationId, queuedTurnId) => {
+      if (!get().byId[conversationId]) throw unknownConversation(conversationId);
+      set((state) => ({
+        queuedTurns: {
+          ...state.queuedTurns,
+          [conversationId]: (state.queuedTurns[conversationId] ?? []).filter((turn) => turn.id !== queuedTurnId),
+        },
+      }));
+    },
+
+    guideQueuedTurn: async (conversationId, queuedTurnId) => {
+      const queuedTurn = get().queuedTurns[conversationId]?.find((turn) => turn.id === queuedTurnId);
+      if (!queuedTurn) throw new Error("这条排队消息已经不存在。");
+      if (
+        queuedTurn.attachments.length > 0
+        || queuedTurn.workspaceFiles.length > 0
+        || (queuedTurn.noteReferences?.length ?? 0) > 0
+      ) {
+        throw new Error("含附件、文件或便签的消息不能转为引导。");
+      }
+      const result = await get().guide(conversationId, queuedTurn.text);
+      get().removeQueuedTurn(conversationId, queuedTurnId);
+      return result;
+    },
+
+    flushQueuedTurns: async (conversationId) => {
+      if (queueFlushLocks.has(conversationId)) return;
+      const initial = get();
+      if (!initial.byId[conversationId] || initial.runIds[conversationId]) return;
+      const head = initial.queuedTurns[conversationId]?.[0];
+      if (!head) return;
+      queueFlushLocks.add(conversationId);
+      try {
+        const options: ConversationTurnOptions | undefined =
+          head.allowSubagents === undefined && head.displayText === undefined && head.noteReferences === undefined && head.permissionMode === undefined
+            ? undefined
+            : {
+                ...(head.allowSubagents !== undefined ? { allowSubagents: head.allowSubagents } : {}),
+                ...(head.displayText !== undefined ? { displayText: head.displayText } : {}),
+                ...(head.noteReferences !== undefined ? { noteReferences: [...head.noteReferences] } : {}),
+                ...(head.permissionMode !== undefined ? { permissionMode: head.permissionMode } : {}),
+              };
+        await get().send(
+          conversationId,
+          head.text,
+          head.attachments.map((attachment) => ({ ...attachment })),
+          head.workspaceFiles.map((file) => ({ ...file })),
+          options,
+        );
+        set((state) => {
+          const queue = state.queuedTurns[conversationId] ?? [];
+          if (queue[0]?.id !== head.id) return {};
+          return {
+            queuedTurns: {
+              ...state.queuedTurns,
+              [conversationId]: queue.slice(1),
+            },
+          };
+        });
+      } catch (error) {
+        const errorMessage = safeRetryError(error instanceof Error ? error.message : error);
+        set((state) => {
+          const queue = state.queuedTurns[conversationId] ?? [];
+          if (queue[0]?.id !== head.id) return {};
+          return {
+            queuedTurns: {
+              ...state.queuedTurns,
+              [conversationId]: [{ ...queue[0], errorMessage }, ...queue.slice(1)],
+            },
+          };
+        });
+      } finally {
+        queueFlushLocks.delete(conversationId);
+      }
+    },
+
     retry: async (conversationId) => {
       const draft = get().pendingSends[conversationId];
       if (!draft?.errorMessage) return;
       try {
-        await get().send(conversationId, draft.text, draft.attachments, draft.workspaceFiles);
+        await get().send(
+          conversationId,
+          draft.text,
+          draft.attachments,
+          draft.workspaceFiles,
+          draft.allowSubagents === undefined && draft.displayText === undefined && draft.noteReferences === undefined && draft.permissionMode === undefined
+            ? undefined
+            : {
+                ...(draft.allowSubagents !== undefined ? { allowSubagents: draft.allowSubagents } : {}),
+                ...(draft.displayText !== undefined ? { displayText: draft.displayText } : {}),
+                ...(draft.noteReferences !== undefined ? { noteReferences: draft.noteReferences } : {}),
+                ...(draft.permissionMode !== undefined ? { permissionMode: draft.permissionMode } : {}),
+              },
+        );
       } catch (error) {
         const meta = get().byId[conversationId];
         set((state) => ({
@@ -792,6 +1100,73 @@ export function createConversationsStore(
       }));
     },
 
+    setGoal: async (conversationId, text) => {
+      const clean = text.trim();
+      if (!clean) throw new Error("目标内容不能为空。");
+      const state = get();
+      const current = state.byId[conversationId];
+      if (!current) throw unknownConversation(conversationId);
+      const timestamp = now();
+      const goal: ConversationGoal = {
+        text: clean,
+        status: current.goal?.status ?? "active",
+        createdAt: current.goal?.createdAt ?? timestamp,
+        updatedAt: timestamp,
+      };
+      const next = { ...current, goal };
+      await deps.persistence?.saveConversation(next, state.timelines[conversationId] ?? []);
+      set((latest) => latest.byId[conversationId]
+        ? { byId: { ...latest.byId, [conversationId]: { ...latest.byId[conversationId], goal } } }
+        : {});
+    },
+
+    toggleGoalPaused: async (conversationId) => {
+      const state = get();
+      const current = state.byId[conversationId];
+      if (!current) throw unknownConversation(conversationId);
+      if (!current.goal) return;
+      const goal: ConversationGoal = {
+        ...current.goal,
+        status: current.goal.status === "active" ? "paused" : "active",
+        updatedAt: now(),
+      };
+      const next = { ...current, goal };
+      await deps.persistence?.saveConversation(next, state.timelines[conversationId] ?? []);
+      set((latest) => latest.byId[conversationId]
+        ? { byId: { ...latest.byId, [conversationId]: { ...latest.byId[conversationId], goal } } }
+        : {});
+    },
+
+    clearGoal: async (conversationId) => {
+      const state = get();
+      const current = state.byId[conversationId];
+      if (!current) throw unknownConversation(conversationId);
+      if (!current.goal) return;
+      const { goal: _removed, ...next } = current;
+      await deps.persistence?.saveConversation(next, state.timelines[conversationId] ?? []);
+      set((latest) => {
+        const latestMeta = latest.byId[conversationId];
+        if (!latestMeta) return {};
+        const { goal: _latestGoal, ...withoutGoal } = latestMeta;
+        return { byId: { ...latest.byId, [conversationId]: withoutGoal } };
+      });
+    },
+
+    setConversationUnread: async (conversationId, unread) => {
+      if (typeof unread !== "boolean") return;
+      const state = get();
+      const current = state.byId[conversationId];
+      if (!current) throw unknownConversation(conversationId);
+      if (current.unread === unread) return;
+      const next = { ...current, unread };
+      // Persist before changing the visible state. A disk failure must not
+      // make the menu claim that a reminder was saved when it was not.
+      await deps.persistence?.saveConversation(next, state.timelines[conversationId] ?? []);
+      set((latest) => latest.byId[conversationId]
+        ? { byId: { ...latest.byId, [conversationId]: { ...latest.byId[conversationId], unread } } }
+        : {});
+    },
+
     pinConversation: async (conversationId, pinned) => {
       const state = get();
       const current = state.byId[conversationId];
@@ -818,6 +1193,7 @@ export function createConversationsStore(
         || (archived && (
           (activeRun !== null && activeRun !== undefined)
           || state.pendingSends[conversationId] !== undefined
+          || (state.queuedTurns[conversationId]?.length ?? 0) > 0
         ))
       ) {
         throw new Error("对话进行中，完成或停止后再归档。");
@@ -855,6 +1231,7 @@ export function createConversationsStore(
         (activeRun !== null && activeRun !== undefined)
         || conversationLocks.has(conversationId)
         || state.pendingSends[conversationId] !== undefined
+        || (state.queuedTurns[conversationId]?.length ?? 0) > 0
       ) {
         throw new Error("对话进行中，完成或停止后再移动。");
       }
@@ -914,6 +1291,7 @@ export function createConversationsStore(
         (activeRun !== null && activeRun !== undefined)
         || conversationLocks.has(conversationId)
         || state.pendingSends[conversationId] !== undefined
+        || (state.queuedTurns[conversationId]?.length ?? 0) > 0
       ) {
         throw new Error("对话进行中，完成或停止后再删除。");
       }
@@ -929,10 +1307,12 @@ export function createConversationsStore(
           const timelines = { ...latest.timelines };
           const runIds = { ...latest.runIds };
           const pendingSends = { ...latest.pendingSends };
+          const queuedTurns = { ...latest.queuedTurns };
           delete byId[conversationId];
           delete timelines[conversationId];
           delete runIds[conversationId];
           delete pendingSends[conversationId];
+          delete queuedTurns[conversationId];
           const order = latest.order.filter((id) => id !== conversationId);
           const nextActiveId = latest.activeId === conversationId
             ? nextConversationInScope({ byId, order }, workspaceIdOf(current), current.bookId)
@@ -942,6 +1322,7 @@ export function createConversationsStore(
             timelines,
             runIds,
             pendingSends,
+            queuedTurns,
             order,
             activeId: nextActiveId,
             openTabs: latest.openTabs.filter((id) => id !== conversationId),
@@ -994,11 +1375,7 @@ export function createConversationsStore(
         // No host-side run survives an app restart. Text/thinking records are
         // still useful history, but their old streaming caret must not imply
         // that work continues invisibly in the background.
-        const restoredTimeline = timeline.map((item): TimelineItem =>
-          (item.kind === "text" || item.kind === "thinking") && item.streaming
-            ? { ...item, streaming: false }
-            : item,
-        );
+        const restoredTimeline = restoreTimelineAfterRestart(timeline);
         const firstUserMessage = restoredTimeline.find(
           (item): item is Extract<TimelineItem, { kind: "text" }> =>
             item.kind === "text" && item.role === "user",
@@ -1039,6 +1416,7 @@ export function createConversationsStore(
         timelines,
         runIds,
         pendingSends: {},
+        queuedTurns: {},
         // A restart must not reopen a conversation the user deliberately
         // archived. The exact visible 本子 will call activateScope after its
         // own restoration; this fallback is only for the shared bootstrap.

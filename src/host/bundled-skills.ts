@@ -29,6 +29,7 @@ interface BundledCatalogEntry {
   license?: string;
   category?: string;
   categoryLabel?: string;
+  setupMessage?: string;
 }
 
 interface BundledCatalog {
@@ -170,6 +171,7 @@ export function discoverBundledSkills(rootPath: string): BundledSkillDefinition[
       const repository = catalogScalar(metadata, "repository", 200);
       const revision = catalogScalar(metadata, "revision", 120);
       const license = catalogScalar(metadata, "license", 80);
+      const setupMessage = catalogScalar(metadata, "setupMessage", 500);
 
       found.push({
         id: `bundled:${entry.name}`,
@@ -190,6 +192,7 @@ export function discoverBundledSkills(rootPath: string): BundledSkillDefinition[
         scanStatus: "scanned",
         canRemove: false,
         canUpdate: false,
+        ...(setupMessage ? { setupRequired: true, setupMessage } : {}),
         ...(sourceUrl ? { sourceUrl } : {}),
         ...(repository ? { repository } : {}),
         ...(revision ? { revision } : {}),

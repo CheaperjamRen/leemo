@@ -1,4 +1,4 @@
-import { act, render, screen } from "@testing-library/react";
+import { act, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useContext } from "react";
 import { describe, expect, it } from "vitest";
@@ -120,10 +120,10 @@ describe("ArtifactsPage", () => {
     expect(screen.getByText("成果记录读取失败")).toBeInTheDocument();
   });
 
-  it("groups populated results and filters files from visualizations", async () => {
+  it("groups populated results by time and filters files from visualizations", async () => {
     const user = userEvent.setup();
     renderPage();
-    expect(screen.getByText("数据结构")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "更早" })).toBeInTheDocument();
     expect(screen.getByText("复习提纲.md")).toBeInTheDocument();
     expect(screen.getByText("复杂度图.html")).toBeInTheDocument();
 
@@ -132,10 +132,81 @@ describe("ArtifactsPage", () => {
     expect(screen.queryByText("复杂度图.html")).not.toBeInTheDocument();
   });
 
+  it("keeps notebook, source, and time metadata in compact today and earlier rows", () => {
+    const today = new Date();
+    today.setHours(10, 24, 0, 0);
+    const yesterday = new Date(today);
+    yesterday.setDate(yesterday.getDate() - 1);
+    yesterday.setHours(9, 55, 0, 0);
+
+    renderPage({
+      entries: [
+        { ...ENTRIES[0], createdAt: today.getTime() },
+        { ...ENTRIES[1], createdAt: yesterday.getTime() },
+      ],
+    });
+
+    const todayList = screen.getByRole("list", { name: "今天的成果" });
+    const earlierList = screen.getByRole("list", { name: "更早的成果" });
+    const todayRow = within(todayList).getByRole("listitem");
+    const earlierRow = within(earlierList).getByRole("listitem");
+
+    expect(within(todayRow).getByText("复习提纲.md")).toBeInTheDocument();
+    expect(within(todayRow).getByText("数据结构")).toBeInTheDocument();
+    expect(within(todayRow).getByText("来自 期末复习任务")).toBeInTheDocument();
+    expect(within(todayRow).getByText("10:24")).toBeInTheDocument();
+    expect(within(earlierRow).getByText("昨天")).toBeInTheDocument();
+  });
+
+  it("searches real artifact titles and paths without losing the page filters", async () => {
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.type(screen.getByRole("searchbox", { name: "搜索成果" }), "复杂度");
+    expect(screen.getByText("复杂度图.html")).toBeInTheDocument();
+    expect(screen.queryByText("复习提纲.md")).not.toBeInTheDocument();
+
+    await user.clear(screen.getByRole("searchbox", { name: "搜索成果" }));
+    expect(screen.getByText("复习提纲.md")).toBeInTheDocument();
+  });
+
+  it("filters the deliverable list by notebook in place", async () => {
+    const user = userEvent.setup();
+    renderPage({
+      entries: [
+        ...ENTRIES,
+        {
+          ...ENTRIES[0],
+          id: "uncategorized-file",
+          path: "临时/随手记.md",
+          title: "随手记.md",
+          bookId: null,
+        },
+      ],
+    });
+
+    await user.selectOptions(screen.getByRole("combobox", { name: "筛选本子" }), "uncategorized");
+    expect(screen.getByText("随手记.md")).toBeInTheDocument();
+    expect(screen.queryByText("复习提纲.md")).not.toBeInTheDocument();
+  });
+
   it("opens a real preview with the file's actual kind", async () => {
     const user = userEvent.setup();
     const { stores } = renderPage();
+    const row = screen.getByText("复习提纲.md").closest('[role="listitem"]');
     await user.click(screen.getByRole("button", { name: "预览 复习提纲.md" }));
+    expect(stores.ui.getState().previewActivePath).toBe("数据结构/复习提纲.md");
+    expect(stores.ui.getState().previewTabs.at(-1)?.kind).toBe("markdown");
+    expect(row).toHaveAttribute("aria-current", "true");
+  });
+
+  it("opens the real preview when the user clicks the artifact row", async () => {
+    const user = userEvent.setup();
+    const { stores } = renderPage();
+    const row = screen.getByText("复习提纲.md").closest('[role="listitem"]');
+
+    await user.click(row!);
+
     expect(stores.ui.getState().previewActivePath).toBe("数据结构/复习提纲.md");
     expect(stores.ui.getState().previewTabs.at(-1)?.kind).toBe("markdown");
   });

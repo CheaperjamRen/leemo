@@ -4,7 +4,7 @@
 //   - DeepSeek: apiFormat=anthropic → DIRECT wiring (real key rides ANTHROPIC_AUTH_TOKEN)
 //   - relay2:   apiFormat=openai    → GATEWAY wiring (placeholder token, real key MUST NOT leak)
 //
-// All `apiKey` values are OBVIOUSLY FAKE test sentinels (sk-test-…). The gateway
+// All `apiKey` values are OBVIOUSLY FAKE test sentinels (test-key-…). The gateway
 // fixture deliberately carries an apiKey so the "gateway env has no real key"
 // assertion is a real leak test, not a vacuous one.
 
@@ -17,7 +17,7 @@ export const deepseekDirect: Provider = {
   category: "cn_official",
   apiFormat: "anthropic",
   baseUrl: "https://api.deepseek.com/anthropic",
-  apiKey: "sk-test-deepseek-DIRECTKEY-000000000000",
+  apiKey: "test-key-deepseek-DIRECTKEY-000000000000",
   models: ["deepseek-v4pro", "deepseek-v4flash"],
   modelCapabilities: {
     "deepseek-v4pro": { thinking: true, vision: false },
@@ -42,7 +42,7 @@ export const relay2Gateway: Provider = {
   category: "custom",
   apiFormat: "openai",
   baseUrl: "https://relay.example.com/v1",
-  apiKey: "sk-test-relay-SHOULD-NEVER-LEAK-111111",
+  apiKey: "test-key-relay-SHOULD-NEVER-LEAK-111111",
   models: ["gpt-5.6-luna"],
   modelCapabilities: { "gpt-5.6-luna": { thinking: false, vision: true } },
   envTemplate: {},
@@ -56,7 +56,7 @@ export const glmDirect: Provider = {
   category: "cn_official",
   apiFormat: "anthropic",
   baseUrl: "https://open.bigmodel.cn/api/anthropic",
-  apiKey: "sk-test-glm-DIRECTKEY-222222222222",
+  apiKey: "test-key-glm-DIRECTKEY-222222222222",
   models: ["glm-5", "glm-5-air"],
   modelCapabilities: { "glm-5": { thinking: true, vision: true } },
   envTemplate: {},

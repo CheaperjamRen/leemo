@@ -120,7 +120,7 @@ describe("createMemoryMcp", () => {
     const { governance, mcp } = createHarness();
     const result = await mcp.runRemember({
       topic: "API key",
-      statement: "api_key: sk-abcdefghijklmnopqrstuvwxyz",
+      statement: "api_key: test-abcdefghijklmnopqrstuvwxyz",
       kind: "state",
     });
     expect(result).toMatchObject({ isError: true });

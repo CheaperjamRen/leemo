@@ -1,6 +1,6 @@
 import { query as sdkQuery } from "@anthropic-ai/claude-agent-sdk";
 import type { SDKUserMessage, McpServerConfig, Options, Settings } from "@anthropic-ai/claude-agent-sdk";
-import type { QueryFn } from "../bridge/pool";
+import type { QueryFn, QueryStream } from "../bridge/pool";
 import type { CanUseTool } from "@anthropic-ai/claude-agent-sdk";
 import type { PermissionMode } from "../bridge/interact";
 import { createManagedClaudeProcessSpawner } from "./sdk-process";
@@ -117,6 +117,9 @@ export function buildQueryFn(
     const pluginPaths = extras.pluginPaths ?? (
       extras.pluginPath === undefined ? undefined : [extras.pluginPath]
     );
+    const disallowedTools = extras.disallowedTools !== undefined || options?.disallowedTools !== undefined
+      ? [...new Set([...(extras.disallowedTools ?? []), ...(options?.disallowedTools ?? [])])]
+      : undefined;
     return queryImpl({
       prompt: wrapPrompt(prompt),
       options: {
@@ -149,8 +152,8 @@ export function buildQueryFn(
         // array is a meaningful value here (see ConversationExtras above), so
         // the key must be genuinely absent when we have nothing to say.
         ...(extras.enabledSkills !== undefined ? { skills: extras.enabledSkills } : {}),
-        ...(extras.disallowedTools !== undefined
-          ? { disallowedTools: extras.disallowedTools }
+        ...(disallowedTools !== undefined
+          ? { disallowedTools }
           : {}),
         // `Options.settings` is the SDK's flag-tier settings object. Keep app
         // settings and native memory in one object so neither silently replaces
@@ -174,6 +177,6 @@ export function buildQueryFn(
             }
           : {}),
       },
-    }) as AsyncIterable<{ type: string; session_id?: string }>;
+    }) as QueryStream;
   };
 }

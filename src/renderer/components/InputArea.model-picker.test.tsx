@@ -171,7 +171,7 @@ describe("InputArea model picker — only configured providers appear", () => {
     );
 
     expect(screen.getByText("尚未确认当前模型的图片能力，仍可直接发送。")).toBeTruthy();
-    expect(screen.getByLabelText("附件")).not.toBeDisabled();
+    expect(screen.getByLabelText("添加")).not.toBeDisabled();
     expect(screen.getByLabelText("发送")).not.toBeDisabled();
     await user.click(screen.getByLabelText("发送"));
     expect(onSend).toHaveBeenCalledOnce();

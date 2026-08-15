@@ -3,9 +3,15 @@ import {
   BrowserWindow,
   clipboard,
   dialog,
+  globalShortcut,
   ipcMain,
+  Menu,
+  nativeImage,
+  Notification,
+  powerSaveBlocker,
   safeStorage,
   shell,
+  Tray,
   type OpenDialogOptions,
 } from "electron";
 import fs from "node:fs";
@@ -15,7 +21,24 @@ import { randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
 import { atomicReplaceTextFile } from "./atomic-text-file";
+import { createAboutIpcHandler } from "./about-ipc";
 import { attachUnsavedDraftGuard } from "./unsaved-draft-guard";
+import { MAIN_WINDOW_OPTIONS, QUICK_CAPTURE_WINDOW_OPTIONS } from "./window-config";
+import { createCaptureAdmin, type CaptureAdminWithTrash } from "./capture-admin";
+import { createCaptureIpcDispatcher, type CaptureIpcDispatcher } from "./capture-ipc";
+import { createCaptureStorage } from "./capture-storage";
+import { createTaskAdmin, type TaskAdminWithTrash } from "./task-admin";
+import { createTaskIpcDispatcher, type TaskIpcDispatcher } from "./task-ipc";
+import { createTrashIpcDispatcher, type TrashIpcDispatcher } from "./trash-ipc";
+import { createTaskPersistence } from "./persistence/task-persistence";
+import {
+  createTaskReminderScheduler,
+  type TaskReminderScheduler,
+} from "./task-reminder-scheduler";
+import {
+  createQuickCaptureController,
+  type QuickCaptureController,
+} from "./quick-capture-window";
 import { createBridgeHost, type BridgeHost } from "../host/bridge-host";
 import { buildCatalog } from "../host/provider-catalog";
 import {
@@ -33,6 +56,7 @@ import {
   routeRootWritePath,
   listNotebooks,
   createNotebook,
+  updateNotebookPresentation,
   ensureStarterNotebook,
   readTree,
   dropFiles,
@@ -42,6 +66,7 @@ import {
   readPreview,
   writeMarkdownFile,
   resolveInside,
+  resolveWorkspaceOpenFile,
   planWorkspaceReveal,
   type WorkspaceIO,
 } from "../host/workspace";
@@ -52,9 +77,39 @@ import { createPersistence, type Persistence } from "./persistence/schema";
 import {
   createRegisteredWorkspacePersistence,
 } from "./persistence/workspace-persistence";
-import { resolveCliBinary } from "./cli-binary";
+import {
+  binaryName,
+  platformPackage,
+  resolveCliBinary,
+  resolveExternalCodexBinary,
+} from "./cli-binary";
+import {
+  createClaudeSubscriptionAuth,
+  createProviderSubscriptionAuthRouter,
+  createSharedLocalSubscriptionAuth,
+  createUnavailableProviderSubscriptionAuth,
+  type ProviderSubscriptionAuth,
+} from "../host/provider-subscription-auth";
+import {
+  CodexAppServerClient,
+  createCodexSubscriptionAuth,
+} from "../host/codex-app-server";
+import {
+  createCodexExecutionRuntime,
+  type CodexExecutionRuntime,
+} from "../host/codex-conversation";
+import {
+  createGeminiAcpClientFactory,
+  createGeminiExecutionRuntime,
+} from "../host/gemini-acp";
+import {
+  hasExternalGeminiLogin,
+  launchExternalGeminiLogin,
+  resolveExternalGeminiCli,
+} from "./gemini-cli";
 import { createOfficeSkillProvisioner } from "./office-skill-provisioner";
 import { createBundledSkillProvisioner } from "./bundled-skill-provisioner";
+import { createSuperpowersSkillProvisioner } from "./superpowers-skill-provisioner";
 import { migrateLegacySkills } from "./skill-path-migration";
 import {
   buildComputerMcpRuntime,
@@ -70,6 +125,15 @@ import {
   registerPickedWorkspace,
 } from "./workspace-registry";
 import { createScheduledTaskScheduler, type ScheduledTaskScheduler } from "./scheduled-task-scheduler";
+import { createScheduledTaskAdmin } from "./scheduled-task-admin";
+import { createTaskWakeLock, keepAwakeSetting, type TaskWakeLock } from "./task-wake-lock";
+import {
+  createDesktopNotifications,
+  desktopNotificationsSetting,
+  type DesktopNotifications,
+  type DesktopNotificationTarget,
+} from "./desktop-notifications";
+import { createLaunchAtLogin, launchAtLoginSetting, type LaunchAtLogin } from "./launch-at-login";
 import {
   assertClipboardImageDimensions,
   cleanupStaleClipboardAttachments,
@@ -77,18 +141,13 @@ import {
   releaseClipboardPng,
   stageClipboardPng,
 } from "./clipboard-attachment";
-import {
-  nextRunAtForSchedule,
-  normalizeScheduledTaskDraft,
-  type ScheduledTask,
-  type ScheduledTaskDraft,
-  type ScheduledTaskRun,
-} from "../scheduled-tasks";
+import type { ScheduledTaskDraft } from "../scheduled-tasks";
 import { createLearningService } from "./learning-service";
 import type { LearningProfileDraft } from "../learning";
 import {
   resolveBundledSkillRoot,
   resolveOfficeBundleRoot,
+  resolveSuperpowersBundleRoot,
 } from "./bundled-resource-roots";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url)); // dist-electron/
@@ -171,6 +230,16 @@ function resolveBundledOfficeSkillsRoot(): string {
  * Skill scripts can execute normally. */
 function resolveBundledSkillLibraryRoot(): string {
   return resolveBundledSkillRoot({
+    packaged: app.isPackaged,
+    appPath: app.getAppPath(),
+    mainDirectory: HERE,
+  });
+}
+
+/** Pinned Superpowers release shipped inside app.asar and materialized into a
+ * real app-data plugin so its scripts and cross-Skill references work offline. */
+function resolveBundledSuperpowersRoot(): string {
+  return resolveSuperpowersBundleRoot({
     packaged: app.isPackaged,
     appPath: app.getAppPath(),
     mainDirectory: HERE,
@@ -343,17 +412,64 @@ function initializeWorkspaceMemory(
 }
 
 let host: BridgeHost | null = null;
+let codexAppServerClient: CodexAppServerClient | null = null;
+let codexExecutionRuntime: CodexExecutionRuntime | null = null;
+let geminiExecutionRuntime: CodexExecutionRuntime | null = null;
 
 function disposeHost(): void {
   const activeHost = host;
   host = null;
   activeHost?.dispose();
+  codexExecutionRuntime?.dispose();
+  codexExecutionRuntime = null;
+  geminiExecutionRuntime?.dispose();
+  geminiExecutionRuntime = null;
+  codexAppServerClient?.dispose();
+  codexAppServerClient = null;
 }
 let persistence: Persistence | null = null;
 let win: BrowserWindow | null = null;
+let quickCaptureWindow: BrowserWindow | null = null;
+let captureAdmin: CaptureAdminWithTrash | null = null;
+let captureIpc: CaptureIpcDispatcher | null = null;
+let taskAdmin: TaskAdminWithTrash | null = null;
+let taskIpc: TaskIpcDispatcher | null = null;
+let trashIpc: TrashIpcDispatcher | null = null;
+let taskReminderScheduler: TaskReminderScheduler | null = null;
+let unsubscribeCaptureChanges: (() => void) | null = null;
+let quickCaptureController: QuickCaptureController | null = null;
+let continueInBackground = true;
+let quickCaptureShortcut = "Alt+N";
+let captureStorageRoot: string | undefined;
+let persistedSettingsCache: Record<string, unknown> = {};
 let scheduledTaskScheduler: ScheduledTaskScheduler | null = null;
+let taskWakeLock: TaskWakeLock | null = null;
+let desktopNotifications: DesktopNotifications | null = null;
+let launchAtLogin: LaunchAtLogin | null = null;
 let clipboardCleanupTimer: NodeJS.Timeout | null = null;
 const activeClipboardAttachments = new Map<string, string[]>();
+
+function continueInBackgroundSetting(settings: Record<string, unknown>): boolean {
+  return typeof settings.continueInBackground === "boolean"
+    ? settings.continueInBackground
+    : true;
+}
+
+function quickCaptureShortcutSetting(settings: Record<string, unknown>): string {
+  const value = settings.quickCaptureShortcut;
+  return typeof value === "string" && value.trim() ? value.trim() : "Alt+N";
+}
+
+function captureStorageRootSetting(settings: Record<string, unknown>): string | undefined {
+  const value = settings.captureStorageRoot;
+  if (typeof value !== "string" || !value.trim()) return undefined;
+  const root = value.trim();
+  return path.isAbsolute(root) ? root : undefined;
+}
+
+function captureFileDropModeSetting(settings: Record<string, unknown>): "reference" | "copy" {
+  return settings.captureFileDropMode === "copy" ? "copy" : "reference";
+}
 
 function clipboardAttachmentRoot(): string {
   if (E2E_ISOLATION) return path.join(E2E_ISOLATION.root, "temp", "clipboard-attachments");
@@ -466,6 +582,91 @@ function setupHost(): void {
   }
 
   const dataDir = resolveDataDir();
+  let authCliExecutablePath = cliExecutablePath;
+  if (!authCliExecutablePath) {
+    try {
+      authCliExecutablePath = NODE_REQUIRE.resolve(
+        `${platformPackage(process.platform, process.arch)}/${binaryName(process.platform)}`,
+      );
+    } catch {
+      // The renderer receives an unavailable state through the auth service;
+      // app startup and ordinary API providers remain usable.
+    }
+  }
+  const subscriptionRoutes: Record<string, ProviderSubscriptionAuth> = {};
+  if (authCliExecutablePath) {
+    subscriptionRoutes["claude-subscription"] = createClaudeSubscriptionAuth({
+      executablePath: authCliExecutablePath,
+      configRoot: dataDir,
+    });
+  }
+
+  const codexExecutablePath = resolveExternalCodexBinary({
+    platform: process.platform,
+    arch: process.arch,
+    env: process.env,
+    probe: {
+      exists: (p) => fs.existsSync(p),
+      join: (...parts) => path.join(...parts),
+    },
+  });
+  if (codexExecutablePath) {
+    codexAppServerClient = new CodexAppServerClient({
+      executablePath: codexExecutablePath,
+    });
+    codexExecutionRuntime = createCodexExecutionRuntime({ transport: codexAppServerClient });
+    subscriptionRoutes["chatgpt-subscription"] = createCodexSubscriptionAuth({
+      providerId: "chatgpt-subscription",
+      client: codexAppServerClient,
+      openExternal: (url) => shell.openExternal(url),
+    });
+    console.log("[leemo:main] external ChatGPT subscription runtime ready");
+  } else {
+    subscriptionRoutes["chatgpt-subscription"] = createUnavailableProviderSubscriptionAuth(
+      "请先安装 Codex 并完成 ChatGPT 登录，然后重启 Leemo。",
+    );
+    console.warn("[leemo:main] external ChatGPT subscription runtime unavailable");
+  }
+
+  const geminiLaunch = resolveExternalGeminiCli({
+    platform: process.platform,
+    env: process.env,
+    nodeExecutable: process.execPath,
+    resourcesPath: process.resourcesPath,
+    probe: {
+      exists: (candidate) => fs.existsSync(candidate),
+      join: (...parts) => path.join(...parts),
+    },
+  });
+  if (geminiLaunch) {
+    geminiExecutionRuntime = createGeminiExecutionRuntime({
+      createClient: createGeminiAcpClientFactory(geminiLaunch),
+    });
+    subscriptionRoutes["gemini-subscription"] = createSharedLocalSubscriptionAuth({
+      productName: "Gemini",
+      isLoggedIn: () => hasExternalGeminiLogin({
+        env: process.env,
+        probe: {
+          exists: (candidate) => fs.existsSync(candidate),
+          readText: (candidate) => fs.readFileSync(candidate, "utf8"),
+          join: (...parts) => path.join(...parts),
+        },
+      }),
+      openLogin: () => launchExternalGeminiLogin(geminiLaunch, {
+        platform: process.platform,
+        env: process.env,
+      }),
+    });
+    console.log("[leemo:main] external Gemini subscription runtime ready");
+  } else {
+    subscriptionRoutes["gemini-subscription"] = createUnavailableProviderSubscriptionAuth(
+      "请先安装 Gemini CLI 并完成 Google 登录，然后重启 Leemo。",
+    );
+    console.warn("[leemo:main] external Gemini subscription runtime unavailable");
+  }
+  const subscriptionAuth = Object.keys(subscriptionRoutes).length > 0
+    ? createProviderSubscriptionAuthRouter(subscriptionRoutes)
+    : undefined;
   const officeSkills = createOfficeSkillProvisioner({
     configDir: path.join(dataDir, "office-skills"),
     bundledRoot: resolveBundledOfficeSkillsRoot(),
@@ -473,6 +674,10 @@ function setupHost(): void {
   const bundledSkills = createBundledSkillProvisioner({
     configDir: path.join(dataDir, "bundled-skills"),
     bundledRoot: resolveBundledSkillLibraryRoot(),
+  });
+  const superpowersSkills = createSuperpowersSkillProvisioner({
+    configDir: dataDir,
+    bundledRoot: resolveBundledSuperpowersRoot(),
   });
   // Never delay first paint. Conversation assembly joins this same promise if
   // the user gets there first, so a bundled skill is ready without a manual
@@ -493,6 +698,13 @@ function setupHost(): void {
       );
     } else if (snapshot.status === "error") {
       console.warn(`[leemo:main] bundled skills unavailable: ${snapshot.error}`);
+    }
+  });
+  void superpowersSkills.ensureReady().then((snapshot) => {
+    if (snapshot.status === "ready") {
+      console.log(`[leemo:main] Superpowers skills ready (${snapshot.skills.length}; ${snapshot.revision})`);
+    } else if (snapshot.status === "error") {
+      console.warn(`[leemo:main] Superpowers skills unavailable: ${snapshot.error}`);
     }
   });
   clearNativeMemoryCache(dataDir);
@@ -558,10 +770,284 @@ function setupHost(): void {
   // before the bridge host so approval brokers and usage channels receive the
   // exact same instance later exposed through the renderer persistence IPC.
   const dbPath = path.join(app.getPath("userData"), "leemo.db");
-  const sqlitePersistence = createPersistence(openDatabase(dbPath));
+  const database = openDatabase(dbPath);
+  const sqlitePersistence = createPersistence(database);
   const activePersistence = createRegisteredWorkspacePersistence(sqlitePersistence, workspaceRegistry);
   const learningService = createLearningService(activePersistence);
   persistence = activePersistence;
+  // Settings live in the SQLite index; reading them here must not trigger a
+  // second portable-workspace scan before the renderer hydrates.
+  const initialSettings = sqlitePersistence.loadAll().settings;
+  persistedSettingsCache = { ...initialSettings };
+  continueInBackground = continueInBackgroundSetting(initialSettings);
+  quickCaptureShortcut = quickCaptureShortcutSetting(initialSettings);
+  captureStorageRoot = captureStorageRootSetting(initialSettings);
+  const persistCaptureStorageRoot = (root: string): void => {
+    const nextSettings = { ...persistedSettingsCache, captureStorageRoot: root };
+    persistence!.saveSettings(nextSettings);
+    persistedSettingsCache = nextSettings;
+    captureStorageRoot = root;
+  };
+  captureAdmin = createCaptureAdmin({
+    persistence: sqlitePersistence,
+    storage: createCaptureStorage(),
+    getStorageRoot: () => captureStorageRoot,
+    setStorageRoot: persistCaptureStorageRoot,
+  });
+  captureIpc = createCaptureIpcDispatcher(captureAdmin, {
+    getQuickCaptureFileDropMode: () => captureFileDropModeSetting(sqlitePersistence.loadAll().settings),
+  });
+  taskAdmin = createTaskAdmin({ persistence: createTaskPersistence(database) });
+  taskIpc = createTaskIpcDispatcher(taskAdmin);
+  trashIpc = createTrashIpcDispatcher({ captures: captureAdmin, tasks: taskAdmin });
+  void captureAdmin.purgeExpired();
+  taskAdmin.purgeExpired();
+
+  unsubscribeCaptureChanges = captureAdmin.subscribe((change) => {
+    for (const target of [win, quickCaptureWindow]) {
+      if (!target || target.isDestroyed()) continue;
+      target.webContents.send("leemo:capture:changed", change);
+    }
+  });
+
+  ipcMain.handle("leemo:capture", (event, message: unknown) => {
+    const sender = event.sender === win?.webContents
+      ? "main"
+      : event.sender === quickCaptureWindow?.webContents
+        ? "quick"
+        : null;
+    return captureIpc!.handle(sender, message);
+  });
+
+  ipcMain.handle("leemo:tasks", (event, message: unknown) => {
+    const sender = event.sender === win?.webContents
+      ? "main"
+      : event.sender === quickCaptureWindow?.webContents
+        ? "quick"
+        : null;
+    const result = taskIpc!.handle(sender, message);
+    const operation = message && typeof message === "object" && !Array.isArray(message)
+      ? (message as { op?: unknown }).op
+      : undefined;
+    if (result.ok && operation !== "listTasks") {
+      taskReminderScheduler?.refresh();
+      if (win && !win.isDestroyed()) win.webContents.send("leemo:tasks:changed");
+    }
+    return result;
+  });
+
+  ipcMain.handle("leemo:trash", async (event, message: unknown) => {
+    const result = await trashIpc!.handle(event.sender === win?.webContents ? "main" : null, message);
+    const operation = message && typeof message === "object" && !Array.isArray(message)
+      ? (message as { op?: unknown }).op
+      : undefined;
+    if (result.ok && operation !== "list") {
+      taskReminderScheduler?.refresh();
+      if (win && !win.isDestroyed()) win.webContents.send("leemo:tasks:changed");
+    }
+    return result;
+  });
+
+  ipcMain.on("leemo:quick-capture:hide", (event) => {
+    if (event.sender !== quickCaptureWindow?.webContents) return;
+    quickCaptureWindow.hide();
+  });
+
+  ipcMain.handle("leemo:choose-capture-storage-root", async (event) => {
+    if (event.sender !== win?.webContents) {
+      return { ok: false, error: "无法确认设置窗口身份。" };
+    }
+    try {
+      const options: OpenDialogOptions = {
+        title: "选择 Leemo 文件存储位置",
+        buttonLabel: "选择此文件夹",
+        properties: ["openDirectory", "createDirectory"],
+      };
+      const result = win
+        ? await dialog.showOpenDialog(win, options)
+        : await dialog.showOpenDialog(options);
+      return { ok: true, response: result.canceled ? undefined : result.filePaths[0] };
+    } catch (error: unknown) {
+      return { ok: false, error: error instanceof Error ? error.message : String(error) };
+    }
+  });
+
+  ipcMain.handle("leemo:open-capture-storage-root", async (event) => {
+    if (event.sender !== win?.webContents) {
+      return { ok: false, error: "无法确认设置窗口身份。" };
+    }
+    if (!captureStorageRoot) {
+      return { ok: false, error: "请先选择 Leemo 文件存储位置。" };
+    }
+    try {
+      const error = await shell.openPath(captureStorageRoot);
+      return error ? { ok: false, error } : { ok: true };
+    } catch (error: unknown) {
+      return { ok: false, error: error instanceof Error ? error.message : String(error) };
+    }
+  });
+
+  ipcMain.handle("leemo:window", (event, message: unknown) => {
+    const target = win;
+    if (!target || target.isDestroyed() || event.sender !== target.webContents) {
+      return { ok: false, error: "无法确认主窗口身份。" };
+    }
+    const op = message && typeof message === "object" && !Array.isArray(message)
+      ? (message as { op?: unknown }).op
+      : undefined;
+    switch (op) {
+      case "minimize":
+        target.minimize();
+        break;
+      case "toggleMaximize":
+        if (target.isMaximized()) target.unmaximize();
+        else target.maximize();
+        break;
+      case "close":
+        // Keep the ordinary close path: unsaved-draft confirmation and the
+        // user's background-residency setting still decide whether it hides
+        // or exits.
+        target.close();
+        break;
+      case "getState":
+        break;
+      default:
+        return { ok: false, error: "未知的窗口操作。" };
+    }
+    return { ok: true, response: { maximized: target.isMaximized() } };
+  });
+
+  const handleAbout = createAboutIpcHandler({
+    isAuthorized: (sender) => sender === win?.webContents,
+    getInfo: () => ({
+      version: app.getVersion(),
+      platform: process.platform,
+      arch: process.arch,
+      packaged: app.isPackaged,
+    }),
+    getLogsDirectory: () => app.getPath("logs"),
+    ensureDirectory: async (directory) => {
+      await fs.promises.mkdir(directory, { recursive: true });
+    },
+    writeTextFile: async (filePath, content) => {
+      await fs.promises.writeFile(filePath, content, "utf8");
+    },
+    openPath: (target) => shell.openPath(target),
+  });
+  ipcMain.handle("leemo:about", (event, message: unknown) => handleAbout(event.sender, message));
+
+  ipcMain.handle("leemo:desktop", (event, message: unknown) => {
+    if (event.sender !== win?.webContents) {
+      return { ok: false, error: "无法确认设置窗口身份。" };
+    }
+    try {
+      if (!message || typeof message !== "object" || Array.isArray(message)) {
+        throw new Error("桌面设置格式不正确。");
+      }
+      const { op, payload } = message as { op?: unknown; payload?: unknown };
+      if (op !== "configure") throw new Error("未知的桌面设置操作。");
+      if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+        throw new Error("桌面设置格式不正确。");
+      }
+      const patch = payload as Record<string, unknown>;
+      const nextBackground = patch.continueInBackground === undefined
+        ? continueInBackground
+        : patch.continueInBackground;
+      if (typeof nextBackground !== "boolean") throw new Error("后台运行设置格式不正确。");
+
+      const nextShortcut = patch.quickCaptureShortcut === undefined
+        ? quickCaptureShortcut
+        : patch.quickCaptureShortcut;
+      if (typeof nextShortcut !== "string" || !nextShortcut.trim()) {
+        throw new Error("请输入有效的快捷键组合。");
+      }
+      const normalizedShortcut = nextShortcut.trim();
+      const previousShortcut = quickCaptureShortcut;
+      const shortcutChanged = patch.quickCaptureShortcut !== undefined;
+      if (shortcutChanged) {
+        const result = quickCaptureController?.updateShortcut(normalizedShortcut)
+          ?? { ok: false as const, error: "快捷记录还没有准备好，请稍后重试。" };
+        if (!result.ok) return result;
+      }
+
+      const nextSettings = {
+        ...persistedSettingsCache,
+        continueInBackground: nextBackground,
+        quickCaptureShortcut: normalizedShortcut,
+      };
+      try {
+        persistence!.saveSettings(nextSettings);
+      } catch (error: unknown) {
+        if (shortcutChanged && normalizedShortcut !== previousShortcut) {
+          quickCaptureController?.updateShortcut(previousShortcut);
+        }
+        throw error;
+      }
+      persistedSettingsCache = nextSettings;
+      continueInBackground = nextBackground;
+      quickCaptureShortcut = normalizedShortcut;
+      return {
+        ok: true,
+        response: { continueInBackground, quickCaptureShortcut, captureStorageRoot },
+      };
+    } catch (error: unknown) {
+      return { ok: false, error: error instanceof Error ? error.message : String(error) };
+    }
+  });
+  taskWakeLock = createTaskWakeLock({
+    blocker: powerSaveBlocker,
+    onError: (error) => console.error("[leemo:main] could not update task wake lock:", error),
+  });
+  const activeNativeNotifications = new Set<Notification>();
+  desktopNotifications = createDesktopNotifications({
+    presenter: {
+      show: ({ title, body, onClick }) => {
+        if (!Notification.isSupported()) return false;
+        const notification = new Notification({ title, body });
+        activeNativeNotifications.add(notification);
+        notification.once("click", () => {
+          activeNativeNotifications.delete(notification);
+          onClick();
+        });
+        notification.once("close", () => activeNativeNotifications.delete(notification));
+        notification.show();
+        return true;
+      },
+    },
+    isWindowFocused: () => Boolean(win && !win.isDestroyed() && win.isFocused()),
+    focusWindow: focusMainWindow,
+    openTarget: (target) => sendDesktopNavigation(target),
+    onError: (error) => console.error("[leemo:main] could not show desktop notification:", error),
+  });
+  taskReminderScheduler = createTaskReminderScheduler({
+    admin: taskAdmin,
+    onReminder: (task) => {
+      if (win && !win.isDestroyed()) win.webContents.send("leemo:tasks:changed");
+      if (!desktopNotificationsSetting(persistedSettingsCache)) return;
+      if (win && !win.isDestroyed() && win.isFocused()) return;
+      if (!Notification.isSupported()) return;
+      const notification = new Notification({ title: "待办提醒", body: task.title });
+      activeNativeNotifications.add(notification);
+      notification.once("click", () => {
+        activeNativeNotifications.delete(notification);
+        focusMainWindow();
+        sendDesktopNavigation({ kind: "task", taskId: task.id });
+      });
+      notification.once("close", () => activeNativeNotifications.delete(notification));
+      notification.show();
+    },
+    onError: (error) => console.error("[leemo:main] could not deliver task reminder:", error),
+  });
+  launchAtLogin = createLaunchAtLogin({
+    apply: (enabled) => {
+      // Registering the Electron development executable would leave a broken
+      // startup item on the developer's machine. The packaged app owns this OS
+      // integration; dev still exercises persistence and the shared policy.
+      if (!app.isPackaged) return;
+      app.setLoginItemSettings({ openAtLogin: enabled, path: process.execPath });
+    },
+    onError: (error) => console.error("[leemo:main] could not update launch-at-login:", error),
+  });
   console.log(`[leemo:main] persistence: workspace records + SQLite index (${dbPath})`);
   scheduledTaskScheduler = createScheduledTaskScheduler({
     persistence: activePersistence,
@@ -569,12 +1055,20 @@ function setupHost(): void {
       if (win && !win.isDestroyed()) win.webContents.send("leemo:scheduler:due", payload);
     },
   });
+  const scheduledTaskAdmin = createScheduledTaskAdmin({
+    persistence: activePersistence,
+    resolveWorkspace: (id) => workspaceRegistry.resolve(id),
+    refresh: () => scheduledTaskScheduler?.refresh(),
+  });
 
   host = createBridgeHost({
     // Getter, not the array: `saveProvider` swaps `catalog` above and every later
     // read must see the new one.
     catalog: () => catalog,
     providerStore,
+    ...(subscriptionAuth ? { subscriptionAuth } : {}),
+    ...(codexExecutionRuntime ? { codexRuntime: codexExecutionRuntime } : {}),
+    ...(geminiExecutionRuntime ? { geminiRuntime: geminiExecutionRuntime } : {}),
     dataDir,
     // 轮 7 A1: momo 在用户看得见的工作区里干活。没有本子的对话（主人格）就在根上，
     // 所以它天然看得见所有本子 —— 它们是它的子目录。
@@ -598,10 +1092,13 @@ function setupHost(): void {
     ),
     ...(E2E_ISOLATION ? { filesystemBoundary: memoryDir() } : {}),
     readGlobalMemory: () => readCurrentMemory({ type: "global" }),
+    captures: captureAdmin,
+    tasks: taskAdmin,
     memoryDir: memoryDir(),
     skillAdmin: createSkillAdminService({ memoryDir: memoryDir(), fetchFn: fetch }),
     officeSkills,
     bundledSkills,
+    superpowersSkills,
     pickSkillSource: async (kind) => {
       const options: OpenDialogOptions = kind === "archive"
         ? {
@@ -636,6 +1133,7 @@ function setupHost(): void {
     approvalPersistence: activePersistence,
     readUsageSummary: (query) => activePersistence.usageSummary(query),
     learningService,
+    scheduledTasks: scheduledTaskAdmin,
     // Guard against a destroyed window: events only flow after the renderer
     // invokes send (post-load), so the window is normally alive here.
     push: (channel, payload) => {
@@ -644,6 +1142,9 @@ function setupHost(): void {
           conversationId?: string;
           event?: { type?: string; subtype?: string; isError?: boolean };
         };
+        if (envelope.conversationId && envelope.event?.type === "run.finished") {
+          taskWakeLock?.end(`conversation:${envelope.conversationId}`);
+        }
         if (
           envelope.conversationId
           && envelope.event?.type === "run.finished"
@@ -651,6 +1152,31 @@ function setupHost(): void {
         ) {
           releaseTrackedClipboardAttachments(envelope.conversationId);
         }
+        if (
+          envelope.event?.type === "run.finished"
+          && envelope.event.subtype !== "interrupted"
+        ) {
+          desktopNotifications?.notify(
+            envelope.event.isError ? "task-failed" : "task-done",
+            envelope.conversationId
+              ? { kind: "conversation", conversationId: envelope.conversationId }
+              : undefined,
+          );
+        }
+      }
+      if (channel === "bridge:approvalRequest") {
+        const conversationId = (payload as { conversationId?: unknown }).conversationId;
+        desktopNotifications?.notify(
+          "approval",
+          typeof conversationId === "string" ? { kind: "conversation", conversationId } : undefined,
+        );
+      }
+      if (channel === "bridge:askUser") {
+        const conversationId = (payload as { conversationId?: unknown }).conversationId;
+        desktopNotifications?.notify(
+          "question",
+          typeof conversationId === "string" ? { kind: "conversation", conversationId } : undefined,
+        );
       }
       if (win && !win.isDestroyed()) win.webContents.send(channel, payload);
     },
@@ -667,9 +1193,13 @@ function setupHost(): void {
         previous?: string[];
         next: string[];
       } | undefined;
+      let wakeTaskId: string | undefined;
+      let wakeLeaseAcquired = false;
       try {
         if (msg.channel === "bridge:send") {
           const request = msg.req as BridgeInvokeMap["bridge:send"]["request"];
+          wakeTaskId = `conversation:${request.conversationId}`;
+          wakeLeaseAcquired = taskWakeLock?.begin(wakeTaskId) ?? false;
           const ownedPaths = [...new Set((request.attachments ?? [])
             .map((attachment) => attachment.path)
             .filter((target) => isOwnedClipboardPngPath(
@@ -691,12 +1221,17 @@ function setupHost(): void {
           }
         }
         const response = await host!.handleInvoke(msg.channel, msg.req as never);
+        if (msg.channel === "bridge:disposeConversation") {
+          const request = msg.req as BridgeInvokeMap["bridge:disposeConversation"]["request"];
+          taskWakeLock?.end(`conversation:${request.conversationId}`);
+        }
         if (clipboardSend?.previous) {
           const retained = new Set(clipboardSend.next);
           releaseClipboardPaths(clipboardSend.previous.filter((target) => !retained.has(target)));
         }
         return { ok: true, response };
       } catch (e: unknown) {
+        if (wakeTaskId && wakeLeaseAcquired) taskWakeLock?.end(wakeTaskId);
         if (clipboardSend) {
           if (clipboardSend.previous) {
             activeClipboardAttachments.set(clipboardSend.conversationId, clipboardSend.previous);
@@ -720,7 +1255,13 @@ function setupHost(): void {
       try {
         switch (msg.op) {
           case "loadAll":
-            return { ok: true, response: persistence!.loadAll() };
+          {
+            const snapshot = persistence!.loadAll();
+            taskWakeLock?.setEnabled(keepAwakeSetting(snapshot.settings));
+            desktopNotifications?.setEnabled(desktopNotificationsSetting(snapshot.settings));
+            launchAtLogin?.setEnabled(launchAtLoginSetting(snapshot.settings));
+            return { ok: true, response: snapshot };
+          }
           case "saveConversation": {
             const p = msg.payload as {
               meta: Parameters<Persistence["saveConversation"]>[0];
@@ -755,8 +1296,23 @@ function setupHost(): void {
           // 轮 7 A3: 设置落盘。此前 settings store 全字段重启即丢 —— 用户打开
           // 联网、换人设卡、改权限档，下次启动一律回到默认。
           case "saveSettings":
-            persistence!.saveSettings(msg.payload as Record<string, unknown>);
+          {
+            const settings = msg.payload as Record<string, unknown>;
+            // Desktop integration values are only accepted through
+            // leemo:desktop after the OS operation succeeds. A renderer store
+            // update must never make an unavailable shortcut look saved.
+            const confirmedSettings = {
+              ...settings,
+              continueInBackground,
+              quickCaptureShortcut,
+            };
+            persistence!.saveSettings(confirmedSettings);
+            persistedSettingsCache = confirmedSettings;
+            taskWakeLock?.setEnabled(keepAwakeSetting(confirmedSettings));
+            desktopNotifications?.setEnabled(desktopNotificationsSetting(confirmedSettings));
+            launchAtLogin?.setEnabled(launchAtLoginSetting(confirmedSettings));
             return { ok: true };
+          }
           default:
             return { ok: false, error: `unknown persist op: ${msg.op}` };
         }
@@ -784,139 +1340,45 @@ function setupHost(): void {
     },
   );
 
-  // Local scheduled tasks live on their own narrow preload surface. The main
-  // process owns time, persistence, and recovery; the renderer only supplies
-  // the three user-facing choices and executes a claimed run through the
-  // existing conversation/tool path.
-  const timezone = (): string => Intl.DateTimeFormat().resolvedOptions().timeZone || "local";
-  const requireScheduledTask = (id: string): ScheduledTask => {
-    const task = activePersistence.getScheduledTask(id);
-    if (!task) throw new Error("没有这个定时任务，它可能已经被删除。");
-    return task;
-  };
-  const taskHasActiveRun = (id: string): boolean => activePersistence
-    .listScheduledTaskRuns(id, 500)
-    .some((run) => run.status === "queued" || run.status === "running");
-  const saveTaskDraft = (draft: ScheduledTaskDraft, existing?: ScheduledTask): ScheduledTask => {
-    const current = Date.now();
-    const clean = normalizeScheduledTaskDraft(draft, current, timezone());
-    // Validate the opaque workspace id on every user mutation. A drive may have
-    // disappeared since the picker registered it; storing an arbitrary path is
-    // never an escape hatch.
-    workspaceRegistry.resolve(clean.workspaceId);
-    const nextRunAt = nextRunAtForSchedule(clean.schedule, current);
-    if (nextRunAt === null) throw new Error("这个时间已经过去，请选择未来的时间。");
-    const workspaceChanged = existing && existing.workspaceId !== clean.workspaceId;
-    return {
-      id: existing?.id ?? randomUUID(),
-      name: clean.name,
-      prompt: clean.prompt,
-      schedule: clean.schedule,
-      timezone: clean.timezone,
-      nextRunAt,
-      workspaceId: clean.workspaceId,
-      status: existing?.status === "paused" ? "paused" : "active",
-      ...(!workspaceChanged && existing?.conversationId ? { conversationId: existing.conversationId } : {}),
-      createdAt: existing?.createdAt ?? current,
-      updatedAt: current,
-      ...(existing?.lastRunAt === undefined ? {} : { lastRunAt: existing.lastRunAt }),
-    };
-  };
-  const queueManualRun = (task: ScheduledTask, trigger: "manual" | "catch-up"): ScheduledTaskRun => {
-    if (taskHasActiveRun(task.id)) throw new Error("这个任务已经在运行，请等它结束后再试。");
-    workspaceRegistry.resolve(task.workspaceId);
-    const current = Date.now();
-    const run: ScheduledTaskRun = {
-      id: randomUUID(),
-      taskId: task.id,
-      scheduledFor: current,
-      trigger,
-      status: "queued",
-      createdAt: current,
-    };
-    activePersistence.saveScheduledTaskRun(run);
-    return run;
-  };
-
   ipcMain.handle(
     "leemo:scheduler",
     async (_e, msg: { op: string; payload: unknown }) => {
       try {
         switch (msg.op) {
           case "list":
-            return {
-              ok: true,
-              response: {
-                tasks: activePersistence.listScheduledTasks(),
-                runs: activePersistence.listScheduledTaskRuns(undefined, 200),
-              },
-            };
+            return { ok: true, response: scheduledTaskAdmin.snapshot() };
           case "create": {
-            const task = saveTaskDraft(msg.payload as ScheduledTaskDraft);
-            activePersistence.saveScheduledTask(task);
-            scheduledTaskScheduler?.refresh();
-            return { ok: true, response: task };
+            return { ok: true, response: scheduledTaskAdmin.create(msg.payload as ScheduledTaskDraft) };
           }
           case "update": {
             const payload = msg.payload as { id: string; draft: ScheduledTaskDraft };
-            const existing = requireScheduledTask(payload.id);
-            if (taskHasActiveRun(existing.id)) throw new Error("任务运行时不能修改，请等它结束后再试。");
-            const task = saveTaskDraft(payload.draft, existing);
-            activePersistence.saveScheduledTask(task);
-            scheduledTaskScheduler?.refresh();
-            return { ok: true, response: task };
+            return { ok: true, response: scheduledTaskAdmin.update(payload.id, payload.draft) };
           }
           case "setPaused": {
             const payload = msg.payload as { id: string; paused: boolean };
-            const existing = requireScheduledTask(payload.id);
-            const current = Date.now();
-            const nextRunAt = payload.paused
-              ? existing.nextRunAt
-              : nextRunAtForSchedule(existing.schedule, current);
-            if (!payload.paused && nextRunAt === null) {
-              throw new Error("这次任务的时间已经过去，请编辑时间后再开启。");
-            }
-            const task: ScheduledTask = {
-              ...existing,
-              status: payload.paused ? "paused" : "active",
-              nextRunAt,
-              updatedAt: current,
-            };
-            activePersistence.saveScheduledTask(task);
-            scheduledTaskScheduler?.refresh();
-            return { ok: true, response: task };
+            return { ok: true, response: scheduledTaskAdmin.setPaused(payload.id, payload.paused) };
           }
           case "delete": {
             const { id } = msg.payload as { id: string };
-            requireScheduledTask(id);
-            if (taskHasActiveRun(id)) throw new Error("任务运行时不能删除，请等它结束后再试。");
-            activePersistence.deleteScheduledTask(id);
-            scheduledTaskScheduler?.refresh();
+            scheduledTaskAdmin.delete(id);
             return { ok: true };
           }
           case "runNow": {
             const { id } = msg.payload as { id: string };
-            return { ok: true, response: queueManualRun(requireScheduledTask(id), "manual") };
+            return { ok: true, response: scheduledTaskAdmin.runNow(id) };
           }
           case "runMissed": {
             const { runId } = msg.payload as { runId: string };
-            const missed = activePersistence.getScheduledTaskRun(runId);
-            if (!missed || missed.status !== "missed") throw new Error("这条错过记录已经处理过了。");
-            const task = requireScheduledTask(missed.taskId);
-            const queued = queueManualRun(task, "catch-up");
-            activePersistence.saveScheduledTaskRun({ ...missed, status: "skipped", completedAt: Date.now() });
-            return { ok: true, response: queued };
+            return { ok: true, response: scheduledTaskAdmin.runMissed(runId) };
           }
           case "skipMissed": {
             const { runId } = msg.payload as { runId: string };
-            const missed = activePersistence.getScheduledTaskRun(runId);
-            if (!missed || missed.status !== "missed") throw new Error("这条错过记录已经处理过了。");
-            activePersistence.saveScheduledTaskRun({ ...missed, status: "skipped", completedAt: Date.now() });
+            scheduledTaskAdmin.skipMissed(runId);
             return { ok: true };
           }
           case "claim": {
             const { runId } = msg.payload as { runId: string };
-            return { ok: true, response: activePersistence.claimScheduledTaskRun(runId, Date.now()) ?? null };
+            return { ok: true, response: scheduledTaskAdmin.claim(runId) };
           }
           case "complete": {
             const payload = msg.payload as {
@@ -925,38 +1387,12 @@ function setupHost(): void {
               conversationId?: string;
               error?: string;
             };
-            const run = activePersistence.getScheduledTaskRun(payload.runId);
-            if (!run) throw new Error("找不到这次运行记录。");
-            const completed: ScheduledTaskRun = {
-              ...run,
-              status: payload.status,
-              completedAt: Date.now(),
-              ...(payload.conversationId ? { conversationId: payload.conversationId } : {}),
-              ...(payload.status === "failed"
-                ? { error: Array.from((payload.error ?? "任务没有完成").trim()).slice(0, 500).join("") }
-                : { error: undefined }),
-            };
-            activePersistence.completeScheduledTaskRun(completed);
-            const task = activePersistence.getScheduledTask(run.taskId);
-            if (task) {
-              activePersistence.saveScheduledTask({
-                ...task,
-                ...(payload.conversationId ? { conversationId: payload.conversationId } : {}),
-                lastRunAt: run.scheduledFor,
-                updatedAt: Date.now(),
-              });
-            }
+            scheduledTaskAdmin.complete(payload);
             return { ok: true };
           }
           case "attachConversation": {
             const payload = msg.payload as { taskId: string; conversationId: string };
-            const task = requireScheduledTask(payload.taskId);
-            if (!payload.conversationId.trim()) throw new Error("对话 id 不能为空。");
-            activePersistence.saveScheduledTask({
-              ...task,
-              conversationId: payload.conversationId,
-              updatedAt: Date.now(),
-            });
+            scheduledTaskAdmin.attachConversation(payload.taskId, payload.conversationId);
             return { ok: true };
           }
           default:
@@ -1000,6 +1436,10 @@ function setupHost(): void {
             const { id } = msg.payload as { id: string };
             return { ok: true, response: workspaceRegistry.touch(id) };
           }
+          case "updateWorkspace": {
+            const { id, name, archived } = msg.payload as { id: string; name?: string; archived?: boolean };
+            return { ok: true, response: workspaceRegistry.update(id, { name, archived }) };
+          }
           case "forgetWorkspace": {
             const { id } = msg.payload as { id: string };
             return { ok: true, response: workspaceRegistry.forget(id) };
@@ -1010,6 +1450,13 @@ function setupHost(): void {
           case "createNotebook": {
             const { title } = msg.payload as { title: string };
             return { ok: true, response: createNotebook(workspaceRoot, title, workspaceIO) };
+          }
+          case "updateNotebook": {
+            const { id, title, archived } = msg.payload as { id: string; title?: string; archived?: boolean };
+            return {
+              ok: true,
+              response: updateNotebookPresentation(workspaceRoot, id, { title, archived }, workspaceIO),
+            };
           }
           case "ensureStarterNotebook":
             return { ok: true, response: ensureStarterNotebook(workspaceRoot, workspaceIO) };
@@ -1122,6 +1569,19 @@ function setupHost(): void {
             }
             return { ok: true };
           }
+          case "openFile": {
+            // Canonicalize before handing a renderer-selected target to the
+            // operating system so an in-workspace symlink cannot escape it.
+            const { path: rel, workspaceId } = msg.payload as { path: string; workspaceId?: string };
+            const target = workspaceRegistry.resolve(workspaceId ?? HOME_WORKSPACE_ID);
+            const file = resolveWorkspaceOpenFile(target.root, rel, workspaceIO, {
+              canonicalize: fs.realpathSync.native,
+              isFile: (candidate) => fs.statSync(candidate).isFile(),
+            });
+            const error = await shell.openPath(file);
+            if (error) throw new Error(`无法打开文件：${error}`);
+            return { ok: true };
+          }
           default:
             return { ok: false, error: `unknown workspace op: ${msg.op}` };
         }
@@ -1132,12 +1592,74 @@ function setupHost(): void {
   );
 }
 
+function createQuickCaptureBrowserWindow(): BrowserWindow {
+  const window = new BrowserWindow({
+    ...QUICK_CAPTURE_WINDOW_OPTIONS,
+    backgroundColor: "#F8F9FA",
+    webPreferences: {
+      preload: path.join(HERE, "quick-capture-preload.cjs"),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+    },
+  });
+  quickCaptureWindow = window;
+  window.on("closed", () => {
+    if (quickCaptureWindow === window) quickCaptureWindow = null;
+  });
+
+  const devUrl = process.env.LEEMO_RENDERER_URL;
+  if (devUrl) {
+    void window.loadURL(`${devUrl.replace(/\/$/, "")}/quick-capture.html`);
+  } else {
+    void window.loadFile(path.join(HERE, "..", "dist", "quick-capture.html"));
+  }
+  window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+  return window;
+}
+
+function focusMainWindow(): void {
+  if (!win || win.isDestroyed()) createWindow();
+  if (!win || win.isDestroyed()) return;
+  if (win.isMinimized()) win.restore();
+  win.show();
+  win.focus();
+}
+
+function sendDesktopNavigation(target: DesktopNotificationTarget): void {
+  if (!win || win.isDestroyed()) return;
+  win.webContents.send("leemo:desktop:navigate", target);
+}
+
+function setupQuickCaptureDesktop(): void {
+  quickCaptureController = createQuickCaptureController({
+    createCaptureWindow: createQuickCaptureBrowserWindow,
+    createTray: () => {
+      const iconPath = app.isPackaged
+        ? path.join(process.resourcesPath, "tray-icon.png")
+        : path.join(HERE, "..", "build", "tray-icon.png");
+      let icon = nativeImage.createFromPath(iconPath);
+      if (process.platform === "win32") icon = icon.resize({ width: 16, height: 16 });
+      return new Tray(icon);
+    },
+    buildMenu: (items) => Menu.buildFromTemplate(items.map((item) => ({
+      label: item.label,
+      click: item.click,
+    }))),
+    registerShortcut: (accelerator, callback) => globalShortcut.register(accelerator, callback),
+    unregisterShortcut: (accelerator) => globalShortcut.unregister(accelerator),
+    backgroundEnabled: () => continueInBackground,
+    shortcut: () => quickCaptureShortcut,
+    focusMainWindow,
+    quitApp: () => app.quit(),
+  });
+  const result = quickCaptureController.start();
+  if (!result.ok) console.warn(`[leemo:main] quick capture shortcut unavailable: ${result.error}`);
+}
+
 function createWindow(): void {
   win = new BrowserWindow({
-    width: 1280,
-    height: 860,
-    minWidth: 800,
-    minHeight: 640,
+    ...MAIN_WINDOW_OPTIONS,
     backgroundColor: "#FAF6EE",
     webPreferences: {
       preload: path.join(HERE, "preload.cjs"),
@@ -1147,6 +1669,15 @@ function createWindow(): void {
     },
   });
   const guardedWindow = win;
+  quickCaptureController?.bindMainWindow(guardedWindow);
+  const publishMaximizedState = (): void => {
+    if (guardedWindow.isDestroyed()) return;
+    guardedWindow.webContents.send("leemo:window:maximized-changed", {
+      maximized: guardedWindow.isMaximized(),
+    });
+  };
+  guardedWindow.on("maximize", publishMaximizedState);
+  guardedWindow.on("unmaximize", publishMaximizedState);
 
   attachUnsavedDraftGuard(guardedWindow.webContents, () => dialog.showMessageBoxSync(guardedWindow, {
     type: "warning",
@@ -1205,14 +1736,17 @@ function createWindow(): void {
 
   win.on("closed", () => {
     win = null;
+    if (!continueInBackground) quickCaptureController?.requestQuit();
   });
 }
 
 app.whenReady().then(() => {
   if (!HAS_SINGLE_INSTANCE_LOCK) return;
+  if (process.platform === "win32") app.setAppUserModelId("com.leemo.app");
   // 必须早于 setupHost —— 它会去读加密件、开 SQLite。迁移晚一步，用户就会看到
   // 一个空库、然后我们又把空库写回去。
   setupHost();
+  setupQuickCaptureDesktop();
   cleanupStaleClipboardAttachments(clipboardAttachmentRoot(), Date.now(), {
     protectedPrefix: CLIPBOARD_ATTACHMENT_PROTECTED_PREFIX,
   });
@@ -1224,26 +1758,42 @@ app.whenReady().then(() => {
   clipboardCleanupTimer.unref();
   createWindow();
   scheduledTaskScheduler?.start();
+  taskReminderScheduler?.start();
 
   app.on("activate", () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow();
+    if (!win || win.isDestroyed()) createWindow();
   });
 });
 
 app.on("window-all-closed", () => {
-  if (process.platform !== "darwin") {
-    disposeHost(); // tear down SDK child processes before app.quit()
-    app.quit();
-  }
+  if (continueInBackground || process.platform === "darwin") return;
+  disposeHost(); // tear down SDK child processes before app.quit()
+  app.quit();
 });
 
 // `before-quit` fires before windows ask whether a dirty draft may unload. If
 // the user chooses "继续编辑", quit is cancelled; irreversible cleanup must
 // therefore wait until Electron knows the app will really exit.
 app.on("will-quit", () => {
+  quickCaptureController?.dispose();
+  quickCaptureController = null;
+  quickCaptureWindow = null;
+  unsubscribeCaptureChanges?.();
+  unsubscribeCaptureChanges = null;
+  captureIpc = null;
+  captureAdmin = null;
+  taskReminderScheduler?.stop();
+  taskReminderScheduler = null;
+  taskIpc = null;
+  trashIpc = null;
+  taskAdmin = null;
   if (clipboardCleanupTimer) clearInterval(clipboardCleanupTimer);
   clipboardCleanupTimer = null;
   scheduledTaskScheduler?.stop();
   scheduledTaskScheduler = null;
+  taskWakeLock?.dispose();
+  taskWakeLock = null;
+  desktopNotifications = null;
+  launchAtLogin = null;
   disposeHost();
 });

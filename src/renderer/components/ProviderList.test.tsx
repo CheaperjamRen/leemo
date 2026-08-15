@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { ProviderList, ProviderOfferGrid } from "./ProviderList";
+import { ProviderBrandIcon } from "./ProviderBrandIcon";
 import type { ProviderSpec } from "../../bridge/contract";
 
 function provider(id: string, configured: boolean, modelCount = 1): ProviderSpec {
@@ -20,7 +21,49 @@ function provider(id: string, configured: boolean, modelCount = 1): ProviderSpec
   };
 }
 
+it("has a packaged mark for every curated provider family", () => {
+  const kinds = [
+    "anthropic", "chatgpt-subscription", "claude-subscription", "deepseek", "doubao",
+    "gemini", "gemini-subscription", "glm", "glm-coding-plan", "groq", "huawei-maas",
+    "kimi", "kimi-code", "lmstudio", "minimax", "minimax-token-plan", "mimo",
+    "mimo-token-plan", "modelscope", "nvidia", "ollama", "openai", "openrouter", "qwen",
+    "qwen-coding-plan", "qwen-token-plan", "siliconflow", "tokenflux", "volcengine-coding-plan",
+  ];
+  render(<>{kinds.map((kind) => <ProviderBrandIcon key={kind} kind={kind} name={kind} />)}</>);
+
+  for (const kind of kinds) {
+    expect(screen.getByTestId(`provider-brand-${kind}`).querySelector("img")).not.toBeNull();
+  }
+});
+
+it("keeps light-on-transparent brand assets legible on their intended dark tile", () => {
+  render(<ProviderBrandIcon kind="kimi" name="Kimi" />);
+  expect(screen.getByTestId("provider-brand-kimi")).toHaveClass("leemo-provider-brand--kimi");
+});
+
 describe("ProviderList", () => {
+  it("uses the provider brand mark instead of a numbered placeholder for known providers", () => {
+    const deepseek = {
+      ...provider("deepseek", true),
+      name: "DeepSeek",
+      kind: "deepseek",
+      category: "cn_official" as const,
+    };
+    render(
+      <ProviderList
+        providers={[deepseek]}
+        selectedId="deepseek"
+        tests={{}}
+        onSelect={vi.fn()}
+        onOpenCatalog={vi.fn()}
+        onReorder={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByTestId("provider-brand-deepseek")).toBeInTheDocument();
+    expect(screen.queryByText("01")).not.toBeInTheDocument();
+  });
+
   it("shows only configured providers, with the real status, first model, and default marker", () => {
     render(
       <ProviderList
@@ -193,6 +236,17 @@ describe("ProviderList", () => {
 
 describe("ProviderOfferGrid", () => {
   const presets: ProviderSpec[] = [
+    {
+      ...provider("gemini-subscription", false, 3),
+      name: "Gemini 订阅",
+      kind: "gemini-subscription",
+      category: "official",
+      baseUrl: "",
+      modelsUrl: undefined,
+      authMode: "oauth-subscription",
+      productKind: "consumer-subscription",
+      capabilities: { balanceApi: false, modelDiscovery: false, subscriptionPlan: true },
+    },
     { ...provider("deepseek", false, 2), name: "DeepSeek", kind: "deepseek", category: "cn_official" },
     { ...provider("glm", false, 2), name: "GLM（智谱）", kind: "glm", category: "cn_official" },
     { ...provider("kimi", true, 2), name: "Kimi（月之暗面）", kind: "kimi", category: "cn_official" },
@@ -213,16 +267,36 @@ describe("ProviderOfferGrid", () => {
   it("offers every real preset plus a custom Provider without fake commercial data", () => {
     render(<ProviderOfferGrid providers={presets} onChoose={vi.fn()} />);
 
-    expect(screen.getAllByTestId("provider-offer-card")).toHaveLength(6);
+    expect(screen.getAllByTestId("provider-offer-card")).toHaveLength(7);
+    expect(screen.getByText("已有订阅")).toBeInTheDocument();
     expect(screen.getByText("国内官方")).toBeInTheDocument();
     expect(screen.getByText("本地与自部署")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "配置 DeepSeek" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "配置 Gemini 订阅" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "配置 GLM（智谱）" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "配置 Kimi（月之暗面）" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "配置 通义千问（百炼）" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "配置 自定义服务" })).toBeInTheDocument();
     expect(screen.getByText("本机运行 · 无需 API Key")).toBeInTheDocument();
+    expect(screen.getByText("订阅登录 · 无需 API Key")).toBeInTheDocument();
     expect(screen.queryByText(/价格|免费额度|¥|\$/)).not.toBeInTheDocument();
+  });
+
+  it("renders recognizable local brand marks for every known offer", () => {
+    render(<ProviderOfferGrid providers={presets} onChoose={vi.fn()} />);
+
+    for (const kind of ["gemini-subscription", "deepseek", "glm", "kimi", "qwen", "ollama"]) {
+      expect(screen.getByTestId(`provider-brand-${kind}`)).toBeInTheDocument();
+    }
+  });
+
+  it("uses the compact three-column provider catalog layout on the main settings surface", () => {
+    render(<ProviderOfferGrid providers={presets} onChoose={vi.fn()} />);
+
+    const subscriptionGroup = screen.getByRole("heading", { name: "已有订阅" }).parentElement;
+    const grid = subscriptionGroup?.querySelector(".leemo-provider-offer-grid");
+    expect(grid).toHaveAttribute("data-layout", "three-column");
+    expect(screen.getAllByTestId("provider-offer-card").every((card) => card.getAttribute("data-density") === "compact")).toBe(true);
   });
 
   it("keeps a stable id for first setup, but creates another instance for an already configured family", async () => {

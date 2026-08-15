@@ -15,7 +15,8 @@ import {
 import type { NotebooksState } from "../stores/notebooks";
 import { createNotebooksStore } from "../stores/notebooks";
 import { previewDraftKey } from "../stores/preview-content";
-import type { BridgeEventEnvelope, ApprovalRequest, AskUserPayload } from "../../bridge/contract";
+import { createNotificationsStore } from "../stores/notifications";
+import type { BridgeEventEnvelope, ApprovalExpired, ApprovalRequest, AskUserPayload } from "../../bridge/contract";
 
 describe("wireBridgeSubscriptions", () => {
   let mockClient: BridgeClient;
@@ -23,21 +24,26 @@ describe("wireBridgeSubscriptions", () => {
   let approvalsStore: StoreApi<ApprovalsState>;
   let wikiEntriesStore: StoreApi<WikiState>;
   let cancelForConversation: ReturnType<typeof vi.fn>;
+  let expire: ReturnType<typeof vi.fn>;
 
   let eventSubscriber: ((envelope: BridgeEventEnvelope) => void) | null = null;
   let approvalSubscriber: ((request: ApprovalRequest) => void) | null = null;
+  let approvalExpiredSubscriber: ((payload: ApprovalExpired) => void) | null = null;
   let askUserSubscriber: ((payload: AskUserPayload) => void) | null = null;
 
   beforeEach(() => {
     eventSubscriber = null;
     approvalSubscriber = null;
+    approvalExpiredSubscriber = null;
     askUserSubscriber = null;
     cancelForConversation = vi.fn();
+    expire = vi.fn();
 
     mockClient = {
       subscribe: vi.fn((channel, callback) => {
         if (channel === "bridge:event") eventSubscriber = callback as any;
         if (channel === "bridge:approvalRequest") approvalSubscriber = callback as any;
+        if (channel === "bridge:approvalExpired") approvalExpiredSubscriber = callback as any;
         if (channel === "bridge:askUser") askUserSubscriber = callback as any;
         return vi.fn();
       }),
@@ -46,7 +52,11 @@ describe("wireBridgeSubscriptions", () => {
 
     conversationsStore = {
       getState: vi.fn(() => ({
-        byId: { "c1": { id: "c1" }, "c2": { id: "c2" } },
+        byId: {
+          "c1": { id: "c1", title: "后台整理" },
+          "c2": { id: "c2", title: "当前对话" },
+        },
+        activeId: "c2",
         runIds: { "c1": "run-1", "c2": null },
         timelines: { "c1": [], "c2": [] },
       })),
@@ -58,6 +68,7 @@ describe("wireBridgeSubscriptions", () => {
         pendingByConversation: {},
         resolvedByRun: {},
         cancelForConversation,
+        expire,
       })),
       setState: vi.fn(),
     } as any;
@@ -68,7 +79,7 @@ describe("wireBridgeSubscriptions", () => {
     } as any;
   });
 
-  it("subscribes to all three channels", () => {
+  it("subscribes to all four channels", () => {
     wireBridgeSubscriptions(mockClient, {
       conversations: conversationsStore,
       approvals: approvalsStore,
@@ -77,6 +88,7 @@ describe("wireBridgeSubscriptions", () => {
 
     expect(mockClient.subscribe).toHaveBeenCalledWith("bridge:event", expect.any(Function));
     expect(mockClient.subscribe).toHaveBeenCalledWith("bridge:approvalRequest", expect.any(Function));
+    expect(mockClient.subscribe).toHaveBeenCalledWith("bridge:approvalExpired", expect.any(Function));
     expect(mockClient.subscribe).toHaveBeenCalledWith("bridge:askUser", expect.any(Function));
   });
 
@@ -95,6 +107,130 @@ describe("wireBridgeSubscriptions", () => {
     eventSubscriber!(envelope);
 
     expect(conversationsStore.setState).toHaveBeenCalledWith(expect.any(Function));
+  });
+
+  it("records one concise notification when a non-active conversation finishes", () => {
+    const notifications = createNotificationsStore();
+    wireBridgeSubscriptions(mockClient, {
+      conversations: conversationsStore,
+      approvals: approvalsStore,
+      wikiEntries: wikiEntriesStore,
+      notifications,
+    });
+
+    eventSubscriber!({
+      conversationId: "c1",
+      event: {
+        type: "run.finished",
+        subtype: "success",
+        isError: false,
+        finalText: "private result",
+        pathAudit: { claimed: [] },
+      },
+    });
+
+    expect(notifications.getState().items).toHaveLength(1);
+    expect(notifications.getState().items[0]).toMatchObject({
+      text: "「后台整理」已完成",
+      kind: "task-done",
+      conversationId: "c1",
+    });
+    expect(JSON.stringify(notifications.getState().items[0])).not.toContain("private result");
+  });
+
+  it("asks the conversation store to flush that conversation after a successful terminal event", () => {
+    const flushQueuedTurns = vi.fn(async () => undefined);
+    conversationsStore.getState = vi.fn(() => ({
+      byId: { c1: { id: "c1", title: "后台整理" } },
+      activeId: "c1",
+      runIds: { c1: "run-1" },
+      timelines: { c1: [] },
+      flushQueuedTurns,
+    })) as never;
+    wireBridgeSubscriptions(mockClient, {
+      conversations: conversationsStore,
+      approvals: approvalsStore,
+      wikiEntries: wikiEntriesStore,
+    });
+
+    eventSubscriber!({
+      conversationId: "c1",
+      event: { type: "run.finished", subtype: "success", isError: false, finalText: "done", pathAudit: { claimed: [] } },
+    });
+
+    expect(flushQueuedTurns).toHaveBeenCalledWith("c1");
+  });
+
+  it("keeps queued turns waiting when the current turn fails or is interrupted", () => {
+    const flushQueuedTurns = vi.fn(async () => undefined);
+    conversationsStore.getState = vi.fn(() => ({
+      byId: { c1: { id: "c1", title: "后台整理" } },
+      activeId: "c1",
+      runIds: { c1: "run-1" },
+      timelines: { c1: [] },
+      flushQueuedTurns,
+    })) as never;
+    wireBridgeSubscriptions(mockClient, {
+      conversations: conversationsStore,
+      approvals: approvalsStore,
+      wikiEntries: wikiEntriesStore,
+    });
+
+    eventSubscriber!({
+      conversationId: "c1",
+      event: { type: "run.finished", subtype: "error", isError: true, finalText: "failed", pathAudit: { claimed: [] } },
+    });
+    eventSubscriber!({
+      conversationId: "c1",
+      event: { type: "run.finished", subtype: "interrupted", isError: false, finalText: "", pathAudit: { claimed: [] } },
+    });
+
+    expect(flushQueuedTurns).not.toHaveBeenCalled();
+  });
+
+  it("does not create redundant history for the visible conversation or an interrupted run", () => {
+    const notifications = createNotificationsStore();
+    wireBridgeSubscriptions(mockClient, {
+      conversations: conversationsStore,
+      approvals: approvalsStore,
+      wikiEntries: wikiEntriesStore,
+      notifications,
+    });
+
+    eventSubscriber!({
+      conversationId: "c2",
+      event: { type: "run.finished", subtype: "success", isError: false, finalText: "done", pathAudit: { claimed: [] } },
+    });
+    eventSubscriber!({
+      conversationId: "c1",
+      event: { type: "run.finished", subtype: "interrupted", isError: true, finalText: "", pathAudit: { claimed: [] } },
+    });
+
+    expect(notifications.getState().items).toEqual([]);
+  });
+
+  it("records a waiting notification only when approval is outside the active conversation", () => {
+    const notifications = createNotificationsStore();
+    wireBridgeSubscriptions(mockClient, {
+      conversations: conversationsStore,
+      approvals: approvalsStore,
+      wikiEntries: wikiEntriesStore,
+      notifications,
+    });
+
+    approvalSubscriber!({
+      id: "approval-1",
+      conversationId: "c1",
+      toolName: "Write",
+      inputSummary: "修改文件",
+      risk: "moderate",
+    });
+
+    expect(notifications.getState().items[0]).toMatchObject({
+      text: "「后台整理」需要你确认",
+      kind: "approval-needed",
+      conversationId: "c1",
+    });
   });
 
   it("routes wiki shadow events to wikiEntries store, not conversations", () => {
@@ -272,6 +408,18 @@ describe("wireBridgeSubscriptions", () => {
     expect(approvalsStore.setState).toHaveBeenCalledWith(expect.any(Function));
   });
 
+  it("expires the matching renderer approval when the host timeout fires", () => {
+    wireBridgeSubscriptions(mockClient, {
+      conversations: conversationsStore,
+      approvals: approvalsStore,
+      wikiEntries: wikiEntriesStore,
+    });
+
+    approvalExpiredSubscriber!({ id: "appr-1", conversationId: "c1" });
+
+    expect(expire).toHaveBeenCalledWith("appr-1");
+  });
+
   it("folds askUser to approvals store with runId lookup", () => {
     wireBridgeSubscriptions(mockClient, {
       conversations: conversationsStore,
@@ -294,11 +442,13 @@ describe("wireBridgeSubscriptions", () => {
     const unsub1 = vi.fn();
     const unsub2 = vi.fn();
     const unsub3 = vi.fn();
+    const unsub4 = vi.fn();
 
     mockClient.subscribe = vi.fn((channel) => {
       if (channel === "bridge:event") return unsub1;
       if (channel === "bridge:approvalRequest") return unsub2;
-      if (channel === "bridge:askUser") return unsub3;
+      if (channel === "bridge:approvalExpired") return unsub3;
+      if (channel === "bridge:askUser") return unsub4;
       return vi.fn();
     }) as any;
 
@@ -313,6 +463,7 @@ describe("wireBridgeSubscriptions", () => {
     expect(unsub1).toHaveBeenCalled();
     expect(unsub2).toHaveBeenCalled();
     expect(unsub3).toHaveBeenCalled();
+    expect(unsub4).toHaveBeenCalled();
   });
 
   it("cancels approvals on run.finished with interrupted subtype", () => {

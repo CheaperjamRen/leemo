@@ -96,4 +96,17 @@ describe("IpcWorkspaceClient workspace registry operations", () => {
       path: "C:/Temp/Leemo/clipboard.png",
     });
   });
+
+  it("opens a workspace file with the system app through guarded main-process IPC", async () => {
+    const bridge = api(true);
+    const client = new IpcWorkspaceClient(bridge) as IpcWorkspaceClient & {
+      openFile(path: string, workspaceId?: string): Promise<void>;
+    };
+
+    await client.openFile("papers/attention.pdf", "workspace-123");
+    expect(bridge.invoke).toHaveBeenCalledWith("openFile", {
+      path: "papers/attention.pdf",
+      workspaceId: "workspace-123",
+    });
+  });
 });

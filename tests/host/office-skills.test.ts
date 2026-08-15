@@ -32,6 +32,14 @@ describe("Office Skills catalog", () => {
       "pptx",
       "pdf",
     ]);
+    expect(OFFICE_SKILL_DEFINITIONS.map((skill) => skill.description)).toEqual([
+      "创建、读取 Word，精确修改文字时另存副本并保留原稿。",
+      "创建、读取 Excel，支持多工作表与结构化数据。",
+      "创建、读取演示文稿，生成清晰的 16:9 内容页。",
+      "读取 PDF 正文与页数，适合总结、问答和资料分析。",
+    ]);
+    expect(OFFICE_SKILL_DEFINITIONS.map((skill) => skill.description).join(" "))
+      .not.toMatch(/图表|拆分|合并|表单|渲染|精修/);
   });
 
   it("reports ready skills without leaking a local plugin path to the renderer", () => {

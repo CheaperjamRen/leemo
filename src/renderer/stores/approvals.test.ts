@@ -209,6 +209,25 @@ describe("approvals actions", () => {
     expect(store.getState().resolvedByRun["run-q"]).toEqual([expect.objectContaining({ id: "q1", items: null })]);
   });
 
+  it("expires only the matching approval and never expires an ordinary question", () => {
+    const { client } = fakeClient();
+    const store = createApprovalsStore(client);
+    store.setState((state) => foldApprovalRequest(state, approval("conversation-a", "a1"), "run-a", 1));
+
+    store.getState().expire("a1");
+    store.getState().expire("a1");
+
+    expect(store.getState().pendingByConversation["conversation-a"]).toBeNull();
+    expect(store.getState().resolvedByRun["run-a"]).toEqual([
+      expect.objectContaining({ id: "a1", outcome: "expired" }),
+    ]);
+
+    store.setState((state) => foldAskUser(state, question("conversation-b", "q1"), "run-q", 2));
+    store.getState().expire("q1");
+    expect(store.getState().pendingByConversation["conversation-b"]).toMatchObject({ kind: "question", id: "q1" });
+    expect(store.getState().resolvedByRun["run-q"]).toBeUndefined();
+  });
+
   it("refreshes whitelist atomically and preserves old data on failure", async () => {
     let list: WhitelistEntry[] = [{ toolName: "Read", risk: "safe" }];
     let fail = false;

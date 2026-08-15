@@ -80,6 +80,12 @@ function renderTurnBlock(
 }
 
 describe("TurnBlock — approval cards live inline in the conversation flow", () => {
+  it("immediately acknowledges a submitted first message before the first host event arrives", () => {
+    renderTurnBlock([user], true, [], [], "buddy");
+    expect(screen.getByText("整理笔记")).toBeInTheDocument();
+    expect(screen.getByRole("status", { name: "momo 已开始处理" })).toHaveTextContent("正在开始处理");
+  });
+
   it("renders no trailing approval node when nothing is pending", () => {
     // The old behaviour pushed <ApprovalBar> after every node, so the card
     // floated below the final text no matter which tool raised it — the user
@@ -130,6 +136,32 @@ describe("TurnBlock — approval cards live inline in the conversation flow", ()
 
     expect(screen.getByTestId("approval-card-pending")).toHaveClass("grid");
     expect(screen.getByTestId("approval-actions")).toHaveClass("col-span-full", "w-full");
+  });
+
+  it("keeps ordinary approvals visually neutral instead of presenting a danger alert", () => {
+    const running: TimelineItem = { ...tool, toolUseId: "tu-neutral", status: "running", summary: undefined };
+    renderTurnBlock([user, open, running], true, [
+      {
+        kind: "approval",
+        id: "a-neutral",
+        conversationId: "conv-fixture",
+        runId: R,
+        toolUseId: "tu-neutral",
+        toolName: "Write",
+        inputSummary: "课程计划.md",
+        risk: "moderate",
+        receivedAt: 0,
+      },
+    ]);
+
+    expect(screen.getByTestId("approval-card-pending")).toHaveStyle({
+      background: "var(--leemo-card)",
+      borderColor: "var(--leemo-line)",
+    });
+    expect(screen.getByTestId("approval-input-summary")).toHaveClass(
+      "border-[var(--leemo-line)]",
+      "bg-[var(--leemo-panel)]",
+    );
   });
 
   it("renders an anchored approval EXACTLY once (no duplicate fallback card)", () => {
@@ -235,9 +267,9 @@ describe("TurnBlock strict-chronological rendering", () => {
     expect(screen.getByText("草稿好了。")).toBeInTheDocument();
 
     fireEvent.click(screen.getByTestId("process-fold").querySelector("button")!);
-    expect(screen.getByText("先确认资料范围")).toBeInTheDocument();
+    expect(screen.queryByText("先确认资料范围")).not.toBeInTheDocument();
     expect(screen.getByText("读取文件")).toBeInTheDocument();
-    expect(screen.getByText("分身干活")).toBeInTheDocument();
+    expect(screen.getByText("任务助手")).toBeInTheDocument();
   });
 
   it("renders user message, then momo text, in document order (user is NOT hoisted below process)", () => {
@@ -361,6 +393,26 @@ describe("TurnBlock strict-chronological rendering", () => {
     const running: TimelineItem = { ...tool, status: "running", summary: undefined };
     renderTurnBlock([user, open, running], true);
     expect(screen.getByText("读取文件")).toBeInTheDocument();
+  });
+
+  it("shows reconnect status compactly and keeps the raw error collapsed until requested", () => {
+    const retry: TimelineItem = {
+      kind: "retry",
+      id: "retry",
+      runId: R,
+      attempt: 1,
+      maxAttempts: 5,
+      summary: "正在重新连接 1/5",
+      detail: "socket hang up: ECONNRESET",
+      state: "retrying",
+    };
+
+    renderTurnBlock([user, open, retry], true);
+    expect(screen.getAllByText("正在重新连接 1/5").length).toBeGreaterThan(0);
+    expect(screen.queryByText("socket hang up: ECONNRESET")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "查看重连错误详情" }));
+    expect(screen.getByText("socket hang up: ECONNRESET")).toBeInTheDocument();
   });
 
   it("clicking the fold bar reveals process cards on a finished turn", () => {
@@ -495,6 +547,28 @@ describe("TurnBlock — ask_user question cards live inline, never folded (卡 D
     fireEvent.click(archive.closest("button")!);
     expect(screen.getByTestId("resolved-approval-receipt")).toHaveTextContent("执行命令");
     expect(screen.getByText("选择部署环境？")).toBeInTheDocument();
+  });
+
+  it("keeps the real task-wide computer scope in the lightweight receipt", () => {
+    renderTurnBlock(
+      [user, open, finalT, usage, result],
+      false,
+      [],
+      [{
+        kind: "approval",
+        id: "computer-task-grant",
+        runId: R,
+        toolName: "mcp__computer__window_management",
+        inputSummary: "Leemo Computer Acceptance",
+        risk: "moderate",
+        taskScope: "computer-control",
+        outcome: "allow-conversation",
+      }],
+    );
+
+    const archive = screen.getByText("含 1 条确认记录");
+    fireEvent.click(archive.closest("button")!);
+    expect(screen.getByTestId("resolved-approval-receipt")).toHaveTextContent("本次任务已允许电脑操作");
   });
 
   it("renders a paired ask_user question EXACTLY once — no duplicate anywhere in the turn", () => {

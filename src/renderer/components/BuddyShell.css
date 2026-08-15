@@ -1,0 +1,272 @@
+.leemo-buddy-shell {
+  position: relative;
+  isolation: isolate;
+  background:
+    radial-gradient(75% 68% at -8% 18%, color-mix(in srgb, var(--leemo-card) 72%, transparent), transparent 72%),
+    radial-gradient(62% 60% at 104% 62%, color-mix(in srgb, var(--leemo-amber-soft) 34%, transparent), transparent 75%),
+    linear-gradient(155deg, var(--leemo-bg) 0%, color-mix(in srgb, var(--leemo-bg) 88%, var(--leemo-card)) 52%, var(--leemo-bg) 100%);
+}
+
+.leemo-buddy-shell::before,
+.leemo-buddy-shell::after {
+  position: absolute;
+  z-index: 0;
+  content: "";
+  pointer-events: none;
+  border: 1px solid color-mix(in srgb, var(--leemo-card) 66%, transparent);
+  opacity: 0.86;
+}
+
+.leemo-buddy-shell::before {
+  top: 76px;
+  left: -22vw;
+  width: 62vw;
+  height: 54vh;
+  border-radius: 0 0 100% 0;
+  box-shadow: 0 28px 90px -78px color-mix(in srgb, var(--leemo-amber) 45%, transparent);
+}
+
+.leemo-buddy-shell::after {
+  right: -18vw;
+  bottom: -20vh;
+  width: 72vw;
+  height: 64vh;
+  border-radius: 100% 0 0;
+  background: color-mix(in srgb, var(--leemo-card) 22%, transparent);
+}
+
+.leemo-buddy-main {
+  padding-top: clamp(32px, 5.2vh, 50px);
+}
+
+.leemo-buddy-landing {
+  display: flex;
+  min-height: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 18px 16px 28px;
+  color: var(--leemo-ink);
+}
+
+.leemo-buddy-clock {
+  color: var(--leemo-ink-3);
+  font-size: 11px;
+  letter-spacing: 0.18em;
+}
+
+.leemo-buddy-intro {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-top: 18px;
+  animation-delay: 90ms;
+}
+
+.leemo-buddy-intro h1 {
+  max-width: 620px;
+  color: var(--leemo-ink);
+  font-family: inherit;
+  font-size: clamp(21px, 1.65vw, 25px);
+  font-weight: 520;
+  line-height: 1.55;
+  letter-spacing: -0.025em;
+}
+
+.leemo-buddy-composer-dock {
+  padding-block: 10px clamp(32px, 5.5vh, 52px);
+}
+
+.leemo-buddy-composer-track {
+  max-width: 900px;
+}
+
+[data-surface="buddy"] .leemo-composer-surface {
+  border-color: color-mix(in srgb, var(--leemo-amber-line) 38%, var(--leemo-line));
+  background: color-mix(in srgb, var(--leemo-card) 82%, white);
+  box-shadow:
+    0 1px 2px rgba(96, 74, 38, 0.045),
+    0 16px 38px -22px rgba(96, 74, 38, 0.3),
+    0 30px 64px -44px rgba(96, 74, 38, 0.3);
+  backdrop-filter: blur(18px);
+}
+
+[data-surface="buddy"] .leemo-composer-surface:focus-within {
+  border-color: color-mix(in srgb, var(--leemo-amber) 72%, var(--leemo-line));
+  box-shadow:
+    0 1px 2px rgba(96, 74, 38, 0.045),
+    0 16px 38px -22px rgba(96, 74, 38, 0.3),
+    0 0 0 3px var(--leemo-focus);
+}
+
+[data-surface="buddy"] .leemo-composer-model,
+[data-surface="buddy"] .leemo-composer-permission {
+  font-size: 13px;
+}
+
+.leemo-buddy-relationship-invite {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  width: min(100%, 650px);
+  min-height: 70px;
+  margin: 0 auto 2px;
+  padding: 11px 12px 11px 14px;
+  border: 1px solid color-mix(in srgb, var(--leemo-line) 78%, transparent);
+  border-radius: 18px;
+  background: color-mix(in srgb, var(--leemo-card) 84%, transparent);
+  box-shadow: 0 14px 34px -28px color-mix(in srgb, var(--leemo-ink) 32%, transparent);
+  backdrop-filter: blur(18px);
+}
+
+.leemo-buddy-invite-title {
+  color: var(--leemo-ink);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.leemo-buddy-invite-copy {
+  margin-top: 2px;
+  overflow: hidden;
+  color: var(--leemo-ink-3);
+  font-size: 11.5px;
+  line-height: 1.45;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.leemo-buddy-invite-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.leemo-buddy-invite-primary,
+.leemo-buddy-invite-secondary {
+  min-height: 32px;
+  border-radius: 10px;
+  padding-inline: 11px;
+  font-size: 12px;
+  font-weight: 520;
+  transition: background 160ms ease, color 160ms ease, box-shadow 160ms ease;
+}
+
+.leemo-buddy-invite-primary {
+  color: white;
+  background: var(--leemo-amber);
+  box-shadow: 0 8px 20px -14px color-mix(in srgb, var(--leemo-amber-strong) 78%, transparent);
+}
+
+.leemo-buddy-invite-primary:hover {
+  background: var(--leemo-amber-strong);
+}
+
+.leemo-buddy-invite-secondary {
+  color: var(--leemo-ink-3);
+}
+
+.leemo-buddy-invite-secondary:hover {
+  color: var(--leemo-ink);
+  background: var(--leemo-hover);
+}
+
+.leemo-buddy-scene-hints > div {
+  padding-block: 10px 8px;
+}
+
+.leemo-buddy-starter-row {
+  width: min(100%, 820px);
+  margin-inline: auto;
+  mask-image: linear-gradient(90deg, transparent 0, black 12px, black calc(100% - 12px), transparent 100%);
+}
+
+@media (max-width: 1120px) {
+  .leemo-buddy-starter-row [data-priority="4"],
+  .leemo-buddy-starter-row [data-priority="5"] {
+    display: none;
+  }
+}
+
+@media (max-width: 720px) {
+  .leemo-buddy-starter-row [data-priority="3"] {
+    display: none;
+  }
+}
+
+.leemo-buddy-shell .leemo-workbench-timeline > div > div {
+  max-width: 900px;
+  padding: 30px 40px 24px;
+}
+
+@media (max-height: 760px) {
+  .leemo-buddy-main {
+    padding-top: 24px;
+  }
+
+  .leemo-buddy-landing {
+    padding-block: 8px 12px;
+  }
+
+  .leemo-buddy-intro {
+    margin-top: 12px;
+  }
+
+  .leemo-buddy-composer-dock {
+    padding-bottom: 22px;
+  }
+}
+
+@media (max-width: 700px) {
+  .leemo-buddy-main {
+    padding-inline: 12px;
+  }
+
+  .leemo-buddy-landing {
+    justify-content: flex-start;
+    padding-top: 44px;
+  }
+
+  .leemo-buddy-intro {
+    align-items: flex-start;
+  }
+
+  .leemo-buddy-relationship-invite {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .leemo-buddy-invite-actions {
+    grid-column: 2;
+  }
+
+  .leemo-buddy-invite-copy {
+    white-space: normal;
+  }
+
+  .leemo-buddy-shell .leemo-workbench-timeline > div > div {
+    padding-inline: 12px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .leemo-buddy-invite-primary,
+  .leemo-buddy-invite-secondary {
+    transition: none;
+  }
+}
+.leemo-buddy-user-bubble {
+  border-color: color-mix(in srgb, var(--leemo-amber-line) 38%, var(--leemo-line-soft));
+  background: color-mix(in srgb, var(--leemo-amber-soft) 34%, white);
+  box-shadow: 0 1px 2px rgba(96, 74, 38, 0.025);
+}
+
+.leemo-buddy-momo-bubble {
+    border: 1px solid color-mix(in srgb, var(--leemo-amber-line) 52%, var(--leemo-line-soft));
+    background: color-mix(in srgb, var(--leemo-card) 82%, var(--leemo-amber-bg));
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.68),
+      0 1px 2px rgba(96, 74, 38, 0.055),
+      0 12px 30px -22px rgba(96, 74, 38, 0.28);
+  }

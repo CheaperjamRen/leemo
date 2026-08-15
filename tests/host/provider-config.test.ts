@@ -9,8 +9,8 @@ import {
 import type { ModelCapabilityEvidence, ProviderDraft } from "../../src/bridge/contract";
 
 /** Obviously-fake sentinels (铁律: no real key shape in tests). */
-const KEY_A = "sk-test-aaaa1111";
-const KEY_B = "sk-test-bbbb2222";
+const KEY_A = "test-key-aaaa1111";
+const KEY_B = "test-key-bbbb2222";
 
 function mintSeq(): () => string {
   let n = 0;
@@ -428,7 +428,7 @@ describe("migrateLegacyConfig — the irreversible point (user keys live here)",
 
   it("does NOT let env overwrite a key already stored for that instance", () => {
     const stored = migrateLegacyConfig({ DEEPSEEK_API_KEY: KEY_A }, {});
-    const out = migrateLegacyConfig(stored, { DEEPSEEK_API_KEY: "sk-test-STALE-env" });
+    const out = migrateLegacyConfig(stored, { DEEPSEEK_API_KEY: "test-key-STALE-env" });
     expect(out.providers.deepseek.apiKey).toBe(KEY_A);
   });
 
@@ -505,6 +505,11 @@ describe("non-provider encrypted fields", () => {
         metaso: "metaso-secret",
         google: "google-secret",
         googleCx: "cx-secret",
+        exa: "exa-secret",
+        brave: "brave-secret",
+        serpapi: "serpapi-secret",
+        serper: "serper-secret",
+        firecrawl: "firecrawl-secret",
       },
       mcpServers: {
         docs: {
@@ -536,6 +541,11 @@ describe("non-provider encrypted fields", () => {
         metaso: "metaso-key",
         google: "google-key",
         googleCx: "google-cx",
+        exa: "exa-key",
+        brave: "brave-key",
+        serpapi: "serpapi-key",
+        serper: "serper-key",
+        firecrawl: "firecrawl-key",
         unknown: "must-drop",
         bocha: 42,
       },
@@ -547,6 +557,11 @@ describe("non-provider encrypted fields", () => {
       metaso: "metaso-key",
       google: "google-key",
       googleCx: "google-cx",
+      exa: "exa-key",
+      brave: "brave-key",
+      serpapi: "serpapi-key",
+      serper: "serper-key",
+      firecrawl: "firecrawl-key",
     });
     expect(JSON.stringify(migrated.searchKeys)).not.toContain("must-drop");
   });

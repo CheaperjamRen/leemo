@@ -1,6 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import TopBar from "./TopBar";
-import Greeting from "./Greeting";
 import ChipRow from "./ChipRow";
 import InputArea from "./InputArea";
 import PinnedPlan from "./PinnedPlan";
@@ -9,7 +8,7 @@ import Timeline from "./timeline/Timeline";
 import LiveStatusBar from "./timeline/LiveStatusBar";
 import DropClassifyBar from "./DropClassifyBar";
 import { isFileDataTransfer, useFileDrop } from "./useFileDrop";
-import { useComposerDrafts, useConversations, useSettings, useSkills, useProviders, useUi, useWorkspace, useFileTree, useWorkspaces } from "../bridge/context";
+import { useArtifacts, useCaptures, useComposerDrafts, useConversations, useScheduledTasks, useSettings, useSkills, useProviders, useUi, useWorkspace, useFileTree, useWorkspaces } from "../bridge/context";
 import type { AttachmentRef, WorkspaceFileRef } from "../../bridge/contract";
 import { orderConfiguredProviders } from "./model-picker";
 import {
@@ -17,9 +16,30 @@ import {
   resolveComposerScope,
 } from "../stores/composer-drafts";
 import { HOME_WORKSPACE_ID } from "../stores/workspaces";
+import type { ConversationTurnOptions } from "../stores/conversations";
+import {
+  buildDailyReviewPrompt,
+  dailyReviewTitle,
+  findTodayDailyReviewConversation,
+} from "../stores/daily-review";
+import {
+  RELATIONSHIP_CONVERSATION_TITLE,
+  buildRelationshipOnboardingPrompt,
+  findRelationshipConversation,
+} from "../stores/relationship-onboarding";
+import { buildGreeting } from "../stores/settings";
+import Clock from "./Clock";
+import MomoAvatar from "./momo/MomoAvatar";
+import "./BuddyShell.css";
 
 export default function BuddyShell() {
   const [drawer, setDrawer] = useState(false);
+  const [dailyReviewBusy, setDailyReviewBusy] = useState(false);
+  const [dailyReviewError, setDailyReviewError] = useState<string | null>(null);
+  const [relationshipBusy, setRelationshipBusy] = useState(false);
+  const [relationshipError, setRelationshipError] = useState<string | null>(null);
+  const dailyReviewInFlight = useRef(false);
+  const relationshipInFlight = useRef(false);
   const globalActiveId = useConversations((s) => s.activeId);
   const conversations = useConversations((s) => s.byId);
   const activateScope = useConversations((s) => s.activateScope);
@@ -45,12 +65,24 @@ export default function BuddyShell() {
   const createConversation = useConversations((s) => s.createConversation);
   const switchActive = useConversations((s) => s.switchActive);
   const send = useConversations((s) => s.send);
+  const guide = useConversations((s) => s.guide);
+  const enqueueTurn = useConversations((s) => s.enqueueTurn);
+  const removeQueuedTurn = useConversations((s) => s.removeQueuedTurn);
+  const guideQueuedTurn = useConversations((s) => s.guideQueuedTurn);
+  const renameTitle = useConversations((s) => s.renameTitle);
   const retry = useConversations((s) => s.retry);
   const dismissRetry = useConversations((s) => s.dismissRetry);
   const interrupt = useConversations((s) => s.interrupt);
   const timeline = useConversations((s) => activeId ? s.timelines[activeId] : undefined);
   const activeRunId = useConversations((s) => activeId ? s.runIds[activeId] : null);
   const retryDraft = useConversations((s) => activeId ? s.pendingSends[activeId] : undefined);
+  const queuedTurns = useConversations((s) => activeId ? s.queuedTurns[activeId] : undefined);
+  const conversationOrder = useConversations((s) => s.order);
+  const timelines = useConversations((s) => s.timelines);
+  const runIds = useConversations((s) => s.runIds);
+  const artifacts = useArtifacts((s) => s.entries);
+  const scheduledTasks = useScheduledTasks((s) => s.tasks);
+  const scheduledRuns = useScheduledTasks((s) => s.runs);
   // Model picker (轮 3 卡 F): the shell owns the subscription, InputArea renders.
   const activeMeta = useConversations((s) => (activeId ? s.byId[activeId] : undefined));
   const permissionMode = useSettings((s) => s.permissionMode);
@@ -58,7 +90,15 @@ export default function BuddyShell() {
   const providerOrder = useSettings((s) => s.providerOrder);
   const defaultProviderId = useSettings((s) => s.defaultProviderId);
   const defaultModelId = useSettings((s) => s.defaultModelId);
+  const setDefaultModel = useSettings((s) => s.setDefaultModel);
+  const relationshipInviteDismissed = useSettings((s) => s.relationshipInviteDismissed);
+  const relationshipConversationId = useSettings((s) => s.relationshipConversationId);
+  const dismissRelationshipInvite = useSettings((s) => s.dismissRelationshipInvite);
+  const setRelationshipConversationId = useSettings((s) => s.setRelationshipConversationId);
   const setModelForConversation = useConversations((s) => s.setModelForConversation);
+  const setGoal = useConversations((s) => s.setGoal);
+  const toggleGoalPaused = useConversations((s) => s.toggleGoalPaused);
+  const clearGoal = useConversations((s) => s.clearGoal);
   const rawProviderList = useProviders((s) => s.list);
   const providerList = useMemo(
     () => orderConfiguredProviders(rawProviderList, providerOrder, { providerId: defaultProviderId, modelId: defaultModelId }),
@@ -67,6 +107,7 @@ export default function BuddyShell() {
   const openSettings = useUi((s) => s.openSettings);
   const workspace = useWorkspace();
   const workspaceFiles = useFileTree((state) => state.roots);
+  const notes = useCaptures((state) => state.notes);
   const activeWorkspaceId = useWorkspaces((state) => state.activeId);
   // Only ENABLED skills are offered — the `/` menu and the chips must not hand
   // the user a command the next conversation would reject.
@@ -75,7 +116,18 @@ export default function BuddyShell() {
   const enabledSkills = skillList.filter(
     (skill) => skill.available !== false && !skillsDisabled.includes(skill.id ?? skill.name),
   );
+  const relationshipConversation = useMemo(
+    () => findRelationshipConversation(conversations, relationshipConversationId),
+    [conversations, relationshipConversationId],
+  );
   const messages = timeline ?? [];
+  const retryRecoveryRendered = Boolean(
+    retryDraft?.errorMessage
+      && messages.some((item) => item.kind === "result"
+        && item.runId === retryDraft.runId
+        && item.isError
+        && !item.interrupted),
+  );
   const hasMessages = messages.length > 0;
   const drop = useFileDrop();
   const runningTool = (() => {
@@ -91,6 +143,7 @@ export default function BuddyShell() {
     text: string,
     attachments?: AttachmentRef[],
     referencedFiles?: WorkspaceFileRef[],
+    options?: ConversationTurnOptions,
   ) => {
     const sendingScope = draftScope;
     let conversationId = activeId ?? composerDraft.assignedConversationId;
@@ -102,12 +155,146 @@ export default function BuddyShell() {
         activate: false,
       });
       assignComposerConversation(sendingScope, conversationId);
+      // Enter the newly-created thread before waiting for the host's send ACK.
+      // The optimistic user turn and momo's truthful start state then appear
+      // immediately instead of leaving the first screen looking unresponsive.
+      if (!activeIdRef.current && draftScopeRef.current === sendingScope) {
+        switchActive(conversationId);
+      }
     }
-    await send(conversationId, text, attachments, referencedFiles);
+    await send(conversationId, text, attachments, referencedFiles, options);
     if (!activeIdRef.current && draftScopeRef.current === sendingScope) {
       switchActive(conversationId);
     }
   };
+
+  const queueFromBuddy = (
+    text: string,
+    attachments?: AttachmentRef[],
+    referencedFiles?: WorkspaceFileRef[],
+    options?: ConversationTurnOptions,
+  ) => {
+    const conversationId = activeId ?? composerDraft.assignedConversationId;
+    if (!conversationId) throw new Error("请先选择对话。");
+    enqueueTurn(conversationId, text, attachments, referencedFiles, options);
+  };
+
+  const saveGoalFromBuddy = async (text: string) => {
+    const goalScope = draftScope;
+    let conversationId = activeId ?? composerDraft.assignedConversationId;
+    if (!conversationId) {
+      conversationId = await createConversation({
+        source: "buddy",
+        workspaceId: HOME_WORKSPACE_ID,
+        bookId: null,
+        activate: false,
+      });
+      assignComposerConversation(goalScope, conversationId);
+    }
+    await setGoal(conversationId, text);
+    if (!activeIdRef.current && draftScopeRef.current === goalScope) switchActive(conversationId);
+  };
+
+  const startDailyReview = useCallback(async () => {
+    if (dailyReviewInFlight.current) return;
+    dailyReviewInFlight.current = true;
+    setDailyReviewBusy(true);
+    setDailyReviewError(null);
+    try {
+      const now = Date.now();
+      const existing = findTodayDailyReviewConversation(Object.values(conversations), now);
+      if (existing) {
+        switchActive(existing.id);
+        if ((timelines[existing.id] ?? []).length > 0 || runIds[existing.id]) return;
+      }
+
+      const prompt = buildDailyReviewPrompt({
+        now,
+        conversations,
+        order: conversationOrder,
+        timelines,
+        artifacts,
+        scheduledTasks,
+        scheduledRuns,
+      });
+      const conversationId = existing?.id ?? await createConversation({
+          source: "buddy",
+          workspaceId: HOME_WORKSPACE_ID,
+          bookId: null,
+          activate: false,
+        });
+      if (!existing) {
+        renameTitle(conversationId, dailyReviewTitle(now));
+        switchActive(conversationId);
+      }
+      await send(conversationId, prompt, undefined, undefined, { displayText: "回顾今天" });
+    } catch (error: unknown) {
+      setDailyReviewError(error instanceof Error ? error.message : "暂时无法生成今天的回顾，请稍后重试。");
+    } finally {
+      dailyReviewInFlight.current = false;
+      setDailyReviewBusy(false);
+    }
+  }, [
+    artifacts,
+    conversationOrder,
+    conversations,
+    createConversation,
+    renameTitle,
+    scheduledRuns,
+    scheduledTasks,
+    send,
+    switchActive,
+    timelines,
+    runIds,
+  ]);
+
+  const startRelationshipOnboarding = useCallback(async () => {
+    if (relationshipInFlight.current) return;
+    relationshipInFlight.current = true;
+    setRelationshipBusy(true);
+    setRelationshipError(null);
+    dismissRelationshipInvite();
+    try {
+      const existing = findRelationshipConversation(conversations, relationshipConversationId);
+      let conversationId = existing?.id;
+      if (!conversationId) {
+        conversationId = await createConversation({
+          source: "buddy",
+          workspaceId: HOME_WORKSPACE_ID,
+          bookId: null,
+          activate: false,
+        });
+        renameTitle(conversationId, RELATIONSHIP_CONVERSATION_TITLE);
+      }
+      setRelationshipConversationId(conversationId);
+      switchActive(conversationId);
+      if ((timelines[conversationId] ?? []).length > 0 || runIds[conversationId]) return;
+
+      await send(
+        conversationId,
+        buildRelationshipOnboardingPrompt(),
+        undefined,
+        undefined,
+        { displayText: RELATIONSHIP_CONVERSATION_TITLE },
+      );
+    } catch (error: unknown) {
+      setRelationshipError(error instanceof Error ? error.message : "暂时没能开始这段对话，请再试一次。");
+    } finally {
+      relationshipInFlight.current = false;
+      setRelationshipBusy(false);
+    }
+  }, [
+    conversations,
+    createConversation,
+    dismissRelationshipInvite,
+    relationshipConversationId,
+    renameTitle,
+    runIds,
+    send,
+    setRelationshipConversationId,
+    switchActive,
+    timelines,
+  ]);
 
   const dismissRetryAndRelease = () => {
     if (!activeId) return;
@@ -121,7 +308,9 @@ export default function BuddyShell() {
 
   return (
     <div
-      className="flex h-screen flex-col overflow-hidden bg-[var(--leemo-bg)]"
+      className="leemo-buddy-shell flex h-screen flex-col overflow-hidden bg-[var(--leemo-bg)]"
+      data-shell="buddy"
+      style={{ overflow: "clip" }}
       onDragOver={(e) => {
         if (drop.enabled && isFileDataTransfer(e.dataTransfer)) e.preventDefault();
       }}
@@ -131,8 +320,30 @@ export default function BuddyShell() {
         if (drop.handleDrop(e.dataTransfer.files)) e.preventDefault();
       }}
     >
-      <TopBar onOpenHistory={() => setDrawer(true)} />
-      <main className="relative z-10 flex min-h-0 flex-1 flex-col px-4 pt-14 sm:px-6">
+      <TopBar
+        onOpenHistory={() => setDrawer(true)}
+        onDailyReview={() => { void startDailyReview(); }}
+        dailyReviewBusy={dailyReviewBusy}
+        onStartRelationship={() => { void startRelationshipOnboarding(); }}
+        relationshipBusy={relationshipBusy}
+      />
+      <main className="leemo-buddy-main relative z-10 flex min-h-0 flex-1 flex-col px-4 sm:px-6">
+        {dailyReviewError && (
+          <div
+            role="alert"
+            className="mx-auto mt-3 max-w-[720px] rounded-md border border-[var(--leemo-danger)]/20 bg-[var(--leemo-card)] px-3 py-2 text-[12.5px] text-[var(--leemo-danger)]"
+          >
+            {dailyReviewError}
+          </div>
+        )}
+        {relationshipError && (
+          <div
+            role="alert"
+            className="mx-auto mt-3 max-w-[720px] rounded-md border border-[var(--leemo-danger)]/20 bg-[var(--leemo-card)] px-3 py-2 text-[12.5px] text-[var(--leemo-danger)]"
+          >
+            {relationshipError}
+          </div>
+        )}
         {hasMessages ? (
           // Timeline is a bounded flex child (flex-1 min-h-0) so it scrolls
           // internally and never shoves the input area out of the viewport.
@@ -143,10 +354,22 @@ export default function BuddyShell() {
           // "same card twice" duplicate-render bug this round fixed.
           <Timeline />
         ) : (
-          <Greeting hour={new Date().getHours()} />
+          <section
+            className="leemo-buddy-landing"
+            data-testid="buddy-landing"
+            aria-labelledby="buddy-greeting"
+          >
+            <Clock className="leemo-buddy-clock leemo-rise" />
+            <div className="leemo-buddy-intro leemo-rise">
+              <MomoAvatar size={42} />
+              <h1 id="buddy-greeting" data-testid="buddy-greeting">
+                {buildGreeting(new Date().getHours())}
+              </h1>
+            </div>
+          </section>
         )}
-        <div className="mt-auto shrink-0 pb-5 pt-2 sm:pb-7">
-          <div className="mx-auto w-full max-w-[720px] px-1 sm:px-6">
+        <div className="leemo-buddy-composer-dock mt-auto shrink-0" data-testid="buddy-composer-dock">
+          <div className="leemo-buddy-composer-track mx-auto w-full px-1 sm:px-6">
             {drop.pending && (
               <DropClassifyBar drop={drop.pending} onConfirm={drop.confirm} onCancel={drop.cancel} />
             )}
@@ -157,18 +380,62 @@ export default function BuddyShell() {
               </div>
             )}
             {!hasMessages && (
-              <ChipRow
-                onPick={(next) => setComposerText(draftScope, next)}
-                skills={enabledSkills}
-                disabled={composerDraft.submitPending}
-              />
+              <>
+                {!relationshipInviteDismissed && !relationshipConversation && (
+                  <section className="leemo-buddy-relationship-invite" data-testid="buddy-relationship-invite">
+                    <MomoAvatar size={28} />
+                    <div className="min-w-0">
+                      <p className="leemo-buddy-invite-title">想让我更懂你一点？</p>
+                      <p className="leemo-buddy-invite-copy">聊聊最近的状态，以及你喜欢的相处和配合方式。</p>
+                    </div>
+                    <div className="leemo-buddy-invite-actions">
+                      <button
+                        type="button"
+                        disabled={relationshipBusy}
+                        onClick={() => { void startRelationshipOnboarding(); }}
+                        className="leemo-buddy-invite-primary disabled:cursor-wait disabled:opacity-45"
+                      >
+                        现在聊聊
+                      </button>
+                      <button
+                        type="button"
+                        aria-label="稍后再说"
+                        onClick={dismissRelationshipInvite}
+                        className="leemo-buddy-invite-secondary"
+                      >
+                        稍后再说
+                      </button>
+                    </div>
+                  </section>
+                )}
+                <div className="leemo-buddy-scene-hints" role="group" aria-label="你可以这样开始">
+                  <ChipRow
+                    onPick={(next) => setComposerText(draftScope, next)}
+                    disabled={composerDraft.submitPending}
+                  />
+                </div>
+              </>
             )}
-            <InputArea conversationId={activeId} value={draft}
+            <InputArea surface="buddy" conversationId={activeId} value={draft}
               onChange={(next) => setComposerText(draftScope, next)} onSend={sendFromBuddy}
+              onQueue={queueFromBuddy}
+              notes={notes}
+              onGuide={(text) => activeId ? guide(activeId, text) : Promise.reject(new Error("请先选择对话。"))}
+              queuedTurns={queuedTurns}
+              onEditQueuedTurn={(queuedTurnId) => { if (activeId) removeQueuedTurn(activeId, queuedTurnId); }}
+              onDeleteQueuedTurn={(queuedTurnId) => { if (activeId) removeQueuedTurn(activeId, queuedTurnId); }}
+              onGuideQueuedTurn={(queuedTurnId) => activeId
+                ? guideQueuedTurn(activeId, queuedTurnId)
+                : Promise.reject(new Error("请先选择对话。"))}
+              goal={activeMeta?.goal}
+              onSaveGoal={saveGoalFromBuddy}
+              onToggleGoalPaused={() => activeId ? toggleGoalPaused(activeId) : undefined}
+              onDeleteGoal={() => activeId ? clearGoal(activeId) : undefined}
               draftScope={draftScope}
               draftState={composerDraft}
               onDraftStateChange={(update) => updateComposerDraft(draftScope, update)}
               retryDraft={retryDraft}
+              retryRecoveryRendered={retryRecoveryRendered}
               onRetry={() => activeId ? retry(activeId) : undefined}
               onDismissRetry={dismissRetryAndRelease}
               busy={activeRunId !== null} onStop={() => { if (activeId) void interrupt(activeId); }}
@@ -183,14 +450,17 @@ export default function BuddyShell() {
               workspaceFiles={activeWorkspaceId === HOME_WORKSPACE_ID ? workspaceFiles : []}
               workspaceId={HOME_WORKSPACE_ID}
               providers={providerList}
-              currentProviderId={activeMeta?.providerId ?? null}
-              currentModelId={activeMeta?.modelId ?? null}
+              currentProviderId={activeMeta?.providerId ?? defaultProviderId}
+              currentModelId={activeMeta?.modelId ?? defaultModelId}
               permissionMode={permissionMode}
               onOpenSettings={() => openSettings("models")}
-              onOpenPermissionSettings={() => openSettings("permissions")}
-              onDisableFullAccess={() => setPermissionMode("acceptEdits")}
+              onSelectPermissionMode={setPermissionMode}
               onSelectModel={(providerId, modelId) => {
-                if (activeId) void setModelForConversation(activeId, providerId, modelId);
+                if (activeId) {
+                  void setModelForConversation(activeId, providerId, modelId);
+                  return;
+                }
+                setDefaultModel(providerId, modelId);
               }} />
           </div>
         </div>

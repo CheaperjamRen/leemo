@@ -19,7 +19,9 @@ export function foldContextUsage(
   conversationId: string,
 ): ContextUsageState {
   if (event.type === "usage.final") {
-    const current = event.usage.inputTokens + event.usage.cacheReadTokens + event.usage.cacheCreationTokens;
+    const current = (event.usage.contextInputTokens ?? event.usage.inputTokens)
+      + (event.usage.contextCacheReadTokens ?? event.usage.cacheReadTokens)
+      + (event.usage.contextCacheCreationTokens ?? event.usage.cacheCreationTokens);
     const previous = prev.byConversation[conversationId];
     return {
       byConversation: {

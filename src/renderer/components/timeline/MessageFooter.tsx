@@ -1,6 +1,7 @@
-import { useState } from "react";
-import { ChevronDown, Copy, Files, FolderOpen, TriangleAlert } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { CheckCircle2, ChevronDown, Copy, FileDiff, FileText, FolderOpen, TriangleAlert } from "lucide-react";
 import type { TimelineItem } from "../../stores/message-model";
+import AnchoredLayer from "../AnchoredLayer";
 
 type ResultItem = Extract<TimelineItem, { kind: "result" }>;
 type UsageItem = Extract<TimelineItem, { kind: "usage" }>;
@@ -74,7 +75,44 @@ export default function MessageFooter({
   onUndoMemory?: (memory: MemoryItem) => void;
 }) {
   const [usageOpen, setUsageOpen] = useState(false);
-  const [filesOpen, setFilesOpen] = useState(false);
+  const [usageHovered, setUsageHovered] = useState(false);
+  const [fileChangesOpen, setFileChangesOpen] = useState(false);
+  const [copyState, setCopyState] = useState<"idle" | "copied" | "error">("idle");
+  const usageAnchorRef = useRef<HTMLButtonElement>(null);
+  const usageCloseTimerRef = useRef<number | null>(null);
+  const copyResetTimerRef = useRef<number | null>(null);
+  const usageVisible = usageOpen || usageHovered;
+
+  const cancelUsageClose = (): void => {
+    if (usageCloseTimerRef.current === null) return;
+    window.clearTimeout(usageCloseTimerRef.current);
+    usageCloseTimerRef.current = null;
+  };
+  const scheduleUsageClose = (): void => {
+    cancelUsageClose();
+    usageCloseTimerRef.current = window.setTimeout(() => {
+      setUsageHovered(false);
+      usageCloseTimerRef.current = null;
+    }, 90);
+  };
+  useEffect(() => () => {
+    cancelUsageClose();
+    if (copyResetTimerRef.current !== null) window.clearTimeout(copyResetTimerRef.current);
+  }, []);
+  const copyAnswer = async (): Promise<void> => {
+    try {
+      if (!navigator.clipboard?.writeText) throw new Error("当前环境不支持复制");
+      await navigator.clipboard.writeText(result.finalText);
+      setCopyState("copied");
+    } catch {
+      setCopyState("error");
+    }
+    if (copyResetTimerRef.current !== null) window.clearTimeout(copyResetTimerRef.current);
+    copyResetTimerRef.current = window.setTimeout(() => {
+      setCopyState("idle");
+      copyResetTimerRef.current = null;
+    }, 1_800);
+  };
   // `writeClaim` was added when the auditor stopped treating every path mention
   // as a completed write. Requiring the marker also suppresses stale false
   // alarms already persisted by older builds without rewriting user history.
@@ -91,18 +129,36 @@ export default function MessageFooter({
   ) : result.interrupted ? (
     <span>已停止</span>
   ) : (
-    <button type="button" className="inline-flex items-center gap-1 transition-colors hover:text-[var(--leemo-ink-2)]"
-      onClick={() => void navigator.clipboard?.writeText(result.finalText)}>
-      <Copy className="h-3 w-3" aria-hidden />
-      复制
+    <button
+      type="button"
+      aria-label={copyState === "copied" ? "已复制回答" : copyState === "error" ? "复制回答失败" : "复制回答"}
+      aria-live="polite"
+      className={`inline-flex items-center gap-1 rounded-[5px] px-0.5 transition-colors ${copyState === "copied" ? "text-[var(--leemo-success)]" : copyState === "error" ? "text-[var(--leemo-danger)]" : "hover:text-[var(--leemo-ink-2)]"}`}
+      onClick={() => void copyAnswer()}
+    >
+      {copyState === "copied" ? <CheckCircle2 className="h-3 w-3" aria-hidden /> : <Copy className="h-3 w-3" aria-hidden />}
+      {copyState === "copied" ? "已复制" : copyState === "error" ? "复制失败" : "复制"}
     </button>
   );
   const cacheTokens = usage ? usage.usage.cacheReadTokens + usage.usage.cacheCreationTokens : 0;
+  const modelBreakdown = usage?.usage.modelBreakdown ?? [];
+  const singleModelUsage = modelBreakdown.length === 1 ? modelBreakdown[0] : undefined;
   const fullMemoryLabel = memory ? normalizeReceiptLabel(memory.label) : "";
   const visibleMemoryLabel = truncateReceiptLabel(fullMemoryLabel);
   const memoryUndone = memory?.undone === true || memoryUndoState === "undone";
+  const deliveryFiles = files?.changes.slice(0, 3) ?? [];
+  const deliveryTotal = files ? files.changes.length + files.omitted : 0;
+  const hiddenDeliveryCount = Math.max(0, deliveryTotal - deliveryFiles.length);
+  const deliveryVerb = files?.changes.some((change) => change.change !== "deleted") ? "交付" : "处理";
+  const visibleChangeSummary = files?.changes.every((change) => change.change === "modified")
+    ? `修改了 ${deliveryTotal} 个文件`
+    : files?.changes.every((change) => change.change === "added")
+      ? `新建了 ${deliveryTotal} 个文件`
+      : files?.changes.every((change) => change.change === "deleted")
+        ? `删除了 ${deliveryTotal} 个文件`
+        : `查看 ${deliveryTotal} 处文件变化`;
   return (
-    <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-[var(--leemo-ink-3)]">
+    <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[12px] text-[var(--leemo-ink-3)]">
       {lead}
       {result.createdAt !== undefined && (
         <time dateTime={new Date(result.createdAt).toISOString()} className="tabular-nums">
@@ -112,66 +168,110 @@ export default function MessageFooter({
       {usage?.usage.durationMs !== undefined && <span className="tabular-nums">{formatDuration(usage.usage.durationMs)}</span>}
       {usage && (
         <button
+          ref={usageAnchorRef}
           type="button"
           aria-label={usageOpen ? "收起用量" : "查看用量"}
-          aria-expanded={usageOpen}
+          aria-expanded={usageVisible}
           onClick={() => setUsageOpen((open) => !open)}
+          onMouseEnter={() => {
+            cancelUsageClose();
+            setUsageHovered(true);
+          }}
+          onMouseLeave={scheduleUsageClose}
+          onFocus={() => setUsageHovered(true)}
+          onBlur={scheduleUsageClose}
           className="rounded-sm underline decoration-[var(--leemo-line)] underline-offset-2 transition-colors hover:text-[var(--leemo-ink-2)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--leemo-amber-line)]"
         >
           {usageOpen ? "收起用量" : "查看用量"}
         </button>
       )}
       {files && files.changes.length > 0 && (
-        <>
+        <section
+          data-file-delivery-receipt
+          aria-label={`本轮${deliveryVerb}文件`}
+          className="mt-2 basis-full overflow-hidden rounded-[10px] border border-[var(--leemo-line)] bg-[var(--leemo-card)] text-[var(--leemo-ink)] shadow-[0_5px_18px_rgba(15,23,42,0.055)]"
+        >
+          <header className="flex h-10 items-center justify-between border-b border-[var(--leemo-line-2)] px-3">
+            <span className="inline-flex items-center gap-1.5 text-[12.5px] font-semibold">
+              <CheckCircle2 className="h-3.5 w-3.5 text-[var(--leemo-success)]" aria-hidden />
+              本轮{deliveryVerb} {deliveryTotal} 个文件
+            </span>
+            <span className="text-[11px] text-[var(--leemo-ink-3)]">已完成</span>
+          </header>
           <button
             type="button"
+            aria-label="查看文件变化"
+            aria-expanded={fileChangesOpen}
             data-file-change-receipt
-            aria-label={filesOpen ? "收起文件变化" : "查看文件变化"}
-            aria-expanded={filesOpen}
-            onClick={() => setFilesOpen((open) => !open)}
-            className="inline-flex items-center gap-1 rounded-sm transition-colors hover:text-[var(--leemo-ink-2)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--leemo-amber-line)]"
+            onClick={() => setFileChangesOpen((open) => !open)}
+            className="flex h-9 w-full items-center gap-2 border-b border-[var(--leemo-line-2)] px-3 text-left text-[12px] text-[var(--leemo-ink-2)] transition-colors hover:bg-[var(--leemo-side-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--leemo-amber-line)]"
           >
-            <Files className="h-3 w-3" aria-hidden />
-            修改了 {files.changes.length + files.omitted} 个文件
-            <ChevronDown className={`h-3 w-3 transition-transform ${filesOpen ? "rotate-180" : ""}`} aria-hidden />
+            <FileDiff className="h-3.5 w-3.5 shrink-0 text-[var(--leemo-ink-3)]" aria-hidden />
+            <span className="min-w-0 flex-1 truncate">{visibleChangeSummary}</span>
+            <ChevronDown
+              className={`h-3.5 w-3.5 shrink-0 text-[var(--leemo-ink-3)] transition-transform ${fileChangesOpen ? "rotate-180" : ""}`}
+              aria-hidden
+            />
           </button>
-          {filesOpen && (
-            <ul className="basis-full space-y-1 pl-4 text-[10.5px] leading-4">
-              {files.changes.map((change) => (
-                <li key={change.path} className="flex min-w-0 items-center gap-2">
+          {fileChangesOpen && (
+            <div
+              data-file-change-card
+              className="max-h-[116px] overflow-y-auto border-b border-[var(--leemo-line-2)] bg-[var(--leemo-panel-soft)] px-3 py-1.5"
+            >
+              {deliveryFiles.map((change) => (
+                <div key={`${change.path}-${change.change}`} className="flex h-7 min-w-0 items-center gap-2 text-[11.5px]">
                   <span className="w-7 shrink-0 text-[var(--leemo-ink-3)]">{fileChangeLabel[change.change]}</span>
-                  {onOpenFile && change.change !== "deleted" ? (
-                    <button
-                      type="button"
-                      aria-label={`预览 ${change.path}`}
-                      title={change.path}
-                      onClick={() => onOpenFile(change)}
-                      className="min-w-0 break-all text-left text-[var(--leemo-ink-2)] underline decoration-transparent underline-offset-2 transition-colors hover:decoration-[var(--leemo-line)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--leemo-amber-line)]"
-                    >
-                      {change.path}
-                    </button>
-                  ) : (
-                    <span className="min-w-0 break-all text-[var(--leemo-ink-2)]" title={change.path}>{change.path}</span>
-                  )}
-                  {onRevealFile && change.change !== "deleted" && (
-                    <button
-                      type="button"
-                      aria-label={`在文件夹中显示 ${change.path}`}
-                      title="在文件夹中显示"
-                      onClick={() => onRevealFile(change)}
-                      className="grid h-5 w-5 shrink-0 place-items-center rounded-sm transition-colors hover:bg-[var(--leemo-side-hover)] hover:text-[var(--leemo-ink-2)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--leemo-amber-line)]"
-                    >
-                      <FolderOpen className="h-3 w-3" aria-hidden />
-                    </button>
-                  )}
-                </li>
+                  <span className="min-w-0 flex-1 truncate text-[var(--leemo-ink-2)]" title={change.path}>{change.path}</span>
+                </div>
               ))}
-              {files.omitted > 0 && (
-                <li className="text-[var(--leemo-ink-3)]">另有 {files.omitted} 个文件未展开</li>
+              {hiddenDeliveryCount > 0 && (
+                <div className="flex h-7 items-center text-[11.5px] text-[var(--leemo-ink-3)]">另有 {hiddenDeliveryCount} 处变化，可在成果页查看</div>
               )}
-            </ul>
+            </div>
           )}
-        </>
+          <ul>
+            {deliveryFiles.map((change) => (
+              <li
+                key={change.path}
+                data-delivery-file-row
+                className="flex h-10 min-w-0 items-center gap-2.5 border-b border-[var(--leemo-line-2)] px-3 last:border-b-0"
+              >
+                <FileText className="h-3.5 w-3.5 shrink-0 text-[var(--leemo-ink-3)]" aria-hidden />
+                <span className="w-7 shrink-0 text-[11px] text-[var(--leemo-ink-3)]">{fileChangeLabel[change.change]}</span>
+                {onOpenFile && change.change !== "deleted" ? (
+                  <button
+                    type="button"
+                    aria-label={`预览 ${change.path}`}
+                    title={change.path}
+                    onClick={() => onOpenFile(change)}
+                    className="min-w-0 flex-1 truncate text-left text-[12.5px] font-medium text-[var(--leemo-ink-2)] transition-colors hover:text-[var(--leemo-ink)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--leemo-amber-line)]"
+                  >
+                    {change.path}
+                  </button>
+                ) : (
+                  <span className="min-w-0 flex-1 truncate text-[12.5px] text-[var(--leemo-ink-2)]" title={change.path}>{change.path}</span>
+                )}
+                {onRevealFile && change.change !== "deleted" && (
+                  <button
+                    type="button"
+                    aria-label={`在文件夹中显示 ${change.path}`}
+                    title="在文件夹中显示"
+                    onClick={() => onRevealFile(change)}
+                    className="grid h-7 w-7 shrink-0 place-items-center rounded-[6px] text-[var(--leemo-ink-3)] transition-colors hover:bg-[var(--leemo-side-hover)] hover:text-[var(--leemo-ink-2)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--leemo-amber-line)]"
+                  >
+                    <FolderOpen className="h-3.5 w-3.5" aria-hidden />
+                  </button>
+                )}
+              </li>
+            ))}
+          </ul>
+          {hiddenDeliveryCount > 0 && (
+            <div className="flex h-9 items-center justify-between border-t border-[var(--leemo-line-2)] px-3 text-[11.5px] text-[var(--leemo-ink-3)]">
+              <span>另有 {hiddenDeliveryCount} 个文件</span>
+              <span>可在成果页查看</span>
+            </div>
+          )}
+        </section>
       )}
       {memory && fullMemoryLabel && (
         <span
@@ -226,17 +326,46 @@ export default function MessageFooter({
           <span>声称写到当前本子外：{escaped.map((c) => c.path).join("、")}</span>
         </span>
       )}
-      {usage && usageOpen && (
-        <div className="basis-full rounded-[6px] border border-[var(--leemo-line-2)] bg-[var(--leemo-panel)]/60 px-2.5 py-2 text-[10.5px] leading-5">
+      {usage && (
+        <AnchoredLayer
+          open={usageVisible}
+          anchor={usageAnchorRef}
+          preferred="top-start"
+          ariaLabel="用量详情"
+          onDismiss={() => {
+            setUsageOpen(false);
+            setUsageHovered(false);
+          }}
+          className="w-max max-w-[min(520px,calc(100vw-16px))] rounded-[8px] border border-[var(--leemo-line-2)] bg-[var(--leemo-card)] px-3 py-2 text-[10.5px] leading-5 text-[var(--leemo-ink-3)] shadow-[0_14px_34px_-18px_rgba(15,23,42,0.38)]"
+        >
+        <div onMouseEnter={cancelUsageClose} onMouseLeave={scheduleUsageClose}>
           <div className="flex flex-wrap gap-x-3 gap-y-0.5 font-mono tabular-nums">
             <span>{usage.usage.providerId} / {usage.usage.modelId}</span>
+            {singleModelUsage?.servingProvider && <span>{singleModelUsage.servingProvider}</span>}
             <span>输入 {fmt(usage.usage.inputTokens)}</span>
             <span>输出 {fmt(usage.usage.outputTokens)}</span>
             <span>缓存 {fmt(cacheTokens)}</span>
             <span>{usage.usage.costUsd === undefined ? "未估价" : `US$${usage.usage.costUsd}`}</span>
             {usage.usage.tokensEstimated && <span>Token 为估算</span>}
           </div>
+          {modelBreakdown.length > 1 && (
+            <div className="mt-1.5 border-t border-[var(--leemo-line-2)] pt-1.5">
+              {modelBreakdown.map((model) => (
+                <div
+                  key={`${model.providerId}:${model.modelId}:${model.servingProvider ?? ""}`}
+                  className="flex flex-wrap gap-x-2 font-mono tabular-nums"
+                >
+                  <span>{model.modelId}</span>
+                  {model.servingProvider && <span>{model.servingProvider}</span>}
+                  <span>输入 {fmt(model.inputTokens)}</span>
+                  <span>输出 {fmt(model.outputTokens)}</span>
+                  <span>US${model.costUsd}</span>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
+        </AnchoredLayer>
       )}
     </div>
   );

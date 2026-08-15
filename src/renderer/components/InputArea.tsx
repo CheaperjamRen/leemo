@@ -1,28 +1,40 @@
 import { useState, useRef, useEffect } from "react";
 import {
   ArrowUp,
+  AtSign,
   Brain,
   Check,
   ChevronDown,
+  ChevronRight,
   CircleAlert,
+  CornerUpRight,
   FileText,
   LoaderCircle,
   Paperclip,
+  Pause,
+  Pencil,
+  Play,
+  Plus,
+  ShieldCheck,
   Square,
-  Wrench,
+  Trash2,
+  Target,
+  UsersRound,
   X,
 } from "lucide-react";
 import SlashMenu from "./SlashMenu";
 import FileMentionMenu from "./FileMentionMenu";
+import ComposerPlusMenu from "./ComposerPlusMenu";
 import {
   parseSlashQuery,
   filterSkillsByQuery,
   moveSelection,
   applySlashPick,
 } from "./slash-menu";
-import type { AttachmentRef, PermissionMode, ProviderSpec, SkillInfo } from "../../bridge/contract";
+import type { AttachmentRef, GuideResponse, PermissionMode, ProviderSpec, SkillInfo } from "../../bridge/contract";
 import type { WorkspaceFileNode } from "../workspace/client";
-import type { PendingSendDraft } from "../stores/conversations";
+import type { ConversationGoal, ConversationTurnOptions, PendingSendDraft, QueuedTurn } from "../stores/conversations";
+import type { Note } from "../../captures";
 import {
   EMPTY_COMPOSER_DRAFT,
   type ComposerAttachment,
@@ -43,7 +55,34 @@ function usedAttachmentSlots(draft: ComposerDraft): number {
     + draft.pendingStageCount;
 }
 
+interface NoteMention {
+  start: number;
+  end: number;
+  query: string;
+}
+
+function parseNoteMention(value: string, caret: number): NoteMention | null {
+  const beforeCaret = value.slice(0, caret);
+  const match = /(?:^|\s)@([^\s@]*)$/.exec(beforeCaret);
+  if (!match) return null;
+  return { start: caret - match[1].length - 1, end: caret, query: match[1] };
+}
+
+function noteLabel(note: Note): string {
+  return note.title.trim() || note.markdown.split("\n").find((line) => line.trim())?.trim() || "未命名便签";
+}
+
+function formatGoalElapsed(createdAt: number, now: number): string {
+  const totalSeconds = Math.max(0, Math.floor((now - createdAt) / 1_000));
+  const hours = Math.floor(totalSeconds / 3_600);
+  const minutes = Math.floor((totalSeconds % 3_600) / 60);
+  const seconds = totalSeconds % 60;
+  if (hours > 0) return `${hours}h ${minutes}m`;
+  return `${minutes}m ${seconds}s`;
+}
+
 export interface InputAreaProps {
+  surface?: "workbench" | "buddy";
   conversationId: string | null;
   value: string;
   onChange: (v: string) => void;
@@ -51,10 +90,29 @@ export interface InputAreaProps {
     text: string,
     attachments?: AttachmentRef[],
     workspaceFiles?: import("../../bridge/contract").WorkspaceFileRef[],
+    options?: ConversationTurnOptions,
   ) => void | Promise<void>;
+  onQueue?: (
+    text: string,
+    attachments?: AttachmentRef[],
+    workspaceFiles?: import("../../bridge/contract").WorkspaceFileRef[],
+    options?: ConversationTurnOptions,
+  ) => void | Promise<void>;
+  onGuide?: (text: string) => Promise<GuideResponse>;
+  queuedTurns?: QueuedTurn[];
+  onEditQueuedTurn?: (queuedTurnId: string) => void;
+  onDeleteQueuedTurn?: (queuedTurnId: string) => void;
+  onGuideQueuedTurn?: (queuedTurnId: string) => Promise<GuideResponse>;
+  goal?: ConversationGoal;
+  onSaveGoal?: (text: string) => void | Promise<void>;
+  onToggleGoalPaused?: () => void | Promise<void>;
+  onDeleteGoal?: () => void | Promise<void>;
   /** Memory-only copy retained after the host accepted a turn but the run later
    * failed. The shell owns the store actions; InputArea only renders them. */
   retryDraft?: PendingSendDraft | null;
+  /** The active timeline already owns recovery for this exact failed run.
+   * Keep the retry draft alive, but do not repeat its recovery UI above the composer. */
+  retryRecoveryRendered?: boolean;
   onRetry?: () => void | Promise<void>;
   onDismissRetry?: () => void;
   busy?: boolean;
@@ -67,6 +125,8 @@ export interface InputAreaProps {
    * relative; host resolves them only when this conversation sends. */
   workspaceFiles?: WorkspaceFileNode[];
   workspaceId?: string;
+  /** Global notes already loaded by the shell's capture store. */
+  notes?: Note[];
   /** Provider catalog (轮 3 卡 F). Same props-not-store discipline as `skills`.
    *  The picker filters to `configured === true` itself, so a caller may pass the
    *  whole list without leaking unconfigured families into the menu. */
@@ -83,6 +143,8 @@ export interface InputAreaProps {
   onOpenSettings?: () => void;
   /** Permission status is independently actionable from the model picker. */
   onOpenPermissionSettings?: () => void;
+  /** Switch the live permission policy without leaving the conversation. */
+  onSelectPermissionMode?: (mode: PermissionMode) => void;
   /** Full access is deliberately easy to leave from either shell. */
   onDisableFullAccess?: () => void;
   /** Electron-only capability backed by webUtils.getPathForFile. Without it the
@@ -104,11 +166,23 @@ export interface InputAreaProps {
 }
 
 export default function InputArea({
+  surface = "workbench",
   conversationId,
   value,
   onChange,
   onSend,
+  onQueue,
+  onGuide,
+  queuedTurns = [],
+  onEditQueuedTurn,
+  onDeleteQueuedTurn,
+  onGuideQueuedTurn,
+  goal,
+  onSaveGoal,
+  onToggleGoalPaused,
+  onDeleteGoal,
   retryDraft = null,
+  retryRecoveryRendered = false,
   onRetry,
   onDismissRetry,
   busy = false,
@@ -116,6 +190,7 @@ export default function InputArea({
   skills = [],
   workspaceFiles = [],
   workspaceId,
+  notes = [],
   providers = [],
   currentProviderId = null,
   currentModelId = null,
@@ -123,6 +198,7 @@ export default function InputArea({
   onSelectModel,
   onOpenSettings,
   onOpenPermissionSettings,
+  onSelectPermissionMode,
   onDisableFullAccess,
   resolveFilePath,
   stageClipboardImage,
@@ -135,13 +211,29 @@ export default function InputArea({
   const [draftsByConversation, setDraftsByConversation] = useState<Record<string, ComposerDraft>>({});
   const [fileDragActive, setFileDragActive] = useState(false);
   const [modelPickerOpen, setModelPickerOpen] = useState(false);
+  const [permissionMenuOpen, setPermissionMenuOpen] = useState(false);
+  const [plusMenuOpen, setPlusMenuOpen] = useState(false);
+  const [referencePickerOpen, setReferencePickerOpen] = useState(false);
+  const [slashEmptyOpen, setSlashEmptyOpen] = useState(false);
   const [slashIndex, setSlashIndex] = useState(0);
   const [mentionIndex, setMentionIndex] = useState(0);
+  const [noteMentionIndex, setNoteMentionIndex] = useState(0);
+  const [noteReferenceIds, setNoteReferenceIds] = useState<string[]>([]);
+  const [queuedListExpanded, setQueuedListExpanded] = useState(false);
+  const [guidancePending, setGuidancePending] = useState(false);
+  const [guidanceNotice, setGuidanceNotice] = useState<string | null>(null);
+  const [goalEditorOpen, setGoalEditorOpen] = useState(false);
+  const [goalDraftText, setGoalDraftText] = useState("");
+  const [goalExpanded, setGoalExpanded] = useState(false);
+  const [goalSaving, setGoalSaving] = useState(false);
+  const [goalError, setGoalError] = useState<string | null>(null);
+  const [goalClock, setGoalClock] = useState(() => Date.now());
   const [caretPosition, setCaretPosition] = useState(value.length);
   /** The query Escape dismissed. Keyed by query text, not a boolean, so Escape
    *  hides THIS list while typing another character brings the menu back. */
   const [slashDismissed, setSlashDismissed] = useState<string | null>(null);
   const [mentionDismissed, setMentionDismissed] = useState<string | null>(null);
+  const [noteMentionDismissed, setNoteMentionDismissed] = useState<string | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const valueRef = useRef(value);
@@ -152,6 +244,38 @@ export default function InputArea({
   const { attachments, submitPending, retryPending, submitError } = composerDraft;
   const referencedWorkspaceFiles = composerDraft.workspaceFiles ?? [];
   const attachmentPending = composerDraft.pendingStageCount > 0;
+  const helpersEnabled = composerDraft.allowSubagents !== false;
+  const planModeActive = composerDraft.planMode === true;
+
+  useEffect(() => {
+    if (!goal) return undefined;
+    setGoalClock(Date.now());
+    const timer = window.setInterval(() => setGoalClock(Date.now()), 1_000);
+    return () => window.clearInterval(timer);
+  }, [goal?.createdAt]);
+
+  const openGoalEditor = () => {
+    setPlusMenuOpen(false);
+    setGoalDraftText(goal?.text ?? "");
+    setGoalError(null);
+    setGoalEditorOpen(true);
+  };
+
+  const saveGoal = async () => {
+    const clean = goalDraftText.trim();
+    if (!clean || !onSaveGoal || goalSaving) return;
+    setGoalSaving(true);
+    setGoalError(null);
+    try {
+      await onSaveGoal(clean);
+      setGoalEditorOpen(false);
+      setGoalExpanded(false);
+    } catch (error) {
+      setGoalError(error instanceof Error ? error.message : "目标没有保存，请重试。");
+    } finally {
+      setGoalSaving(false);
+    }
+  };
   const updateComposerDraft = (
     targetKey: string,
     update: (current: ComposerDraft) => ComposerDraft,
@@ -201,24 +325,109 @@ export default function InputArea({
     slashQuery !== null && slashMatches.length > 0 && slashDismissed !== slashQuery;
   const fileMention = parseFileMention(value, caretPosition);
   const mentionMatches = fileMention ? filterWorkspaceFiles(workspaceFiles, fileMention.query) : [];
+  const referencePickerWorkspaceFiles = workspaceId
+    ? filterWorkspaceFiles(workspaceFiles, "", 12)
+    : [];
   const mentionKey = fileMention ? `${fileMention.start}:${fileMention.end}:${fileMention.query}` : null;
+  const noteMention = parseNoteMention(value, caretPosition);
+  const noteMentionMatches = noteMention
+    ? notes.filter((note) => `${note.title}\n${note.markdown}`.toLocaleLowerCase().includes(noteMention.query.toLocaleLowerCase()))
+    : [];
+  const noteMentionKey = noteMention ? `${noteMention.start}:${noteMention.end}:${noteMention.query}` : null;
+  const noteMentionOpen = noteMention !== null
+    && !referencePickerOpen
+    && noteMentionMatches.length > 0
+    && noteMentionDismissed !== noteMentionKey;
   const mentionOpen = Boolean(workspaceId)
+    && !referencePickerOpen
+    && !noteMentionOpen
     && fileMention !== null
     && mentionMatches.length > 0
     && mentionDismissed !== mentionKey;
-  const permissionLabel: Record<PermissionMode, string> = {
+  const approvalPermissionMode: Exclude<PermissionMode, "plan"> = permissionMode === "plan"
+    ? "acceptEdits"
+    : permissionMode;
+  const permissionLabel: Record<Exclude<PermissionMode, "plan">, string> = {
     default: "每次确认",
-    acceptEdits: "任务中少打扰",
-    plan: "只规划",
+    acceptEdits: "风险确认",
     bypassPermissions: "完全访问",
   };
-  const canDisableFullAccess = permissionMode === "bypassPermissions" && onDisableFullAccess !== undefined;
+  const permissionOptions: Array<{ mode: Exclude<PermissionMode, "plan">; detail: string }> = [
+    { mode: "default", detail: "写入、联网或执行前都先问你" },
+    { mode: "acceptEdits", detail: "常规改动直接做，风险操作再询问" },
+    { mode: "bypassPermissions", detail: "不再请求权限；仅在信任当前任务时使用" },
+  ];
+  const dismissInlinePickers = () => {
+    setSlashEmptyOpen(false);
+    setReferencePickerOpen(false);
+    if (slashQuery !== null) setSlashDismissed(slashQuery);
+    if (mentionKey !== null) setMentionDismissed(mentionKey);
+    if (noteMentionKey !== null) setNoteMentionDismissed(noteMentionKey);
+  };
+  useEffect(() => {
+    const popoverOpen = plusMenuOpen
+      || modelPickerOpen
+      || permissionMenuOpen
+      || referencePickerOpen
+      || slashEmptyOpen
+      || slashOpen
+      || mentionOpen
+      || noteMentionOpen;
+    if (!popoverOpen) return undefined;
+
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      event.stopPropagation();
+      setPlusMenuOpen(false);
+      setModelPickerOpen(false);
+      setPermissionMenuOpen(false);
+      setSlashEmptyOpen(false);
+      setReferencePickerOpen(false);
+      if (slashQuery !== null) setSlashDismissed(slashQuery);
+      if (mentionKey !== null) setMentionDismissed(mentionKey);
+      if (noteMentionKey !== null) setNoteMentionDismissed(noteMentionKey);
+      window.requestAnimationFrame(() => textareaRef.current?.focus());
+    };
+
+    document.addEventListener("keydown", closeOnEscape);
+    return () => document.removeEventListener("keydown", closeOnEscape);
+  }, [
+    mentionKey,
+    mentionOpen,
+    modelPickerOpen,
+    noteMentionKey,
+    noteMentionOpen,
+    permissionMenuOpen,
+    plusMenuOpen,
+    referencePickerOpen,
+    slashEmptyOpen,
+    slashOpen,
+    slashQuery,
+  ]);
+  const togglePermissionMenu = () => {
+    setModelPickerOpen(false);
+    setPlusMenuOpen(false);
+    dismissInlinePickers();
+    setPermissionMenuOpen((open) => !open);
+  };
+  const selectPermissionMode = (mode: Exclude<PermissionMode, "plan">) => {
+    setPermissionMenuOpen(false);
+    if (onSelectPermissionMode) {
+      onSelectPermissionMode(mode);
+      return;
+    }
+    if (mode === "acceptEdits" && permissionMode === "bypassPermissions") {
+      onDisableFullAccess?.();
+      return;
+    }
+    onOpenPermissionSettings?.();
+  };
 
   const submit = async () => {
     const t = value.trim();
     if (
-      (!t && attachments.length === 0 && referencedWorkspaceFiles.length === 0)
-      || busy
+      (!t && attachments.length === 0 && referencedWorkspaceFiles.length === 0 && noteReferenceIds.length === 0)
       || submitPending
       || submitInFlightRef.current
       || attachmentPending
@@ -227,6 +436,7 @@ export default function InputArea({
     const submittedText = value;
     const submittedAttachmentIds = new Set(attachments.map((attachment) => attachment.id));
     const submittedWorkspaceFileIds = new Set(referencedWorkspaceFiles.map((file) => file.id));
+    const submittedNoteReferenceIds = new Set(noteReferenceIds);
     submitInFlightRef.current = true;
     patchComposerDraft(targetKey, { submitPending: true, submitError: null });
     try {
@@ -240,8 +450,26 @@ export default function InputArea({
             workspacePath,
           }))
         : undefined;
-      if (outgoingWorkspaceFiles) await onSend(t, outgoingAttachments, outgoingWorkspaceFiles);
-      else await onSend(t, outgoingAttachments);
+      const turnOptions: ConversationTurnOptions | undefined = (!helpersEnabled
+        || noteReferenceIds.length > 0
+        || composerDraft.planMode !== undefined)
+        ? {
+        ...(composerDraft.planMode !== undefined
+          ? { permissionMode: planModeActive ? "plan" : approvalPermissionMode }
+          : {}),
+        ...(!helpersEnabled ? { allowSubagents: false } : {}),
+        ...(noteReferenceIds.length > 0 ? { noteReferences: [...noteReferenceIds] } : {}),
+          }
+        : undefined;
+      const dispatch = busy ? onQueue : onSend;
+      if (!dispatch) throw new Error("当前任务仍在进行，暂时无法排队这条消息。");
+      if (outgoingWorkspaceFiles && turnOptions) {
+        await dispatch(t, outgoingAttachments, outgoingWorkspaceFiles, turnOptions);
+      } else if (outgoingWorkspaceFiles) {
+        await dispatch(t, outgoingAttachments, outgoingWorkspaceFiles);
+      } else if (turnOptions) await dispatch(t, outgoingAttachments, undefined, turnOptions);
+      else await dispatch(t, outgoingAttachments);
+      setNoteReferenceIds((current) => current.filter((id) => !submittedNoteReferenceIds.has(id)));
       updateComposerDraft(targetKey, (current) => {
         const text = current.text === submittedText ? "" : current.text;
         const remainingAttachments = current.attachments.filter(
@@ -259,6 +487,8 @@ export default function InputArea({
           text,
           attachments: remainingAttachments,
           workspaceFiles: remainingWorkspaceFiles,
+          allowSubagents: undefined,
+          planMode: current.planMode === false ? undefined : current.planMode,
           assignedConversationId: hasRemainingDraft ? current.assignedConversationId : null,
         };
       });
@@ -335,7 +565,134 @@ export default function InputArea({
     });
   };
 
+  const pickNoteReference = (note: Note) => {
+    if (submitPending || !noteMention) return;
+    const label = noteLabel(note);
+    const nextValue = `${value.slice(0, noteMention.start)}@${label} ${value.slice(noteMention.end)}`;
+    setNoteReferenceIds((current) => current.includes(note.id) ? current : [...current, note.id]);
+    onChange(nextValue);
+    setNoteMentionDismissed(noteMentionKey);
+    setNoteMentionIndex(0);
+    const caret = noteMention.start + label.length + 2;
+    setCaretPosition(caret);
+    requestAnimationFrame(() => {
+      textareaRef.current?.focus();
+      textareaRef.current?.setSelectionRange(caret, caret);
+    });
+  };
+
+  const insertReferenceLabel = (label: string): { value: string; caret: number } => {
+    const caret = textareaRef.current?.selectionStart ?? value.length;
+    const prefix = value.slice(0, caret);
+    const needsLeadingSpace = prefix.length > 0 && !/\s$/.test(prefix);
+    const inserted = `${needsLeadingSpace ? " " : ""}@${label} `;
+    return {
+      value: `${prefix}${inserted}${value.slice(caret)}`,
+      caret: caret + inserted.length,
+    };
+  };
+
+  const finishReferencePickerPick = (nextValue: string, caret: number) => {
+    const pickedFileMention = parseFileMention(nextValue, caret);
+    if (pickedFileMention) {
+      setMentionDismissed(`${pickedFileMention.start}:${pickedFileMention.end}:${pickedFileMention.query}`);
+    }
+    onChange(nextValue);
+    setReferencePickerOpen(false);
+    setCaretPosition(caret);
+    requestAnimationFrame(() => {
+      textareaRef.current?.focus();
+      textareaRef.current?.setSelectionRange(caret, caret);
+    });
+  };
+
+  const pickNoteFromReferencePicker = (note: Note) => {
+    if (submitPending) return;
+    const picked = insertReferenceLabel(noteLabel(note));
+    setNoteReferenceIds((current) => current.includes(note.id) ? current : [...current, note.id]);
+    finishReferencePickerPick(picked.value, picked.caret);
+  };
+
+  const pickWorkspaceFileFromReferencePicker = (file: WorkspaceFileNode) => {
+    if (submitPending || !workspaceId) return;
+    const picked = insertReferenceLabel(file.name);
+    updateComposerDraft(conversationKey, (current) => {
+      const existing = current.workspaceFiles ?? [];
+      const duplicate = existing.some((entry) => entry.workspacePath === file.path);
+      const atLimit = usedAttachmentSlots(current) >= 20;
+      return {
+        ...current,
+        text: picked.value,
+        workspaceFiles: duplicate || atLimit
+          ? existing
+          : [...existing, {
+              id: `${Date.now()}-${Math.random()}`,
+              name: file.name,
+              workspaceId,
+              workspacePath: file.path,
+            }],
+        submitError: atLimit && !duplicate ? "一次最多添加 20 个附件。" : null,
+      };
+    });
+    finishReferencePickerPick(picked.value, picked.caret);
+  };
+
+  const removeNoteReference = (id: string) => {
+    if (!submitPending) setNoteReferenceIds((current) => current.filter((entry) => entry !== id));
+  };
+
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (referencePickerOpen && e.key === "Escape") {
+      e.preventDefault();
+      setReferencePickerOpen(false);
+      return;
+    }
+    if (e.key === "Enter" && e.ctrlKey && !composing && busy) {
+      e.preventDefault();
+      if (attachments.length > 0 || referencedWorkspaceFiles.length > 0 || noteReferenceIds.length > 0) {
+        setGuidanceNotice("引导只支持纯文字；附件、文件或便签可按 Enter 排到下一轮");
+        return;
+      }
+      const prompt = value.trim();
+      if (!prompt || !onGuide || guidancePending) return;
+      const targetKey = conversationKey;
+      setGuidancePending(true);
+      setGuidanceNotice(null);
+      patchComposerDraft(targetKey, { submitError: null });
+      void onGuide(prompt).then((result) => {
+        if (valueRef.current.trim() === prompt) onChange("");
+        setGuidanceNotice(result.delivery === "applied"
+          ? "已加入当前任务"
+          : "已排队，将在下一轮送达");
+      }).catch((error: unknown) => {
+        patchComposerDraft(targetKey, {
+          submitError: error instanceof Error ? error.message : String(error),
+        });
+      }).finally(() => setGuidancePending(false));
+      return;
+    }
+    if (noteMentionOpen) {
+      if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+        e.preventDefault();
+        setNoteMentionIndex((index) => moveSelection(
+          index,
+          e.key === "ArrowDown" ? 1 : -1,
+          noteMentionMatches.length,
+        ));
+        return;
+      }
+      if (e.key === "Enter" && !e.shiftKey && !composing) {
+        e.preventDefault();
+        const picked = noteMentionMatches[noteMentionIndex] ?? noteMentionMatches[0];
+        if (picked) pickNoteReference(picked);
+        return;
+      }
+      if (e.key === "Escape") {
+        e.preventDefault();
+        setNoteMentionDismissed(noteMentionKey);
+        return;
+      }
+    }
     if (mentionOpen) {
       if (e.key === "ArrowDown" || e.key === "ArrowUp") {
         e.preventDefault();
@@ -358,6 +715,11 @@ export default function InputArea({
         return;
       }
     }
+    if (slashEmptyOpen && e.key === "Escape") {
+      e.preventDefault();
+      setSlashEmptyOpen(false);
+      return;
+    }
     // The open menu owns ↑↓/Enter/Escape; without this Enter would send a bare
     // "/pd" instead of completing the command the user is clearly typing.
     if (slashOpen) {
@@ -378,9 +740,57 @@ export default function InputArea({
         return;
       }
     }
-    if (e.key === "Enter" && !e.shiftKey && !composing && !busy) {
+    if (e.key === "Enter" && !e.shiftKey && !composing) {
       e.preventDefault();
       void submit();
+    }
+  };
+
+  const editQueuedTurn = (queuedTurn: QueuedTurn) => {
+    const targetKey = conversationKey;
+    const restoredText = value.trim()
+      ? `${queuedTurn.text.trimEnd()}\n\n${value}`
+      : queuedTurn.text;
+    const restoredAttachments: ComposerAttachment[] = queuedTurn.attachments.map((attachment, index) => ({
+      ...attachment,
+      id: `${queuedTurn.id}-attachment-${index}`,
+    }));
+    const restoredWorkspaceFiles = queuedTurn.workspaceFiles.map((file, index) => ({
+      ...file,
+      id: `${queuedTurn.id}-workspace-${index}`,
+    }));
+    updateComposerDraft(targetKey, (current) => ({
+      ...current,
+      text: restoredText,
+      attachments: [...restoredAttachments, ...current.attachments],
+      workspaceFiles: [...restoredWorkspaceFiles, ...(current.workspaceFiles ?? [])],
+      allowSubagents: queuedTurn.allowSubagents,
+      submitError: null,
+    }));
+    if (draftState === undefined || !onDraftStateChange) onChange(restoredText);
+    if (queuedTurn.noteReferences?.length) {
+      setNoteReferenceIds((current) => [...new Set([...queuedTurn.noteReferences!, ...current])]);
+    }
+    onEditQueuedTurn?.(queuedTurn.id);
+    requestAnimationFrame(() => textareaRef.current?.focus());
+  };
+
+  const guideQueuedTurn = async (queuedTurn: QueuedTurn) => {
+    if (!onGuideQueuedTurn || guidancePending) return;
+    setGuidancePending(true);
+    setGuidanceNotice(null);
+    patchComposerDraft(conversationKey, { submitError: null });
+    try {
+      const result = await onGuideQueuedTurn(queuedTurn.id);
+      setGuidanceNotice(result.delivery === "applied"
+        ? "已加入当前任务"
+        : "已排队，将在下一轮送达");
+    } catch (error) {
+      patchComposerDraft(conversationKey, {
+        submitError: error instanceof Error ? error.message : String(error),
+      });
+    } finally {
+      setGuidancePending(false);
     }
   };
 
@@ -548,14 +958,37 @@ export default function InputArea({
   const handleSkillClick = () => {
     if (submitPending) return;
     setModelPickerOpen(false);
+    setPermissionMenuOpen(false);
+    setPlusMenuOpen(false);
+    dismissInlinePickers();
     setSlashDismissed(null);
     setSlashIndex(0);
+    if (skills.length === 0) {
+      setSlashEmptyOpen((open) => !open);
+      textareaRef.current?.focus();
+      return;
+    }
+    setSlashEmptyOpen(false);
     if (parseSlashQuery(value) === null) onChange("/");
     textareaRef.current?.focus();
   };
 
   const handleAttachmentClick = () => {
+    setPlusMenuOpen(false);
     if (resolveFilePath && !submitPending) fileInputRef.current?.click();
+  };
+
+  const handleReferenceClick = () => {
+    if (submitPending) return;
+    setModelPickerOpen(false);
+    setPermissionMenuOpen(false);
+    setPlusMenuOpen(false);
+    setSlashEmptyOpen(false);
+    if (slashQuery !== null) setSlashDismissed(slashQuery);
+    setMentionDismissed(null);
+    setNoteMentionDismissed(null);
+    setReferencePickerOpen((open) => !open);
+    textareaRef.current?.focus();
   };
 
   useEffect(() => {
@@ -574,13 +1007,17 @@ export default function InputArea({
 
   return (
     <div
-      className="bg-transparent px-8 pb-3 pt-2.5 max-[900px]:px-4"
+      data-testid="shared-composer"
+      data-surface={surface}
+      className={surface === "buddy"
+        ? "leemo-shared-composer bg-transparent px-4 pb-4 pt-2 max-[900px]:px-3"
+        : "leemo-shared-composer bg-transparent px-4 pb-4 pt-2.5 max-[900px]:px-3"}
       onDragEnter={handleFileDrag}
       onDragOver={handleFileDrag}
       onDragLeave={handleFileDragLeave}
       onDrop={handleFileDrop}
     >
-      {retryDraft?.errorMessage && (
+      {retryDraft?.errorMessage && !retryRecoveryRendered && (
         <div
           role="alert"
           className="mb-2 rounded-[8px] border border-[var(--leemo-danger-line)] bg-[var(--leemo-danger-soft)] px-3 py-2 text-xs text-[var(--leemo-ink-2)]"
@@ -635,7 +1072,82 @@ export default function InputArea({
         </div>
       )}
 
-      {(attachments.length > 0 || referencedWorkspaceFiles.length > 0 || attachmentPending) && (
+      {queuedTurns[0] && (
+        <div
+          data-testid="queued-turn-list"
+          className={`mb-2 space-y-1 ${queuedListExpanded ? "max-h-36 overflow-y-auto pr-0.5" : ""}`}
+        >
+          {queuedTurns
+            .slice(0, queuedListExpanded ? queuedTurns.length : 1)
+            .map((queuedTurn, index) => {
+              const fileCount = queuedTurn.attachments.length
+                + queuedTurn.workspaceFiles.length
+                + (queuedTurn.noteReferences?.length ?? 0);
+              const preview = Array.from(queuedTurn.text.trim() || "附件消息").slice(0, 24).join("");
+              const canGuide = fileCount === 0 && queuedTurn.text.trim().length > 0;
+              const guideTitle = canGuide
+                ? "转为引导"
+                : "含附件、文件或便签，不能转为引导";
+              return (
+                <div
+                  key={queuedTurn.id}
+                  data-testid={index === 0 ? "queued-turn-row" : "queued-turn-extra-row"}
+                  className="flex h-8 min-w-0 items-center gap-2 rounded-[8px] border border-[var(--leemo-line)] bg-[var(--leemo-card)] px-2.5 text-xs text-[var(--leemo-ink-2)]"
+                >
+                  <span className="shrink-0 text-[var(--leemo-amber-strong)]">已排队</span>
+                  <span className="min-w-0 flex-1 truncate" title={queuedTurn.text}>{preview}</span>
+                  {fileCount > 0 && <span className="shrink-0 text-[var(--leemo-ink-3)]">{fileCount} 个文件</span>}
+                  {index === 0 && queuedTurns.length > 1 && (
+                    <button
+                      type="button"
+                      aria-label={queuedListExpanded ? "收起排队消息" : `另有 ${queuedTurns.length - 1} 条`}
+                      aria-expanded={queuedListExpanded}
+                      className="shrink-0 rounded px-1 py-0.5 text-[var(--leemo-ink-3)] hover:bg-[var(--leemo-hover)] hover:text-[var(--leemo-ink)]"
+                      onClick={() => setQueuedListExpanded((expanded) => !expanded)}
+                    >
+                      {queuedListExpanded ? "收起" : `另有 ${queuedTurns.length - 1} 条`}
+                    </button>
+                  )}
+                  {queuedTurn.errorMessage && (
+                    <span className="max-w-[180px] shrink truncate text-[var(--leemo-danger)]" title={queuedTurn.errorMessage}>
+                      发送失败：{queuedTurn.errorMessage}
+                    </span>
+                  )}
+                  <button
+                    type="button"
+                    aria-label="编辑排队消息"
+                    title="编辑"
+                    className="rounded p-1 text-[var(--leemo-ink-3)] hover:bg-[var(--leemo-hover)] hover:text-[var(--leemo-ink)]"
+                    onClick={() => editQueuedTurn(queuedTurn)}
+                  >
+                    <Pencil className="h-3.5 w-3.5" aria-hidden />
+                  </button>
+                  <button
+                    type="button"
+                    aria-label="删除排队消息"
+                    title="删除"
+                    className="rounded p-1 text-[var(--leemo-ink-3)] hover:bg-[var(--leemo-hover)] hover:text-[var(--leemo-danger)]"
+                    onClick={() => onDeleteQueuedTurn?.(queuedTurn.id)}
+                  >
+                    <Trash2 className="h-3.5 w-3.5" aria-hidden />
+                  </button>
+                  <button
+                    type="button"
+                    aria-label="转为引导"
+                    title={guideTitle}
+                    disabled={!canGuide || !onGuideQueuedTurn || guidancePending}
+                    className="rounded p-1 text-[var(--leemo-ink-3)] hover:bg-[var(--leemo-hover)] hover:text-[var(--leemo-ink)] disabled:cursor-not-allowed disabled:opacity-35"
+                    onClick={() => void guideQueuedTurn(queuedTurn)}
+                  >
+                    <CornerUpRight className="h-3.5 w-3.5" aria-hidden />
+                  </button>
+                </div>
+              );
+            })}
+        </div>
+      )}
+
+      {(attachments.length > 0 || referencedWorkspaceFiles.length > 0 || noteReferenceIds.length > 0 || attachmentPending) && (
         <div className="mb-2 flex flex-wrap gap-2">
           {attachments.map((att) => (
             <div
@@ -675,6 +1187,30 @@ export default function InputArea({
               </button>
             </div>
           ))}
+          {noteReferenceIds.map((id) => {
+            const note = notes.find((candidate) => candidate.id === id);
+            if (!note) return null;
+            const label = noteLabel(note);
+            return (
+              <div
+                key={id}
+                className="flex items-center gap-2 rounded-lg border border-[var(--leemo-line)] bg-[var(--leemo-card)] px-3 py-1.5 text-sm"
+              >
+                <FileText className="h-4 w-4 text-[var(--leemo-amber-strong)]" aria-hidden />
+                <span className="max-w-[220px] truncate text-[var(--leemo-ink-2)]">{label}</span>
+                <span className="text-[10.5px] text-[var(--leemo-ink-4)]">便签</span>
+                <button
+                  type="button"
+                  onClick={() => removeNoteReference(id)}
+                  disabled={submitPending}
+                  className="ml-1 text-[var(--leemo-ink-3)] hover:text-[var(--leemo-ink)]"
+                  aria-label={`移除便签引用 ${label}`}
+                >
+                  <X className="h-3.5 w-3.5" aria-hidden />
+                </button>
+              </div>
+            );
+          })}
           {attachmentPending && (
             <div
               role="status"
@@ -697,8 +1233,79 @@ export default function InputArea({
         </div>
       )}
 
+      {goalEditorOpen && (
+        <div className="leemo-goal-editor mb-2 rounded-[10px] border border-[var(--leemo-line)] bg-[var(--leemo-card)] px-3 py-2 shadow-[var(--leemo-shadow-input)]">
+          <div className="flex items-center gap-2">
+            <Target className="h-3.5 w-3.5 shrink-0 text-[var(--leemo-amber-strong)]" aria-hidden />
+            <input
+              autoFocus
+              aria-label="目标内容"
+              value={goalDraftText}
+              onChange={(event) => setGoalDraftText(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" && !event.shiftKey) {
+                  event.preventDefault();
+                  void saveGoal();
+                }
+                if (event.key === "Escape") setGoalEditorOpen(false);
+              }}
+              placeholder="这段时间希望持续完成什么？"
+              className="leemo-goal-editor__input min-w-0 flex-1 bg-transparent text-[12.5px] text-[var(--leemo-ink)] outline-none placeholder:text-[var(--leemo-ink-3)]"
+            />
+            <button
+              type="button"
+              aria-label="取消编辑目标"
+              onClick={() => setGoalEditorOpen(false)}
+              className="rounded-md px-2 py-1 text-[11px] text-[var(--leemo-ink-3)] hover:bg-[var(--leemo-hover)]"
+            >
+              取消
+            </button>
+            <button
+              type="button"
+              aria-label="保存目标"
+              disabled={!goalDraftText.trim() || !onSaveGoal || goalSaving}
+              onClick={() => void saveGoal()}
+              className="rounded-md bg-[var(--leemo-amber)] px-2.5 py-1 text-[11px] font-medium text-white hover:bg-[var(--leemo-amber-strong)] disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              保存
+            </button>
+          </div>
+          {goalError && <p role="alert" className="mt-1.5 pl-5 text-[11px] text-[var(--leemo-danger)]">{goalError}</p>}
+        </div>
+      )}
+
+      {goal && !goalEditorOpen && (
+        <div
+          data-testid="conversation-goal-card"
+          className="leemo-goal-card mb-2 rounded-[10px] border border-[var(--leemo-line)] bg-[var(--leemo-card)] px-2.5 shadow-[var(--leemo-shadow-input)]"
+        >
+          <div className="flex h-9 min-w-0 items-center gap-2 text-xs text-[var(--leemo-ink-2)]">
+            <Target className={`h-3.5 w-3.5 shrink-0 ${goal.status === "active" ? "text-[var(--leemo-amber-strong)]" : "text-[var(--leemo-ink-3)]"}`} aria-hidden />
+            <span className="leemo-goal-status-label shrink-0 font-medium text-[var(--leemo-ink)]">
+              {goal.status === "active" ? "进行中的目标" : "已暂停的目标"}
+            </span>
+            <span className="min-w-0 flex-1 truncate text-[var(--leemo-ink-3)]" title={goal.text}>{goal.text}</span>
+            <span className="leemo-goal-elapsed shrink-0 tabular-nums text-[var(--leemo-ink-3)]">{formatGoalElapsed(goal.createdAt, goalClock)}</span>
+            <button type="button" aria-label="编辑目标" title="编辑" onClick={openGoalEditor} className="rounded p-1 text-[var(--leemo-ink-3)] hover:bg-[var(--leemo-hover)] hover:text-[var(--leemo-ink)]">
+              <Pencil className="h-3.5 w-3.5" aria-hidden />
+            </button>
+            <button type="button" aria-label={goal.status === "active" ? "暂停目标" : "继续目标"} title={goal.status === "active" ? "暂停" : "继续"} onClick={() => void onToggleGoalPaused?.()} className="rounded p-1 text-[var(--leemo-ink-3)] hover:bg-[var(--leemo-hover)] hover:text-[var(--leemo-ink)]">
+              {goal.status === "active" ? <Pause className="h-3.5 w-3.5" aria-hidden /> : <Play className="h-3.5 w-3.5" aria-hidden />}
+            </button>
+            <button type="button" aria-label="删除目标" title="删除" onClick={() => void onDeleteGoal?.()} className="rounded p-1 text-[var(--leemo-ink-3)] hover:bg-[var(--leemo-hover)] hover:text-[var(--leemo-danger)]">
+              <Trash2 className="h-3.5 w-3.5" aria-hidden />
+            </button>
+            <button type="button" aria-label={goalExpanded ? "收起完整目标" : "显示完整目标"} aria-expanded={goalExpanded} onClick={() => setGoalExpanded((expanded) => !expanded)} className="rounded p-1 text-[var(--leemo-ink-3)] hover:bg-[var(--leemo-hover)] hover:text-[var(--leemo-ink)]">
+              {goalExpanded ? <ChevronDown className="h-3.5 w-3.5" aria-hidden /> : <ChevronRight className="h-3.5 w-3.5" aria-hidden />}
+            </button>
+          </div>
+          {goalExpanded && <p className="border-t border-[var(--leemo-line)] py-2 pl-5 pr-2 text-xs leading-5 text-[var(--leemo-ink-2)]">{goal.text}</p>}
+        </div>
+      )}
+
       <div
-        className="leemo-input-shadow relative rounded-[10px] border border-[var(--leemo-line)] bg-white transition-all duration-200 focus-within:border-[var(--leemo-amber)] focus-within:ring-4 focus-within:ring-[var(--leemo-amber-soft)]/50"
+        data-testid="composer-surface"
+        className={`leemo-composer-surface leemo-input-shadow relative border border-[var(--leemo-line)] bg-[var(--leemo-card)] transition-[border-color,box-shadow] duration-150 focus-within:border-[var(--leemo-amber)] ${surface === "buddy" ? "rounded-[20px]" : "rounded-[13px]"}`}
         data-file-drop-active={fileDragActive ? "true" : "false"}
       >
         {fileDragActive && (
@@ -717,6 +1324,104 @@ export default function InputArea({
             onHover={setSlashIndex}
           />
         )}
+        {slashEmptyOpen && (
+          <div
+            role="status"
+            className="absolute bottom-[calc(100%+8px)] left-0 z-30 w-[280px] rounded-[10px] border border-[var(--leemo-line)] bg-[var(--leemo-card)] px-3.5 py-3 shadow-[var(--leemo-shadow-popover)]"
+          >
+            <p className="text-[13px] font-medium text-[var(--leemo-ink)]">还没有启用技能</p>
+            <p className="mt-1 text-[11.5px] leading-5 text-[var(--leemo-ink-3)]">请先在技能中心启用一个技能。</p>
+          </div>
+        )}
+        {referencePickerOpen && (
+          <div
+            role="listbox"
+            aria-label="引用文件或便签"
+            className="absolute bottom-[calc(100%+8px)] left-0 z-30 max-h-[min(360px,58vh)] w-[420px] max-w-full min-w-[280px] overflow-y-auto rounded-[14px] border border-[var(--leemo-line)] bg-[var(--leemo-card)] p-1.5 shadow-[var(--leemo-shadow-popover)]"
+          >
+            <div className="px-2.5 pb-1.5 pt-1 text-[11.5px] font-medium tracking-[0.02em] text-[var(--leemo-ink-3)]">
+              引用到本轮
+            </div>
+            {notes.length > 0 && (
+              <div className="pb-1">
+                <div className="px-2.5 py-1 text-[11px] text-[var(--leemo-ink-3)]">便签</div>
+                {notes.slice(0, 8).map((note) => (
+                  <button
+                    key={note.id}
+                    type="button"
+                    role="option"
+                    aria-selected={noteReferenceIds.includes(note.id)}
+                    aria-label={`便签 ${noteLabel(note)}`}
+                    onClick={() => pickNoteFromReferencePicker(note)}
+                    className="flex w-full items-center gap-2.5 rounded-[9px] px-2.5 py-2 text-left transition-colors hover:bg-[var(--leemo-hover)] focus-visible:bg-[var(--leemo-hover)] focus-visible:outline-none"
+                  >
+                    <span className="grid h-7 w-7 shrink-0 place-items-center rounded-[8px] bg-[var(--leemo-amber-soft)] text-[var(--leemo-amber-strong)]">
+                      <FileText className="h-3.5 w-3.5" aria-hidden />
+                    </span>
+                    <span className="min-w-0">
+                      <span className="block truncate text-[13px] font-medium text-[var(--leemo-ink)]">{noteLabel(note)}</span>
+                      {note.markdown.trim() && (
+                        <span className="mt-0.5 block truncate text-[11.5px] text-[var(--leemo-ink-3)]">{note.markdown}</span>
+                      )}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
+            {referencePickerWorkspaceFiles.length > 0 && (
+              <div className={notes.length > 0 ? "border-t border-[var(--leemo-line)] pt-1" : ""}>
+                <div className="px-2.5 py-1 text-[11px] text-[var(--leemo-ink-3)]">当前本子文件</div>
+                {referencePickerWorkspaceFiles.map((file) => (
+                  <button
+                    key={file.path}
+                    type="button"
+                    role="option"
+                    aria-selected={referencedWorkspaceFiles.some((entry) => entry.workspacePath === file.path)}
+                    aria-label={`文件 ${file.name} ${file.path}`}
+                    onClick={() => pickWorkspaceFileFromReferencePicker(file)}
+                    className="flex w-full items-center gap-2.5 rounded-[9px] px-2.5 py-2 text-left transition-colors hover:bg-[var(--leemo-hover)] focus-visible:bg-[var(--leemo-hover)] focus-visible:outline-none"
+                  >
+                    <span className="grid h-7 w-7 shrink-0 place-items-center rounded-[8px] bg-[var(--leemo-surface-2)] text-[var(--leemo-ink-3)]">
+                      <FileText className="h-3.5 w-3.5" aria-hidden />
+                    </span>
+                    <span className="min-w-0">
+                      <span className="block truncate text-[13px] font-medium text-[var(--leemo-ink)]">{file.name}</span>
+                      <span className="mt-0.5 block truncate text-[11.5px] text-[var(--leemo-ink-3)]">{file.path}</span>
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
+            {notes.length === 0 && referencePickerWorkspaceFiles.length === 0 && (
+              <div className="px-3 py-4 text-center">
+                <p className="text-[13px] text-[var(--leemo-ink-2)]">还没有可引用的内容</p>
+                <p className="mt-1 text-[11.5px] text-[var(--leemo-ink-3)]">创建便签或打开一个包含文件的本子后再试。</p>
+              </div>
+            )}
+          </div>
+        )}
+        {noteMentionOpen && (
+          <div
+            data-testid="note-mention-menu"
+            className="absolute bottom-full left-0 z-30 mb-2 max-h-60 w-full overflow-y-auto rounded-lg border border-[var(--leemo-line)] bg-[var(--leemo-card)] p-1 shadow-lg"
+          >
+            {noteMentionMatches.map((note, index) => (
+              <button
+                key={note.id}
+                type="button"
+                aria-label={`引用便签 ${noteLabel(note)}`}
+                onMouseEnter={() => setNoteMentionIndex(index)}
+                onClick={() => pickNoteReference(note)}
+                className={`block w-full rounded px-3 py-2 text-left text-sm ${index === noteMentionIndex ? "bg-[var(--leemo-hover)]" : "hover:bg-[var(--leemo-hover)]"}`}
+              >
+                <span className="block truncate text-[var(--leemo-ink)]">{noteLabel(note)}</span>
+                {note.markdown.trim() && (
+                  <span className="mt-0.5 block truncate text-xs text-[var(--leemo-ink-3)]">{note.markdown}</span>
+                )}
+              </button>
+            ))}
+          </div>
+        )}
         {mentionOpen && (
           <FileMentionMenu
             files={mentionMatches}
@@ -725,6 +1430,18 @@ export default function InputArea({
             onHover={setMentionIndex}
           />
         )}
+        <ComposerPlusMenu
+          open={plusMenuOpen}
+          fileEnabled={Boolean(resolveFilePath) && !submitPending}
+          planModeActive={planModeActive}
+          hasGoal={Boolean(goal)}
+          onPickFile={handleAttachmentClick}
+          onTogglePlanMode={() => {
+            patchComposerDraft(conversationKey, { planMode: planModeActive ? false : true });
+            setPlusMenuOpen(false);
+          }}
+          onOpenGoal={openGoalEditor}
+        />
 
         <textarea
           ref={textareaRef}
@@ -733,9 +1450,13 @@ export default function InputArea({
           value={value}
           disabled={submitPending}
           onChange={(e) => {
+            setSlashEmptyOpen(false);
+            setReferencePickerOpen(false);
             setCaretPosition(e.target.selectionStart);
             setMentionDismissed(null);
             setMentionIndex(0);
+            setNoteMentionDismissed(null);
+            setNoteMentionIndex(0);
             onChange(e.target.value);
           }}
           onClick={(e) => setCaretPosition(e.currentTarget.selectionStart)}
@@ -743,33 +1464,123 @@ export default function InputArea({
           onCompositionEnd={() => setComposing(false)}
           onKeyDown={handleKeyDown}
           onPaste={handlePaste}
-          className="w-full resize-none bg-transparent px-4 py-3 text-[15px] text-[var(--leemo-ink)] caret-[var(--leemo-amber)] outline-none placeholder:text-[var(--leemo-ink-3)] disabled:cursor-wait"
+          className={`leemo-composer-textarea w-full resize-none bg-transparent px-4 pb-2 pt-3.5 leading-[1.65] text-[var(--leemo-ink)] caret-[var(--leemo-amber)] outline-none placeholder:text-[var(--leemo-ink-3)] disabled:cursor-wait ${surface === "buddy" ? "text-[15.5px]" : "text-[14.5px]"}`}
           rows={1}
-          style={{ minHeight: "48px", maxHeight: "144px" }}
+          style={{ minHeight: surface === "workbench" ? "66px" : "64px", maxHeight: "144px" }}
         />
 
-        <div className="flex items-center gap-1 px-2.5 pb-1.5">
+        <div className="leemo-composer-toolbar flex min-h-11 items-center gap-1.5 px-2.5 pb-1.5">
           <button
+            data-testid="composer-icon-control"
+            type="button"
+            onClick={() => {
+              setModelPickerOpen(false);
+              setPermissionMenuOpen(false);
+              dismissInlinePickers();
+              setPlusMenuOpen((open) => !open);
+            }}
+            disabled={submitPending}
+            className={`relative grid h-8 w-8 shrink-0 place-items-center rounded-full transition-colors hover:bg-[var(--leemo-hover)] disabled:cursor-wait disabled:opacity-35 ${
+              planModeActive ? "bg-[var(--leemo-amber-soft)]" : ""
+            }`}
+            title={planModeActive ? "计划模式已开启；打开添加菜单" : "添加"}
+            aria-label={planModeActive ? "添加，计划模式已开启" : "添加"}
+            aria-expanded={plusMenuOpen}
+          >
+            <Plus className={`h-[18px] w-[18px] ${planModeActive ? "text-[var(--leemo-amber-strong)]" : "text-[var(--leemo-ink-3)]"}`} aria-hidden />
+            {planModeActive && (
+              <span
+                data-testid="composer-plan-mode-indicator"
+                className="absolute right-[3px] top-[3px] h-1.5 w-1.5 rounded-full bg-[var(--leemo-amber-strong)] ring-2 ring-[var(--leemo-card)]"
+                aria-hidden
+              />
+            )}
+          </button>
+          <button
+            data-testid="composer-icon-control"
             type="button"
             onClick={handleSkillClick}
             disabled={submitPending}
-            className="rounded p-1.5 hover:bg-[var(--leemo-hover)] disabled:cursor-wait disabled:opacity-35 disabled:hover:bg-transparent"
-            title="/ 技能"
+            className="grid h-8 w-8 shrink-0 place-items-center rounded-full hover:bg-[var(--leemo-hover)] disabled:cursor-wait disabled:opacity-35 disabled:hover:bg-transparent"
+            title="技能"
             aria-label="/ 技能"
           >
-            <Wrench className="h-4 w-4 text-[var(--leemo-ink-3)]" aria-hidden />
+            <span className="leemo-composer-slash-glyph grid h-[18px] w-[18px] -translate-y-px place-items-center text-[17px] font-medium leading-none text-[var(--leemo-ink-3)]" aria-hidden>/</span>
           </button>
 
           <button
+            data-testid="composer-icon-control"
             type="button"
-            onClick={handleAttachmentClick}
-            disabled={!resolveFilePath || submitPending}
-            className="rounded p-1.5 hover:bg-[var(--leemo-hover)] disabled:cursor-not-allowed disabled:opacity-35 disabled:hover:bg-transparent"
-            title={resolveFilePath ? "附件" : "附件仅在桌面版可用"}
-            aria-label="附件"
+            onClick={handleReferenceClick}
+            disabled={submitPending}
+            aria-expanded={referencePickerOpen}
+            className={`grid h-8 w-8 shrink-0 place-items-center rounded-full transition-colors hover:bg-[var(--leemo-hover)] disabled:cursor-wait disabled:opacity-35 disabled:hover:bg-transparent ${referencePickerOpen ? "bg-[var(--leemo-amber-soft)] text-[var(--leemo-amber-strong)]" : ""}`}
+            title="引用文件或便签"
+            aria-label="@ 引用"
           >
-            <Paperclip className="h-4 w-4 text-[var(--leemo-ink-3)]" aria-hidden />
+            <AtSign className={`h-[17px] w-[17px] ${referencePickerOpen ? "text-[var(--leemo-amber-strong)]" : "text-[var(--leemo-ink-3)]"}`} aria-hidden />
           </button>
+
+          <>
+              <span className="leemo-composer-divider mx-1 h-4 w-px bg-[var(--leemo-line)]" aria-hidden />
+              <button
+                type="button"
+                className="leemo-composer-model flex min-h-8 min-w-0 max-w-[190px] items-center gap-1.5 rounded-md px-2 py-1 text-[12.5px] text-[var(--leemo-ink-2)] hover:bg-[var(--leemo-hover)]"
+                aria-label="切换模型"
+                title={`当前模型：${modelPickerLabel(currentModelId)}`}
+                onClick={() => {
+                  setPermissionMenuOpen(false);
+                  setPlusMenuOpen(false);
+                  dismissInlinePickers();
+                  setModelPickerOpen(!modelPickerOpen);
+                }}
+              >
+                <Brain className="h-[15px] w-[15px] shrink-0" aria-hidden />
+                <span data-testid="composer-model-label" className="leemo-composer-responsive-label truncate">{modelPickerLabel(currentModelId)}</span>
+                <ChevronDown className="leemo-composer-responsive-chevron h-3 w-3 shrink-0" aria-hidden />
+              </button>
+              <button
+                type="button"
+                aria-label={`权限模式：${permissionLabel[approvalPermissionMode]}`}
+                aria-expanded={permissionMenuOpen}
+                title="切换权限模式"
+                onClick={togglePermissionMenu}
+                className={`leemo-composer-permission flex min-h-8 min-w-0 max-w-[150px] items-center gap-1.5 truncate rounded-md px-2 py-1 text-[12.5px] hover:bg-[var(--leemo-hover)] ${
+                  approvalPermissionMode === "bypassPermissions"
+                    ? "text-[var(--leemo-amber-strong)]"
+                    : "text-[var(--leemo-ink-2)]"
+                }`}
+              >
+                <ShieldCheck className="h-[15px] w-[15px] shrink-0" aria-hidden />
+                <span data-testid="composer-permission-label" className="leemo-composer-responsive-label truncate">
+                  {permissionLabel[approvalPermissionMode]}
+                </span>
+                <ChevronDown className="leemo-composer-responsive-chevron h-3 w-3 shrink-0" aria-hidden />
+              </button>
+              <button
+                data-testid="composer-icon-control"
+                type="button"
+                disabled={submitPending}
+                aria-label={helpersEnabled ? "本轮自动召集助手" : "本轮不使用助手"}
+                aria-pressed={helpersEnabled}
+                title={helpersEnabled ? "助手分工：自动" : "助手分工：本轮关闭"}
+                onClick={() => patchComposerDraft(conversationKey, {
+                  allowSubagents: helpersEnabled ? false : undefined,
+                })}
+                className={`relative grid h-8 w-8 shrink-0 place-items-center rounded-md transition-[background-color,color] hover:bg-[var(--leemo-hover)] disabled:cursor-wait disabled:opacity-50 ${
+                  helpersEnabled ? "text-[var(--leemo-ink-3)]" : "bg-[var(--leemo-hover)] text-[var(--leemo-ink-2)]"
+                }`}
+              >
+                <UsersRound className="h-[15px] w-[15px]" aria-hidden />
+                {!helpersEnabled && (
+                  <span
+                    data-testid="assistant-disabled-slash"
+                    className="pointer-events-none absolute h-[1.5px] w-[18px] -rotate-45 rounded-full bg-current"
+                    aria-hidden
+                  />
+                )}
+              </button>
+          </>
 
           <input
             ref={fileInputRef}
@@ -780,8 +1591,11 @@ export default function InputArea({
             className="hidden"
           />
 
-          <span className="text-[10.5px] text-[var(--leemo-ink-4)] max-[900px]:hidden">
-            Enter 发送 · Shift+Enter 换行
+          <span
+            data-testid="composer-shortcut-hint"
+            className={`leemo-composer-shortcut ${surface === "buddy" ? "max-[900px]:hidden" : ""} text-[10.5px] text-[var(--leemo-ink-4)]`}
+          >
+            {busy ? "Ctrl+Enter 引导当前任务 · Shift+Enter 换行" : "Enter 发送 · Shift+Enter 换行"}
           </span>
 
           {busy ? (
@@ -789,7 +1603,7 @@ export default function InputArea({
               type="button"
               aria-label="停止"
               onClick={() => onStop?.()}
-              className="ml-auto grid h-9 w-9 shrink-0 place-items-center rounded-full bg-[var(--leemo-ink)] text-white shadow-sm transition-colors hover:bg-black"
+              className="ml-auto grid h-10 w-10 shrink-0 place-items-center rounded-full bg-[var(--leemo-ink)] text-white shadow-sm transition-colors hover:bg-black"
             >
               <Square className="h-3.5 w-3.5 fill-current" aria-hidden />
             </button>
@@ -799,118 +1613,143 @@ export default function InputArea({
               aria-label="发送"
               onClick={() => void submit()}
               disabled={submitPending || attachmentPending || (!value.trim() && attachments.length === 0 && referencedWorkspaceFiles.length === 0)}
-              className="ml-auto grid h-9 w-9 shrink-0 place-items-center rounded-full bg-[var(--leemo-amber)] text-white shadow-sm transition-colors hover:bg-[var(--leemo-amber-strong)] disabled:cursor-not-allowed disabled:opacity-40"
+              className="leemo-composer-submit ml-auto grid h-[38px] w-[38px] shrink-0 place-items-center rounded-[12px] text-white disabled:cursor-not-allowed"
             >
-              <ArrowUp className="h-[15px] w-[15px]" aria-hidden />
+              <ArrowUp className="h-4 w-4" aria-hidden />
             </button>
           )}
         </div>
+
+        {permissionMenuOpen && (
+          <div
+            role="menu"
+            aria-label="权限模式"
+            className="absolute bottom-[calc(100%+8px)] left-3 right-3 z-40 overflow-hidden rounded-[14px] border border-[var(--leemo-line)] bg-[var(--leemo-card)] p-1.5 shadow-[0_14px_36px_rgba(17,31,49,0.16)] sm:left-[132px] sm:right-auto sm:w-[340px]"
+          >
+            <div className="px-2.5 pb-1.5 pt-1 text-[11px] text-[var(--leemo-ink-3)]">本轮如何执行</div>
+            {permissionOptions.map((option) => {
+              const selected = approvalPermissionMode === option.mode;
+              return (
+                <button
+                  key={option.mode}
+                  type="button"
+                  role="menuitemradio"
+                  aria-checked={selected}
+                  onClick={() => selectPermissionMode(option.mode)}
+                  className={`flex w-full items-start gap-2.5 rounded-[10px] px-2.5 py-2 text-left transition-colors hover:bg-[var(--leemo-hover)] ${
+                    selected ? "bg-[var(--leemo-hover)]" : ""
+                  }`}
+                >
+                  <span className={`mt-0.5 grid h-4 w-4 shrink-0 place-items-center ${
+                    option.mode === "bypassPermissions" ? "text-[var(--leemo-amber-strong)]" : "text-[var(--leemo-ink-3)]"
+                  }`}>
+                    {selected && <Check className="h-3.5 w-3.5" aria-hidden />}
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className={`block text-[12.5px] font-medium ${
+                      option.mode === "bypassPermissions" ? "text-[var(--leemo-amber-strong)]" : "text-[var(--leemo-ink)]"
+                    }`}>{permissionLabel[option.mode]}</span>
+                    <span className="mt-0.5 block text-[11.5px] leading-4 text-[var(--leemo-ink-3)]">{option.detail}</span>
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        )}
+
+        {modelPickerOpen && (
+          <div
+            data-testid="model-picker-menu"
+            className="absolute bottom-[calc(100%+8px)] left-3 right-3 z-40 max-h-72 overflow-y-auto rounded-[14px] border border-[var(--leemo-line)] bg-[var(--leemo-card)] p-2 shadow-[var(--leemo-shadow-popover)] sm:left-[132px] sm:right-auto sm:w-[360px]"
+          >
+            {modelGroups.length === 0 ? (
+              <div className="p-2">
+                <div className="text-xs text-[var(--leemo-ink-2)]">还没有可用的模型</div>
+                <div className="mt-1 text-xs text-[var(--leemo-ink-3)]">
+                  去设置页接入一个云端或本地模型服务，模型会出现在这里。
+                </div>
+                {onOpenSettings && (
+                  <button
+                    type="button"
+                    className="mt-2 rounded border border-[var(--leemo-line)] px-2 py-1 text-xs text-[var(--leemo-ink-2)] hover:bg-[var(--leemo-hover)]"
+                    onClick={() => {
+                      setModelPickerOpen(false);
+                      onOpenSettings();
+                    }}
+                  >
+                    去设置页配置模型
+                  </button>
+                )}
+              </div>
+            ) : (
+              modelGroups.map((group) => (
+                <div key={group.providerId} className="mb-1 last:mb-0">
+                  <div className="px-2 py-1 text-[10px] uppercase tracking-wide text-[var(--leemo-ink-3)]">
+                    {group.providerName}
+                  </div>
+                  {group.options.map((option) => {
+                    const current = isCurrentModel(option, currentProviderId, currentModelId);
+                    return (
+                      <button
+                        key={`${option.providerId}::${option.modelId}`}
+                        type="button"
+                        aria-current={current ? "true" : undefined}
+                        className={`flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs hover:bg-[var(--leemo-hover)] ${
+                          current ? "bg-[var(--leemo-hover)]" : ""
+                        }`}
+                        onClick={() => {
+                          setModelPickerOpen(false);
+                          onSelectModel?.(option.providerId, option.modelId);
+                        }}
+                      >
+                        <span className="grid w-3 shrink-0 place-items-center text-[var(--leemo-accent)]">
+                          {current && <Check className="h-3.5 w-3.5" aria-hidden />}
+                        </span>
+                        <span className="min-w-0 flex-1 truncate text-[var(--leemo-ink)]">
+                          {option.modelId}
+                        </span>
+                        {option.reasoningStatus === "verified" && (
+                          <span className="shrink-0 rounded bg-[var(--leemo-hover)] px-1 text-[10px] text-[var(--leemo-ink-3)]">
+                            思考
+                          </span>
+                        )}
+                        {option.imageStatus === "verified" && (
+                          <span className="shrink-0 rounded bg-[var(--leemo-hover)] px-1 text-[10px] text-[var(--leemo-ink-3)]">
+                            识图
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              ))
+            )}
+          </div>
+        )}
       </div>
 
       {submitError && (
-        <div role="alert" className="mt-1.5 px-2 text-xs text-red-600">
-          {submitError}
+        <div role="alert" className="leemo-composer-alert" title={submitError}>
+          <CircleAlert className="h-3.5 w-3.5 shrink-0" aria-hidden />
+          <span className="min-w-0 flex-1 truncate">{submitError}</span>
+          <button
+            type="button"
+            className="leemo-composer-alert__dismiss"
+            aria-label="关闭错误提示"
+            title="关闭"
+            onClick={() => patchComposerDraft(conversationKey, { submitError: null })}
+          >
+            <X className="h-3.5 w-3.5" aria-hidden />
+          </button>
         </div>
       )}
 
-      <div className="mt-2 flex flex-wrap items-center gap-1 px-1 text-xs text-[var(--leemo-ink-3)]">
-        <button
-          type="button"
-          className="flex items-center gap-1 rounded px-1 py-1 hover:bg-[var(--leemo-hover)]"
-          aria-label="切换模型"
-          title={`当前模型：${modelPickerLabel(currentModelId)}`}
-          onClick={() => setModelPickerOpen(!modelPickerOpen)}
-        >
-          <Brain className="h-3.5 w-3.5" aria-hidden />
-          <span>{modelPickerLabel(currentModelId)}</span>
-          <ChevronDown className="h-3 w-3" aria-hidden />
-        </button>
-        <span aria-hidden>·</span>
-        <button
-          type="button"
-          aria-label={canDisableFullAccess ? "关闭完全访问" : `权限模式：${permissionLabel[permissionMode]}`}
-          title={canDisableFullAccess ? "关闭完全访问" : "打开权限设置"}
-          onClick={canDisableFullAccess ? onDisableFullAccess : onOpenPermissionSettings}
-          className={`rounded px-1 py-1 hover:bg-[var(--leemo-hover)] ${
-            permissionMode === "bypassPermissions"
-              ? "text-[var(--leemo-danger)]"
-              : permissionMode === "plan"
-                ? "text-[var(--leemo-amber-strong)]"
-                : ""
-          }`}
-        >
-          {canDisableFullAccess ? "完全访问 · 关闭" : permissionLabel[permissionMode]}
-        </button>
-      </div>
-
-      {modelPickerOpen && (
-        <div className="mt-2 max-h-72 overflow-y-auto rounded-lg border border-[var(--leemo-line)] bg-white p-2 shadow-lg">
-          {modelGroups.length === 0 ? (
-            /* No configured provider yet. An empty box would read as a bug, so
-               point at the one place that fixes it. */
-            <div className="p-2">
-              <div className="text-xs text-[var(--leemo-ink-2)]">还没有可用的模型</div>
-              <div className="mt-1 text-xs text-[var(--leemo-ink-3)]">
-                去设置页接入一个云端或本地模型服务，模型会出现在这里。
-              </div>
-              {onOpenSettings && (
-                <button
-                  type="button"
-                  className="mt-2 rounded border border-[var(--leemo-line)] px-2 py-1 text-xs text-[var(--leemo-ink-2)] hover:bg-[var(--leemo-hover)]"
-                  onClick={() => {
-                    setModelPickerOpen(false);
-                    onOpenSettings();
-                  }}
-                >
-                  去设置页配置模型
-                </button>
-              )}
-            </div>
-          ) : (
-            modelGroups.map((group) => (
-              <div key={group.providerId} className="mb-1 last:mb-0">
-                <div className="px-2 py-1 text-[10px] uppercase tracking-wide text-[var(--leemo-ink-3)]">
-                  {group.providerName}
-                </div>
-                {group.options.map((option) => {
-                  const current = isCurrentModel(option, currentProviderId, currentModelId);
-                  return (
-                    <button
-                      key={`${option.providerId}::${option.modelId}`}
-                      type="button"
-                      aria-current={current ? "true" : undefined}
-                      className={`flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs hover:bg-[var(--leemo-hover)] ${
-                        current ? "bg-[var(--leemo-hover)]" : ""
-                      }`}
-                      onClick={() => {
-                        setModelPickerOpen(false);
-                        onSelectModel?.(option.providerId, option.modelId);
-                      }}
-                    >
-                      <span className="grid w-3 shrink-0 place-items-center text-[var(--leemo-accent)]">
-                        {current && <Check className="h-3.5 w-3.5" aria-hidden />}
-                      </span>
-                      <span className="min-w-0 flex-1 truncate text-[var(--leemo-ink)]">
-                        {option.modelId}
-                      </span>
-                      {option.reasoningStatus === "verified" && (
-                        <span className="shrink-0 rounded bg-[var(--leemo-hover)] px-1 text-[10px] text-[var(--leemo-ink-3)]">
-                          思考
-                        </span>
-                      )}
-                      {option.imageStatus === "verified" && (
-                        <span className="shrink-0 rounded bg-[var(--leemo-hover)] px-1 text-[10px] text-[var(--leemo-ink-3)]">
-                          识图
-                        </span>
-                      )}
-                    </button>
-                  );
-                })}
-              </div>
-            ))
-          )}
+      {guidanceNotice && !submitError && (
+        <div role="status" className="mt-1.5 px-2 text-xs text-[var(--leemo-ink-3)]">
+          {guidanceNotice}
         </div>
       )}
+
     </div>
   );
 }

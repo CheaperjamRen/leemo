@@ -20,7 +20,7 @@
 // env object and reads nothing from process.env / .env / disk. The pool is
 // responsible for spreading process.env and setting CLAUDE_CONFIG_DIR.
 
-import type { ProviderApiFormat } from "./contract";
+import type { ProviderApiFormat, ProviderAuthMode } from "./contract";
 
 /** Per-model capability flags (06 §3.1). */
 export interface ModelCapabilities {
@@ -53,12 +53,15 @@ export interface EnvTemplate {
  *
  *  `apiKey` is the REAL secret. In direct wiring it rides ANTHROPIC_AUTH_TOKEN
  *  into the SDK child; in gateway wiring it is NEVER emitted here (the gateway
- *  holds it). Tests use obviously-fake `sk-test-…` sentinels. */
+ *  holds it). Tests use obviously-fake `test-key-…` sentinels. */
 export interface Provider {
   id: string;
   name: string;
   category: "cn_official" | "official" | "custom";
   apiFormat: ProviderApiFormat;
+  /** Native subscription providers authenticate through their isolated
+   *  Harness account directory instead of an API key or gateway token. */
+  authMode?: ProviderAuthMode;
   baseUrl: string;
   apiKey: string;
   models: string[];
@@ -88,19 +91,24 @@ const SLOT_KEYS = [
  *  and keep the rest. Case-insensitive. */
 const SECRET_ENV_PATTERNS: RegExp[] = [
   /_API_KEY$/i,
-  /_AUTH_TOKEN$/i,
+  /_TOKEN$/i,
   /_SECRET(_|$)/i,
   /_ACCESS_KEY/i,
   /^ANTHROPIC_API_KEY$/i,
 ];
 
-const HARNESS_MODEL_ENV_NAMES = new Set([
+const HARNESS_ENV_OVERRIDE_NAMES = new Set([
+  "ANTHROPIC_BASE_URL",
+  "ANTHROPIC_CUSTOM_HEADERS",
   "ANTHROPIC_MODEL",
   "ANTHROPIC_DEFAULT_FABLE_MODEL",
   "ANTHROPIC_DEFAULT_SONNET_MODEL",
   "ANTHROPIC_DEFAULT_OPUS_MODEL",
   "ANTHROPIC_DEFAULT_HAIKU_MODEL",
   "ANTHROPIC_SMALL_FAST_MODEL",
+  "CLAUDE_CODE_USE_BEDROCK",
+  "CLAUDE_CODE_USE_VERTEX",
+  "CLAUDE_CODE_USE_FOUNDRY",
   "CLAUDE_CODE_SUBAGENT_MODEL",
 ]);
 
@@ -129,7 +137,7 @@ export function sanitizeHostEnv(
 ): Record<string, string | undefined> {
   const out: Record<string, string | undefined> = {};
   for (const [name, value] of Object.entries(hostEnv)) {
-    if (isSecretEnvName(name) || HARNESS_MODEL_ENV_NAMES.has(name.toUpperCase())) continue;
+    if (isSecretEnvName(name) || HARNESS_ENV_OVERRIDE_NAMES.has(name.toUpperCase())) continue;
     out[name] = value;
   }
   return out;
@@ -153,20 +161,21 @@ export function buildConversationEnv(
   gatewayPort?: number,
   searchShimPort?: number
 ): ConversationEnv {
-  const gateway = provider.apiFormat !== "anthropic";
+  const nativeSubscription = provider.authMode === "oauth-subscription";
+  const gateway = !nativeSubscription && provider.apiFormat !== "anthropic";
   // SHIM wiring (轮 4 卡 H2) — anthropic 家 + 本地搜索 shim 在跑。
   // 它不翻译协议，只是一根认得出「CC 内置 WebSearch 的嵌套服务端工具请求」的
   // 哑管道：那一种请求由 Leemo 自己的搜索链答掉，其余原样透传。于是内置
   // WebSearch 在每一家 provider 上行为一致，且全程不回连 claude.ai。
   // 详见 src/host/search-shim.ts 顶部注释。
-  const shim = !gateway && searchShimPort !== undefined;
+  const shim = !nativeSubscription && !gateway && searchShimPort !== undefined;
 
   // Direct/shim sends raw model ids. Gateway disguises each raw id with a
   // claude- prefix, then restores it before the OpenAI upstream call.
   const slotDefault = gateway ? `claude-${modelId}` : modelId;
 
-  let baseUrl: string;
-  let authToken: string;
+  let baseUrl: string | undefined;
+  let authToken: string | undefined;
 
   if (gateway) {
     if (gatewayPort === undefined) {
@@ -182,17 +191,12 @@ export function buildConversationEnv(
     // host process registry. This is strictly SAFER than direct wiring, where
     // the real key sits in the SDK child's env and any bash round can read it.
     authToken = `leemo-search:${provider.id}`;
-  } else {
+  } else if (!nativeSubscription) {
     baseUrl = provider.baseUrl;
     authToken = provider.apiKey; // real key — direct-wiring semantics
   }
 
   const env: ConversationEnv = {
-    ANTHROPIC_BASE_URL: baseUrl,
-    ANTHROPIC_AUTH_TOKEN: authToken,
-    // Blank the API-key channel so an ambient ANTHROPIC_API_KEY (spread from
-    // process.env by the pool) can never shadow AUTH_TOKEN. (Phase 0 buildEnv.)
-    ANTHROPIC_API_KEY: "",
     // Suppress non-essential background traffic in the SDK child (Phase 0
     // smoke/lib.mjs precedent). Both wiring modes.
     CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1",
@@ -203,6 +207,19 @@ export function buildConversationEnv(
     PYTHONIOENCODING: "utf-8",
     PYTHONDONTWRITEBYTECODE: "1",
   };
+
+  // A subscription login lives in CLAUDE_CONFIG_DIR, which the conversation
+  // pool assigns per provider. Leaving every endpoint/key channel ABSENT is
+  // important: even an empty override can switch the native CLI away from its
+  // first-party OAuth session. Static-key and gateway providers retain their
+  // explicit wiring below.
+  if (!nativeSubscription) {
+    env.ANTHROPIC_BASE_URL = baseUrl;
+    env.ANTHROPIC_AUTH_TOKEN = authToken;
+    // Blank the API-key channel so an ambient ANTHROPIC_API_KEY (spread from
+    // process.env by the pool) can never shadow AUTH_TOKEN. (Phase 0 buildEnv.)
+    env.ANTHROPIC_API_KEY = "";
+  }
 
   for (const slot of SLOT_KEYS) {
     if (slot === "ANTHROPIC_MODEL") {

@@ -26,6 +26,10 @@ import type {
   LearningSession,
 } from "../../learning";
 import { LEARNING_FOCUSES, LEARNING_SKILLS } from "../../learning";
+import {
+  createCapturePersistence,
+  type CapturePersistence,
+} from "./capture-persistence";
 
 type JsonRecord = Record<string, unknown>;
 
@@ -215,7 +219,8 @@ CREATE TABLE IF NOT EXISTS conversations (
   session_id TEXT,
   pinned INTEGER,
   archived INTEGER,
-  last_opened_at INTEGER
+  last_opened_at INTEGER,
+  goal_json TEXT
 );
 CREATE TABLE IF NOT EXISTS messages (
   conversation_id TEXT NOT NULL,
@@ -328,6 +333,7 @@ interface ConversationRow {
   pinned: number | null;
   archived: number | null;
   last_opened_at: number | null;
+  goal_json: string | null;
 }
 
 /**
@@ -362,6 +368,9 @@ function migrate(db: SqliteDatabase): void {
   }
   if (!columns.has("last_opened_at")) {
     db.exec(`ALTER TABLE conversations ADD COLUMN last_opened_at INTEGER`);
+  }
+  if (!columns.has("goal_json")) {
+    db.exec(`ALTER TABLE conversations ADD COLUMN goal_json TEXT`);
   }
   const wikiColumns = new Set(
     (db.prepare(`PRAGMA table_info(wiki_entries)`).all() as { name: string }[]).map((c) => c.name),
@@ -431,15 +440,21 @@ interface ScheduledTaskRunRow {
 
 interface UsageSummaryRow {
   provider_id: string;
+  model_id: string;
   input_tokens: number;
   output_tokens: number;
+  cache_read_tokens: number;
+  cache_creation_tokens: number;
   cost_usd: string | null;
   created_at: number;
 }
 
 interface UsageAccumulator {
+  callCount: number;
   inputTokens: number;
   outputTokens: number;
+  cacheReadTokens: number;
+  cacheCreationTokens: number;
   costMicros: bigint;
   hasCost: boolean;
 }
@@ -509,17 +524,18 @@ function decodeScheduledTaskRun(row: ScheduledTaskRunRow): ScheduledTaskRun {
   };
 }
 
-export function createPersistence(db: SqliteDatabase): Persistence {
+export function createPersistence(db: SqliteDatabase): Persistence & CapturePersistence {
   db.exec(SCHEMA);
   // Order matters: SCHEMA creates the tables on a fresh install, migrate() then
   // patches an install that already had them. Both run before any prepare(),
   // since prepared statements naming session_id would otherwise fail to compile.
   migrate(db);
+  const capturePersistence = createCapturePersistence(db);
 
   const upsertConv = db.prepare(`
     INSERT INTO conversations
-      (id, title, title_manually_updated, book_id, source, provider_id, model_id, created_at, last_activity_at, unread, workspace_id, session_id, pinned, archived, last_opened_at)
-    VALUES (@id, @title, @title_manually_updated, @book_id, @source, @provider_id, @model_id, @created_at, @last_activity_at, @unread, @workspace_id, @session_id, @pinned, @archived, @last_opened_at)
+      (id, title, title_manually_updated, book_id, source, provider_id, model_id, created_at, last_activity_at, unread, workspace_id, session_id, pinned, archived, last_opened_at, goal_json)
+    VALUES (@id, @title, @title_manually_updated, @book_id, @source, @provider_id, @model_id, @created_at, @last_activity_at, @unread, @workspace_id, @session_id, @pinned, @archived, @last_opened_at, @goal_json)
     ON CONFLICT(id) DO UPDATE SET
       title=excluded.title,
       title_manually_updated=excluded.title_manually_updated,
@@ -534,7 +550,8 @@ export function createPersistence(db: SqliteDatabase): Persistence {
       session_id=excluded.session_id,
       pinned=excluded.pinned,
       archived=excluded.archived,
-      last_opened_at=excluded.last_opened_at
+      last_opened_at=excluded.last_opened_at,
+      goal_json=excluded.goal_json
   `);
   const findTombstone = db.prepare(`SELECT id FROM conversation_tombstones WHERE id = ?`);
   const addTombstone = db.prepare(`
@@ -654,6 +671,7 @@ export function createPersistence(db: SqliteDatabase): Persistence {
         pinned: ((meta as ConversationMeta & { pinned?: boolean }).pinned ?? false) ? 1 : 0,
         archived: ((meta as ConversationMeta & { archived?: boolean }).archived ?? false) ? 1 : 0,
         last_opened_at: (meta as ConversationMeta & { lastOpenedAt?: number }).lastOpenedAt ?? meta.lastActivityAt,
+        goal_json: meta.goal ? JSON.stringify(meta.goal) : null,
       });
       delMessages.run(meta.id);
       timeline.forEach((item, seq) => {
@@ -666,20 +684,33 @@ export function createPersistence(db: SqliteDatabase): Persistence {
       for (const item of timeline) {
         if (item.kind === "usage") {
           const u = item.usage;
-          insUsage.run(
-            meta.id,
-            u.providerId,
-            u.modelId,
-            u.inputTokens,
-            u.outputTokens,
-            u.cacheReadTokens,
-            u.cacheCreationTokens,
-            u.costUsd ?? null,
-            u.costSource,
-            u.tokensEstimated ? 1 : 0,
-            u.durationMs ?? null,
-            meta.lastActivityAt,
-          );
+          const rows = u.modelBreakdown?.length
+            ? u.modelBreakdown
+            : [{
+                providerId: u.providerId,
+                modelId: u.modelId,
+                inputTokens: u.inputTokens,
+                outputTokens: u.outputTokens,
+                cacheReadTokens: u.cacheReadTokens,
+                cacheCreationTokens: u.cacheCreationTokens,
+                costUsd: u.costUsd,
+              }];
+          rows.forEach((row, index) => {
+            insUsage.run(
+              meta.id,
+              row.providerId,
+              row.modelId,
+              row.inputTokens,
+              row.outputTokens,
+              row.cacheReadTokens,
+              row.cacheCreationTokens,
+              row.costUsd ?? null,
+              u.costSource,
+              u.tokensEstimated ? 1 : 0,
+              index === 0 ? u.durationMs ?? null : null,
+              meta.lastActivityAt,
+            );
+          });
         }
       }
   };
@@ -766,6 +797,22 @@ export function createPersistence(db: SqliteDatabase): Persistence {
       // sessionId rather than a null the re-claim path would have to special-case.
       if (r.session_id != null) meta.sessionId = r.session_id;
       if (r.workspace_id != null) meta.workspaceId = r.workspace_id;
+      if (r.goal_json != null) {
+        try {
+          const goal = JSON.parse(r.goal_json) as ConversationMeta["goal"];
+          if (
+            goal
+            && typeof goal.text === "string"
+            && (goal.status === "active" || goal.status === "paused")
+            && typeof goal.createdAt === "number"
+            && typeof goal.updatedAt === "number"
+          ) {
+            meta.goal = goal;
+          }
+        } catch {
+          // One corrupt optional goal must not prevent conversation recovery.
+        }
+      }
       return { meta, timeline };
     });
 
@@ -910,7 +957,7 @@ export function createPersistence(db: SqliteDatabase): Persistence {
       current.getMonth(),
       current.getDate() + 1,
     ).getTime();
-    const daysBack = query.range === "last7d" ? 6 : 0;
+    const daysBack = query.range === "last30d" ? 29 : query.range === "last7d" ? 6 : 0;
     const start = new Date(
       current.getFullYear(),
       current.getMonth(),
@@ -918,7 +965,8 @@ export function createPersistence(db: SqliteDatabase): Persistence {
     ).getTime();
     const providerId = query.providerId ?? null;
     const rows = db.prepare(`
-      SELECT provider_id, input_tokens, output_tokens, cost_usd, created_at
+      SELECT provider_id, model_id, input_tokens, output_tokens,
+             cache_read_tokens, cache_creation_tokens, cost_usd, created_at
       FROM usage
       WHERE created_at >= ? AND created_at < ?
         AND (? IS NULL OR provider_id = ?)
@@ -926,24 +974,64 @@ export function createPersistence(db: SqliteDatabase): Persistence {
     `).all(start, end, providerId, providerId) as UsageSummaryRow[];
 
     const providers = new Map<string, UsageAccumulator>();
+    const models = new Map<string, { providerId: string; modelId: string; aggregate: UsageAccumulator }>();
     const days = new Map<string, { costMicros: bigint; hasCost: boolean }>();
     let totalCostMicros = 0n;
     let hasTotalCost = false;
+    let totalCallCount = 0;
+    let totalInputTokens = 0;
+    let totalOutputTokens = 0;
+    let totalCacheReadTokens = 0;
+    let totalCacheCreationTokens = 0;
 
     for (const row of rows) {
       const provider = providers.get(row.provider_id) ?? {
+        callCount: 0,
         inputTokens: 0,
         outputTokens: 0,
+        cacheReadTokens: 0,
+        cacheCreationTokens: 0,
         costMicros: 0n,
         hasCost: false,
       };
+      provider.callCount += 1;
       provider.inputTokens += row.input_tokens;
       provider.outputTokens += row.output_tokens;
+      provider.cacheReadTokens += row.cache_read_tokens;
+      provider.cacheCreationTokens += row.cache_creation_tokens;
+
+      const modelKey = `${row.provider_id}\u0000${row.model_id}`;
+      const model = models.get(modelKey) ?? {
+        providerId: row.provider_id,
+        modelId: row.model_id,
+        aggregate: {
+          callCount: 0,
+          inputTokens: 0,
+          outputTokens: 0,
+          cacheReadTokens: 0,
+          cacheCreationTokens: 0,
+          costMicros: 0n,
+          hasCost: false,
+        },
+      };
+      model.aggregate.callCount += 1;
+      model.aggregate.inputTokens += row.input_tokens;
+      model.aggregate.outputTokens += row.output_tokens;
+      model.aggregate.cacheReadTokens += row.cache_read_tokens;
+      model.aggregate.cacheCreationTokens += row.cache_creation_tokens;
+
+      totalCallCount += 1;
+      totalInputTokens += row.input_tokens;
+      totalOutputTokens += row.output_tokens;
+      totalCacheReadTokens += row.cache_read_tokens;
+      totalCacheCreationTokens += row.cache_creation_tokens;
 
       const costMicros = parseCostMicros(row.cost_usd);
       if (costMicros !== undefined) {
         provider.costMicros += costMicros;
         provider.hasCost = true;
+        model.aggregate.costMicros += costMicros;
+        model.aggregate.hasCost = true;
         totalCostMicros += costMicros;
         hasTotalCost = true;
 
@@ -952,11 +1040,12 @@ export function createPersistence(db: SqliteDatabase): Persistence {
         day.costMicros += costMicros;
         day.hasCost = true;
         days.set(date, day);
-      } else if (query.range === "last7d") {
+      } else if (query.range !== "today") {
         const date = localDateKey(row.created_at);
         if (!days.has(date)) days.set(date, { costMicros: 0n, hasCost: false });
       }
       providers.set(row.provider_id, provider);
+      models.set(modelKey, model);
     }
 
     const byProvider = [...providers.entries()]
@@ -964,10 +1053,25 @@ export function createPersistence(db: SqliteDatabase): Persistence {
       .map(([id, aggregate]) => ({
         providerId: id,
         ...(aggregate.hasCost ? { costUsd: formatCostMicros(aggregate.costMicros) } : {}),
+        callCount: aggregate.callCount,
         inputTokens: aggregate.inputTokens,
         outputTokens: aggregate.outputTokens,
+        cacheReadTokens: aggregate.cacheReadTokens,
+        cacheCreationTokens: aggregate.cacheCreationTokens,
       }));
-    const byDay = query.range === "last7d"
+    const byModel = [...models.values()]
+      .sort((left, right) => left.providerId.localeCompare(right.providerId) || left.modelId.localeCompare(right.modelId))
+      .map(({ providerId: id, modelId, aggregate }) => ({
+        providerId: id,
+        modelId,
+        ...(aggregate.hasCost ? { costUsd: formatCostMicros(aggregate.costMicros) } : {}),
+        callCount: aggregate.callCount,
+        inputTokens: aggregate.inputTokens,
+        outputTokens: aggregate.outputTokens,
+        cacheReadTokens: aggregate.cacheReadTokens,
+        cacheCreationTokens: aggregate.cacheCreationTokens,
+      }));
+    const byDay = query.range !== "today"
       ? [...days.entries()]
           .sort(([left], [right]) => left.localeCompare(right))
           .map(([date, aggregate]) => ({
@@ -978,7 +1082,13 @@ export function createPersistence(db: SqliteDatabase): Persistence {
 
     return {
       ...(hasTotalCost ? { totalCostUsd: formatCostMicros(totalCostMicros) } : {}),
+      callCount: totalCallCount,
+      inputTokens: totalInputTokens,
+      outputTokens: totalOutputTokens,
+      cacheReadTokens: totalCacheReadTokens,
+      cacheCreationTokens: totalCacheCreationTokens,
       byProvider,
+      byModel,
       byDay,
     };
   }
@@ -1068,6 +1178,7 @@ export function createPersistence(db: SqliteDatabase): Persistence {
   }
 
   return {
+    ...capturePersistence,
     saveConversation,
     moveConversation,
     deleteConversation,

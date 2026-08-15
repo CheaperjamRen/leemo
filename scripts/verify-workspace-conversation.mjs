@@ -12,7 +12,7 @@ const notebookId = process.env.LEEMO_A2_NOTEBOOK || "诊断";
 const prompt = "只回复：A2 归档验收通过";
 let workspaceRoot;
 let archiveDir;
-const outputDir = path.resolve(process.env.LEEMO_VERIFY_OUTPUT_DIR || "dist-verify/audit-shots");
+const outputDir = path.resolve("docs/research/audit-shots");
 const factsPath = path.join(outputDir, "a2-workspace-conversation-facts.json");
 fs.mkdirSync(outputDir, { recursive: true });
 

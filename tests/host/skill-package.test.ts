@@ -62,10 +62,10 @@ describe("loadSkillArchive", () => {
 
   it("preserves YAML block descriptions used by official community Skills", () => {
     const loaded = loadSkillArchive(zip({
-      "nested/SKILL.md": "---\nname: nested-metadata\ndescription: |\n  第一行说明。\n  第二行说明。\nmetadata:\n  description: nested value\n---\nUse the workflow.",
+      "ima/SKILL.md": "---\nname: ima-skill\ndescription: |\n  管理知识库。\n  管理笔记。\nmetadata:\n  description: nested value\n---\nUse the API.",
     }));
 
-    expect(loaded.candidates[0]?.description).toBe("第一行说明。\n第二行说明。");
+    expect(loaded.candidates[0]?.description).toBe("管理知识库。\n管理笔记。");
   });
 
   it("rejects path traversal before extraction", () => {

@@ -1,0 +1,20 @@
+{
+  "packaged": true,
+  "packagedExecutable": "dist-package/win-unpacked/Leemo.exe",
+  "executableSha256": "559CE0B9868CBB6AD06DE2AD629047C2DF4F2F190AB1D717286E570A99C1DBD6",
+  "installerSha256": "B2D2CA94939BA498727907521A746F30723EF537A2F477A572FACDF321B61B8A",
+  "rendererLoadedFromAsar": true,
+  "isolatedE2eRoot": true,
+  "testProviderDeleted": true,
+  "elapsedMs": 4823,
+  "upstreamRequestCount": 1,
+  "exactModelForwarded": true,
+  "authorizationForwarded": true,
+  "customHeaderForwarded": true,
+  "ipcTextMarkerReceived": true,
+  "finished": {
+    "subtype": "success",
+    "isError": false
+  },
+  "ipcErrors": []
+}

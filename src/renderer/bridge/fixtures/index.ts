@@ -72,9 +72,17 @@ export const DEMO_TURN_EVENTS: LeemoEvent[] = [
   { type: "tool.finished", toolUseId: "t1", isError: false, contentSummary: "38 页 · 2,146 字" },
   { type: "tool.started", toolUseId: "t2", name: "Grep", subagent: false, input: { query: "本子内相关笔记" } },
   { type: "tool.finished", toolUseId: "t2", isError: false, contentSummary: "命中 4 条" },
+  { type: "tool.started", toolUseId: "sa1", name: "Agent", subagent: false, input: {
+    subagent_type: "Explore",
+    description: "核对章节结构和易错点",
+    prompt: "独立检查资料结构，返回简短结论。",
+  } },
   { type: "subagent.activity", parentToolUseId: "sa1" },
+  { type: "subagent.output", parentToolUseId: "sa1", kind: "thinking", text: "先核对目录，再交叉检查例题。" },
   { type: "tool.started", toolUseId: "t3", name: "Write", subagent: true, input: { file: "草稿.md" } },
   { type: "tool.finished", toolUseId: "t3", isError: false, contentSummary: "草稿完成" },
+  { type: "subagent.output", parentToolUseId: "sa1", kind: "text", text: "**核对完成：** 遍历与平衡树是两处高频易错点。" },
+  { type: "tool.finished", toolUseId: "sa1", isError: false, contentSummary: "核对完成" },
   { type: "tool.started", toolUseId: "viz-1", name: LEEMO_VISUALIZATION_TOOL_NAME, subagent: false, input: {
     file_path: "遍历-复杂度.html",
     title: "遍历复杂度",
@@ -102,6 +110,13 @@ export const DEMO_TURN_EVENTS: LeemoEvent[] = [
 ];
 
 import type { FileNode } from "../../stores/file-tree";
+import type { PreviewEntry } from "../../stores/preview-content";
+import type { WorkspaceNotebook } from "../../workspace/client";
+
+export const FIXTURE_NOTEBOOKS: WorkspaceNotebook[] = [
+  { id: "数据结构", title: "数据结构", dir: "~/Leemo/数据结构", color: "blue", hasMemory: true },
+  { id: "高等数学", title: "高等数学", dir: "~/Leemo/高等数学", color: "green", hasMemory: true },
+];
 
 export const FIXTURE_FILE_TREE: FileNode[] = [
   {
@@ -124,3 +139,24 @@ export const FIXTURE_FILE_TREE: FileNode[] = [
     ],
   },
 ];
+
+export const FIXTURE_PREVIEW_ENTRIES: Record<string, PreviewEntry> = {
+  "/books/数据结构/第五章笔记.md": {
+    status: "ready",
+    payload: {
+      kind: "text",
+      text: "# 第五章：树与二叉树\n\n## 复习主线\n\n1. 二叉树的性质与存储\n2. 前序、中序、后序遍历\n3. 平衡树与常见易错点\n\n> 先掌握遍历，再回头串联复杂度。",
+      truncated: false,
+      size: 153,
+    },
+  },
+  "/books/高等数学/极限与连续.md": {
+    status: "ready",
+    payload: {
+      kind: "text",
+      text: "# 极限与连续\n\n## 三天复习计划\n\n### 第一天 · 极限的语言\n\n- 数列极限与函数极限\n- 左极限、右极限与双侧极限\n\n### 第二天 · 计算方法\n\n- 等价无穷小\n- 洛必达法则的适用条件\n\n### 第三天 · 连续性\n\n- 间断点分类\n- 闭区间连续函数的性质\n\n> 易混淆：存在极限不等于函数在该点有定义。",
+      truncated: false,
+      size: 221,
+    },
+  },
+};

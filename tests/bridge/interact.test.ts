@@ -8,6 +8,7 @@ import {
   classifyRisk,
   createAskUserMcp,
   LEEMO_ASK_USER_TOOL,
+  ASK_USER_TOOL_DESCRIPTION,
   type ApprovalTransport,
   type ApprovalPersistence,
   type ApprovalRequest,
@@ -24,7 +25,10 @@ import { LEEMO_WEB_SEARCH_TOOL } from "../../src/bridge/web-search-mcp";
 import { LEEMO_ACADEMIC_SEARCH_TOOL } from "../../src/bridge/academic-search-mcp";
 import { LEEMO_DOCUMENT_TOOL_NAMES } from "../../src/bridge/document-mcp";
 import { LEEMO_SKILL_ADMIN_TOOL_NAMES } from "../../src/bridge/skill-admin-mcp";
+import { LEEMO_SCHEDULED_TASK_TOOL_NAMES } from "../../src/bridge/scheduled-task-mcp";
+import { LEEMO_CAPTURE_TASK_TOOL_NAMES } from "../../src/bridge/capture-task-mcp";
 import { LEEMO_VISUALIZATION_TOOL_NAME } from "../../src/bridge/visualization-spec";
+import { LEEMO_WORK_OVERVIEW_TOOL } from "../../src/bridge/work-overview";
 
 // B3 — interaction bridge: ApprovalBroker (canUseTool three-tier + danger
 // downgrade + concurrency) and ask_user MCP (blocking round-trip + timeout +
@@ -160,6 +164,8 @@ describe("classifyRisk — Bash danger seed list (non-exhaustive)", () => {
     expect(classifyRisk("Grep", { pattern: "x" })).toBe("safe");
     expect(classifyRisk(LEEMO_SKILL_ADMIN_TOOL_NAMES.inspect, { source: "https://github.com/example/skill" })).toBe("safe");
     expect(classifyRisk(LEEMO_SKILL_ADMIN_TOOL_NAMES.scan, { source: "https://github.com/example/skill" })).toBe("safe");
+    expect(classifyRisk(LEEMO_SCHEDULED_TASK_TOOL_NAMES.list, {})).toBe("safe");
+    expect(classifyRisk(LEEMO_WORK_OVERVIEW_TOOL, { focus: "PDF 阅读" })).toBe("safe");
   });
 
   it("a write/exec tool with no dangerous pattern classifies as moderate", () => {
@@ -167,12 +173,59 @@ describe("classifyRisk — Bash danger seed list (non-exhaustive)", () => {
     expect(classifyRisk("Bash", { command: "ls -la" })).toBe("moderate");
     expect(classifyRisk(LEEMO_SKILL_ADMIN_TOOL_NAMES.install, { source: "https://github.com/example/skill" })).toBe("moderate");
     expect(classifyRisk(LEEMO_SKILL_ADMIN_TOOL_NAMES.remove, { id: "managed:demo" })).toBe("moderate");
+    expect(classifyRisk(LEEMO_SCHEDULED_TASK_TOOL_NAMES.create, { prompt: "每天复习" })).toBe("moderate");
   });
 
   it("applies the same danger boundary to Claude Code's Windows PowerShell tool", () => {
     expect(classifyRisk("PowerShell", { command: "Remove-Item -Recurse -Force C:\\Users\\R\\notes" })).toBe("dangerous");
     expect(classifyRisk("PowerShell", { command: "reg delete HKCU\\Software\\X /f" })).toBe("dangerous");
     expect(classifyRisk("PowerShell", { command: "npm test" })).toBe("moderate");
+  });
+});
+
+describe("ApprovalBroker — Leemo-owned maintenance cleanup", () => {
+  it("cleans an explicit Leemo temp/cache path without showing an approval card", async () => {
+    const { persistence } = memoryPersistence();
+    const { transport, seen } = scriptedApprovalTransport(() => "deny");
+    const broker = capabilityBroker(
+      "conv-cleanup",
+      transport,
+      persistence,
+      { mode: "default", dangerousCommandCaching: false },
+      ALL_RUNTIME_CAPABILITIES,
+    );
+
+    await expect(decide(broker.canUseTool, "PowerShell", {
+      command: "Remove-Item -LiteralPath 'E:\\Temp\\Leemo-root-markdown\\node-compile-cache' -Recurse -Force",
+    })).resolves.toMatchObject({ behavior: "allow" });
+    await expect(decide(broker.canUseTool, "Bash", {
+      command: "rm -rf '/tmp/leemo-render-cache'",
+    })).resolves.toMatchObject({ behavior: "allow" });
+
+    expect(seen).toEqual([]);
+  });
+
+  it("does not treat user data, variables, globs, or chained commands as maintenance", async () => {
+    const { persistence } = memoryPersistence();
+    const { transport, seen } = scriptedApprovalTransport(() => "allow-once");
+    const broker = capabilityBroker(
+      "conv-cleanup",
+      transport,
+      persistence,
+      { mode: "default", dangerousCommandCaching: false },
+      ALL_RUNTIME_CAPABILITIES,
+    );
+
+    for (const command of [
+      "Remove-Item -LiteralPath 'E:\\Leemo\\src' -Recurse -Force",
+      "Remove-Item -LiteralPath $env:TEMP -Recurse -Force",
+      "Remove-Item -LiteralPath 'E:\\Temp\\Leemo-*' -Recurse -Force",
+      "Remove-Item -LiteralPath 'E:\\Temp\\Leemo-cache' -Recurse -Force; Remove-Item 'E:\\Documents'",
+    ]) {
+      await expect(decide(broker.canUseTool, "PowerShell", { command })).resolves.toMatchObject({ behavior: "allow" });
+    }
+
+    expect(seen).toHaveLength(4);
   });
 });
 
@@ -280,7 +333,10 @@ describe("ApprovalBroker — built-in read-only tools never repeat consent", () 
       ALL_RUNTIME_CAPABILITIES,
     );
 
-    await decide(broker.canUseTool, "mcp__computer__ui_snapshot", {});
+    await decide(broker.canUseTool, "mcp__computer__window_management", {
+      action: "find",
+      title: "Leemo Computer Acceptance",
+    });
     await decide(broker.canUseTool, "mcp__computer__ui_type", {
       windowHandle: "42",
       name: "Text editor",
@@ -291,11 +347,15 @@ describe("ApprovalBroker — built-in read-only tools never repeat consent", () 
       direction: "down",
     });
     expect(seen).toHaveLength(1);
+    expect(seen[0].taskScope).toBe("computer-control");
+    expect(seen[0].inputSummary).toBe("Leemo Computer Acceptance");
 
     const send = { windowHandle: "42", name: "发送" };
     await decide(broker.canUseTool, "mcp__computer__ui_click", send);
     await decide(broker.canUseTool, "mcp__computer__ui_click", send);
     expect(seen).toHaveLength(2);
+    expect(seen[1].taskScope).toBe("exact-input");
+    expect(seen[1].inputSummary).toBe("发送");
 
     broker.beginTask();
     await decide(broker.canUseTool, "mcp__computer__ui_snapshot", {});
@@ -1011,6 +1071,31 @@ describe("ApprovalBroker — acceptEdits (轮 7 A5)", () => {
     expect(seen.length).toBe(1);
   });
 
+  it("auto-allows only read-only workboard tools and keeps local mutations moderate", async () => {
+    const { persistence } = memoryPersistence();
+    const { transport, seen } = scriptedApprovalTransport(() => "allow-once");
+    const broker = createApprovalBroker("conv-workboard", transport, persistence, {
+      mode: "acceptEdits",
+      dangerousCommandCaching: false,
+    });
+
+    await expect(decide(broker.canUseTool, LEEMO_CAPTURE_TASK_TOOL_NAMES.listNotes, {}))
+      .resolves.toEqual({ behavior: "allow" });
+    await expect(decide(broker.canUseTool, LEEMO_CAPTURE_TASK_TOOL_NAMES.listTasks, {}))
+      .resolves.toEqual({ behavior: "allow" });
+    expect(seen).toHaveLength(0);
+
+    expect(classifyRisk(LEEMO_CAPTURE_TASK_TOOL_NAMES.createNote, { title: "x" })).toBe("moderate");
+    expect(classifyRisk(LEEMO_CAPTURE_TASK_TOOL_NAMES.createTask, { title: "x" })).toBe("moderate");
+    expect(classifyRisk(LEEMO_CAPTURE_TASK_TOOL_NAMES.updateTask, { id: "task-1" })).toBe("moderate");
+    await decide(broker.canUseTool, LEEMO_CAPTURE_TASK_TOOL_NAMES.setTaskCompleted, {
+      id: "task-1",
+      expectedRevision: 1,
+      completed: true,
+    });
+    expect(seen).toHaveLength(1);
+  });
+
   it("default mode keeps asking for edits (acceptEdits is not the only mode)", async () => {
     const { persistence } = memoryPersistence();
     const { transport, seen } = scriptedApprovalTransport(() => "allow-once");
@@ -1053,6 +1138,14 @@ describe("ApprovalBroker — acceptEdits (轮 7 A5)", () => {
 // ===========================================================================
 
 describe("ApprovalBroker — ask_user is not a permission-gated tool", () => {
+  it("tells the model exactly when a bounded next-step choice must become a card", () => {
+    expect(ASK_USER_TOOL_DESCRIPTION).toContain("determines the next action or conversation path");
+    expect(ASK_USER_TOOL_DESCRIPTION).toContain("every qualifying round");
+    expect(ASK_USER_TOOL_DESCRIPTION).toContain("after earlier cards");
+    expect(ASK_USER_TOOL_DESCRIPTION).toContain("Do not use it for rhetorical questions");
+    expect(ASK_USER_TOOL_DESCRIPTION).toContain("open-ended reflection");
+  });
+
   it("auto-allows momo's own question tool with ZERO transport calls", async () => {
     const { persistence, list } = memoryPersistence();
     // Transport would DENY if consulted — proving the allow is a short-circuit.
@@ -1234,6 +1327,27 @@ describe("createAskUserMcp — blocking round-trip", () => {
     expect(mcp.server.type).toBe("sdk");
     expect(mcp.server.name).toBe("leemo-ask-user");
     expect(mcp.server.instance).toBeTruthy();
+  });
+
+  it("returns the same structured answer to another local execution engine", async () => {
+    const asks: AskUserPayload[] = [];
+    const mcp = createAskUserMcp("conv-structured", {
+      async ask(payload) {
+        asks.push(payload);
+      },
+    });
+
+    const pending = mcp.requestAnswer({
+      questions: [{ question: "Pick one", options: [{ label: "A" }, { label: "B" }] }],
+    });
+    await tick();
+    const answer: AskUserAnswer = {
+      id: asks[0].id,
+      items: [{ selected: ["B"], other: "补充说明" }],
+    };
+    mcp.provideAnswer(answer.id, answer);
+
+    await expect(pending).resolves.toEqual(answer);
   });
 });
 

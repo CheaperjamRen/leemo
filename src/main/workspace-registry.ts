@@ -12,6 +12,7 @@ export interface WorkspaceRegistryEntry {
   kind: "home" | "external";
   available: boolean;
   lastOpenedAt: number;
+  archived: boolean;
 }
 
 export interface ResolvedWorkspace extends WorkspaceRegistryEntry {
@@ -24,10 +25,11 @@ interface StoredWorkspace {
   name: string;
   root: string;
   lastOpenedAt: number;
+  archived: boolean;
 }
 
 interface RegistryFile {
-  version: 1;
+  version: 2;
   workspaces: StoredWorkspace[];
 }
 
@@ -35,6 +37,7 @@ export interface WorkspaceRegistry {
   list(): WorkspaceRegistryEntry[];
   register(candidate: string): WorkspaceRegistryEntry;
   touch(id: string): WorkspaceRegistryEntry;
+  update(id: string, input: { name?: string; archived?: boolean }): WorkspaceRegistryEntry;
   forget(id: string): boolean;
   resolve(id: string): ResolvedWorkspace;
 }
@@ -88,7 +91,7 @@ function usableDirectory(candidate: string): boolean {
   }
 }
 
-function storedWorkspace(value: unknown): value is StoredWorkspace {
+function storedWorkspace(value: unknown): value is Omit<StoredWorkspace, "archived"> & { archived?: boolean } {
   if (!value || typeof value !== "object") return false;
   const item = value as Partial<StoredWorkspace>;
   return typeof item.id === "string"
@@ -98,7 +101,8 @@ function storedWorkspace(value: unknown): value is StoredWorkspace {
     && typeof item.root === "string"
     && path.isAbsolute(item.root)
     && typeof item.lastOpenedAt === "number"
-    && Number.isFinite(item.lastOpenedAt);
+    && Number.isFinite(item.lastOpenedAt)
+    && (item.archived === undefined || typeof item.archived === "boolean");
 }
 
 function writeAtomic(file: string, contents: string): void {
@@ -127,15 +131,17 @@ export function createWorkspaceRegistry(options: WorkspaceRegistryOptions): Work
     if (!fs.existsSync(registryFile)) return [];
     try {
       const parsed = JSON.parse(fs.readFileSync(registryFile, "utf8")) as Partial<RegistryFile>;
-      if (parsed.version !== 1 || !Array.isArray(parsed.workspaces)) return [];
+      const version = (parsed as { version?: unknown }).version;
+      if ((version !== 1 && version !== 2) || !Array.isArray(parsed.workspaces)) return [];
       const byId = new Map<string, StoredWorkspace>();
       for (const value of parsed.workspaces) {
         if (!storedWorkspace(value)) continue;
         // A hand-edited/corrupt file must not let an id point at a different
         // path. Recompute the opaque id from the stored canonical path.
         if (workspaceId(value.root) !== value.id) continue;
+        const normalized: StoredWorkspace = { ...value, archived: value.archived ?? false };
         const previous = byId.get(value.id);
-        if (!previous || value.lastOpenedAt >= previous.lastOpenedAt) byId.set(value.id, value);
+        if (!previous || normalized.lastOpenedAt >= previous.lastOpenedAt) byId.set(value.id, normalized);
       }
       return [...byId.values()];
     } catch {
@@ -145,7 +151,7 @@ export function createWorkspaceRegistry(options: WorkspaceRegistryOptions): Work
 
   const write = (workspaces: StoredWorkspace[]): void => {
     const file: RegistryFile = {
-      version: 1,
+      version: 2,
       workspaces: [...workspaces].sort((left, right) => right.lastOpenedAt - left.lastOpenedAt),
     };
     writeAtomic(registryFile, `${JSON.stringify(file, null, 2)}\n`);
@@ -158,6 +164,7 @@ export function createWorkspaceRegistry(options: WorkspaceRegistryOptions): Work
     kind: "home",
     available: true,
     lastOpenedAt: 0,
+    archived: false,
     root: homeRoot,
   });
 
@@ -173,6 +180,7 @@ export function createWorkspaceRegistry(options: WorkspaceRegistryOptions): Work
     kind: "external",
     available: usableDirectory(stored.root),
     lastOpenedAt: stored.lastOpenedAt,
+    archived: stored.archived,
   });
 
   const resolveStored = (id: string): StoredWorkspace => {
@@ -191,11 +199,13 @@ export function createWorkspaceRegistry(options: WorkspaceRegistryOptions): Work
       if (pathKey(root) === pathKey(homeRoot)) return homeEntry();
       const id = workspaceId(root);
       const existing = read();
+      const previous = existing.find((item) => item.id === id);
       const record: StoredWorkspace = {
         id,
-        name: path.basename(root) || "外部工作区",
+        name: previous?.name ?? (path.basename(root) || "外部工作区"),
         root,
         lastOpenedAt: now(),
+        archived: false,
       };
       write([...existing.filter((item) => item.id !== id), record]);
       return project(record);
@@ -205,6 +215,22 @@ export function createWorkspaceRegistry(options: WorkspaceRegistryOptions): Work
       if (id === HOME_WORKSPACE_ID) return homeEntry();
       const target = resolveStored(id);
       const next = { ...target, lastOpenedAt: now() };
+      write([...read().filter((item) => item.id !== id), next]);
+      return project(next);
+    },
+
+    update(id, input) {
+      if (id === HOME_WORKSPACE_ID) throw new Error("Leemo 主工作区不能重命名或归档。");
+      const target = resolveStored(id);
+      const next = { ...target };
+      if (input.name !== undefined) {
+        const name = input.name.trim();
+        if (!name || name.length > 80 || /[\u0000-\u001f]/.test(name)) {
+          throw new Error("本子显示名称不能为空，且不能超过 80 个字。");
+        }
+        next.name = name;
+      }
+      if (input.archived !== undefined) next.archived = input.archived;
       write([...read().filter((item) => item.id !== id), next]);
       return project(next);
     },

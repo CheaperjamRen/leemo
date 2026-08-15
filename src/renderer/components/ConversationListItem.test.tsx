@@ -22,6 +22,61 @@ const CONVERSATION: ConversationMeta = {
 };
 
 describe("ConversationListItem lifecycle menu", () => {
+  it("keeps workbench conversations readable without inflating the sidebar", () => {
+    render(
+      <ConversationListItem
+        conversation={CONVERSATION}
+        active
+        variant="workbench"
+        onPick={vi.fn()}
+        onRename={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: "高数复习计划" })).toHaveClass("h-9", "text-[13px]");
+    expect(screen.getByRole("button", { name: "高数复习计划" })).toHaveClass("focus-visible:outline-none");
+    expect(screen.getByRole("button", { name: "高数复习计划" }).parentElement).toHaveClass("focus-within:ring-2");
+  });
+
+  it("offers a quiet unread toggle and keeps the dot on the active row", async () => {
+    const user = userEvent.setup();
+    const onUnread = vi.fn(async () => undefined);
+    render(
+      <ConversationListItem
+        conversation={{ ...CONVERSATION, unread: true }}
+        active
+        variant="workbench"
+        onPick={vi.fn()}
+        onRename={vi.fn()}
+        onUnread={onUnread}
+        status={{ kind: "completed", label: "已完成", detail: "任务已完成", runId: "run-1" }}
+      />,
+    );
+
+    expect(screen.getByRole("img", { name: "高数复习计划：未读" })).toBeInTheDocument();
+    expect(screen.queryByText("已完成")).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "更多操作：高数复习计划" }));
+    await user.click(screen.getByRole("button", { name: "标记已读" }));
+    expect(onUnread).toHaveBeenCalledWith(false);
+  });
+
+  it("shows only the error icon when a failed run is also unread", () => {
+    render(
+      <ConversationListItem
+        conversation={{ ...CONVERSATION, unread: true }}
+        active={false}
+        variant="workbench"
+        onPick={vi.fn()}
+        onRename={vi.fn()}
+        status={{ kind: "failed", label: "失败", detail: "这次没有完成", runId: "run-1" }}
+      />,
+    );
+
+    expect(screen.getByRole("img", { name: "高数复习计划：报错" })).toBeInTheDocument();
+    expect(screen.queryByRole("img", { name: "高数复习计划：未读" })).not.toBeInTheDocument();
+    expect(screen.queryByText("失败")).not.toBeInTheDocument();
+  });
+
   it("keeps row actions quiet until the overflow menu is opened", async () => {
     const user = userEvent.setup();
     const onPin = vi.fn(async () => undefined);
@@ -67,6 +122,49 @@ describe("ConversationListItem lifecycle menu", () => {
     await user.click(screen.getByRole("button", { name: "移动到求职" }));
 
     expect(onMove).toHaveBeenCalledWith({ workspaceId: "leemo-home", bookId: "求职", label: "求职" });
+  });
+
+  it("uses the compact approved labels in the buddy history menu", async () => {
+    const user = userEvent.setup();
+    render(
+      <ConversationListItem
+        conversation={{ ...CONVERSATION, source: "buddy", bookId: null }}
+        active
+        variant="buddy"
+        onPick={vi.fn()}
+        onRename={vi.fn()}
+        moveTargets={[{ workspaceId: "leemo-home", bookId: "求职", label: "求职" }]}
+        onMove={vi.fn()}
+        onDelete={vi.fn()}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "更多操作：高数复习计划" }));
+    const menu = document.querySelector("[data-conversation-menu]");
+    expect(menu).not.toBeNull();
+    expect(menu?.closest("[data-anchored-layer]")).not.toBeNull();
+    expect(screen.getByRole("button", { name: "移动到其他本子" })).toHaveTextContent("移动到本子");
+    expect(screen.getByRole("button", { name: "删除对话" })).toHaveTextContent(/^删除$/);
+  });
+
+  it("renders workbench actions in a viewport-aware anchored layer instead of a clipped downward menu", async () => {
+    const user = userEvent.setup();
+    render(
+      <ConversationListItem
+        conversation={CONVERSATION}
+        active
+        variant="workbench"
+        onPick={vi.fn()}
+        onRename={vi.fn()}
+        onArchive={vi.fn()}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "更多操作：高数复习计划" }));
+    const layer = document.querySelector("[data-anchored-layer]");
+    expect(layer).not.toBeNull();
+    expect(layer).toHaveAttribute("role", "menu");
+    expect(layer).toHaveAttribute("data-placement");
   });
 
   it("requires an inline confirmation before permanent deletion", async () => {

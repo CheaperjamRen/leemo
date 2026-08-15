@@ -107,7 +107,7 @@ try {
   insist((await composer.inputValue()) === "请总结 ", "选择文件后没有只移除当前 @ 查询");
   await page.getByText("引用验收.md", { exact: true }).waitFor({ state: "visible" });
 
-  await page.getByRole("button", { name: "工作台", exact: true }).click();
+  await page.getByRole("button", { name: "切换到工作台", exact: true }).click();
   await page.getByRole("button", { name: "文件树", exact: true }).click();
   const directory = page.getByTestId("dir-row-默认工作区");
   await directory.waitFor({ state: "visible" });

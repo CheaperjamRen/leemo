@@ -264,7 +264,7 @@ describe("token 与头处理", () => {
         "anthropic-beta": "fine-grained-tool-streaming-2025-05-14",
         "user-agent": "claude-cli/2.1.210",
       },
-      "sk-test-real-key"
+      "test-key-real-key"
     );
     expect(out.host).toBeUndefined();
     expect(out["content-length"]).toBeUndefined();
@@ -272,7 +272,7 @@ describe("token 与头处理", () => {
     expect(out["anthropic-version"]).toBe("2023-06-01");
     expect(out["anthropic-beta"]).toBe("fine-grained-tool-streaming-2025-05-14");
     expect(out["user-agent"]).toBe("claude-cli/2.1.210");
-    expect(out.authorization).toBe("Bearer sk-test-real-key");
+    expect(out.authorization).toBe("Bearer test-key-real-key");
     expect(out["x-api-key"]).toBeUndefined();
   });
 
@@ -413,7 +413,7 @@ describe("startSearchShim —— 真 socket", () => {
     const shim = await startSearchShim({
       resolveUpstream: () => ({
         baseUrl: upstream.url,
-        apiKey: "sk-test-plan",
+        apiKey: "test-key-plan",
         apiKeyHeader: "x-api-key",
         headers: { "X-Tenant": "workspace-7" },
       }),
@@ -429,7 +429,7 @@ describe("startSearchShim —— 真 socket", () => {
       expect(upstream.hits).toHaveLength(1);
       expect(upstream.hits[0]).toMatchObject({
         auth: undefined,
-        xkey: "sk-test-plan",
+        xkey: "test-key-plan",
         tenant: "workspace-7",
       });
     } finally {
@@ -442,7 +442,7 @@ describe("startSearchShim —— 真 socket", () => {
     const upstream = await startFakeUpstream();
     const runSearch = vi.fn(async () => HITS);
     const shim = await startSearchShim({
-      resolveUpstream: () => ({ baseUrl: upstream.url, apiKey: "sk-test-real" }),
+      resolveUpstream: () => ({ baseUrl: upstream.url, apiKey: "test-key-real" }),
       runSearch,
     });
     try {
@@ -468,7 +468,7 @@ describe("startSearchShim —— 真 socket", () => {
   it("stream:true 时回 SSE，stream 缺省时回 JSON", async () => {
     const upstream = await startFakeUpstream();
     const shim = await startSearchShim({
-      resolveUpstream: () => ({ baseUrl: upstream.url, apiKey: "sk-test-real" }),
+      resolveUpstream: () => ({ baseUrl: upstream.url, apiKey: "test-key-real" }),
       runSearch: async () => HITS,
     });
     try {
@@ -495,7 +495,7 @@ describe("startSearchShim —— 真 socket", () => {
   it("搜索全挂：回错误 block（不是空数组），stats 记 failed", async () => {
     const upstream = await startFakeUpstream();
     const shim = await startSearchShim({
-      resolveUpstream: () => ({ baseUrl: upstream.url, apiKey: "sk-test-real" }),
+      resolveUpstream: () => ({ baseUrl: upstream.url, apiKey: "test-key-real" }),
       runSearch: async () => null,
     });
     try {
@@ -516,7 +516,7 @@ describe("startSearchShim —— 真 socket", () => {
   it("搜索源抛异常也不 500 —— 降级成「搜索失败」这一种可解释的结果", async () => {
     const upstream = await startFakeUpstream();
     const shim = await startSearchShim({
-      resolveUpstream: () => ({ baseUrl: upstream.url, apiKey: "sk-test-real" }),
+      resolveUpstream: () => ({ baseUrl: upstream.url, apiKey: "test-key-real" }),
       runSearch: async () => {
         throw new Error("anysearch HTTP 500");
       },
@@ -540,7 +540,7 @@ describe("startSearchShim —— 真 socket", () => {
     const upstream = await startFakeUpstream();
     const runSearch = vi.fn(async () => HITS);
     const shim = await startSearchShim({
-      resolveUpstream: () => ({ baseUrl: upstream.url, apiKey: "sk-test-real" }),
+      resolveUpstream: () => ({ baseUrl: upstream.url, apiKey: "test-key-real" }),
       runSearch,
     });
     try {
@@ -567,7 +567,7 @@ describe("startSearchShim —— 真 socket", () => {
   it("上游收到的是**真 key**，占位符不出门", async () => {
     const upstream = await startFakeUpstream();
     const shim = await startSearchShim({
-      resolveUpstream: () => ({ baseUrl: upstream.url, apiKey: "sk-test-real-key-value" }),
+      resolveUpstream: () => ({ baseUrl: upstream.url, apiKey: "test-key-real-key-value" }),
       runSearch: async () => HITS,
     });
     try {
@@ -576,7 +576,7 @@ describe("startSearchShim —— 真 socket", () => {
         headers: { authorization: `Bearer ${SEARCH_SHIM_PREFIX}deepseek` },
         body: JSON.stringify(normalConversationBody()),
       });
-      expect(upstream.hits[0]!.auth).toBe("Bearer sk-test-real-key-value");
+      expect(upstream.hits[0]!.auth).toBe("Bearer test-key-real-key-value");
       expect(upstream.hits[0]!.xkey).toBeUndefined();
       expect(JSON.stringify(upstream.hits[0])).not.toContain(SEARCH_SHIM_PREFIX);
     } finally {
@@ -597,7 +597,7 @@ describe("startSearchShim —— 真 socket", () => {
       }, 120);
     });
     const shim = await startSearchShim({
-      resolveUpstream: () => ({ baseUrl: upstream.url, apiKey: "sk-test-real" }),
+      resolveUpstream: () => ({ baseUrl: upstream.url, apiKey: "test-key-real" }),
       runSearch: async () => HITS,
     });
     try {
@@ -659,7 +659,7 @@ describe("startSearchShim —— 真 socket", () => {
   it("上游连不上 → 502，不挂死", async () => {
     const shim = await startSearchShim({
       // 端口 1 上不会有人监听
-      resolveUpstream: () => ({ baseUrl: "http://127.0.0.1:1/anthropic", apiKey: "sk-test" }),
+      resolveUpstream: () => ({ baseUrl: "http://127.0.0.1:1/anthropic", apiKey: "test-key" }),
       runSearch: async () => HITS,
     });
     try {
@@ -677,7 +677,7 @@ describe("startSearchShim —— 真 socket", () => {
   it("非 JSON body 不劫、照常透传（count_tokens 等非对话路径也走这儿）", async () => {
     const upstream = await startFakeUpstream();
     const shim = await startSearchShim({
-      resolveUpstream: () => ({ baseUrl: upstream.url, apiKey: "sk-test-real" }),
+      resolveUpstream: () => ({ baseUrl: upstream.url, apiKey: "test-key-real" }),
       runSearch: async () => HITS,
     });
     try {

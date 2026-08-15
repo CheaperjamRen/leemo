@@ -133,6 +133,17 @@
       "category": "productivity",
       "categoryLabel": "效率与协作"
     },
+    "ima-skill": {
+      "displayName": "IMA 知识库",
+      "description": "连接腾讯 IMA，管理笔记、知识库、文件与网页资料。",
+      "sourceLabel": "腾讯官方",
+      "sourceUrl": "https://app-dl.ima.qq.com/skills/ima-skills-1.1.2.zip",
+      "repository": "腾讯 IMA",
+      "revision": "1.1.2",
+      "license": "腾讯官方分发",
+      "category": "integration",
+      "categoryLabel": "知识与连接"
+    },
     "baoyu-format-markdown": {
       "displayName": "Markdown 排版",
       "description": "不改写原意，为 Markdown 补齐结构、重点与中英文排版。",
@@ -275,6 +286,26 @@
       "license": "MIT",
       "category": "publishing",
       "categoryLabel": "发布与运营"
+    },
+    "leemo-research": {
+      "displayName": "Leemo 科研",
+      "description": "从选题、检索和证据管理到分析、写作与复核的可追溯科研工作流。",
+      "sourceLabel": "Leemo 自有",
+      "repository": "Leemo Research",
+      "revision": "2026-08-09",
+      "license": "用户授权随 Leemo 分发（非开源）",
+      "category": "research",
+      "categoryLabel": "研究与阅读",
+      "setupMessage": "自动初始化与项目校验需本机 Python 3；未安装时仍可使用研究方法和模板，但不会把自动校验标成已运行。"
+    },
+    "meet-momo": {
+      "displayName": "和 momo 认识一下",
+      "description": "通过自然对话让 momo 建立可确认、可更新的用户理解与协作方式。",
+      "sourceLabel": "Leemo 原生",
+      "repository": "Leemo",
+      "license": "Apache-2.0",
+      "category": "companion",
+      "categoryLabel": "关系与陪伴"
     }
   }
 }

@@ -1,5 +1,9 @@
 import { describe, it, expect } from "vitest";
-import { testProviderConnection, type ProviderTestTarget } from "../../src/host/provider-test";
+import {
+  requestProviderText,
+  testProviderConnection,
+  type ProviderTestTarget,
+} from "../../src/host/provider-test";
 
 // 轮 3 卡 F2 — provider-test.ts. fetchFn is fully injected; zero live network
 // calls. `now` is injected too, so latencyMs assertions are deterministic.
@@ -35,24 +39,69 @@ function throwingFetch(err: unknown): typeof fetch {
 
 const anthropicTarget: ProviderTestTarget = {
   baseUrl: "https://api.deepseek.com/anthropic",
-  apiKey: "sk-test-DIRECTKEY-anthropic-000",
+  apiKey: "test-key-DIRECTKEY-anthropic-000",
   modelId: "deepseek-v4-flash",
   apiFormat: "anthropic",
 };
 
 const openaiTarget: ProviderTestTarget = {
   baseUrl: "https://relay.example.com/v1",
-  apiKey: "sk-test-DIRECTKEY-openai-111",
+  apiKey: "test-key-DIRECTKEY-openai-111",
   modelId: "gpt-4o-mini",
   apiFormat: "openai",
 };
 
 const responsesTarget: ProviderTestTarget = {
   baseUrl: "https://tokenflux.dev/v1",
-  apiKey: "sk-test-tokenflux-222",
+  apiKey: "test-key-tokenflux-222",
   modelId: "gpt-5.6-sol",
   apiFormat: "openai-responses",
 };
+
+describe("requestProviderText", () => {
+  it.each([
+    {
+      target: anthropicTarget,
+      response: { content: [{ type: "text", text: '{"items":[]}' }] },
+      endpoint: "/v1/messages",
+      tokenKey: "max_tokens",
+    },
+    {
+      target: openaiTarget,
+      response: { choices: [{ message: { content: '{"items":[]}' } }] },
+      endpoint: "/chat/completions",
+      tokenKey: "max_tokens",
+    },
+    {
+      target: responsesTarget,
+      response: { output: [{ type: "message", content: [{ type: "output_text", text: '{"items":[]}' }] }] },
+      endpoint: "/responses",
+      tokenKey: "max_output_tokens",
+    },
+  ])("uses the configured $target.apiFormat wire format", async ({ target, response, endpoint, tokenKey }) => {
+    const calls: CapturedCall[] = [];
+    const result = await requestProviderText(target, "Return JSON only.", {
+      fetchFn: sequencedFetch([fakeResponse(200, response)], calls),
+      maxTokens: 384,
+    });
+
+    expect(result).toEqual({ ok: true, text: '{"items":[]}' });
+    expect(calls).toHaveLength(1);
+    expect(calls[0].url).toContain(endpoint);
+    const body = JSON.parse(calls[0].init.body ?? "{}");
+    expect(body[tokenKey]).toBe(384);
+    if (target.apiFormat === "openai-responses") expect(body.store).toBe(false);
+  });
+
+  it("returns a classified failure without leaking the configured key", async () => {
+    const result = await requestProviderText(anthropicTarget, "Return JSON only.", {
+      fetchFn: throwingFetch(new Error(`failed with ${anthropicTarget.apiKey}`)),
+    });
+
+    expect(result.ok).toBe(false);
+    expect(JSON.stringify(result)).not.toContain(anthropicTarget.apiKey);
+  });
+});
 
 function fixedClock(values: number[]): () => number {
   let i = 0;

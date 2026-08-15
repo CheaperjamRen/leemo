@@ -111,6 +111,43 @@ describe("WorkspaceRegistry", () => {
     expect(() => f.registry.forget(HOME_WORKSPACE_ID)).toThrow(/不能移除/);
   });
 
+  it("persists display rename and archive without touching the external folder", () => {
+    const f = fixture();
+    const marker = path.join(f.externalRoot, "实验数据.csv");
+    fs.writeFileSync(marker, "keep", "utf8");
+    const entry = f.registry.register(f.externalRoot);
+
+    expect(f.registry.update(entry.id, { name: "毕业论文资料", archived: true })).toMatchObject({
+      id: entry.id,
+      name: "毕业论文资料",
+      archived: true,
+    });
+    expect(f.registry.list().find((item) => item.id === entry.id)).toMatchObject({
+      name: "毕业论文资料",
+      archived: true,
+    });
+    expect(fs.readFileSync(marker, "utf8")).toBe("keep");
+
+    const reopened = createWorkspaceRegistry({
+      homeRoot: f.homeRoot,
+      registryFile: f.registryFile,
+    });
+    expect(reopened.list().find((item) => item.id === entry.id)).toMatchObject({
+      name: "毕业论文资料",
+      archived: true,
+    });
+  });
+
+  it("migrates version 1 registry entries as unarchived", () => {
+    const f = fixture();
+    const entry = f.registry.register(f.externalRoot);
+    const legacy = JSON.parse(fs.readFileSync(f.registryFile, "utf8")) as { workspaces: unknown[] };
+    fs.writeFileSync(f.registryFile, `${JSON.stringify({ version: 1, workspaces: legacy.workspaces })}\n`, "utf8");
+
+    const reopened = createWorkspaceRegistry({ homeRoot: f.homeRoot, registryFile: f.registryFile });
+    expect(reopened.list().find((item) => item.id === entry.id)).toMatchObject({ archived: false });
+  });
+
   it("rejects files and unknown ids with user-facing errors", () => {
     const f = fixture();
     const file = path.join(f.root, "not-a-folder.txt");

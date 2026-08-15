@@ -40,6 +40,13 @@ export interface QueryOptions {
   abortController?: AbortController;
   /** Session id to resume; omitted on the first round. */
   resume?: string;
+  /** Built-in tools removed for this round only. Conversation-wide settings
+   * are merged later by the SDK adapter. */
+  disallowedTools?: string[];
+}
+
+export interface ConversationRoundOptions {
+  disallowedTools?: string[];
 }
 
 /** Custom-spawn acknowledgement written synchronously by sdk-process.ts when
@@ -53,8 +60,12 @@ export interface QueryParams {
   options?: QueryOptions;
 }
 
+export interface QueryStream extends AsyncIterable<SdkMessageLike> {
+  streamInput?(stream: AsyncIterable<unknown>): Promise<void>;
+}
+
 /** The injected query function. Fake in tests; real SDK `query` (adapted) in B4. */
-export type QueryFn = (params: QueryParams) => AsyncIterable<SdkMessageLike>;
+export type QueryFn = (params: QueryParams) => QueryStream;
 
 export interface BridgeDeps {
   queryFn: QueryFn;
@@ -99,7 +110,9 @@ export type ConversationState = "idle" | "running" | "disposed";
 export interface ConversationHandle<TMessage = SdkMessageLike> {
   readonly id: string;
   /** Start a round. Returns the (raw, in B1) message stream. Throws if disposed. */
-  send(prompt: string): AsyncIterable<TMessage>;
+  send(prompt: string, options?: ConversationRoundOptions): AsyncIterable<TMessage>;
+  /** Add guidance to the active round through the SDK's streaming-input API. */
+  guide(prompt: string): Promise<"applied">;
   /** Abort the active round. True means no owned process tree remains and the
    * conversation may send again; false keeps the slot closed. */
   interrupt(): boolean;
@@ -147,6 +160,7 @@ class Conversation implements ConversationHandle {
   private searchShimPort?: number;
   private sessionId?: string;
   private currentAbort?: AbortController;
+  private currentQuery?: QueryStream;
   /** A failed process-tree stop is terminal for this in-memory handle. Clearing
    * the controller must never let a second Stop turn an unconfirmed process
    * into an apparently reusable conversation. Only dispose/restart replaces
@@ -225,6 +239,26 @@ class Conversation implements ConversationHandle {
     return true;
   }
 
+  async guide(prompt: string): Promise<"applied"> {
+    const query = this.currentQuery;
+    if (this._state !== "running" || !query?.streamInput) {
+      throw new Error("当前任务暂时不能接收引导，请稍后重试。");
+    }
+    const message = prompt.trim();
+    if (!message) throw new Error("引导内容不能为空。");
+    await query.streamInput((async function* () {
+      yield {
+        type: "user",
+        message: { role: "user", content: message },
+        parent_tool_use_id: null,
+        session_id: "",
+        priority: "now",
+        shouldQuery: true,
+      };
+    })());
+    return "applied";
+  }
+
   dispose(): void {
     const abort = this.currentAbort;
     this.activeRoundId = undefined;
@@ -237,7 +271,7 @@ class Conversation implements ConversationHandle {
    *  (process.env spread + provider env + per-provider CONFIG_DIR), and resume
    *  if a session was captured on a prior round. Runs synchronously at send()
    *  time so interrupt() has a controller and env reflects the current model. */
-  private buildOptions(): QueryOptions {
+  private buildOptions(roundOptions?: ConversationRoundOptions): QueryOptions {
     const abortController = new AbortController();
 
     const configDir = path.join(this.dataDir, "providers", this.configDirProviderId);
@@ -253,9 +287,19 @@ class Conversation implements ConversationHandle {
       ...sanitizeHostEnv(process.env),
       ...buildConversationEnv(this.provider, this.modelId, this.gatewayPort, this.searchShimPort),
       CLAUDE_CONFIG_DIR: configDir,
+      // The UI promises at most five transparent reconnect attempts. Pin the
+      // native SDK to the same limit so a host-level override cannot leave a
+      // turn running while every later retry is misleadingly displayed as 5/5.
+      CLAUDE_CODE_MAX_RETRIES: "5",
     };
 
-    const options: QueryOptions = { env, abortController };
+    const options: QueryOptions = {
+      env,
+      abortController,
+      ...(roundOptions?.disallowedTools !== undefined
+        ? { disallowedTools: [...roundOptions.disallowedTools] }
+        : {}),
+    };
     if (this.sessionId) options.resume = this.sessionId;
     return options;
   }
@@ -272,19 +316,25 @@ class Conversation implements ConversationHandle {
    *  send()'s degrade path, after it has established the first attempt produced
    *  no effects. Drops the dead session id first so buildOptions() omits resume
    *  and the next round carries whatever session this one mints. */
-  private async *retryWithoutResume(prompt: string, roundId: number): AsyncIterable<SdkMessageLike> {
+  private async *retryWithoutResume(
+    prompt: string,
+    roundId: number,
+    roundOptions?: ConversationRoundOptions,
+  ): AsyncIterable<SdkMessageLike> {
     if (this.activeRoundId !== roundId) return;
     this.sessionId = undefined;
-    const options = this.buildOptions(); // fresh AbortController, no resume
+    const options = this.buildOptions(roundOptions); // fresh AbortController, no resume
     this.currentAbort = options.abortController;
-    for await (const msg of this.queryFn({ prompt, options })) {
+    const query = this.queryFn({ prompt, options });
+    this.currentQuery = query;
+    for await (const msg of query) {
       if (this.activeRoundId !== roundId) return;
       this.captureSession(msg, roundId);
       yield msg;
     }
   }
 
-  send(prompt: string): AsyncIterable<SdkMessageLike> {
+  send(prompt: string, roundOptions?: ConversationRoundOptions): AsyncIterable<SdkMessageLike> {
     if (this._state === "disposed") {
       throw new Error("cannot send() on a disposed conversation");
     }
@@ -300,7 +350,7 @@ class Conversation implements ConversationHandle {
     // env captures the model/resume as of this call. buildOptions may throw
     // (e.g. missing gateway port) — do it BEFORE flipping state so a failure
     // leaves the conversation reusable (idle), not stuck running.
-    const options = this.buildOptions();
+    const options = this.buildOptions(roundOptions);
     const roundId = ++this.nextRoundId;
     // Flip to running synchronously so a racing send() is rejected even before
     // the generator is first pulled.
@@ -361,7 +411,9 @@ class Conversation implements ConversationHandle {
           self.state !== "disposed";
 
         try {
-          for await (const msg of self.queryFn({ prompt, options })) {
+          const query = self.queryFn({ prompt, options });
+          self.currentQuery = query;
+          for await (const msg of query) {
             if (self.activeRoundId !== roundId) return;
             if (degradable && isTerminalErrorResult(msg)) {
               held.push(msg); // might be the dead-resume round; decide at the end
@@ -381,7 +433,7 @@ class Conversation implements ConversationHandle {
           // as the dead-resume case; otherwise pass the held result through.
           if (held.length > 0 && canDegradeNow()) {
             held = [];
-            yield* self.retryWithoutResume(prompt, roundId);
+            yield* self.retryWithoutResume(prompt, roundId, roundOptions);
           } else {
             yield* flushHeld();
           }
@@ -391,7 +443,7 @@ class Conversation implements ConversationHandle {
             throw e;
           }
           held = [];
-          yield* self.retryWithoutResume(prompt, roundId);
+          yield* self.retryWithoutResume(prompt, roundId, roundOptions);
         }
       } finally {
         // Only the still-current round may release the slot. An interrupted old
@@ -399,6 +451,7 @@ class Conversation implements ConversationHandle {
         if (self.activeRoundId === roundId) {
           self.activeRoundId = undefined;
           self.currentAbort = undefined;
+          self.currentQuery = undefined;
           if (self.state !== "disposed") self.setState("idle");
         }
       }

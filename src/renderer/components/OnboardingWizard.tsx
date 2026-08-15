@@ -5,6 +5,8 @@ import type { ProviderDraft } from "../../bridge/contract";
 import { mergeCapabilityProbeResults } from "../../bridge/model-capabilities";
 import { BridgeContext, useWorkspace, type BridgeStores } from "../bridge/context";
 import MomoAvatar from "./momo/MomoAvatar";
+import { ProviderBrandIcon } from "./ProviderBrandIcon";
+import "./ProviderList.css";
 
 type SetupStage = "connect" | "ready";
 
@@ -227,14 +229,19 @@ export function OnboardingWizard(): React.JSX.Element | null {
                             type="button"
                             aria-pressed={chosen}
                             onClick={() => chooseProvider(provider.id)}
-                            className={`relative min-h-[76px] rounded-md border px-3 py-3 text-left transition-colors ${
+                            className={`relative min-h-[76px] rounded-[10px] border px-2.5 py-2.5 text-left transition-[border-color,background-color,box-shadow,transform] ${
                               chosen
-                                ? "border-[var(--leemo-amber)] bg-[var(--leemo-amber-bg)]"
-                                : "border-[#DEDFE1] bg-white hover:border-[#B8BBC0]"
+                                ? "border-[var(--leemo-amber)] bg-[var(--leemo-amber-bg)] shadow-[0_5px_16px_-12px_rgba(112,63,15,0.45)]"
+                                : "border-[#DEDFE1] bg-white shadow-[0_4px_14px_-13px_rgba(15,27,46,0.35)] hover:-translate-y-px hover:border-[#B8BBC0] hover:shadow-[0_8px_20px_-15px_rgba(15,27,46,0.4)]"
                             }`}
                           >
-                            <span className="block truncate text-[13px] font-medium text-[#242426]">{provider.name}</span>
-                            <span className="mt-1 block text-[10.5px] text-[#8B8F95]">{provider.models.length} 个预置模型</span>
+                            <span className="flex min-w-0 items-center gap-2.5">
+                              <ProviderBrandIcon kind={provider.kind} name={provider.name} compact />
+                              <span className="min-w-0 flex-1">
+                                <span className={`block truncate text-[13px] font-medium text-[#242426] ${recommended ? "pr-8" : ""}`}>{provider.name}</span>
+                                <span className="mt-1 block text-[10.5px] text-[#8B8F95]">{provider.models.length} 个预置模型</span>
+                              </span>
+                            </span>
                             {recommended && (
                               <span className="absolute right-2 top-2 text-[9.5px] font-medium text-[var(--leemo-amber)]">推荐</span>
                             )}

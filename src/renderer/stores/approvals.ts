@@ -1,6 +1,7 @@
 import { createStore, type StoreApi } from "zustand/vanilla";
 import type {
   ApprovalRequest,
+  ApprovalTaskScope,
   ApprovalTier,
   AskUserAnswerItem,
   AskUserPayload,
@@ -19,6 +20,8 @@ export type PendingInteraction =
       toolName: string;
       inputSummary: string;
       risk: RiskLevel;
+      /** Scope enforced by the permission broker for a task-level grant. */
+      taskScope?: ApprovalTaskScope;
       /** SDK tool-call id, so the card renders next to the tool that raised
        *  it. Absent for hosts that predate the field. */
       toolUseId?: string;
@@ -41,8 +44,9 @@ export type ResolvedInteraction =
       toolName: string;
       inputSummary: string;
       risk: RiskLevel;
+      taskScope?: ApprovalTaskScope;
       toolUseId?: string;
-      outcome: ApprovalTier | "cancelled";
+      outcome: ApprovalTier | "cancelled" | "expired";
     }
   | {
       kind: "question";
@@ -61,6 +65,7 @@ export interface ApprovalsState extends ApprovalsData {
   whitelist: WhitelistEntry[];
   decide(id: string, decision: ApprovalTier, message?: string): Promise<void>;
   answer(id: string, items: AskUserAnswerItem[]): Promise<void>;
+  expire(id: string): void;
   cancelForConversation(conversationId: string): void;
   refreshWhitelist(): Promise<void>;
   revokeWhitelistEntry(entry: { toolName: string; risk: RiskLevel }): Promise<void>;
@@ -90,6 +95,7 @@ function resolvedFromCancelled(interaction: PendingInteraction): ResolvedInterac
       toolName: interaction.toolName,
       inputSummary: interaction.inputSummary,
       risk: interaction.risk,
+      taskScope: interaction.taskScope,
       toolUseId: interaction.toolUseId,
       outcome: "cancelled",
     };
@@ -132,6 +138,7 @@ export function foldApprovalRequest(
     toolName: payload.toolName,
     inputSummary: payload.inputSummary,
     risk: payload.risk,
+    taskScope: payload.taskScope,
     toolUseId: payload.toolUseId,
     receivedAt,
   };
@@ -178,8 +185,25 @@ function resolvedFromDecision(
     toolName: interaction.toolName,
     inputSummary: interaction.inputSummary,
     risk: interaction.risk,
+    taskScope: interaction.taskScope,
     toolUseId: interaction.toolUseId,
     outcome: decision,
+  };
+}
+
+function resolvedFromExpired(
+  interaction: PendingInteraction & { kind: "approval" },
+): ResolvedInteraction {
+  return {
+    kind: "approval",
+    id: interaction.id,
+    runId: interaction.runId,
+    toolName: interaction.toolName,
+    inputSummary: interaction.inputSummary,
+    risk: interaction.risk,
+    taskScope: interaction.taskScope,
+    toolUseId: interaction.toolUseId,
+    outcome: "expired",
   };
 }
 
@@ -305,6 +329,33 @@ export function createApprovalsStore(client: BridgeClient, deps: ApprovalsStoreD
           latestFlightByConversation.delete(flight.conversationId);
         }
       }
+    },
+
+    expire: (id) => {
+      let interaction = findPending(get(), id, "approval");
+      for (const flight of inFlight) {
+        if (flight.interaction.kind === "approval" && flight.interaction.id === id) {
+          flight.cancelled = true;
+          interaction = flight.interaction;
+          break;
+        }
+      }
+      if (!interaction || interaction.kind !== "approval") return;
+      const expired = resolvedFromExpired(interaction);
+      set((state) => {
+        const current = state.pendingByConversation[interaction.conversationId];
+        const existing = state.resolvedByRun[interaction.runId] ?? [];
+        const withoutStaleOutcome = existing.filter((item) => !(item.kind === "approval" && item.id === id));
+        return {
+          pendingByConversation: current?.kind === "approval" && current.id === id
+            ? { ...state.pendingByConversation, [interaction.conversationId]: null }
+            : state.pendingByConversation,
+          resolvedByRun: {
+            ...state.resolvedByRun,
+            [interaction.runId]: [...withoutStaleOutcome, expired],
+          },
+        };
+      });
     },
 
     cancelForConversation: (conversationId) => {

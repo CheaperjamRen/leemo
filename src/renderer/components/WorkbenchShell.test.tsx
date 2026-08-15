@@ -17,9 +17,11 @@ describe("WorkbenchShell", () => {
       </BridgeProvider>
     );
 
+    expect(screen.getByTestId("topbar-product-identity")).toHaveTextContent("Leemo");
+    expect(screen.getAllByRole("navigation", { name: "模式切换" })).toHaveLength(1);
     expect(screen.getByRole("button", { name: "选择本子，当前 Leemo 工作台" })).toBeInTheDocument();
     expect(screen.getByLabelText("新建对话")).toBeInTheDocument();
-    expect(screen.getByLabelText("模式切换")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "收起侧栏" })).toBeInTheDocument();
   });
 
   it("shows empty state when no conversations", () => {
@@ -31,6 +33,45 @@ describe("WorkbenchShell", () => {
 
     expect(screen.getByText("还没有对话")).toBeInTheDocument();
     expect(screen.getByText("今天想先处理什么？")).toBeInTheDocument();
+    expect(screen.getByTestId("workbench-conversation-bar")).toBeInTheDocument();
+    expect(screen.getByTestId("workbench-context-title")).toHaveTextContent("新对话");
+    expect(screen.getByTestId("workbench-context-title")).toHaveAttribute("data-tab-state", "active");
+  });
+
+  it("keeps browser visual development representative with real-looking notebook structure", () => {
+    render(
+      <BridgeProvider>
+        <WorkbenchShell />
+      </BridgeProvider>,
+    );
+
+    const notebooks = screen.getByTestId("workbench-notebook-map");
+    expect(within(notebooks).getByText("数据结构")).toBeInTheDocument();
+    expect(within(notebooks).getByText("高等数学")).toBeInTheDocument();
+  });
+
+  it("primes the composer from an empty-state action without sending", async () => {
+    const user = userEvent.setup();
+    let stores!: BridgeStores;
+    function CaptureStores() {
+      stores = useContext(BridgeContext) as BridgeStores;
+      return null;
+    }
+    render(
+      <BridgeProvider>
+        <CaptureStores />
+        <WorkbenchShell />
+      </BridgeProvider>,
+    );
+
+    await user.click(screen.getByRole("button", { name: "整理资料" }));
+
+    expect(screen.getByLabelText("输入消息")).toHaveValue(
+      "帮我整理这些资料，提炼重点并形成清晰结构",
+    );
+    await waitFor(() => expect(screen.getByLabelText("输入消息")).toHaveFocus());
+    expect(Object.keys(stores.conversations.getState().byId)).toHaveLength(0);
+    expect(screen.queryByRole("button", { name: "整理资料" })).not.toBeInTheDocument();
   });
 
   it("opens the dedicated scheduled-task page from the workbench sidebar", async () => {
@@ -42,21 +83,50 @@ describe("WorkbenchShell", () => {
     );
 
     await user.click(screen.getByRole("button", { name: "定时任务" }));
-    expect(screen.getByRole("heading", { name: "定时任务" })).toBeInTheDocument();
+    expect(screen.getByRole("status", { name: "正在打开定时任务" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "定时任务" })).toBeInTheDocument();
+    expect(screen.queryByTestId("workbench-conversation-bar")).not.toBeInTheDocument();
     expect(screen.queryByTestId("workbench-context-title")).not.toBeInTheDocument();
   });
 
-  it("opens English learning as a first-class workbench page", async () => {
-    const user = userEvent.setup();
+  it("keeps English learning available without exposing its unfinished shortcut", async () => {
+    let stores!: BridgeStores;
+    function CaptureStores() {
+      stores = useContext(BridgeContext) as BridgeStores;
+      return null;
+    }
     render(
       <BridgeProvider>
+        <CaptureStores />
         <WorkbenchShell />
       </BridgeProvider>,
     );
 
-    await user.click(screen.getByRole("button", { name: "英语学习" }));
-    expect(screen.getByRole("heading", { name: "英语学习" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "英语学习" })).not.toBeInTheDocument();
+    act(() => stores.ui.getState().setView("learning"));
+    expect(await screen.findByRole("heading", { name: "英语学习" })).toBeInTheDocument();
     expect(screen.queryByTestId("workbench-context-title")).not.toBeInTheDocument();
+  });
+
+  it("renders the organizer as the full central work surface", async () => {
+    let stores!: BridgeStores;
+    function CaptureStores() {
+      stores = useContext(BridgeContext) as BridgeStores;
+      return null;
+    }
+    render(
+      <BridgeProvider>
+        <CaptureStores />
+        <WorkbenchShell />
+      </BridgeProvider>,
+    );
+
+    act(() => stores.ui.getState().setView("organizer"));
+
+    expect(screen.getByRole("status", { name: "正在打开工作看板" })).toBeInTheDocument();
+    expect(await screen.findByRole("tabpanel", { name: "今天" })).toBeInTheDocument();
+    expect(screen.queryByTestId("conversation-column")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("工作工具")).toBeInTheDocument();
   });
 
   it("renders conversation list", async () => {
@@ -70,8 +140,35 @@ describe("WorkbenchShell", () => {
     const newBtn = screen.getByLabelText("新建对话");
     await user.click(newBtn);
 
-    expect(screen.getAllByText("新对话")).toHaveLength(2); // sidebar + topbar
+    expect(within(screen.getByTestId("workbench-sidebar")).getAllByText("新对话")).toHaveLength(2); // create action + conversation row
     expect(screen.queryByText("还没有对话")).not.toBeInTheDocument();
+  });
+
+  it("opens model setup and explains why a new conversation could not start", async () => {
+    const client = new FixtureBridgeClient();
+    const invoke = client.invoke.bind(client);
+    vi.spyOn(client, "invoke").mockImplementation(async (channel, request) => {
+      if (channel === "bridge:createConversation") {
+        throw new Error("「DeepSeek」还没有配置 API Key，先去设置页填一个再开始对话。");
+      }
+      return invoke(channel, request as never) as never;
+    });
+    let stores!: BridgeStores;
+    function CaptureStores() {
+      stores = useContext(BridgeContext) as BridgeStores;
+      return null;
+    }
+    render(
+      <BridgeProvider client={client}>
+        <CaptureStores />
+        <WorkbenchShell />
+      </BridgeProvider>,
+    );
+
+    await userEvent.click(screen.getByLabelText("新建对话"));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("还没有配置 API Key");
+    expect(stores.ui.getState()).toMatchObject({ settingsOpen: true, settingsSection: "models" });
   });
 
   it("switches active conversation on click", async () => {
@@ -200,7 +297,7 @@ describe("WorkbenchShell", () => {
     );
 
     const aside = screen.getByTestId("workbench-shell").querySelector("aside");
-    expect(aside).toHaveClass("w-[260px]");
+    expect(aside).toHaveStyle({ width: "288px" });
   });
 
   it("keeps a visible control for collapsing and restoring the workbench sidebar", async () => {
@@ -212,7 +309,7 @@ describe("WorkbenchShell", () => {
     );
 
     await user.click(screen.getByRole("button", { name: "收起侧栏" }));
-    expect(screen.getByRole("complementary")).toHaveClass("w-[48px]");
+    expect(screen.getByRole("complementary")).toHaveStyle({ width: "52px" });
     await user.click(screen.getByRole("button", { name: "展开侧栏" }));
     expect(screen.getByRole("button", { name: "收起侧栏" })).toBeInTheDocument();
   });
@@ -224,7 +321,7 @@ describe("WorkbenchShell", () => {
       </BridgeProvider>
     );
 
-    expect(screen.getByTitle("设置")).toBeInTheDocument();
+    expect(within(screen.getByTestId("workbench-sidebar")).getByTitle("设置")).toBeInTheDocument();
   });
 
   it("keeps secondary-page navigation active without duplicating the page title in the header", async () => {
@@ -235,14 +332,14 @@ describe("WorkbenchShell", () => {
       </BridgeProvider>,
     );
 
-    const skills = screen.getByTitle("技能");
-    const artifacts = screen.getByTitle("成果");
+    const skills = screen.getByRole("button", { name: "技能" });
+    const organizer = screen.getByRole("button", { name: "看板" });
     await user.click(skills);
     expect(skills).toHaveAttribute("aria-current", "page");
     expect(screen.queryByTestId("workbench-context-title")).not.toBeInTheDocument();
 
-    await user.click(artifacts);
-    expect(artifacts).toHaveAttribute("aria-current", "page");
+    await user.click(organizer);
+    expect(organizer).toHaveAttribute("aria-current", "page");
     expect(skills).not.toHaveAttribute("aria-current");
     expect(screen.queryByTestId("workbench-context-title")).not.toBeInTheDocument();
   });
@@ -259,9 +356,10 @@ describe("WorkbenchShell", () => {
     const title = screen.getByTestId("workbench-context-title");
     expect(title).toHaveClass("truncate");
     expect(title).toHaveAttribute("title", "新对话");
+    expect(title).toHaveAttribute("data-tab-state", "active");
   });
 
-  it("shows the active conversation's derived task state in the header and sidebar", () => {
+  it("does not add a visible status label for an ordinary completed conversation", () => {
     function SeedCompleted() {
       const stores = useContext(BridgeContext) as BridgeStores;
       if (!stores.conversations.getState().byId["conv-done"]) {
@@ -288,8 +386,8 @@ describe("WorkbenchShell", () => {
     }
 
     render(<BridgeProvider><SeedCompleted /></BridgeProvider>);
-    expect(screen.getByTestId("current-conversation-status")).toHaveTextContent("已完成");
-    expect(screen.getByRole("status", { name: "整理课程报告：已完成" })).toBeInTheDocument();
+    expect(screen.queryByTestId("current-conversation-status")).not.toBeInTheDocument();
+    expect(screen.queryByText("已完成")).not.toBeInTheDocument();
   });
 
   it("does not expose unfinished share or more actions", () => {
@@ -422,14 +520,14 @@ describe("WorkbenchShell", () => {
     );
   });
 
-  it("keeps both side columns compact at the minimum desktop width", () => {
+  it("keeps the adjustable sidebar and conversation column together at desktop width", () => {
     render(
       <BridgeProvider>
         <WorkbenchShell />
       </BridgeProvider>,
     );
 
-    expect(screen.getByRole("complementary")).toHaveClass("max-[900px]:w-[180px]");
+    expect(screen.getByRole("complementary")).toHaveStyle({ width: "288px" });
     expect(screen.getByTestId("conversation-column")).toBeInTheDocument();
   });
 
@@ -452,8 +550,10 @@ describe("WorkbenchShell", () => {
     expect(screen.getByTestId("preview-pane-column")).toBeInTheDocument();
   });
 
-  it("turns preview into a single main-area page below 1024px instead of squeezing the composer", async () => {
+  it("turns a narrow preview into mutually exclusive conversation and file tabs", async () => {
     const originalMatchMedia = window.matchMedia;
+    const originalInnerWidth = window.innerWidth;
+    Object.defineProperty(window, "innerWidth", { configurable: true, value: 800 });
     Object.defineProperty(window, "matchMedia", {
       configurable: true,
       value: vi.fn(() => ({
@@ -483,19 +583,21 @@ describe("WorkbenchShell", () => {
       const trigger = screen.getByText("open-preview");
       await user.click(trigger);
       const preview = screen.getByTestId("preview-pane-column");
-      expect(preview).toHaveClass(
-        "max-[1024px]:absolute",
-        "max-[1024px]:inset-y-0",
-        "max-[1024px]:right-0",
-        "max-[1024px]:!w-full",
-      );
-      expect(screen.getByTestId("conversation-column")).toHaveAttribute("inert");
-      expect(screen.getByTestId("conversation-column")).toHaveAttribute("aria-hidden", "true");
-      await waitFor(() => expect(preview).toHaveFocus());
+      expect(screen.getByTestId("workbench-stage")).toHaveAttribute("data-layout", "tabs");
+      expect(screen.getByRole("tab", { name: /文件/ })).toHaveAttribute("aria-selected", "true");
+      expect(screen.getByTestId("conversation-surface")).toHaveAttribute("inert");
+      expect(screen.getByTestId("file-surface")).not.toHaveAttribute("inert");
+      expect(preview).toBeInTheDocument();
 
+      await user.click(screen.getByRole("tab", { name: /对话/ }));
+      expect(screen.getByTestId("conversation-surface")).not.toHaveAttribute("inert");
+      expect(screen.getByTestId("file-surface")).toHaveAttribute("inert");
+
+      await user.click(screen.getByRole("tab", { name: /文件/ }));
       await user.click(screen.getByRole("button", { name: "关闭 Test" }));
-      await waitFor(() => expect(trigger).toHaveFocus());
+      expect(screen.getByTestId("workbench-stage")).toHaveAttribute("data-layout", "conversation");
     } finally {
+      Object.defineProperty(window, "innerWidth", { configurable: true, value: originalInnerWidth });
       Object.defineProperty(window, "matchMedia", {
         configurable: true,
         value: originalMatchMedia,
@@ -541,8 +643,10 @@ describe("WorkbenchShell", () => {
     }
   });
 
-  it("returns focus to the narrow preview when another file replaces the active preview", async () => {
+  it("keeps the file surface active when another file replaces the active narrow preview", async () => {
     const originalMatchMedia = window.matchMedia;
+    const originalInnerWidth = window.innerWidth;
+    Object.defineProperty(window, "innerWidth", { configurable: true, value: 800 });
     Object.defineProperty(window, "matchMedia", {
       configurable: true,
       value: vi.fn(() => ({
@@ -576,11 +680,16 @@ describe("WorkbenchShell", () => {
       const user = userEvent.setup();
       await user.click(screen.getByText("open-first"));
       const preview = screen.getByTestId("preview-pane-column");
-      await waitFor(() => expect(preview).toHaveFocus());
+      expect(screen.getByRole("tab", { name: /^文件$/ })).toHaveAttribute("aria-selected", "true");
+      expect(within(preview).getByText("First", { exact: true })).toBeInTheDocument();
+      expect(preview).toBeInTheDocument();
 
       await user.click(screen.getByText("open-second"));
-      await waitFor(() => expect(preview).toHaveFocus());
+      expect(screen.getByRole("tab", { name: /^文件$/ })).toHaveAttribute("aria-selected", "true");
+      expect(within(preview).getByText("Second", { exact: true })).toBeInTheDocument();
+      expect(screen.getByTestId("conversation-surface")).toHaveAttribute("inert");
     } finally {
+      Object.defineProperty(window, "innerWidth", { configurable: true, value: originalInnerWidth });
       Object.defineProperty(window, "matchMedia", {
         configurable: true,
         value: originalMatchMedia,
@@ -626,7 +735,7 @@ describe("WorkbenchShell", () => {
       </BridgeProvider>,
     );
 
-    await user.click(screen.getByRole("button", { name: "预览 报告.md" }));
+    await user.click(await screen.findByRole("button", { name: "预览 报告.md" }));
     expect(await screen.findByTestId("preview-pane-column")).toBeInTheDocument();
     expect(await screen.findByRole("heading", { name: "真实成果内容" })).toBeInTheDocument();
   });
@@ -641,7 +750,7 @@ describe("WorkbenchShell", () => {
     expect(screen.queryByTestId("preview-pane-column")).not.toBeInTheDocument();
   });
 
-  it("renders file tree column when filesOpen is true", async () => {
+  it("opens and closes the unified file tool from the right activity rail", async () => {
     const user = userEvent.setup();
     render(
       <BridgeProvider>
@@ -649,21 +758,22 @@ describe("WorkbenchShell", () => {
       </BridgeProvider>
     );
 
-    expect(screen.queryByTestId("file-tree-column")).not.toBeInTheDocument();
-    await user.click(screen.getByLabelText("文件树"));
-    expect(screen.getByTestId("file-tree-column")).toHaveClass("absolute");
-    await user.click(screen.getByLabelText("关闭文件树"));
-    expect(screen.queryByTestId("file-tree-column")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("workbench-tool-panel")).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "文件" }));
+    expect(screen.getByTestId("workbench-tool-panel")).toHaveAttribute("data-tool", "files");
+    await user.click(screen.getByRole("button", { name: "关闭面板" }));
+    expect(screen.queryByTestId("workbench-tool-panel")).not.toBeInTheDocument();
   });
 
-  it("hides file tree column when filesOpen is false", () => {
+  it("keeps the right activity rail visible while its tool panel is closed", () => {
     render(
       <BridgeProvider>
         <WorkbenchShell />
       </BridgeProvider>
     );
 
-    expect(screen.queryByTestId("file-tree-column")).not.toBeInTheDocument();
+    expect(screen.getByRole("toolbar", { name: "工作工具" })).toBeInTheDocument();
+    expect(screen.queryByTestId("workbench-tool-panel")).not.toBeInTheDocument();
   });
 
   it("renders momo's question card when momo asks — previously the round stalled forever here (卡 D)", async () => {
@@ -731,6 +841,20 @@ describe("WorkbenchShell — 本子 + 拖入归类 (轮 3 卡 G, 06 §2.2)", () 
     renderWith(fakeWorkspace());
     await userEvent.click(await screen.findByRole("button", { name: "选择本子，当前 Leemo 工作台" }));
     expect(screen.getByRole("menuitem", { name: "打开本子 高等数学" })).toBeInTheDocument();
+  });
+
+  it("opens overview in the right slot without replacing the central conversation", async () => {
+    const user = userEvent.setup();
+    render(
+      <BridgeProvider>
+        <WorkbenchShell />
+      </BridgeProvider>,
+    );
+
+    await user.click(screen.getByRole("button", { name: "概览" }));
+    expect(screen.getByTestId("workbench-tool-panel")).toHaveAttribute("data-tool", "overview");
+    expect(screen.getByTestId("conversation-column")).toBeInTheDocument();
+    expect(screen.getByText(/还没有可汇总的进展/)).toBeInTheDocument();
   });
 
   it("orders pinned conversations first and keeps archived conversations in a restorable section", async () => {
@@ -1005,7 +1129,8 @@ describe("WorkbenchShell — 本子 + 拖入归类 (轮 3 卡 G, 06 §2.2)", () 
       </BridgeProvider>,
     );
 
-    expect(screen.queryByTestId("workbench-context-title")).not.toBeInTheDocument();
+    expect(screen.getByTestId("workbench-context-title")).toHaveTextContent("新对话");
+    expect(screen.getByTestId("workbench-context-title")).not.toHaveTextContent("搭子里的对话");
     await userEvent.type(screen.getByLabelText("输入消息"), "只在毕业设计里执行{Enter}");
 
     await waitFor(() => expect(invoke).toHaveBeenCalledWith(
@@ -1068,7 +1193,8 @@ describe("WorkbenchShell — workspace conversation scope", () => {
 
     render(<BridgeProvider><Seed /></BridgeProvider>);
     expect(screen.getAllByText("毕业设计对话").length).toBeGreaterThan(0);
-    expect(screen.queryByText("Leemo 主工作区对话")).not.toBeInTheDocument();
+    expect(within(screen.getByTestId("workbench-global-map")).getByText("Leemo 主工作区对话")).toBeInTheDocument();
+    expect(within(screen.getByTestId("workbench-notebook-map")).queryByText("Leemo 主工作区对话")).not.toBeInTheDocument();
   });
 
   it("shows only conversations that belong to the active managed book", () => {
@@ -1116,7 +1242,8 @@ describe("WorkbenchShell — workspace conversation scope", () => {
 
     expect(screen.getAllByText("微积分复习").length).toBeGreaterThan(0);
     expect(screen.queryByText("产品经理简历")).not.toBeInTheDocument();
-    expect(screen.queryByText("全局聊天")).not.toBeInTheDocument();
+    expect(within(screen.getByTestId("workbench-global-map")).getByText("全局聊天")).toBeInTheDocument();
+    expect(within(screen.getByTestId("workbench-notebook-map")).queryByText("全局聊天")).not.toBeInTheDocument();
   });
 
   it("creates a new execution conversation inside the active managed book", async () => {

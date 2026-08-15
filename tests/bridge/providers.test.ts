@@ -35,7 +35,7 @@ describe("buildConversationEnv — DIRECT wiring (apiFormat=anthropic)", () => {
     const env = buildConversationEnv(deepseekDirect, "deepseek-v4pro");
     expect(env.ANTHROPIC_BASE_URL).toBe("https://api.deepseek.com/anthropic");
     expect(env.ANTHROPIC_AUTH_TOKEN).toBe(
-      "sk-test-deepseek-DIRECTKEY-000000000000"
+      "test-key-deepseek-DIRECTKEY-000000000000"
     );
   });
 
@@ -105,6 +105,25 @@ describe("buildConversationEnv — DIRECT wiring (apiFormat=anthropic)", () => {
   });
 });
 
+describe("buildConversationEnv — native subscription login", () => {
+  it("uses the isolated native login without injecting an endpoint or credential channel", () => {
+    const env = buildConversationEnv({
+      ...deepseekDirect,
+      id: "claude-subscription",
+      name: "Claude 订阅",
+      baseUrl: "",
+      apiKey: "",
+      authMode: "oauth-subscription",
+    }, "claude-sonnet-4-6");
+
+    expect(env.ANTHROPIC_BASE_URL).toBeUndefined();
+    expect(env.ANTHROPIC_AUTH_TOKEN).toBeUndefined();
+    expect(env.ANTHROPIC_API_KEY).toBeUndefined();
+    expect(env.ANTHROPIC_MODEL).toBe("claude-sonnet-4-6");
+    expect(env.CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC).toBe("1");
+  });
+});
+
 describe("buildConversationEnv — GATEWAY wiring (apiFormat=openai)", () => {
   it("uses the same isolated gateway for Responses-native providers", () => {
     const env = buildConversationEnv({ ...relay2Gateway, id: "tokenflux", apiFormat: "openai-responses" }, "gpt-5.6-sol", 61340);
@@ -148,7 +167,7 @@ describe("buildConversationEnv — GATEWAY wiring (apiFormat=openai)", () => {
     const env = buildConversationEnv(relay2Gateway, "gpt-5.6-luna", 61340);
     const blob = JSON.stringify(env);
     expect(blob).not.toContain(relay2Gateway.apiKey);
-    expect(blob).not.toContain("sk-test-relay");
+    expect(blob).not.toContain("test-key-relay");
     // and specifically the AUTH_TOKEN slot is the placeholder, key-shaped-free
     expect(env.ANTHROPIC_AUTH_TOKEN).not.toContain("sk-");
   });
@@ -187,7 +206,7 @@ describe("buildConversationEnv — SEARCH SHIM wiring (轮 4 卡 H2)", () => {
     // 走 shim 之后真 key 只留在本进程注册表里，这是一次安全升级，不是退让。
     const env = buildConversationEnv(deepseekDirect, "deepseek-v4pro", undefined, 45123);
     const blob = JSON.stringify(env);
-    expect(blob).not.toContain("sk-test-deepseek-DIRECTKEY-000000000000");
+    expect(blob).not.toContain("test-key-deepseek-DIRECTKEY-000000000000");
     expect(blob).not.toContain("DIRECTKEY");
   });
 
@@ -227,7 +246,7 @@ describe("buildConversationEnv — SEARCH SHIM wiring (轮 4 卡 H2)", () => {
     // shim 起不来时必须原样退回直连 —— 少一个搜索工具好过整个对话打不通。
     const env = buildConversationEnv(deepseekDirect, "deepseek-v4pro");
     expect(env.ANTHROPIC_BASE_URL).toBe("https://api.deepseek.com/anthropic");
-    expect(env.ANTHROPIC_AUTH_TOKEN).toBe("sk-test-deepseek-DIRECTKEY-000000000000");
+    expect(env.ANTHROPIC_AUTH_TOKEN).toBe("test-key-deepseek-DIRECTKEY-000000000000");
   });
 });
 
@@ -254,16 +273,20 @@ describe("sanitizeHostEnv — strip secret-shaped host vars before spread", () =
   // secret-shaped var; the conversation's OWN token is re-applied afterward by
   // buildConversationEnv (ANTHROPIC_AUTH_TOKEN), so direct wiring is unaffected.
 
-  it("drops *_API_KEY (incl. ANTHROPIC_API_KEY) and *_AUTH_TOKEN", () => {
+  it("drops *_API_KEY (incl. ANTHROPIC_API_KEY) and every *_TOKEN credential", () => {
     const clean = sanitizeHostEnv({
-      RELAY2_API_KEY: "sk-test-relay-should-be-stripped",
-      ANTHROPIC_API_KEY: "sk-test-anthropic-should-be-stripped",
-      SOME_VENDOR_AUTH_TOKEN: "sk-test-vendor-token",
+      RELAY2_API_KEY: "test-key-relay-should-be-stripped",
+      ANTHROPIC_API_KEY: "test-key-anthropic-should-be-stripped",
+      SOME_VENDOR_AUTH_TOKEN: "test-key-vendor-token",
+      CLAUDE_CODE_OAUTH_TOKEN: "oauth-token-must-be-stripped",
+      GITHUB_TOKEN: "github-token-must-be-stripped",
       PATH: "/usr/bin",
     });
     expect(clean.RELAY2_API_KEY).toBeUndefined();
     expect(clean.ANTHROPIC_API_KEY).toBeUndefined();
     expect(clean.SOME_VENDOR_AUTH_TOKEN).toBeUndefined();
+    expect(clean.CLAUDE_CODE_OAUTH_TOKEN).toBeUndefined();
+    expect(clean.GITHUB_TOKEN).toBeUndefined();
     expect(clean.PATH).toBe("/usr/bin"); // benign system var preserved
   });
 
@@ -272,7 +295,7 @@ describe("sanitizeHostEnv — strip secret-shaped host vars before spread", () =
       MY_SECRET: "s1",
       DB_SECRET_VALUE: "s2",
       AWS_ACCESS_KEY_ID: "AKIA-test",
-      AWS_SECRET_ACCESS_KEY: "sk-test-aws",
+      AWS_SECRET_ACCESS_KEY: "test-key-aws",
       HOME: "/home/momo",
     });
     expect(clean.MY_SECRET).toBeUndefined();
@@ -298,10 +321,28 @@ describe("sanitizeHostEnv — strip secret-shaped host vars before spread", () =
     expect(clean.PATH).toBe("/usr/bin");
   });
 
+  it("drops ambient endpoint and cloud-backend routing owned by Leemo provider settings", () => {
+    const clean = sanitizeHostEnv({
+      ANTHROPIC_BASE_URL: "https://old-gateway.example/v1",
+      ANTHROPIC_CUSTOM_HEADERS: "X-Old-Route: true",
+      CLAUDE_CODE_USE_BEDROCK: "1",
+      CLAUDE_CODE_USE_VERTEX: "1",
+      CLAUDE_CODE_USE_FOUNDRY: "1",
+      HTTPS_PROXY: "http://127.0.0.1:10801",
+    });
+
+    expect(clean.ANTHROPIC_BASE_URL).toBeUndefined();
+    expect(clean.ANTHROPIC_CUSTOM_HEADERS).toBeUndefined();
+    expect(clean.CLAUDE_CODE_USE_BEDROCK).toBeUndefined();
+    expect(clean.CLAUDE_CODE_USE_VERTEX).toBeUndefined();
+    expect(clean.CLAUDE_CODE_USE_FOUNDRY).toBeUndefined();
+    expect(clean.HTTPS_PROXY).toBe("http://127.0.0.1:10801");
+  });
+
   it("is case-insensitive on the sensitive suffixes", () => {
     const clean = sanitizeHostEnv({
-      relay2_api_key: "sk-test-lower",
-      Some_Auth_Token: "sk-test-mixed",
+      relay2_api_key: "test-key-lower",
+      Some_Auth_Token: "test-key-mixed",
       LANG: "en_US.UTF-8",
     });
     expect(clean.relay2_api_key).toBeUndefined();
@@ -310,9 +351,9 @@ describe("sanitizeHostEnv — strip secret-shaped host vars before spread", () =
   });
 
   it("does not mutate its input and returns a fresh object", () => {
-    const input = { RELAY2_API_KEY: "sk-test", PATH: "/bin" };
+    const input = { RELAY2_API_KEY: "test-key", PATH: "/bin" };
     const clean = sanitizeHostEnv(input);
     expect(clean).not.toBe(input);
-    expect(input.RELAY2_API_KEY).toBe("sk-test"); // original untouched
+    expect(input.RELAY2_API_KEY).toBe("test-key"); // original untouched
   });
 });

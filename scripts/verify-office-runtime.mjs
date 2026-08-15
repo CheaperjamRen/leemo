@@ -3,12 +3,13 @@ import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import { listPackage } from "@electron/asar";
 import { Document, HeadingLevel, Packer, Paragraph } from "docx";
 import PptxGenJS from "pptxgenjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const BUNDLE = path.join(ROOT, "bundled-skills", "office", "skills");
-const PACKAGE_RESOURCES = path.join(ROOT, "dist-package", "win-unpacked", "resources");
+const BUNDLE = path.join(ROOT, "bundled-skills", "office", "release", "skills");
+const PACKAGE_ASAR = path.join(ROOT, "dist-package", "win-unpacked", "resources", "app.asar");
 const requiredSkills = ["docx", "xlsx", "pptx", "pdf"];
 const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "leemo-office-runtime-"));
 const productEnv = {
@@ -118,7 +119,12 @@ async function createFixtures() {
 
 try {
   const missingSkills = requiredSkills.filter((name) => !fs.existsSync(path.join(BUNDLE, name, "SKILL.md")));
-  const packagedMissing = requiredSkills.filter((name) => !fs.existsSync(path.join(PACKAGE_RESOURCES, "office-skills", "skills", name, "SKILL.md")));
+  const packagedEntries = fs.existsSync(PACKAGE_ASAR)
+    ? new Set(listPackage(PACKAGE_ASAR).map((entry) => entry.replaceAll("\\", "/").replace(/^\/+/, "")))
+    : new Set();
+  const packagedMissing = requiredSkills.filter((name) => (
+    !packagedEntries.has(`bundled-skills/office/release/skills/${name}/SKILL.md`)
+  ));
   const fixtures = await createFixtures();
 
   const python = commandPath("python");

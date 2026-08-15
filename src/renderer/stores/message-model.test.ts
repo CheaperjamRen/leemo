@@ -5,6 +5,74 @@ import { applyEvent, RENDERER_RUN_ID_INITIAL, type TimelineItem } from "./messag
 const RUN = "run-1";
 
 describe("applyEvent — text + run lifecycle (migrated)", () => {
+  it("keeps connection and subagent retries as separate statuses", () => {
+    let items = applyEvent([], {
+      type: "stream.retry",
+      attempt: 1,
+      maxAttempts: 5,
+      summary: "正在重新连接 1/5",
+      detail: "socket closed",
+      scope: "connection",
+    }, RUN);
+    items = applyEvent(items, {
+      type: "stream.retry",
+      attempt: 1,
+      maxAttempts: 3,
+      summary: "协作任务正在重试 1/3",
+      detail: "upstream overloaded",
+      scope: "subagent",
+      retryId: "agent-a",
+    }, RUN);
+    items = applyEvent(items, {
+      type: "stream.retry",
+      attempt: 2,
+      maxAttempts: 3,
+      summary: "协作任务正在重试 2/3",
+      detail: "upstream overloaded again",
+      scope: "subagent",
+      retryId: "agent-a",
+    }, RUN);
+
+    expect(items.filter((item) => item.kind === "retry")).toEqual([
+      expect.objectContaining({ scope: "connection", attempt: 1 }),
+      expect.objectContaining({ scope: "subagent", retryId: "agent-a", attempt: 2 }),
+    ]);
+  });
+
+  it("folds reconnect attempts into one status and preserves partial output on failure", () => {
+    let items = applyEvent([], { type: "text.delta", text: "已收到" }, RUN);
+    items = applyEvent(items, {
+      type: "stream.retry",
+      attempt: 1,
+      maxAttempts: 5,
+      summary: "正在重新连接 1/5",
+      detail: "socket closed",
+    }, RUN);
+    items = applyEvent(items, {
+      type: "stream.retry",
+      attempt: 2,
+      maxAttempts: 5,
+      summary: "正在重新连接 2/5",
+      detail: "socket closed again",
+    }, RUN);
+    items = applyEvent(items, {
+      type: "run.finished", subtype: "error", isError: true, finalText: "已收到",
+      pathAudit: { claimed: [] },
+    }, RUN);
+
+    expect(items.filter((item) => item.kind === "retry")).toEqual([
+      expect.objectContaining({
+        attempt: 2,
+        maxAttempts: 5,
+        summary: "正在重新连接 2/5",
+        detail: "socket closed again",
+        state: "failed",
+      }),
+    ]);
+    expect(items.find((item) => item.kind === "text")).toMatchObject({ text: "已收到", streaming: false });
+    expect(items.at(-1)).toMatchObject({ kind: "result", isError: true, finalText: "已收到" });
+  });
+
   it("conversation.started adds no item", () => {
     expect(applyEvent([], { type: "conversation.started", sessionId: "s1" }, RUN)).toEqual([]);
   });
@@ -84,6 +152,42 @@ describe("applyEvent — text + run lifecycle (migrated)", () => {
     expect(m.at(-1)).toMatchObject({ kind: "result", interrupted: false });
   });
 
+  it("preserves structured cancellation and retryability on the terminal result", () => {
+    const cancelled = applyEvent([], {
+      type: "run.finished",
+      subtype: "aborted_streaming",
+      outcome: "cancelled",
+      retryable: false,
+      isError: false,
+      finalText: "",
+      pathAudit: { claimed: [] },
+    }, RUN);
+    expect(cancelled.at(-1)).toMatchObject({
+      kind: "result",
+      outcome: "cancelled",
+      interrupted: true,
+      retryable: false,
+    });
+
+    const overloaded = applyEvent([], {
+      type: "run.finished",
+      subtype: "error_during_execution",
+      outcome: "overloaded",
+      retryable: true,
+      statusCode: 529,
+      isError: true,
+      finalText: "",
+      pathAudit: { claimed: [] },
+    }, RUN);
+    expect(overloaded.at(-1)).toMatchObject({
+      kind: "result",
+      outcome: "overloaded",
+      interrupted: false,
+      retryable: true,
+      statusCode: 529,
+    });
+  });
+
   it("thinking.delta appends a thinking process item (streaming)", () => {
     const m = applyEvent([], { type: "thinking.delta", text: "先看看" }, RUN);
     expect(m).toHaveLength(1);
@@ -142,6 +246,27 @@ describe("applyEvent — tool / plan / activity / compact (slice 2)", () => {
     expect(m[0]).toMatchObject({ kind: "tool", status: "error", summary: "denied" });
   });
 
+  it("keeps a denied tool result distinct from an execution failure", () => {
+    let m: TimelineItem[] = applyEvent([], {
+      type: "tool.started", toolUseId: "t1", name: "Write", input: {}, subagent: false,
+    }, RUN);
+    m = applyEvent(m, {
+      type: "tool.finished",
+      toolUseId: "t1",
+      isError: true,
+      outcome: "denied",
+      contentSummary: "没有获得写入权限",
+      userFeedback: "请不要修改这个文件",
+    }, RUN);
+    expect(m[0]).toMatchObject({
+      kind: "tool",
+      status: "error",
+      outcome: "denied",
+      summary: "没有获得写入权限",
+      userFeedback: "请不要修改这个文件",
+    });
+  });
+
   it("TodoWrite tool.started projects a plan item from input.todos", () => {
     const m = applyEvent([], {
       type: "tool.started", toolUseId: "p1", name: "TodoWrite", subagent: false,
@@ -164,6 +289,39 @@ describe("applyEvent — tool / plan / activity / compact (slice 2)", () => {
   it("malformed TodoWrite input degrades to a plain tool item, never throws", () => {
     const m = applyEvent([], { type: "tool.started", toolUseId: "p2", name: "TodoWrite", input: { todos: "oops" }, subagent: false }, RUN);
     expect(m[0].kind).toBe("tool");
+  });
+
+  it("does not invent a todo status when TodoWrite omits a supported structured status", () => {
+    const m = applyEvent([], {
+      type: "tool.started", toolUseId: "p3", name: "TodoWrite", subagent: false,
+      input: { todos: [{ content: "没有真实状态" }] },
+    }, RUN);
+
+    expect(m[0]).toMatchObject({ kind: "tool", name: "TodoWrite", status: "running" });
+  });
+
+  it("coalesces repeated TodoWrite updates from one run into one current plan", () => {
+    let m = applyEvent([], {
+      type: "tool.started", toolUseId: "p1", name: "TodoWrite", subagent: false,
+      input: { todos: [{ content: "先检查", status: "in_progress" }] },
+    }, RUN);
+    m = applyEvent(m, {
+      type: "tool.started", toolUseId: "p2", name: "TodoWrite", subagent: false,
+      input: { todos: [
+        { content: "先检查", status: "completed" },
+        { content: "再修复", status: "in_progress" },
+      ] },
+    }, RUN);
+
+    expect(m).toHaveLength(1);
+    expect(m[0]).toMatchObject({
+      kind: "plan",
+      toolUseId: "p2",
+      todos: [
+        { text: "先检查", status: "done" },
+        { text: "再修复", status: "active" },
+      ],
+    });
   });
 
   it("coalesces current SDK TaskCreate calls into one visible plan", () => {
@@ -192,7 +350,26 @@ describe("applyEvent — tool / plan / activity / compact (slice 2)", () => {
     ] });
   });
 
-  it("projects TaskUpdate status changes into the matching plan row", () => {
+  it("does not publish a TaskCreate row until the structured tool call succeeds", () => {
+    let m: TimelineItem[] = applyEvent([], {
+      type: "tool.started", toolUseId: "create-1", name: "TaskCreate", subagent: false,
+      input: { subject: "不会提前出现" },
+    }, RUN);
+
+    expect(m).toEqual([expect.objectContaining({
+      kind: "tool", toolUseId: "create-1", name: "TaskCreate", status: "running",
+    })]);
+
+    m = applyEvent(m, {
+      type: "tool.finished", toolUseId: "create-1", isError: true,
+      contentSummary: "creation failed",
+    }, RUN);
+
+    expect(m.some((item) => item.kind === "plan")).toBe(false);
+    expect(m).toEqual([expect.objectContaining({ kind: "tool", status: "error" })]);
+  });
+
+  it("commits TaskUpdate only after success and leaves confirmed status unchanged on failure", () => {
     let m: TimelineItem[] = [];
     m = applyEvent(m, {
       type: "tool.started", toolUseId: "create-1", name: "TaskCreate", subagent: false,
@@ -206,13 +383,32 @@ describe("applyEvent — tool / plan / activity / compact (slice 2)", () => {
       type: "tool.started", toolUseId: "update-1", name: "TaskUpdate", subagent: false,
       input: { taskId: "3", status: "in_progress" },
     }, RUN);
+    expect(m.find((item) => item.kind === "plan")).toMatchObject({
+      kind: "plan", todos: [{ text: "跑测试", status: "todo", taskId: "3" }],
+    });
+    m = applyEvent(m, {
+      type: "tool.finished", toolUseId: "update-1", isError: true,
+      contentSummary: "update failed",
+    }, RUN);
+    expect(m.find((item) => item.kind === "plan")).toMatchObject({
+      kind: "plan", todos: [{ text: "跑测试", status: "todo", taskId: "3" }],
+    });
     m = applyEvent(m, {
       type: "tool.started", toolUseId: "update-2", name: "TaskUpdate", subagent: false,
       input: { taskId: "3", status: "completed" },
     }, RUN);
+    expect(m.find((item) => item.kind === "plan")).toMatchObject({
+      kind: "plan", todos: [{ text: "跑测试", status: "todo", taskId: "3" }],
+    });
+    m = applyEvent(m, {
+      type: "tool.finished", toolUseId: "update-2", isError: false,
+      contentSummary: "Task #3 updated",
+    }, RUN);
 
-    expect(m).toHaveLength(1);
-    expect(m[0]).toMatchObject({ kind: "plan", todos: [{ text: "跑测试", status: "done", taskId: "3" }] });
+    expect(m.filter((item) => item.kind === "plan")).toHaveLength(1);
+    expect(m.find((item) => item.kind === "plan")).toMatchObject({
+      kind: "plan", todos: [{ text: "跑测试", status: "done", taskId: "3" }],
+    });
   });
 
   it("malformed TaskCreate and unknown TaskUpdate degrade to ordinary tool cards", () => {
@@ -251,6 +447,54 @@ describe("applyEvent — tool / plan / activity / compact (slice 2)", () => {
       expect(m[0].transcript).toEqual([
         { kind: "thinking", text: "先读测试" },
         { kind: "text", text: "找到原因" },
+      ]);
+    }
+  });
+
+  it("folds the parent Agent call into one identified activity with trustworthy timing", () => {
+    let m: TimelineItem[] = applyEvent([], {
+      type: "tool.started",
+      toolUseId: "agent-1",
+      name: "Agent",
+      input: {
+        subagent_type: "Explore",
+        description: "比较三款桌面 Agent 的设置流程",
+        prompt: "读取实现并形成证据。",
+      },
+      subagent: false,
+    }, RUN, 1_000);
+    m = applyEvent(m, {
+      type: "subagent.activity",
+      parentToolUseId: "agent-1",
+    }, RUN, 1_200);
+
+    expect(m).toHaveLength(1);
+    expect(m[0]).toMatchObject({
+      kind: "activity",
+      parentToolUseId: "agent-1",
+      role: "调研助手",
+      task: "比较三款桌面 Agent 的设置流程",
+      status: "running",
+      startedAt: 1_000,
+    });
+
+    m = applyEvent(m, {
+      type: "subagent.output",
+      parentToolUseId: "agent-1",
+      kind: "text",
+      text: "找到关键差异",
+    }, RUN, 9_000);
+    m = applyEvent(m, {
+      type: "tool.finished",
+      toolUseId: "agent-1",
+      isError: false,
+      contentSummary: "完成",
+    }, RUN, 9_500);
+
+    expect(m[0]).toMatchObject({ kind: "activity", status: "ok", updatedAt: 9_500 });
+    if (m[0].kind === "activity") {
+      expect(m[0].transcript).toEqual([
+        { kind: "text", text: "找到关键差异", createdAt: 9_000 },
       ]);
     }
   });
@@ -463,5 +707,91 @@ describe("applyEvent — lightweight file change receipt", () => {
     }, RUN);
 
     expect(items[0]).toMatchObject({ kind: "files", omitted: 23 });
+  });
+});
+
+describe("applyEvent — persisted work overview", () => {
+  const toolName = "mcp__leemo-work-overview__set_work_overview";
+
+  it("replaces a successful metadata tool call with a compact semantic overview", () => {
+    let items = applyEvent([], {
+      type: "tool.started",
+      toolUseId: "overview-1",
+      name: toolName,
+      input: {
+        theme: "  Leemo 内测  ",
+        summary: " 聚焦可安装候选包 ",
+        currentPosition: " 正在补齐概览 ",
+        nextStep: " 打包验收 ",
+        focus: " PDF 阅读准确性 ",
+      },
+      subagent: false,
+    }, RUN, 100);
+
+    items = applyEvent(items, {
+      type: "tool.finished",
+      toolUseId: "overview-1",
+      isError: false,
+      contentSummary: "工作概览已更新。",
+    }, RUN, 200);
+
+    expect(items).toEqual([{
+      kind: "overview",
+      id: "m0",
+      runId: RUN,
+      toolUseId: "overview-1",
+      createdAt: 200,
+      overview: {
+        theme: "Leemo 内测",
+        summary: "聚焦可安装候选包",
+        currentPosition: "正在补齐概览",
+        nextStep: "打包验收",
+        focus: "PDF 阅读准确性",
+      },
+    }]);
+  });
+
+  it("keeps a failed or malformed update visible as an ordinary tool result", () => {
+    let failed = applyEvent([], {
+      type: "tool.started", toolUseId: "failed", name: toolName,
+      input: { theme: "新主题" }, subagent: false,
+    }, RUN);
+    failed = applyEvent(failed, {
+      type: "tool.finished", toolUseId: "failed", isError: true, contentSummary: "保存失败",
+    }, RUN);
+    expect(failed[0]).toMatchObject({ kind: "tool", status: "error", summary: "保存失败" });
+
+    let malformed = applyEvent([], {
+      type: "tool.started", toolUseId: "bad", name: toolName,
+      input: { theme: " " }, subagent: false,
+    }, RUN);
+    malformed = applyEvent(malformed, {
+      type: "tool.finished", toolUseId: "bad", isError: false, contentSummary: "unexpected",
+    }, RUN);
+    expect(malformed[0]).toMatchObject({ kind: "tool", status: "ok" });
+  });
+
+  it("keeps earlier overview meaning when the user only changes one focus field", () => {
+    const existing: TimelineItem = {
+      kind: "overview", id: "old", runId: "old-run", toolUseId: "old-tool", createdAt: 10,
+      overview: { theme: "毕业求职", summary: "准备投递材料", nextStep: "完成岗位定向简历" },
+    };
+    let items = applyEvent([existing], {
+      type: "tool.started", toolUseId: "focus", name: toolName,
+      input: { focus: "优先关注产品岗位" }, subagent: false,
+    }, RUN);
+    items = applyEvent(items, {
+      type: "tool.finished", toolUseId: "focus", isError: false, contentSummary: "工作概览已更新。",
+    }, RUN, 20);
+
+    expect(items.at(-1)).toMatchObject({
+      kind: "overview",
+      overview: {
+        theme: "毕业求职",
+        summary: "准备投递材料",
+        nextStep: "完成岗位定向简历",
+        focus: "优先关注产品岗位",
+      },
+    });
   });
 });

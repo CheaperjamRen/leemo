@@ -568,9 +568,10 @@ describe("ProviderConfigForm — progressive disclosure", () => {
     expect(screen.getByText("已启用模型")).toBeInTheDocument();
     expect(screen.queryByLabelText("模型发现地址")).not.toBeInTheDocument();
     expect(screen.queryByLabelText("子任务使用方式")).not.toBeInTheDocument();
-    expect(screen.queryByRole("tab")).not.toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "连接与模型" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("tab", { name: "高级设置" })).toHaveAttribute("aria-selected", "false");
 
-    await user.click(screen.getByText("高级设置"));
+    await user.click(screen.getByRole("tab", { name: "高级设置" }));
     expect(screen.getByLabelText("快速与后台任务方式")).toHaveValue("auto");
     expect(screen.getByLabelText("子任务使用方式")).toHaveValue("auto");
     expect(screen.getByLabelText("模型发现地址")).toBeInTheDocument();
@@ -618,6 +619,92 @@ describe("ProviderConfigForm — progressive disclosure", () => {
     await waitFor(() => expect(savedPayload).toBeDefined());
     expect(savedPayload).toMatchObject({ authMode: "none", models: ["qwen-local"] });
     expect(savedPayload).not.toHaveProperty("apiKey");
+  });
+
+  it("connects a subscription through login without asking for an API key or endpoint", async () => {
+    const user = userEvent.setup();
+    let savedPayload: ProviderDraft | undefined;
+    const savedSpec: ProviderSpec = {
+      id: "claude-subscription",
+      kind: "claude-subscription",
+      name: "Claude 订阅",
+      category: "official",
+      apiFormat: "anthropic",
+      authMode: "oauth-subscription",
+      productKind: "consumer-subscription",
+      baseUrl: "",
+      models: ["claude-sonnet-4-6"],
+      capabilities: { balanceApi: false, modelDiscovery: false, subscriptionPlan: true },
+      configured: true,
+      saved: true,
+    };
+    const client = stubClient({
+      "bridge:getProviderConfig": () => null,
+      "bridge:getProviderLoginStatus": () => ({ state: "disconnected" }),
+      "bridge:loginProvider": () => ({ state: "connected" }),
+      "bridge:saveProvider": (request) => {
+        savedPayload = request as ProviderDraft;
+        return savedSpec;
+      },
+      "bridge:listProviders": () => [savedSpec],
+    });
+    renderForm(client, {
+      preset: {
+        id: "claude-subscription",
+        kind: "claude-subscription",
+        name: "Claude 订阅",
+        baseUrl: "",
+        apiFormat: "anthropic",
+        authMode: "oauth-subscription",
+        productKind: "consumer-subscription",
+        models: ["claude-sonnet-4-6"],
+      },
+    });
+
+    expect(await screen.findByText("尚未登录")).toBeInTheDocument();
+    expect(screen.queryByLabelText("API Key")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Base URL")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "测试连接" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "保存设置" })).toBeDisabled();
+
+    await user.click(screen.getByRole("button", { name: "登录 Claude 订阅" }));
+    expect((await screen.findAllByText("订阅已连接")).length).toBeGreaterThan(0);
+    expect(screen.getByRole("button", { name: "保存设置" })).toBeEnabled();
+    await user.click(screen.getByRole("button", { name: "保存设置" }));
+
+    await waitFor(() => expect(savedPayload).toBeDefined());
+    expect(savedPayload).toMatchObject({
+      id: "claude-subscription",
+      authMode: "oauth-subscription",
+      baseUrl: "",
+      models: ["claude-sonnet-4-6"],
+    });
+    expect(savedPayload).not.toHaveProperty("apiKey");
+  });
+
+  it("disables subscription login when the required local app is missing", async () => {
+    const client = stubClient({
+      "bridge:getProviderConfig": () => null,
+      "bridge:getProviderLoginStatus": () => ({
+        state: "unavailable",
+        message: "请先安装 Codex 并完成 ChatGPT 登录，然后重启 Leemo。",
+      }),
+    });
+    renderForm(client, {
+      preset: {
+        id: "chatgpt-subscription",
+        kind: "chatgpt-subscription",
+        name: "ChatGPT 订阅",
+        baseUrl: "",
+        apiFormat: "openai-responses",
+        authMode: "oauth-subscription",
+        productKind: "consumer-subscription",
+        models: ["gpt-5.6-sol"],
+      },
+    });
+
+    expect(await screen.findByText(/请先安装 Codex/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "登录 ChatGPT 订阅" })).toBeDisabled();
   });
 });
 

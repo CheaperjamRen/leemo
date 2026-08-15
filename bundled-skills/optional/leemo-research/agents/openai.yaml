@@ -1,0 +1,4 @@
+interface:
+  display_name: "Leemo 科研"
+  short_description: "把普通研究指令编排成可核验、可复现且可迁移的科研工作流"
+  default_prompt: "使用 $leemo-research 规划并执行这项科研任务，保留证据、来源和关键决策记录。"

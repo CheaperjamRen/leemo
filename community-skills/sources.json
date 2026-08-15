@@ -1,0 +1,1184 @@
+[
+  {
+    "repository": "autoclaw-cc/xiaohongshu-skills",
+    "revision": "b043748282a57e347c52f517dfb59819121134ab",
+    "license": "MIT",
+    "licensePath": "LICENSE",
+    "entries": [
+      {
+        "kind": "family",
+        "id": "xiaohongshu-skills",
+        "upstreamPath": "",
+        "name": "小红书工具组",
+        "description": "从登录、内容发现到发布与互动的一组完整小红书运营工具。",
+        "category": "social",
+        "categoryLabel": "社媒运营",
+        "featured": true,
+        "author": "Auto-Claw-CC",
+        "sharedPaths": [
+          "README.md",
+          "extension",
+          "pyproject.toml",
+          "scripts",
+          "uv.lock"
+        ],
+        "members": [
+          {
+            "id": "xhs-auth",
+            "upstreamPath": "skills/xhs-auth",
+            "name": "账号与登录",
+            "description": "登录、检查登录状态与退出账号。",
+            "category": "social",
+            "categoryLabel": "社媒运营",
+            "displayName": "账号与登录（小红书）"
+          },
+          {
+            "id": "xhs-content-ops",
+            "upstreamPath": "skills/xhs-content-ops",
+            "name": "内容运营",
+            "description": "组合调研、创作、发布与互动的完整运营工作流。",
+            "category": "social",
+            "categoryLabel": "社媒运营",
+            "displayName": "全流程内容运营（小红书）"
+          },
+          {
+            "id": "xhs-explore",
+            "upstreamPath": "skills/xhs-explore",
+            "name": "内容发现",
+            "description": "搜索笔记、浏览推荐、查看详情和用户主页。",
+            "category": "social",
+            "categoryLabel": "社媒运营",
+            "displayName": "内容搜索与分析（小红书）"
+          },
+          {
+            "id": "xhs-interact",
+            "upstreamPath": "skills/xhs-interact",
+            "name": "互动管理",
+            "description": "评论、回复、点赞和收藏笔记。",
+            "category": "social",
+            "categoryLabel": "社媒运营",
+            "displayName": "点赞评论与收藏（小红书）"
+          },
+          {
+            "id": "xhs-publish",
+            "upstreamPath": "skills/xhs-publish",
+            "name": "内容发布",
+            "description": "发布图文、视频和长文，支持定时与可见范围。",
+            "category": "social",
+            "categoryLabel": "社媒运营",
+            "displayName": "图文视频发布（小红书）"
+          }
+        ],
+        "displayName": "小红书运营套件"
+      }
+    ]
+  },
+  {
+    "repository": "googleworkspace/cli",
+    "revision": "a3768d0e82ad83cca2da97724e46bea4ff0e6dbd",
+    "license": "Apache-2.0",
+    "licensePath": "LICENSE",
+    "setupMessage": "首次使用需另行安装 gws，并使用个人 Google Cloud 项目完成 OAuth 授权。",
+    "entries": [
+      {
+        "id": "gws-calendar",
+        "upstreamPath": "skills/gws-calendar",
+        "name": "gws-calendar",
+        "description": "通过 Google Workspace CLI 完成 calendar 相关操作。",
+        "category": "productivity",
+        "categoryLabel": "效率",
+        "featured": false,
+        "author": "Google Workspace CLI",
+        "displayName": "Google 日历管理"
+      },
+      {
+        "id": "gws-calendar-agenda",
+        "upstreamPath": "skills/gws-calendar-agenda",
+        "name": "gws-calendar-agenda",
+        "description": "通过 Google Workspace CLI 完成 calendar-agenda 相关操作。",
+        "category": "productivity",
+        "categoryLabel": "效率",
+        "featured": false,
+        "author": "Google Workspace CLI",
+        "displayName": "Google 近期日程"
+      },
+      {
+        "id": "gws-calendar-insert",
+        "upstreamPath": "skills/gws-calendar-insert",
+        "name": "gws-calendar-insert",
+        "description": "通过 Google Workspace CLI 完成 calendar-insert 相关操作。",
+        "category": "productivity",
+        "categoryLabel": "效率",
+        "featured": false,
+        "author": "Google Workspace CLI",
+        "displayName": "Google 新建日程"
+      },
+      {
+        "id": "gws-docs",
+        "upstreamPath": "skills/gws-docs",
+        "name": "gws-docs",
+        "description": "通过 Google Workspace CLI 完成 docs 相关操作。",
+        "category": "productivity",
+        "categoryLabel": "效率",
+        "featured": false,
+        "author": "Google Workspace CLI",
+        "displayName": "Google 文档读写"
+      },
+      {
+        "id": "gws-docs-write",
+        "upstreamPath": "skills/gws-docs-write",
+        "name": "gws-docs-write",
+        "description": "通过 Google Workspace CLI 完成 docs-write 相关操作。",
+        "category": "productivity",
+        "categoryLabel": "效率",
+        "featured": false,
+        "author": "Google Workspace CLI",
+        "displayName": "Google 文档追加内容"
+      },
+      {
+        "id": "gws-drive",
+        "upstreamPath": "skills/gws-drive",
+        "name": "gws-drive",
+        "description": "通过 Google Workspace CLI 完成 drive 相关操作。",
+        "category": "productivity",
+        "categoryLabel": "效率",
+        "featured": false,
+        "author": "Google Workspace CLI",
+        "displayName": "Google 云端硬盘管理"
+      },
+      {
+        "id": "gws-drive-upload",
+        "upstreamPath": "skills/gws-drive-upload",
+        "name": "gws-drive-upload",
+        "description": "通过 Google Workspace CLI 完成 drive-upload 相关操作。",
+        "category": "productivity",
+        "categoryLabel": "效率",
+        "featured": false,
+        "author": "Google Workspace CLI",
+        "displayName": "Google 云端硬盘上传"
+      },
+      {
+        "id": "gws-events",
+        "upstreamPath": "skills/gws-events",
+        "name": "gws-events",
+        "description": "通过 Google Workspace CLI 完成 events 相关操作。",
+        "category": "productivity",
+        "categoryLabel": "效率",
+        "featured": false,
+        "author": "Google Workspace CLI",
+        "displayName": "Google 事件订阅管理"
+      },
+      {
+        "id": "gws-events-renew",
+        "upstreamPath": "skills/gws-events-renew",
+        "name": "gws-events-renew",
+        "description": "通过 Google Workspace CLI 完成 events-renew 相关操作。",
+        "category": "productivity",
+        "categoryLabel": "效率",
+        "featured": false,
+        "author": "Google Workspace CLI",
+        "displayName": "Google 事件订阅续期"
+      },
+      {
+        "id": "gws-events-subscribe",
+        "upstreamPath": "skills/gws-events-subscribe",
+        "name": "gws-events-subscribe",
+        "description": "通过 Google Workspace CLI 完成 events-subscribe 相关操作。",
+        "category": "productivity",
+        "categoryLabel": "效率",
+        "featured": false,
+        "author": "Google Workspace CLI",
+        "displayName": "Google 事件实时订阅"
+      },
+      {
+        "id": "gws-gmail",
+        "upstreamPath": "skills/gws-gmail",
+        "name": "gws-gmail",
+        "description": "通过 Google Workspace CLI 完成 gmail 相关操作。",
+        "category": "productivity",
+        "categoryLabel": "效率",
+        "featured": false,
+        "author": "Google Workspace CLI",
+        "displayName": "Gmail 邮件管理"
+      },
+      {
+        "id": "gws-gmail-forward",
+        "upstreamPath": "skills/gws-gmail-forward",
+        "name": "gws-gmail-forward",
+        "description": "通过 Google Workspace CLI 完成 gmail-forward 相关操作。",
+        "category": "productivity",
+        "categoryLabel": "效率",
+        "featured": false,
+        "author": "Google Workspace CLI",
+        "displayName": "Gmail 邮件转发"
+      },
+      {
+        "id": "gws-gmail-reply",
+        "upstreamPath": "skills/gws-gmail-reply",
+        "name": "gws-gmail-reply",
+        "description": "通过 Google Workspace CLI 完成 gmail-reply 相关操作。",
+        "category": "productivity",
+        "categoryLabel": "效率",
+        "featured": false,
+        "author": "Google Workspace CLI",
+        "displayName": "Gmail 单人回复"
+      },
+      {
+        "id": "gws-gmail-reply-all",
+        "upstreamPath": "skills/gws-gmail-reply-all",
+        "name": "gws-gmail-reply-all",
+        "description": "通过 Google Workspace CLI 完成 gmail-reply-all 相关操作。",
+        "category": "productivity",
+        "categoryLabel": "效率",
+        "featured": false,
+        "author": "Google Workspace CLI",
+        "displayName": "Gmail 全员回复"
+      },
+      {
+        "id": "gws-gmail-send",
+        "upstreamPath": "skills/gws-gmail-send",
+        "name": "gws-gmail-send",
+        "description": "通过 Google Workspace CLI 完成 gmail-send 相关操作。",
+        "category": "productivity",
+        "categoryLabel": "效率",
+        "featured": false,
+        "author": "Google Workspace CLI",
+        "displayName": "Gmail 邮件发送"
+      },
+      {
+        "id": "gws-gmail-triage",
+        "upstreamPath": "skills/gws-gmail-triage",
+        "name": "gws-gmail-triage",
+        "description": "通过 Google Workspace CLI 完成 gmail-triage 相关操作。",
+        "category": "productivity",
+        "categoryLabel": "效率",
+        "featured": false,
+        "author": "Google Workspace CLI",
+        "displayName": "Gmail 未读邮件整理"
+      },
+      {
+        "id": "gws-gmail-watch",
+        "upstreamPath": "skills/gws-gmail-watch",
+        "name": "gws-gmail-watch",
+        "description": "通过 Google Workspace CLI 完成 gmail-watch 相关操作。",
+        "category": "productivity",
+        "categoryLabel": "效率",
+        "featured": false,
+        "author": "Google Workspace CLI",
+        "displayName": "Gmail 新邮件监听"
+      },
+      {
+        "id": "gws-shared",
+        "upstreamPath": "skills/gws-shared",
+        "name": "gws-shared",
+        "description": "通过 Google Workspace CLI 完成 shared 相关操作。",
+        "category": "productivity",
+        "categoryLabel": "效率",
+        "featured": false,
+        "author": "Google Workspace CLI",
+        "displayName": "Google Workspace 通用操作"
+      },
+      {
+        "id": "gws-sheets",
+        "upstreamPath": "skills/gws-sheets",
+        "name": "gws-sheets",
+        "description": "通过 Google Workspace CLI 完成 sheets 相关操作。",
+        "category": "productivity",
+        "categoryLabel": "效率",
+        "featured": false,
+        "author": "Google Workspace CLI",
+        "displayName": "Google 表格读写"
+      },
+      {
+        "id": "gws-sheets-append",
+        "upstreamPath": "skills/gws-sheets-append",
+        "name": "gws-sheets-append",
+        "description": "通过 Google Workspace CLI 完成 sheets-append 相关操作。",
+        "category": "productivity",
+        "categoryLabel": "效率",
+        "featured": false,
+        "author": "Google Workspace CLI",
+        "displayName": "Google 表格追加行"
+      },
+      {
+        "id": "gws-sheets-read",
+        "upstreamPath": "skills/gws-sheets-read",
+        "name": "gws-sheets-read",
+        "description": "通过 Google Workspace CLI 完成 sheets-read 相关操作。",
+        "category": "productivity",
+        "categoryLabel": "效率",
+        "featured": false,
+        "author": "Google Workspace CLI",
+        "displayName": "Google 表格读取"
+      }
+    ]
+  },
+  {
+    "repository": "larksuite/cli",
+    "revision": "841953496b41a06bb670396f3d9f8fba943766ed",
+    "license": "MIT",
+    "licensePath": "LICENSE",
+    "setupMessage": "首次使用需另行安装 lark-cli，并完成飞书应用配置与个人账号授权；部分组织功能仍取决于所在飞书组织授予的权限。",
+    "entries": [
+      {
+        "kind": "family",
+        "id": "lark-cli",
+        "upstreamPath": "",
+        "name": "飞书官方工具组",
+        "description": "按需安装飞书官方 Agent Skills，通过 lark-cli 处理文档、消息、日历、表格、会议等工作。",
+        "category": "integration",
+        "categoryLabel": "办公连接",
+        "featured": true,
+        "author": "Lark/飞书官方",
+        "sharedPaths": [],
+        "members": [
+          {
+            "id": "lark-approval",
+            "upstreamPath": "skills/lark-approval",
+            "name": "lark-approval",
+            "description": "查询与处理飞书审批实例和任务。",
+            "displayName": "飞书审批"
+          },
+          {
+            "id": "lark-apps",
+            "upstreamPath": "skills/lark-apps",
+            "name": "lark-apps",
+            "description": "管理飞书应用与妙搭应用相关资源。",
+            "displayName": "飞书应用"
+          },
+          {
+            "id": "lark-attendance",
+            "upstreamPath": "skills/lark-attendance",
+            "name": "lark-attendance",
+            "description": "查询飞书考勤记录与相关配置。",
+            "displayName": "飞书考勤"
+          },
+          {
+            "id": "lark-base",
+            "upstreamPath": "skills/lark-base",
+            "name": "lark-base",
+            "description": "读写飞书多维表格、数据表与记录。",
+            "displayName": "飞书多维表格"
+          },
+          {
+            "id": "lark-calendar",
+            "upstreamPath": "skills/lark-calendar",
+            "name": "lark-calendar",
+            "description": "查询和管理飞书日历与日程。",
+            "displayName": "飞书日历"
+          },
+          {
+            "id": "lark-contact",
+            "upstreamPath": "skills/lark-contact",
+            "name": "lark-contact",
+            "description": "查询飞书通讯录中的用户、部门与群组信息。",
+            "displayName": "飞书通讯录"
+          },
+          {
+            "id": "lark-doc",
+            "upstreamPath": "skills/lark-doc",
+            "name": "lark-doc",
+            "description": "读取、创建和编辑飞书云文档。",
+            "displayName": "飞书云文档"
+          },
+          {
+            "id": "lark-drive",
+            "upstreamPath": "skills/lark-drive",
+            "name": "lark-drive",
+            "description": "管理飞书云空间文件与文件夹。",
+            "displayName": "飞书云空间"
+          },
+          {
+            "id": "lark-event",
+            "upstreamPath": "skills/lark-event",
+            "name": "lark-event",
+            "description": "订阅和处理飞书开放平台事件。",
+            "displayName": "飞书实时事件"
+          },
+          {
+            "id": "lark-im",
+            "upstreamPath": "skills/lark-im",
+            "name": "lark-im",
+            "description": "发送、查询和管理飞书消息与群聊。",
+            "displayName": "飞书消息与群聊"
+          },
+          {
+            "id": "lark-mail",
+            "upstreamPath": "skills/lark-mail",
+            "name": "lark-mail",
+            "description": "查询和处理飞书邮箱内容。",
+            "displayName": "飞书邮箱"
+          },
+          {
+            "id": "lark-markdown",
+            "upstreamPath": "skills/lark-markdown",
+            "name": "lark-markdown",
+            "description": "在飞书工作流中处理 Markdown 内容与文件。",
+            "displayName": "飞书 Markdown"
+          },
+          {
+            "id": "lark-minutes",
+            "upstreamPath": "skills/lark-minutes",
+            "name": "lark-minutes",
+            "description": "查询和整理飞书妙记内容。",
+            "displayName": "飞书妙记"
+          },
+          {
+            "id": "lark-note",
+            "upstreamPath": "skills/lark-note",
+            "name": "lark-note",
+            "description": "创建和维护飞书会议笔记。",
+            "displayName": "飞书会议笔记"
+          },
+          {
+            "id": "lark-okr",
+            "upstreamPath": "skills/lark-okr",
+            "name": "lark-okr",
+            "description": "查询和管理飞书 OKR。",
+            "displayName": "飞书 OKR"
+          },
+          {
+            "id": "lark-openapi-explorer",
+            "upstreamPath": "skills/lark-openapi-explorer",
+            "name": "lark-openapi-explorer",
+            "description": "发现并试用飞书开放平台 API。",
+            "displayName": "飞书 OpenAPI 探索"
+          },
+          {
+            "id": "lark-shared",
+            "upstreamPath": "skills/lark-shared",
+            "name": "lark-shared",
+            "description": "处理 lark-cli 的账号、授权与通用能力。",
+            "displayName": "飞书账号与授权"
+          },
+          {
+            "id": "lark-sheets",
+            "upstreamPath": "skills/lark-sheets",
+            "name": "lark-sheets",
+            "description": "读取和编辑飞书电子表格。",
+            "displayName": "飞书电子表格"
+          },
+          {
+            "id": "lark-skill-maker",
+            "upstreamPath": "skills/lark-skill-maker",
+            "name": "lark-skill-maker",
+            "description": "基于飞书开放能力创建新的 Agent Skill。",
+            "displayName": "飞书 Skill 创建"
+          },
+          {
+            "id": "lark-slides",
+            "upstreamPath": "skills/lark-slides",
+            "name": "lark-slides",
+            "description": "读取和编辑飞书幻灯片。",
+            "displayName": "飞书幻灯片"
+          },
+          {
+            "id": "lark-task",
+            "upstreamPath": "skills/lark-task",
+            "name": "lark-task",
+            "description": "查询和管理飞书任务与清单。",
+            "displayName": "飞书任务"
+          },
+          {
+            "id": "lark-vc",
+            "upstreamPath": "skills/lark-vc",
+            "name": "lark-vc",
+            "description": "查询和管理飞书视频会议信息。",
+            "displayName": "飞书视频会议"
+          },
+          {
+            "id": "lark-vc-agent",
+            "upstreamPath": "skills/lark-vc-agent",
+            "name": "lark-vc-agent",
+            "description": "使用飞书会中助手能力处理会议任务。",
+            "displayName": "飞书会中助手"
+          },
+          {
+            "id": "lark-whiteboard",
+            "upstreamPath": "skills/lark-whiteboard",
+            "name": "lark-whiteboard",
+            "description": "读取和处理飞书画板内容。",
+            "displayName": "飞书画板"
+          },
+          {
+            "id": "lark-wiki",
+            "upstreamPath": "skills/lark-wiki",
+            "name": "lark-wiki",
+            "description": "查询和管理飞书知识库节点。",
+            "displayName": "飞书知识库"
+          },
+          {
+            "id": "lark-workflow-meeting-summary",
+            "upstreamPath": "skills/lark-workflow-meeting-summary",
+            "name": "lark-workflow-meeting-summary",
+            "description": "把飞书会议内容整理成结构化纪要。",
+            "displayName": "飞书会议纪要整理"
+          },
+          {
+            "id": "lark-workflow-standup-report",
+            "upstreamPath": "skills/lark-workflow-standup-report",
+            "name": "lark-workflow-standup-report",
+            "description": "汇总飞书日程与待办，生成站会摘要。",
+            "displayName": "飞书站会摘要"
+          }
+        ],
+        "displayName": "飞书官方工具套件"
+      }
+    ]
+  },
+  {
+    "repository": "hardikpandya/stop-slop",
+    "revision": "8da1f030185bdfe8471220585162991eaeb970e9",
+    "license": "MIT",
+    "licensePath": "LICENSE",
+    "entries": [
+      {
+        "id": "stop-slop",
+        "upstreamPath": "",
+        "name": "stop-slop",
+        "description": "清掉模板化的 AI 腔，让文章更直接、具体并保留真实的人类节奏。",
+        "category": "writing",
+        "categoryLabel": "写作",
+        "featured": true,
+        "author": "Hardik Pandya",
+        "displayName": "去除 AI 腔"
+      }
+    ]
+  },
+  {
+    "repository": "JimLiu/baoyu-skills",
+    "revision": "6b7a2e417500561a5ecdd0b168332f4142584617",
+    "license": "MIT",
+    "licensePath": "LICENSE",
+    "entries": [
+      {
+        "id": "baoyu-article-illustrator",
+        "upstreamPath": "skills/baoyu-article-illustrator",
+        "name": "baoyu-article-illustrator",
+        "description": "宝玉内容创作工作流：article-illustrator。",
+        "category": "writing",
+        "categoryLabel": "写作",
+        "featured": false,
+        "author": "JimLiu",
+        "displayName": "文章配图"
+      },
+      {
+        "id": "baoyu-comic",
+        "upstreamPath": "skills/baoyu-comic",
+        "name": "baoyu-comic",
+        "description": "宝玉内容创作工作流：comic。",
+        "category": "image",
+        "categoryLabel": "图像",
+        "featured": false,
+        "author": "JimLiu",
+        "displayName": "知识漫画"
+      },
+      {
+        "id": "baoyu-compress-image",
+        "upstreamPath": "skills/baoyu-compress-image",
+        "name": "baoyu-compress-image",
+        "description": "宝玉内容创作工作流：compress-image。",
+        "category": "image",
+        "categoryLabel": "图像",
+        "featured": false,
+        "author": "JimLiu",
+        "displayName": "图片压缩"
+      },
+      {
+        "id": "baoyu-cover-image",
+        "upstreamPath": "skills/baoyu-cover-image",
+        "name": "baoyu-cover-image",
+        "description": "宝玉内容创作工作流：cover-image。",
+        "category": "image",
+        "categoryLabel": "图像",
+        "featured": false,
+        "author": "JimLiu",
+        "displayName": "封面图设计"
+      },
+      {
+        "id": "baoyu-format-markdown",
+        "upstreamPath": "skills/baoyu-format-markdown",
+        "name": "baoyu-format-markdown",
+        "description": "宝玉内容创作工作流：format-markdown。",
+        "category": "writing",
+        "categoryLabel": "写作",
+        "featured": false,
+        "author": "JimLiu",
+        "displayName": "Markdown 排版"
+      },
+      {
+        "id": "baoyu-image-gen",
+        "upstreamPath": "skills/baoyu-image-gen",
+        "name": "baoyu-image-gen",
+        "description": "宝玉内容创作工作流：image-gen。",
+        "category": "image",
+        "categoryLabel": "图像",
+        "featured": true,
+        "author": "JimLiu",
+        "displayName": "AI 图片生成"
+      },
+      {
+        "id": "baoyu-infographic",
+        "upstreamPath": "skills/baoyu-infographic",
+        "name": "baoyu-infographic",
+        "description": "宝玉内容创作工作流：infographic。",
+        "category": "image",
+        "categoryLabel": "图像",
+        "featured": false,
+        "author": "JimLiu",
+        "displayName": "信息图设计"
+      },
+      {
+        "id": "baoyu-markdown-to-html",
+        "upstreamPath": "skills/baoyu-markdown-to-html",
+        "name": "baoyu-markdown-to-html",
+        "description": "宝玉内容创作工作流：markdown-to-html。",
+        "category": "writing",
+        "categoryLabel": "写作",
+        "featured": false,
+        "author": "JimLiu",
+        "displayName": "Markdown 转网页"
+      },
+      {
+        "id": "baoyu-post-to-wechat",
+        "upstreamPath": "skills/baoyu-post-to-wechat",
+        "name": "baoyu-post-to-wechat",
+        "description": "宝玉内容创作工作流：post-to-wechat。",
+        "category": "writing",
+        "categoryLabel": "写作",
+        "featured": false,
+        "author": "JimLiu",
+        "displayName": "发布到微信公众号"
+      },
+      {
+        "id": "baoyu-post-to-x",
+        "upstreamPath": "skills/baoyu-post-to-x",
+        "name": "baoyu-post-to-x",
+        "description": "宝玉内容创作工作流：post-to-x。",
+        "category": "writing",
+        "categoryLabel": "写作",
+        "featured": false,
+        "author": "JimLiu",
+        "displayName": "发布到 X"
+      },
+      {
+        "id": "baoyu-slide-deck",
+        "upstreamPath": "skills/baoyu-slide-deck",
+        "name": "baoyu-slide-deck",
+        "description": "宝玉内容创作工作流：slide-deck。",
+        "category": "image",
+        "categoryLabel": "图像",
+        "featured": false,
+        "author": "JimLiu",
+        "displayName": "幻灯片视觉稿"
+      },
+      {
+        "id": "baoyu-url-to-markdown",
+        "upstreamPath": "skills/baoyu-url-to-markdown",
+        "name": "baoyu-url-to-markdown",
+        "description": "宝玉内容创作工作流：url-to-markdown。",
+        "category": "writing",
+        "categoryLabel": "写作",
+        "featured": false,
+        "author": "JimLiu",
+        "displayName": "网页转 Markdown"
+      },
+      {
+        "id": "baoyu-xhs-images",
+        "upstreamPath": "skills/baoyu-xhs-images",
+        "name": "baoyu-xhs-images",
+        "description": "宝玉内容创作工作流：xhs-images。",
+        "category": "image",
+        "categoryLabel": "图像",
+        "featured": false,
+        "author": "JimLiu",
+        "displayName": "小红书图文卡片"
+      }
+    ]
+  },
+  {
+    "repository": "kepano/obsidian-skills",
+    "revision": "a1dc48e68138490d522c04cbf5822214c6eb1202",
+    "license": "MIT",
+    "licensePath": "LICENSE",
+    "entries": [
+      {
+        "id": "defuddle",
+        "upstreamPath": "skills/defuddle",
+        "name": "defuddle",
+        "description": "提取网页正文为干净 Markdown，便于放入知识库。",
+        "category": "knowledge",
+        "categoryLabel": "知识管理",
+        "featured": false,
+        "author": "Steph Ango",
+        "displayName": "网页正文提取（Defuddle）"
+      },
+      {
+        "id": "json-canvas",
+        "upstreamPath": "skills/json-canvas",
+        "name": "json-canvas",
+        "description": "创建和编辑可连接节点的 Canvas，用于思维导图、流程图和研究关系图。",
+        "category": "knowledge",
+        "categoryLabel": "知识管理",
+        "featured": true,
+        "author": "Steph Ango",
+        "displayName": "JSON Canvas 关系画布"
+      },
+      {
+        "id": "obsidian-bases",
+        "upstreamPath": "skills/obsidian-bases",
+        "name": "obsidian-bases",
+        "description": "创建和编辑 Obsidian Bases 数据视图。",
+        "category": "knowledge",
+        "categoryLabel": "知识管理",
+        "featured": false,
+        "author": "Steph Ango",
+        "displayName": "Obsidian Bases 数据视图"
+      },
+      {
+        "id": "obsidian-cli",
+        "upstreamPath": "skills/obsidian-cli",
+        "name": "obsidian-cli",
+        "description": "通过官方命令行管理 Obsidian vault、笔记、链接和属性。",
+        "category": "knowledge",
+        "categoryLabel": "知识管理",
+        "featured": true,
+        "author": "Steph Ango",
+        "displayName": "Obsidian 知识库管理"
+      },
+      {
+        "id": "obsidian-markdown",
+        "upstreamPath": "skills/obsidian-markdown",
+        "name": "obsidian-markdown",
+        "description": "编写与维护 Obsidian Markdown、链接、属性和嵌入语法。",
+        "category": "knowledge",
+        "categoryLabel": "知识管理",
+        "featured": false,
+        "author": "Steph Ango",
+        "displayName": "Obsidian Markdown 编辑"
+      }
+    ]
+  },
+  {
+    "repository": "KKKKhazix/human-writing",
+    "revision": "4fda173f3fef7fb808f3eba991eeb2528ea4b189",
+    "license": "MIT",
+    "licensePath": "LICENSE",
+    "entries": [
+      {
+        "id": "human-writing",
+        "upstreamPath": "human-writing",
+        "name": "human-writing",
+        "description": "基于真实材料、事实边界和中文语感完成自然写作与改稿。",
+        "category": "writing",
+        "categoryLabel": "写作与表达",
+        "featured": true,
+        "author": "KKKKhazix",
+        "displayName": "自然中文写作（Human Writing）"
+      }
+    ]
+  },
+  {
+    "repository": "KKKKhazix/khazix-skills",
+    "revision": "17573491cf2ff70582d2ae0018ca39e571d35f53",
+    "license": "MIT",
+    "licensePath": "LICENSE",
+    "entries": [
+      {
+        "id": "storage-analyzer",
+        "upstreamPath": "storage-analyzer",
+        "name": "storage-analyzer",
+        "description": "分析目录占用、定位大文件并给出可核对的存储清理建议。",
+        "category": "productivity",
+        "categoryLabel": "效率",
+        "featured": false,
+        "author": "KKKKhazix",
+        "displayName": "磁盘空间分析"
+      }
+    ]
+  },
+  {
+    "repository": "mattpocock/skills",
+    "revision": "84fdeffd12f2ee307994d1eb6feb48173b6e0502",
+    "license": "MIT",
+    "licensePath": "LICENSE",
+    "entries": [
+      {
+        "id": "matt-ask-matt",
+        "upstreamPath": "skills/engineering/ask-matt",
+        "name": "ask-matt",
+        "description": "Matt Pocock 的工程工作流：ask-matt。",
+        "category": "development",
+        "categoryLabel": "开发",
+        "featured": false,
+        "author": "Matt Pocock",
+        "displayName": "技能选择顾问"
+      },
+      {
+        "id": "matt-code-review",
+        "upstreamPath": "skills/engineering/code-review",
+        "name": "code-review",
+        "description": "Matt Pocock 的工程工作流：code-review。",
+        "category": "development",
+        "categoryLabel": "开发",
+        "featured": true,
+        "author": "Matt Pocock",
+        "displayName": "代码审查（规范与需求）"
+      },
+      {
+        "id": "matt-codebase-design",
+        "upstreamPath": "skills/engineering/codebase-design",
+        "name": "codebase-design",
+        "description": "Matt Pocock 的工程工作流：codebase-design。",
+        "category": "development",
+        "categoryLabel": "开发",
+        "featured": false,
+        "author": "Matt Pocock",
+        "displayName": "代码模块边界设计"
+      },
+      {
+        "id": "matt-diagnosing-bugs",
+        "upstreamPath": "skills/engineering/diagnosing-bugs",
+        "name": "diagnosing-bugs",
+        "description": "Matt Pocock 的工程工作流：diagnosing-bugs。",
+        "category": "development",
+        "categoryLabel": "开发",
+        "featured": false,
+        "author": "Matt Pocock",
+        "displayName": "疑难问题诊断"
+      },
+      {
+        "id": "matt-domain-modeling",
+        "upstreamPath": "skills/engineering/domain-modeling",
+        "name": "domain-modeling",
+        "description": "Matt Pocock 的工程工作流：domain-modeling。",
+        "category": "development",
+        "categoryLabel": "开发",
+        "featured": false,
+        "author": "Matt Pocock",
+        "displayName": "领域模型梳理"
+      },
+      {
+        "id": "matt-grill-with-docs",
+        "upstreamPath": "skills/engineering/grill-with-docs",
+        "name": "grill-with-docs",
+        "description": "Matt Pocock 的工程工作流：grill-with-docs。",
+        "category": "development",
+        "categoryLabel": "开发",
+        "featured": false,
+        "author": "Matt Pocock",
+        "displayName": "文档式深度追问"
+      },
+      {
+        "id": "matt-implement",
+        "upstreamPath": "skills/engineering/implement",
+        "name": "implement",
+        "description": "Matt Pocock 的工程工作流：implement。",
+        "category": "development",
+        "categoryLabel": "开发",
+        "featured": false,
+        "author": "Matt Pocock",
+        "displayName": "按规格实现"
+      },
+      {
+        "id": "matt-improve-codebase-architecture",
+        "upstreamPath": "skills/engineering/improve-codebase-architecture",
+        "name": "improve-codebase-architecture",
+        "description": "Matt Pocock 的工程工作流：improve-codebase-architecture。",
+        "category": "development",
+        "categoryLabel": "开发",
+        "featured": false,
+        "author": "Matt Pocock",
+        "displayName": "代码库架构体检"
+      },
+      {
+        "id": "matt-prototype",
+        "upstreamPath": "skills/engineering/prototype",
+        "name": "prototype",
+        "description": "Matt Pocock 的工程工作流：prototype。",
+        "category": "development",
+        "categoryLabel": "开发",
+        "featured": false,
+        "author": "Matt Pocock",
+        "displayName": "抛弃式原型验证"
+      },
+      {
+        "id": "matt-research",
+        "upstreamPath": "skills/engineering/research",
+        "name": "research",
+        "description": "Matt Pocock 的工程工作流：research。",
+        "category": "development",
+        "categoryLabel": "开发",
+        "featured": false,
+        "author": "Matt Pocock",
+        "displayName": "一手资料调研"
+      },
+      {
+        "id": "matt-resolving-merge-conflicts",
+        "upstreamPath": "skills/engineering/resolving-merge-conflicts",
+        "name": "resolving-merge-conflicts",
+        "description": "Matt Pocock 的工程工作流：resolving-merge-conflicts。",
+        "category": "development",
+        "categoryLabel": "开发",
+        "featured": false,
+        "author": "Matt Pocock",
+        "displayName": "Git 合并冲突处理"
+      },
+      {
+        "id": "matt-setup-matt-pocock-skills",
+        "upstreamPath": "skills/engineering/setup-matt-pocock-skills",
+        "name": "setup-matt-pocock-skills",
+        "description": "Matt Pocock 的工程工作流：setup-matt-pocock-skills。",
+        "category": "development",
+        "categoryLabel": "开发",
+        "featured": false,
+        "author": "Matt Pocock",
+        "displayName": "工程工作流初始化"
+      },
+      {
+        "id": "matt-tdd",
+        "upstreamPath": "skills/engineering/tdd",
+        "name": "tdd",
+        "description": "Matt Pocock 的工程工作流：tdd。",
+        "category": "development",
+        "categoryLabel": "开发",
+        "featured": true,
+        "author": "Matt Pocock",
+        "displayName": "测试驱动开发"
+      },
+      {
+        "id": "matt-to-spec",
+        "upstreamPath": "skills/engineering/to-spec",
+        "name": "to-spec",
+        "description": "Matt Pocock 的工程工作流：to-spec。",
+        "category": "development",
+        "categoryLabel": "开发",
+        "featured": false,
+        "author": "Matt Pocock",
+        "displayName": "对话整理为规格"
+      },
+      {
+        "id": "matt-to-tickets",
+        "upstreamPath": "skills/engineering/to-tickets",
+        "name": "to-tickets",
+        "description": "Matt Pocock 的工程工作流：to-tickets。",
+        "category": "development",
+        "categoryLabel": "开发",
+        "featured": false,
+        "author": "Matt Pocock",
+        "displayName": "规格拆分为任务"
+      },
+      {
+        "id": "matt-triage",
+        "upstreamPath": "skills/engineering/triage",
+        "name": "triage",
+        "description": "Matt Pocock 的工程工作流：triage。",
+        "category": "development",
+        "categoryLabel": "开发",
+        "featured": false,
+        "author": "Matt Pocock",
+        "displayName": "Issue 与 PR 分诊"
+      },
+      {
+        "id": "matt-wayfinder",
+        "upstreamPath": "skills/engineering/wayfinder",
+        "name": "wayfinder",
+        "description": "Matt Pocock 的工程工作流：wayfinder。",
+        "category": "development",
+        "categoryLabel": "开发",
+        "featured": false,
+        "author": "Matt Pocock",
+        "displayName": "大型项目路线图"
+      },
+      {
+        "id": "matt-wizard",
+        "upstreamPath": "skills/engineering/wizard",
+        "name": "wizard",
+        "description": "Matt Pocock 的工程工作流：wizard。",
+        "category": "development",
+        "categoryLabel": "开发",
+        "featured": false,
+        "author": "Matt Pocock",
+        "displayName": "人工操作向导"
+      },
+      {
+        "id": "matt-grill-me",
+        "upstreamPath": "skills/productivity/grill-me",
+        "name": "grill-me",
+        "description": "Matt Pocock 的工程工作流：grill-me。",
+        "category": "development",
+        "categoryLabel": "开发",
+        "featured": false,
+        "author": "Matt Pocock",
+        "displayName": "苏格拉底式追问"
+      },
+      {
+        "id": "matt-grilling",
+        "upstreamPath": "skills/productivity/grilling",
+        "name": "grilling",
+        "description": "Matt Pocock 的工程工作流：grilling。",
+        "category": "development",
+        "categoryLabel": "开发",
+        "featured": false,
+        "author": "Matt Pocock",
+        "displayName": "压力测试式追问"
+      },
+      {
+        "id": "matt-handoff",
+        "upstreamPath": "skills/productivity/handoff",
+        "name": "handoff",
+        "description": "Matt Pocock 的工程工作流：handoff。",
+        "category": "development",
+        "categoryLabel": "开发",
+        "featured": false,
+        "author": "Matt Pocock",
+        "displayName": "Agent 任务交接"
+      },
+      {
+        "id": "matt-teach",
+        "upstreamPath": "skills/productivity/teach",
+        "name": "teach",
+        "description": "Matt Pocock 的工程工作流：teach。",
+        "category": "development",
+        "categoryLabel": "开发",
+        "featured": false,
+        "author": "Matt Pocock",
+        "displayName": "项目内教学"
+      },
+      {
+        "id": "matt-to-questionnaire",
+        "upstreamPath": "skills/productivity/to-questionnaire",
+        "name": "to-questionnaire",
+        "description": "Matt Pocock 的工程工作流：to-questionnaire。",
+        "category": "development",
+        "categoryLabel": "开发",
+        "featured": false,
+        "author": "Matt Pocock",
+        "displayName": "决策问题问卷"
+      },
+      {
+        "id": "matt-wait-what",
+        "upstreamPath": "skills/productivity/wait-what",
+        "name": "wait-what",
+        "description": "Matt Pocock 的工程工作流：wait-what。",
+        "category": "development",
+        "categoryLabel": "开发",
+        "featured": false,
+        "author": "Matt Pocock",
+        "displayName": "重新说明请求"
+      },
+      {
+        "id": "matt-writing-for-agents",
+        "upstreamPath": "skills/productivity/writing-for-agents",
+        "name": "writing-for-agents",
+        "description": "Matt Pocock 的工程工作流：writing-for-agents。",
+        "category": "development",
+        "categoryLabel": "开发",
+        "featured": false,
+        "author": "Matt Pocock",
+        "displayName": "Agent 指令写作"
+      },
+      {
+        "id": "matt-git-guardrails-claude-code",
+        "upstreamPath": "skills/misc/git-guardrails-claude-code",
+        "name": "git-guardrails-claude-code",
+        "description": "Matt Pocock 的工程工作流：git-guardrails-claude-code。",
+        "category": "development",
+        "categoryLabel": "开发",
+        "featured": false,
+        "author": "Matt Pocock",
+        "displayName": "Git 危险操作防护（CLI）"
+      },
+      {
+        "id": "matt-migrate-to-shoehorn",
+        "upstreamPath": "skills/misc/migrate-to-shoehorn",
+        "name": "migrate-to-shoehorn",
+        "description": "Matt Pocock 的工程工作流：migrate-to-shoehorn。",
+        "category": "development",
+        "categoryLabel": "开发",
+        "featured": false,
+        "author": "Matt Pocock",
+        "displayName": "测试类型断言迁移（Shoehorn）"
+      },
+      {
+        "id": "matt-scaffold-exercises",
+        "upstreamPath": "skills/misc/scaffold-exercises",
+        "name": "scaffold-exercises",
+        "description": "Matt Pocock 的工程工作流：scaffold-exercises。",
+        "category": "development",
+        "categoryLabel": "开发",
+        "featured": false,
+        "author": "Matt Pocock",
+        "displayName": "课程练习脚手架"
+      },
+      {
+        "id": "matt-setup-pre-commit",
+        "upstreamPath": "skills/misc/setup-pre-commit",
+        "name": "setup-pre-commit",
+        "description": "Matt Pocock 的工程工作流：setup-pre-commit。",
+        "category": "development",
+        "categoryLabel": "开发",
+        "featured": false,
+        "author": "Matt Pocock",
+        "displayName": "提交前质量检查"
+      }
+    ]
+  },
+  {
+    "repository": "microsoft/playwright-cli",
+    "revision": "ca196c297169a494ee5517584883eada60dc8d0e",
+    "license": "Apache-2.0",
+    "licensePath": "LICENSE",
+    "entries": [
+      {
+        "id": "playwright-cli",
+        "upstreamPath": "skills/playwright-cli",
+        "name": "playwright-cli",
+        "description": "用 Playwright 打开页面、交互、调试、编写和运行浏览器测试。",
+        "category": "development",
+        "categoryLabel": "开发",
+        "featured": true,
+        "author": "Microsoft",
+        "displayName": "浏览器自动化（Playwright）"
+      }
+    ]
+  },
+  {
+    "repository": "vercel-labs/agent-browser",
+    "revision": "acbc22bdc5d4f6c5a88d97d4a4745d3c5eb0591f",
+    "license": "Apache-2.0",
+    "licensePath": "LICENSE",
+    "entries": [
+      {
+        "id": "agent-browser-core",
+        "upstreamPath": "skill-data/core",
+        "name": "agent-browser core",
+        "description": "使用快照引用进行网页浏览、表单填写、抓取、截图与浏览器自动化。",
+        "category": "development",
+        "categoryLabel": "开发",
+        "featured": true,
+        "author": "Vercel Labs",
+        "displayName": "浏览器自动化（快照模式）"
+      }
+    ]
+  },
+  {
+    "repository": "vercel-labs/skills",
+    "revision": "a4d243c3d4f86cdf9385dd1b6a0733f6937e70b5",
+    "license": "MIT",
+    "licensePath": "LICENSE",
+    "entries": [
+      {
+        "id": "find-skills",
+        "upstreamPath": "skills/find-skills",
+        "name": "find-skills",
+        "description": "搜索、比较并安装适合当前任务的开放 Agent Skill。",
+        "category": "development",
+        "categoryLabel": "开发",
+        "featured": false,
+        "author": "Vercel Labs",
+        "displayName": "技能搜索与安装"
+      }
+    ]
+  }
+]

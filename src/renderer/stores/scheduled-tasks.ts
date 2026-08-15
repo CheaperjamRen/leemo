@@ -142,19 +142,9 @@ export function createScheduledTasksStore(
           const error = runError(timeline, rendererRunId, result);
           finalError = error;
           await client.complete(runId, "failed", conversationId, error);
-          deps.notifications.getState().push({
-            text: `定时任务「${task.name}」没有完成`,
-            kind: "generic",
-            conversationId,
-          });
           return false;
         }
         await client.complete(runId, "succeeded", conversationId);
-        deps.notifications.getState().push({
-          text: `定时任务「${task.name}」已完成`,
-          kind: "task-done",
-          conversationId,
-        });
         return true;
       } catch (error: unknown) {
         const detail = message(error);

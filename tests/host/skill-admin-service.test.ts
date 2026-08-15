@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -6,7 +6,10 @@ import { mkdtempSync } from "node:fs";
 import { zipSync } from "fflate";
 import { describe, expect, it, vi } from "vitest";
 import { createSkillAdminService } from "../../src/host/skill-admin-service";
-import type { CommunitySkillCatalogEntry } from "../../src/host/community-skill-catalog";
+import {
+  COMMUNITY_SKILL_CATALOG,
+  type CommunitySkillCatalogEntry,
+} from "../../src/host/community-skill-catalog";
 import { scanSkills, skillsRootFor } from "../../src/host/skills";
 
 function writeSkill(root: string, name: string, body = "Do the requested work."): string {
@@ -34,6 +37,20 @@ function scanInstalled(memoryDir: string) {
     writeFile: () => {},
     mkdirp: () => {},
   });
+}
+
+function installedFilePaths(root: string, current = root): string[] {
+  return readdirSync(current, { withFileTypes: true }).flatMap((entry) => {
+    const absolute = join(current, entry.name);
+    if (entry.isDirectory()) return installedFilePaths(root, absolute);
+    return [absolute.slice(root.length + 1).replaceAll("\\", "/")];
+  }).sort();
+}
+
+function generatedHumanWritingEntry(): CommunitySkillCatalogEntry {
+  const entry = COMMUNITY_SKILL_CATALOG.find((candidate) => candidate.id === "human-writing");
+  if (!entry) throw new Error("generated catalog is missing human-writing");
+  return entry;
 }
 
 function fakeGitHubFetch(): typeof fetch {
@@ -68,12 +85,15 @@ function fakeGitHubFetch(): typeof fetch {
 
 function curatedFixture(): CommunitySkillCatalogEntry {
   const skill = Buffer.from("---\nname: trusted-demo\ndescription: Trusted demo\n---\nDo useful work.\n");
+  const reference = Buffer.from("Review supporting files before publishing.\n");
   return {
     id: "trusted-demo",
     name: "trusted-demo",
+    displayName: "可信技能演示",
     description: "Trusted demo",
     category: "new-open-category",
     categoryLabel: "新分类",
+    featured: true,
     author: "Trusted Author",
     repository: "trusted/skills",
     revision: "0123456789abcdef0123456789abcdef01234567",
@@ -81,21 +101,128 @@ function curatedFixture(): CommunitySkillCatalogEntry {
     license: "MIT",
     licenseUrl: "https://github.com/trusted/skills/blob/0123456789abcdef0123456789abcdef01234567/LICENSE",
     sourceUrl: "https://github.com/trusted/skills/tree/0123456789abcdef0123456789abcdef01234567/skills/trusted-demo",
-    files: [{
-      path: "SKILL.md",
-      bytes: skill.byteLength,
-      sha256: "40f99c3915001f618d373da8d830a4685d1ce50ff79c53293654b9d7f0d1e198",
-    }],
+    files: [
+      {
+        path: "references/revision.md",
+        bytes: reference.byteLength,
+        sha256: "debe5b698540f889f80d680cf0a65fb558774f17030d2d09bb13541d2051a8fa",
+      },
+      {
+        path: "SKILL.md",
+        bytes: skill.byteLength,
+        sha256: "40f99c3915001f618d373da8d830a4685d1ce50ff79c53293654b9d7f0d1e198",
+      },
+    ],
   };
 }
 
-function curatedFetch(entry: CommunitySkillCatalogEntry): typeof fetch {
-  const skill = "---\nname: trusted-demo\ndescription: Trusted demo\n---\nDo useful work.\n";
-  const url = `https://raw.githubusercontent.com/${entry.repository}/${entry.revision}/${entry.upstreamPath}/SKILL.md`;
+function curatedFetch(entry: CommunitySkillCatalogEntry, alteredPath?: string): typeof fetch {
+  const payloads = new Map<string, Buffer>([
+    ["SKILL.md", Buffer.from("---\nname: trusted-demo\ndescription: Trusted demo\n---\nDo useful work.\n")],
+    ["references/revision.md", Buffer.from("Review supporting files before publishing.\n")],
+  ]);
+  const routes = new Map<string, Buffer>(entry.files.map((file) => {
+    const payload = payloads.get(file.path);
+    if (!payload) throw new Error(`test fixture is missing ${file.path}`);
+    const contents = Buffer.from(payload);
+    if (file.path === alteredPath) contents[0] ^= 0xff;
+    const sourcePath = file.sourcePath ?? `${entry.upstreamPath}/${file.path}`;
+    return [`https://raw.githubusercontent.com/${entry.repository}/${entry.revision}/${sourcePath}`, contents] as const;
+  }));
   return (async (input: string | URL | Request) => {
     const href = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
-    return href === url ? new Response(skill, { status: 200 }) : new Response("not found", { status: 404 });
+    const contents = routes.get(href);
+    return contents ? new Response(contents, { status: 200 }) : new Response("not found", { status: 404 });
   }) as typeof fetch;
+}
+
+const FAMILY_MEMBER_IDS = [
+  "family-auth",
+  "family-content",
+  "family-explore",
+  "family-interact",
+  "family-publish",
+] as const;
+
+function familyFixture(): CommunitySkillCatalogEntry {
+  const payloads = new Map<string, Buffer>([
+    ["SKILL.md", Buffer.from("---\nname: family-collection\ndescription: Collection index only\n---\nThis is not an invokable Skill.\n")],
+    ...FAMILY_MEMBER_IDS.map((id) => [
+      `skills/${id}/SKILL.md`,
+      Buffer.from(`---\nname: ${id}\ndescription: ${id} description\n---\nUse the shared family runtime.\n`),
+    ] as const),
+    ["scripts/shared.js", Buffer.from("export const shared = true;\n")],
+    ["pyproject.toml", Buffer.from("[project]\nname = \"trusted-family\"\n")],
+    ["LICENSE.upstream", Buffer.from("MIT License\n")],
+  ]);
+  return {
+    kind: "family",
+    id: "trusted-family",
+    name: "Trusted Family",
+    description: "Five related Skills sharing one runtime.",
+    category: "productivity",
+    categoryLabel: "效率",
+    featured: true,
+    author: "Trusted Author",
+    repository: "trusted/family",
+    revision: "0123456789abcdef0123456789abcdef01234567",
+    upstreamPath: "",
+    license: "MIT",
+    licenseUrl: "https://github.com/trusted/family/blob/0123456789abcdef0123456789abcdef01234567/LICENSE",
+    sourceUrl: "https://github.com/trusted/family/tree/0123456789abcdef0123456789abcdef01234567",
+    memberCount: FAMILY_MEMBER_IDS.length,
+    members: FAMILY_MEMBER_IDS.map((id) => ({
+      id,
+      name: id,
+      description: `${id} description`,
+      upstreamPath: `skills/${id}`,
+      category: "productivity",
+      categoryLabel: "效率",
+    })),
+    files: [...payloads].map(([path, contents]) => ({
+      path,
+      sourcePath: path,
+      bytes: contents.byteLength,
+      sha256: createHash("sha256").update(contents).digest("hex"),
+    })),
+  } as unknown as CommunitySkillCatalogEntry;
+}
+
+function familyFetch(
+  entry: CommunitySkillCatalogEntry,
+  alteredPath?: string,
+): { fetchFn: typeof fetch; requests: Map<string, number> } {
+  const payloads = new Map<string, Buffer>([
+    ["SKILL.md", Buffer.from("---\nname: family-collection\ndescription: Collection index only\n---\nThis is not an invokable Skill.\n")],
+    ...FAMILY_MEMBER_IDS.map((id) => [
+      `skills/${id}/SKILL.md`,
+      Buffer.from(`---\nname: ${id}\ndescription: ${id} description\n---\nUse the shared family runtime.\n`),
+    ] as const),
+    ["scripts/shared.js", Buffer.from("export const shared = true;\n")],
+    ["pyproject.toml", Buffer.from("[project]\nname = \"trusted-family\"\n")],
+    ["LICENSE.upstream", Buffer.from("MIT License\n")],
+  ]);
+  for (const file of entry.files) {
+    if (!payloads.has(file.path) && file.path.startsWith("references/catalog-padding-")) {
+      payloads.set(file.path, Buffer.from(`${file.path}\n`));
+    }
+  }
+  const requests = new Map<string, number>();
+  const routes = new Map<string, Buffer>(entry.files.map((file) => {
+    const payload = payloads.get(file.path);
+    if (!payload) throw new Error(`family fixture is missing ${file.path}`);
+    const contents = Buffer.from(payload);
+    if (file.path === alteredPath) contents[0] ^= 0xff;
+    const sourcePath = file.sourcePath ?? file.path;
+    return [`https://raw.githubusercontent.com/${entry.repository}/${entry.revision}/${sourcePath}`, contents] as const;
+  }));
+  const fetchFn = (async (input: string | URL | Request) => {
+    const href = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+    requests.set(href, (requests.get(href) ?? 0) + 1);
+    const contents = routes.get(href);
+    return contents ? new Response(contents, { status: 200 }) : new Response("not found", { status: 404 });
+  }) as typeof fetch;
+  return { fetchFn, requests };
 }
 
 describe("SkillAdminService local installation", () => {
@@ -211,6 +338,43 @@ describe("SkillAdminService local installation", () => {
     expect(() => restarted.remove("unmanaged-skill")).toThrow("不由 Leemo 管理");
   });
 
+  it("reads a v1 registry without rewriting it and migrates only on the next mutation", () => {
+    const { memoryDir } = tempFixture();
+    const dir = writeSkill(join(skillsRootFor(memoryDir), "managed-abcdef123456"), "legacy-skill");
+    const registryPath = join(memoryDir, ".leemo", "skills", "registry.json");
+    const legacy = {
+      version: 1,
+      skills: [{
+        id: "managed:abcdef123456",
+        name: "legacy-skill",
+        description: "legacy-skill description",
+        dir,
+        trust: "personal",
+        sourceKind: "local-folder",
+        sourceLabel: "本地导入",
+        source: dir,
+        resolvedSource: dir,
+        candidate: "legacy-skill",
+        scanStatus: "unscanned",
+        findings: [],
+        installedAt: 1,
+        updatedAt: 1,
+      }],
+    };
+    writeFileSync(registryPath, `${JSON.stringify(legacy, null, 2)}\n`);
+
+    const service = createSkillAdminService({ memoryDir });
+    expect(service.listManaged()).toEqual([expect.objectContaining({ name: "legacy-skill" })]);
+    expect(JSON.parse(readFileSync(registryPath, "utf8"))).toMatchObject({ version: 1 });
+
+    service.remove("legacy-skill");
+    expect(JSON.parse(readFileSync(registryPath, "utf8"))).toMatchObject({
+      version: 2,
+      packages: [],
+      skills: [],
+    });
+  });
+
   it("never treats the skills root itself as a removable managed directory", () => {
     const { memoryDir } = tempFixture();
     const skillsRoot = skillsRootFor(memoryDir);
@@ -290,6 +454,20 @@ describe("SkillAdminService remote installation", () => {
 });
 
 describe("SkillAdminService trusted catalog and installed scans", () => {
+  it("loads the pinned Skill instructions for an on-demand catalog detail view", async () => {
+    const { memoryDir } = tempFixture();
+    const entry = curatedFixture();
+    const service = createSkillAdminService({
+      memoryDir,
+      communityCatalog: [entry],
+      fetchFn: curatedFetch(entry),
+    });
+
+    await expect(service.loadCatalogDetails(entry.id)).resolves.toEqual({
+      markdown: "---\nname: trusted-demo\ndescription: Trusted demo\n---\nDo useful work.\n",
+    });
+  });
+
   it("lists the embedded catalog without contacting any hosted Skill service", () => {
     const { memoryDir } = tempFixture();
     const fetchFn = vi.fn() as unknown as typeof fetch;
@@ -301,9 +479,27 @@ describe("SkillAdminService trusted catalog and installed scans", () => {
     });
 
     expect(service.listCatalog()).toEqual([
-      expect.objectContaining({ id: entry.id, sourceUrl: entry.sourceUrl, installed: false }),
+      expect.objectContaining({ id: entry.id, name: "trusted-demo", displayName: "可信技能演示", sourceUrl: entry.sourceUrl, installed: false }),
     ]);
     expect(fetchFn).not.toHaveBeenCalled();
+  });
+
+  it("preserves an explicit setup prerequisite in catalog and installed records", async () => {
+    const { memoryDir } = tempFixture();
+    const setupMessage = "首次使用需安装官方 CLI，并完成个人账号授权。";
+    const entry = { ...curatedFixture(), setupMessage } as CommunitySkillCatalogEntry;
+    const service = createSkillAdminService({
+      memoryDir,
+      fetchFn: curatedFetch(entry),
+      communityCatalog: [entry],
+    });
+
+    expect(service.listCatalog()).toEqual([
+      expect.objectContaining({ setupRequired: true, setupMessage }),
+    ]);
+    const installed = await service.installCatalog(entry.id);
+    expect(installed.installed[0]).toMatchObject({ setupRequired: true, setupMessage });
+    expect(service.listManaged()[0]).toMatchObject({ setupRequired: true, setupMessage });
   });
 
   it("grants community trust only through a host-owned catalog id and verifies pinned bytes", async () => {
@@ -320,6 +516,7 @@ describe("SkillAdminService trusted catalog and installed scans", () => {
 
     expect(result.installed[0]).toMatchObject({
       name: "trusted-demo",
+      displayName: "可信技能演示",
       trust: "community",
       sourceLabel: "Trusted Author",
       repository: "trusted/skills",
@@ -338,6 +535,84 @@ describe("SkillAdminService trusted catalog and installed scans", () => {
       fetchFn: curatedFetch(entry),
     }).listCatalog()).toEqual([
       expect.objectContaining({ id: "trusted-demo", installed: true }),
+    ]);
+  });
+
+  it("keeps the generated human-writing source pinned with its supporting files", () => {
+    const entry = generatedHumanWritingEntry();
+
+    expect(entry).toMatchObject({
+      repository: "KKKKhazix/human-writing",
+      revision: "4fda173f3fef7fb808f3eba991eeb2528ea4b189",
+      upstreamPath: "human-writing",
+      license: "MIT",
+    });
+    expect(entry.files.map((file) => file.path)).toEqual(expect.arrayContaining([
+      "SKILL.md",
+      "references/revision.md",
+      "scripts/check_prose.py",
+      "LICENSE.upstream",
+    ]));
+  });
+
+  it("installs a pinned catalog skill with supporting files and restores it after restart", async () => {
+    const { memoryDir } = tempFixture();
+    const entry = curatedFixture();
+    const service = createSkillAdminService({
+      memoryDir,
+      fetchFn: curatedFetch(entry),
+      communityCatalog: [entry],
+      now: () => 75,
+    });
+
+    const result = await service.installCatalog(entry.id);
+    const installed = result.installed[0];
+
+    expect(installed).toMatchObject({
+      catalogId: "trusted-demo",
+      name: "trusted-demo",
+      trust: "community",
+      sourceLabel: "Trusted Author",
+      repository: "trusted/skills",
+      revision: entry.revision,
+      license: "MIT",
+      scanStatus: "scanned",
+      installedAt: 75,
+    });
+    expect(installedFilePaths(installed.dir)).toEqual(entry.files.map((file) => file.path).sort());
+    expect(readFileSync(join(installed.dir, "references", "revision.md"), "utf8"))
+      .toBe("Review supporting files before publishing.\n");
+
+    const restarted = createSkillAdminService({
+      memoryDir,
+      fetchFn: curatedFetch(entry),
+      communityCatalog: [entry],
+    });
+    expect(restarted.listManaged()).toEqual([
+      expect.objectContaining({ catalogId: "trusted-demo", trust: "community", scanStatus: "scanned" }),
+    ]);
+    expect(restarted.listCatalog()).toEqual([
+      expect.objectContaining({ id: "trusted-demo", installed: true, scanStatus: "scanned" }),
+    ]);
+  });
+
+  it("leaves no directory or registry when a supporting file fails integrity", async () => {
+    const { memoryDir } = tempFixture();
+    const entry = curatedFixture();
+    const service = createSkillAdminService({
+      memoryDir,
+      fetchFn: curatedFetch(entry, "references/revision.md"),
+      communityCatalog: [entry],
+    });
+
+    await expect(service.installCatalog(entry.id)).rejects.toThrow("固定版本校验失败，已停止安装");
+
+    const skillsRoot = skillsRootFor(memoryDir);
+    expect(existsSync(skillsRoot) ? readdirSync(skillsRoot) : []).toEqual([]);
+    expect(existsSync(join(memoryDir, ".leemo", "skills", "registry.json"))).toBe(false);
+    expect(service.listManaged()).toEqual([]);
+    expect(createSkillAdminService({ memoryDir, communityCatalog: [entry] }).listCatalog()).toEqual([
+      expect.objectContaining({ id: "trusted-demo", installed: false }),
     ]);
   });
 
@@ -403,5 +678,173 @@ describe("SkillAdminService trusted catalog and installed scans", () => {
       scanStatus: "review",
     });
     expect(service.listManaged()).toEqual([]);
+  });
+});
+
+describe("SkillAdminService curated family packages", () => {
+  it("installs a pinned family whose vetted manifest exceeds the personal-import file limit", async () => {
+    const { memoryDir } = tempFixture();
+    const base = familyFixture();
+    const padding = Array.from({ length: 506 }, (_, index) => {
+      const path = `references/catalog-padding-${index}.txt`;
+      const contents = Buffer.from(`${path}\n`);
+      return {
+        path,
+        sourcePath: path,
+        bytes: contents.byteLength,
+        sha256: createHash("sha256").update(contents).digest("hex"),
+      };
+    });
+    const entry = { ...base, files: [...base.files, ...padding] } as CommunitySkillCatalogEntry;
+    expect(entry.files).toHaveLength(515);
+    const upstream = familyFetch(entry).fetchFn;
+    let activeRequests = 0;
+    let maximumActiveRequests = 0;
+    const fetchFn = (async (input: string | URL | Request, init?: RequestInit) => {
+      activeRequests += 1;
+      maximumActiveRequests = Math.max(maximumActiveRequests, activeRequests);
+      await new Promise((resolve) => setTimeout(resolve, 1));
+      try {
+        return await upstream(input, init);
+      } finally {
+        activeRequests -= 1;
+      }
+    }) as typeof fetch;
+    const service = createSkillAdminService({ memoryDir, communityCatalog: [entry], fetchFn });
+
+    await expect(service.installCatalog(entry.id)).resolves.toMatchObject({
+      installed: expect.arrayContaining(FAMILY_MEMBER_IDS.map((id) => expect.objectContaining({ name: id }))),
+    });
+    expect(maximumActiveRequests).toBeGreaterThan(1);
+    expect(maximumActiveRequests).toBeLessThanOrEqual(8);
+  });
+
+  it("downloads, scans, and installs one package while registering only its five members", async () => {
+    const { memoryDir } = tempFixture();
+    const entry = familyFixture();
+    const { fetchFn, requests } = familyFetch(entry);
+    const service = createSkillAdminService({
+      memoryDir,
+      communityCatalog: [entry],
+      fetchFn,
+      now: () => 90,
+    });
+
+    const result = await service.installCatalog(entry.id);
+
+    expect(result.installed).toHaveLength(FAMILY_MEMBER_IDS.length);
+    expect(result.installed.map((record) => record.name).sort()).toEqual([...FAMILY_MEMBER_IDS].sort());
+    expect(result.installed.map((record) => record.name)).not.toContain("family-collection");
+    expect(new Set(result.installed.map((record) => record.packageId))).toHaveLength(1);
+    expect(new Set(result.installed.map((record) => record.qualifiedName))).toHaveLength(FAMILY_MEMBER_IDS.length);
+    expect(result.installed).toEqual(expect.arrayContaining(FAMILY_MEMBER_IDS.map((id) => expect.objectContaining({
+      name: id,
+      candidate: id,
+      familyCatalogId: "trusted-family",
+      familyLabel: "Trusted Family",
+      setupRequired: true,
+      setupMessage: "首次使用需先完成 Python / uv 环境设置。",
+      scanStatus: "scanned",
+      installedAt: 90,
+    }))));
+
+    const pluginRoots = result.installed.map((record) => service.pluginPathForQualifiedName(record.qualifiedName!));
+    expect(new Set(pluginRoots)).toHaveLength(1);
+    const pluginRoot = pluginRoots[0]!;
+    expect(pluginRoot).toBeTruthy();
+    expect(existsSync(join(pluginRoot, ".claude-plugin", "plugin.json"))).toBe(true);
+    expect(readFileSync(join(pluginRoot, "scripts", "shared.js"), "utf8")).toContain("shared = true");
+    expect(entry.files.every((file) => requests.get(
+      `https://raw.githubusercontent.com/${entry.repository}/${entry.revision}/${file.sourcePath ?? file.path}`,
+    ) === 1)).toBe(true);
+
+    const registry = JSON.parse(readFileSync(join(memoryDir, ".leemo", "skills", "registry.json"), "utf8")) as {
+      version: number;
+      packages: unknown[];
+      skills: unknown[];
+    };
+    expect(registry).toMatchObject({ version: 2 });
+    expect(registry.packages).toHaveLength(1);
+    expect(registry.skills).toHaveLength(FAMILY_MEMBER_IDS.length);
+
+    const restarted = createSkillAdminService({ memoryDir, communityCatalog: [entry], fetchFn });
+    const restored = restarted.listManaged();
+    expect(restored.map((record) => record.qualifiedName).sort())
+      .toEqual(result.installed.map((record) => record.qualifiedName).sort());
+    expect(restored.every((record) => restarted.pluginPathForQualifiedName(record.qualifiedName!) === pluginRoot)).toBe(true);
+    expect(restarted.listCatalog()).toEqual([
+      expect.objectContaining({
+        id: "trusted-family",
+        kind: "family",
+        memberCount: FAMILY_MEMBER_IDS.length,
+        setupRequired: true,
+        setupMessage: "首次使用需先完成 Python / uv 环境设置。",
+        installed: true,
+      }),
+    ]);
+  });
+
+  it("leaves neither a partial package nor registry when one family file fails integrity", async () => {
+    const { memoryDir } = tempFixture();
+    const entry = familyFixture();
+    const { fetchFn } = familyFetch(entry, "scripts/shared.js");
+    const service = createSkillAdminService({ memoryDir, communityCatalog: [entry], fetchFn });
+
+    await expect(service.installCatalog(entry.id)).rejects.toThrow("固定版本校验失败，已停止安装");
+
+    const packagesRoot = join(memoryDir, ".leemo", "packages");
+    expect(existsSync(packagesRoot) ? readdirSync(packagesRoot) : []).toEqual([]);
+    expect(existsSync(join(memoryDir, ".leemo", "skills", "registry.json"))).toBe(false);
+    expect(service.listManaged()).toEqual([]);
+  });
+
+  it("rejects a family whose pinned member id does not match its SKILL header", async () => {
+    const { memoryDir } = tempFixture();
+    const base = familyFixture();
+    const entry = {
+      ...base,
+      members: base.kind === "family"
+        ? [{ ...base.members[0], id: "wrong-member-id" }, ...base.members.slice(1)]
+        : [],
+    } as CommunitySkillCatalogEntry;
+    const { fetchFn } = familyFetch(entry);
+    const service = createSkillAdminService({ memoryDir, communityCatalog: [entry], fetchFn });
+
+    await expect(service.installCatalog(entry.id)).rejects.toThrow("名称与固定清单不一致");
+    expect(service.listManaged()).toEqual([]);
+    expect(existsSync(join(memoryDir, ".leemo", "skills", "registry.json"))).toBe(false);
+  });
+
+  it("removes the whole family atomically when any member is removed", async () => {
+    const { memoryDir } = tempFixture();
+    const entry = familyFixture();
+    const { fetchFn } = familyFetch(entry);
+    const service = createSkillAdminService({ memoryDir, communityCatalog: [entry], fetchFn });
+    const installed = await service.installCatalog(entry.id);
+    const pluginRoot = service.pluginPathForQualifiedName(installed.installed[0].qualifiedName!)!;
+
+    service.remove(installed.installed[2].id);
+
+    expect(service.listManaged()).toEqual([]);
+    expect(existsSync(pluginRoot)).toBe(false);
+    expect(JSON.parse(readFileSync(join(memoryDir, ".leemo", "skills", "registry.json"), "utf8")))
+      .toMatchObject({ version: 2, packages: [], skills: [] });
+  });
+
+  it("keeps a damaged family visible after restart but never routes its plugin", async () => {
+    const { memoryDir } = tempFixture();
+    const entry = familyFixture();
+    const { fetchFn } = familyFetch(entry);
+    const service = createSkillAdminService({ memoryDir, communityCatalog: [entry], fetchFn });
+    const installed = await service.installCatalog(entry.id);
+    rmSync(installed.installed[1].dir, { recursive: true, force: true });
+
+    const restarted = createSkillAdminService({ memoryDir, communityCatalog: [entry], fetchFn });
+    const records = restarted.listManaged();
+
+    expect(records).toHaveLength(FAMILY_MEMBER_IDS.length);
+    expect(records.every((record) => record.available === false)).toBe(true);
+    expect(records.every((record) => record.unavailableReason?.includes("不完整"))).toBe(true);
+    expect(records.every((record) => restarted.pluginPathForQualifiedName(record.qualifiedName!) === undefined)).toBe(true);
   });
 });

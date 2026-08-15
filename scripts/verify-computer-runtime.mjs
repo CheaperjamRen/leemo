@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { NtExecutable, NtExecutableResource } from "resedit";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const releaseDir = path.join(root, "bundled-runtime", "windows-mcp", "release");
@@ -19,6 +20,30 @@ if (hash !== manifest.executable.sha256) {
 }
 if (!fs.existsSync(path.join(releaseDir, "LICENSE.txt"))) {
   throw new Error("Windows computer runtime license is missing");
+}
+const dpiPatch = manifest.patches?.find((patch) => patch.name === "per-monitor-v2-dpi-awareness");
+if (!dpiPatch) {
+  throw new Error("Windows computer runtime Per-Monitor V2 patch metadata is missing");
+}
+for (const patch of manifest.patches) {
+  const patchPath = path.resolve(releaseDir, patch.source);
+  if (!fs.existsSync(patchPath)) {
+    throw new Error(`Windows computer runtime patch source is missing: ${patch.source}`);
+  }
+  const patchHash = createHash("sha256")
+    .update(fs.readFileSync(patchPath))
+    .digest("hex")
+    .toUpperCase();
+  if (patchHash !== patch.sha256) {
+    throw new Error(`Windows computer runtime patch hash mismatch: ${patch.name}`);
+  }
+}
+
+const executable = NtExecutable.from(bytes);
+const resources = NtExecutableResource.from(executable);
+const embeddedManifest = resources.entries.find((entry) => entry.type === 24 && entry.id === 1);
+if (!embeddedManifest || !Buffer.from(embeddedManifest.bin).toString("utf8").includes("PerMonitorV2")) {
+  throw new Error("Windows computer runtime is not Per-Monitor V2 DPI aware");
 }
 
 console.log(`Windows computer runtime verified (${manifest.version}; ${bytes.byteLength} bytes; ${hash})`);

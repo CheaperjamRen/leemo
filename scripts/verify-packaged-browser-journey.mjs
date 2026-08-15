@@ -337,7 +337,7 @@ async function enableManagedBrowser(page) {
 
 async function ensureWorkbench(page) {
   if (await page.getByTestId("workbench-shell").isVisible().catch(() => false)) return;
-  await page.getByRole("button", { name: "工作台", exact: true }).click();
+  await page.getByRole("button", { name: "切换到工作台", exact: true }).click();
   await page.getByTestId("workbench-shell").waitFor({ state: "visible" });
 }
 

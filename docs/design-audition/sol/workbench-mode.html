@@ -1,0 +1,914 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Leemo · 工作台模式</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    :root {
+      --page: #f7f8f9;
+      --panel: #ffffff;
+      --sidebar: #f1f2f3;
+      --sidebar-active: #e5e7e9;
+      --surface-muted: #f5f6f7;
+      --surface-pressed: #eceef0;
+      --ink: #191b1e;
+      --ink-soft: #45494f;
+      --muted: #70757d;
+      --faint: #9a9fa6;
+      --line: #dfe2e5;
+      --line-strong: #ced2d7;
+      --amber: #c26d22;
+      --amber-deep: #8d4a13;
+      --amber-soft: #f4ddc1;
+      --amber-pale: #fff7ec;
+      --green: #287a56;
+      --green-soft: #e8f3ed;
+      --blue: #4770a8;
+      --red: #ad4947;
+      --red-soft: #f9eceb;
+      --book-blue: #5d7695;
+      --book-green: #66806c;
+      --book-red: #966763;
+      --white: #ffffff;
+      --transparent: rgba(255, 255, 255, 0);
+      --shadow: rgba(30, 34, 40, 0.07);
+      --focus: rgba(194, 109, 34, 0.18);
+      --sidebar-shadow: rgba(30, 34, 40, 0.04);
+    }
+
+    * { box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; }
+
+    body {
+      margin: 0;
+      overflow: hidden;
+      background: var(--page);
+      color: var(--ink);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", "PingFang SC", sans-serif;
+      font-size: 14px;
+      letter-spacing: 0;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    button, textarea { font: inherit; }
+    button, a, summary { -webkit-tap-highlight-color: var(--transparent); }
+    button:focus-visible, a:focus-visible, textarea:focus-visible, summary:focus-visible {
+      outline: 3px solid var(--focus);
+      outline-offset: 2px;
+    }
+
+    .app-shell {
+      min-width: 1120px;
+      height: 100vh;
+      min-height: 720px;
+      display: grid;
+      grid-template-columns: 264px minmax(0, 1fr);
+      background: var(--page);
+    }
+
+    .sidebar {
+      height: 100vh;
+      min-height: 720px;
+      display: flex;
+      flex-direction: column;
+      border-right: 1px solid var(--line);
+      background: var(--sidebar);
+      box-shadow: 1px 0 0 var(--sidebar-shadow);
+      overflow: hidden;
+    }
+
+    .brand-row {
+      height: 64px;
+      padding: 0 16px 0 18px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      color: var(--ink);
+      font-size: 16px;
+      font-weight: 700;
+      text-decoration: none;
+    }
+
+    .brand-mark {
+      width: 26px;
+      height: 26px;
+      display: grid;
+      place-items: center;
+      border-radius: 7px;
+      background: var(--ink);
+      color: var(--white);
+    }
+
+    .brand-mark svg { width: 16px; height: 16px; }
+
+    .collapse-button, .sidebar-icon-button {
+      width: 30px;
+      height: 30px;
+      display: grid;
+      place-items: center;
+      border: 1px solid var(--transparent);
+      border-radius: 6px;
+      background: var(--transparent);
+      color: var(--muted);
+      cursor: pointer;
+    }
+
+    .collapse-button:hover, .sidebar-icon-button:hover {
+      border-color: var(--line-strong);
+      background: var(--panel);
+      color: var(--ink);
+    }
+
+    .collapse-button svg, .sidebar-icon-button svg { width: 16px; height: 16px; }
+
+    .new-chat-wrap { padding: 12px 12px 8px; }
+
+    .new-chat {
+      width: 100%;
+      height: 38px;
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      padding: 0 11px;
+      border: 1px solid var(--line-strong);
+      border-radius: 7px;
+      background: var(--panel);
+      color: var(--ink);
+      font-weight: 600;
+      cursor: pointer;
+      box-shadow: 0 1px 2px var(--shadow);
+      transition: background-color 140ms ease, border-color 140ms ease;
+    }
+
+    .new-chat:hover { border-color: var(--muted); background: var(--surface-muted); }
+    .new-chat svg { width: 16px; height: 16px; }
+
+    .sidebar-scroll {
+      min-height: 0;
+      flex: 1;
+      padding: 6px 9px 18px;
+      overflow-y: auto;
+      scrollbar-width: thin;
+      scrollbar-color: var(--line-strong) var(--transparent);
+    }
+
+    .side-section + .side-section { margin-top: 24px; }
+
+    .section-label {
+      height: 27px;
+      padding: 0 8px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 650;
+    }
+
+    .side-item {
+      width: 100%;
+      min-height: 34px;
+      padding: 0 8px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      border-radius: 6px;
+      color: var(--ink-soft);
+      text-decoration: none;
+      white-space: nowrap;
+      overflow: hidden;
+    }
+
+    .side-item:hover { background: var(--surface-pressed); color: var(--ink); }
+
+    .side-item.active {
+      background: var(--sidebar-active);
+      color: var(--ink);
+      font-weight: 600;
+    }
+
+    .side-item .label {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .book-icon {
+      width: 15px;
+      height: 17px;
+      flex: 0 0 auto;
+      border: 1px solid var(--book-blue);
+      border-left-width: 4px;
+      border-radius: 2px;
+      background: var(--panel);
+    }
+
+    .book-icon.green { border-color: var(--book-green); }
+    .book-icon.red { border-color: var(--book-red); }
+
+    .side-chevron {
+      width: 14px;
+      height: 14px;
+      margin-left: auto;
+      color: var(--faint);
+    }
+
+    .thread-list {
+      position: relative;
+      margin: 2px 0 5px 15px;
+      padding-left: 14px;
+    }
+
+    .thread-list::before {
+      content: "";
+      position: absolute;
+      top: 3px;
+      bottom: 3px;
+      left: 0;
+      width: 1px;
+      background: var(--line-strong);
+    }
+
+    .thread-list .side-item { min-height: 32px; font-size: 12px; }
+
+    .thread-state {
+      width: 6px;
+      height: 6px;
+      flex: 0 0 auto;
+      border-radius: 50%;
+      background: var(--amber);
+    }
+
+    .loose-icon {
+      width: 16px;
+      height: 16px;
+      flex: 0 0 auto;
+      color: var(--muted);
+    }
+
+    .sidebar-footer {
+      height: 62px;
+      padding: 9px 12px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      border-top: 1px solid var(--line);
+      background: var(--sidebar);
+    }
+
+    .mini-avatar {
+      width: 34px;
+      height: 34px;
+      flex: 0 0 auto;
+      filter: drop-shadow(0 2px 4px var(--shadow));
+    }
+
+    .profile-copy { min-width: 0; flex: 1; }
+    .profile-name { display: block; color: var(--ink); font-size: 12px; font-weight: 650; line-height: 1.2; }
+    .profile-status { display: block; margin-top: 3px; color: var(--muted); font-size: 10px; line-height: 1.2; }
+
+    .workspace {
+      min-width: 0;
+      height: 100vh;
+      min-height: 720px;
+      display: grid;
+      grid-template-rows: 64px minmax(0, 1fr) 116px;
+      background: var(--panel);
+    }
+
+    .workspace-header {
+      padding: 0 22px 0 28px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      border-bottom: 1px solid var(--line);
+      background: var(--panel);
+    }
+
+    .header-title { min-width: 0; flex: 1; }
+    .breadcrumb { color: var(--muted); font-size: 11px; line-height: 1.2; }
+    .conversation-title { margin-top: 4px; color: var(--ink); font-size: 14px; font-weight: 650; line-height: 1.2; }
+
+    .mode-switch {
+      width: 184px;
+      height: 36px;
+      padding: 3px;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      border: 1px solid var(--line);
+      border-radius: 9px;
+      background: var(--surface-muted);
+    }
+
+    .mode-switch a {
+      display: grid;
+      place-items: center;
+      border-radius: 6px;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 600;
+      text-decoration: none;
+    }
+
+    .mode-switch a[aria-current="page"] {
+      background: var(--panel);
+      color: var(--ink);
+      box-shadow: 0 1px 3px var(--shadow);
+    }
+
+    .header-more {
+      width: 32px;
+      height: 32px;
+      display: grid;
+      place-items: center;
+      border: 1px solid var(--transparent);
+      border-radius: 6px;
+      background: var(--transparent);
+      color: var(--muted);
+      cursor: pointer;
+    }
+
+    .header-more:hover { border-color: var(--line); background: var(--surface-muted); color: var(--ink); }
+    .header-more svg { width: 17px; height: 17px; }
+
+    .conversation-scroll {
+      min-height: 0;
+      overflow-y: auto;
+      background: var(--panel);
+      scrollbar-width: thin;
+      scrollbar-color: var(--line-strong) var(--transparent);
+    }
+
+    .conversation {
+      width: min(820px, calc(100% - 64px));
+      margin: 0 auto;
+      padding: 25px 0 18px;
+    }
+
+    .message-row {
+      display: grid;
+      grid-template-columns: 30px minmax(0, 1fr);
+      gap: 11px;
+      align-items: start;
+    }
+
+    .message-row + .message-row, .message-row + .work-block, .work-block + .message-row { margin-top: 14px; }
+
+    .message-row.user {
+      display: flex;
+      justify-content: flex-end;
+    }
+
+    .user-bubble {
+      max-width: 620px;
+      padding: 10px 13px;
+      border: 1px solid var(--line);
+      border-radius: 8px 8px 2px 8px;
+      background: var(--surface-muted);
+      color: var(--ink);
+      font-size: 13px;
+      line-height: 1.55;
+    }
+
+    .tiny-momo {
+      width: 30px;
+      height: 30px;
+      filter: drop-shadow(0 2px 3px var(--shadow));
+    }
+
+    .momo-message { min-width: 0; padding-top: 3px; }
+    .message-copy { margin: 0; color: var(--ink-soft); font-size: 13px; line-height: 1.6; }
+
+    .usage-note {
+      margin-top: 3px;
+      color: var(--faint);
+      font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+      font-size: 9px;
+      line-height: 1.4;
+      opacity: .18;
+      transition: opacity 150ms ease;
+    }
+
+    .message-row:hover .usage-note, .message-row:focus-within .usage-note { opacity: 1; }
+
+    .work-block { margin-left: 41px; }
+
+    .plan-card {
+      border: 1px solid var(--line-strong);
+      border-radius: 8px;
+      background: var(--panel);
+      overflow: hidden;
+    }
+
+    .plan-header {
+      height: 38px;
+      padding: 0 12px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid var(--line);
+      background: var(--surface-muted);
+    }
+
+    .plan-title {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--ink);
+      font-size: 12px;
+      font-weight: 650;
+    }
+
+    .plan-title svg { width: 15px; height: 15px; color: var(--muted); }
+    .plan-progress { color: var(--muted); font-size: 10px; font-variant-numeric: tabular-nums; }
+
+    .plan-list { margin: 0; padding: 5px 0; list-style: none; }
+    .plan-item { min-height: 29px; padding: 0 12px; display: flex; align-items: center; gap: 9px; color: var(--ink-soft); font-size: 12px; }
+
+    .state-icon {
+      width: 17px;
+      height: 17px;
+      flex: 0 0 auto;
+      display: grid;
+      place-items: center;
+      border: 1px solid var(--line-strong);
+      border-radius: 50%;
+      color: var(--faint);
+    }
+
+    .state-icon svg { width: 11px; height: 11px; }
+    .state-icon.done { border-color: var(--green); background: var(--green-soft); color: var(--green); }
+
+    .state-icon.running {
+      border-color: var(--amber);
+      border-top-color: var(--transparent);
+      background: var(--amber-pale);
+      animation: spin 1.4s linear infinite;
+    }
+
+    .plan-item.running { color: var(--ink); font-weight: 600; }
+    .plan-item.pending { color: var(--muted); }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .tool-stack { margin-top: 9px; display: grid; gap: 5px; }
+
+    .tool-row {
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: var(--surface-muted);
+      overflow: hidden;
+    }
+
+    .tool-row summary {
+      height: 34px;
+      padding: 0 10px;
+      display: grid;
+      grid-template-columns: 18px minmax(0, 1fr) auto 14px;
+      align-items: center;
+      gap: 8px;
+      list-style: none;
+      color: var(--ink-soft);
+      font-size: 11px;
+      cursor: pointer;
+    }
+
+    .tool-row summary::-webkit-details-marker { display: none; }
+    .tool-row summary:hover { background: var(--surface-pressed); }
+
+    .tool-status { width: 16px; height: 16px; display: grid; place-items: center; color: var(--green); }
+    .tool-status svg { width: 14px; height: 14px; }
+    .tool-status.running { color: var(--amber); }
+    .tool-status.running svg { animation: spin 1.4s linear infinite; }
+    .tool-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .tool-time { color: var(--faint); font-size: 9px; font-variant-numeric: tabular-nums; }
+    .tool-chevron { width: 12px; height: 12px; color: var(--faint); transition: transform 140ms ease; }
+    .tool-row[open] .tool-chevron { transform: rotate(90deg); }
+
+    .tool-detail {
+      margin: 0;
+      padding: 8px 10px 9px 36px;
+      border-top: 1px solid var(--line);
+      background: var(--panel);
+      color: var(--muted);
+      font-size: 10px;
+      line-height: 1.5;
+    }
+
+    .approval {
+      margin-top: 9px;
+      min-height: 78px;
+      padding: 10px 11px 10px 13px;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      align-items: center;
+      gap: 16px;
+      border: 1px solid var(--amber-soft);
+      border-left: 3px solid var(--amber);
+      border-radius: 6px;
+      background: var(--amber-pale);
+    }
+
+    .approval-copy { min-width: 0; }
+    .approval-title { margin: 0; color: var(--ink); font-size: 12px; font-weight: 650; line-height: 1.4; }
+    .approval-path {
+      display: block;
+      margin-top: 5px;
+      color: var(--amber-deep);
+      font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+      font-size: 10px;
+      line-height: 1.4;
+      overflow-wrap: anywhere;
+    }
+
+    .approval-actions { display: flex; align-items: center; gap: 6px; white-space: nowrap; }
+
+    .approval-button {
+      height: 29px;
+      padding: 0 10px;
+      border: 1px solid var(--line-strong);
+      border-radius: 5px;
+      background: var(--panel);
+      color: var(--ink-soft);
+      font-size: 10px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+
+    .approval-button:hover { border-color: var(--muted); color: var(--ink); }
+    .approval-button.primary { border-color: var(--amber); background: var(--amber); color: var(--white); }
+    .approval-button.primary:hover { border-color: var(--amber-deep); background: var(--amber-deep); color: var(--white); }
+    .approval-button.danger { color: var(--red); }
+    .approval-button.danger:hover { border-color: var(--red); background: var(--red-soft); }
+
+    .streaming {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      min-height: 34px;
+      padding: 7px 10px;
+      border: 1px solid var(--line);
+      border-radius: 3px 8px 8px 8px;
+      background: var(--surface-muted);
+      color: var(--ink-soft);
+      font-size: 12px;
+      line-height: 1.5;
+    }
+
+    .typing-caret {
+      width: 2px;
+      height: 15px;
+      flex: 0 0 auto;
+      background: var(--amber);
+      animation: blink 1s steps(1, end) infinite;
+    }
+
+    @keyframes blink { 0%, 48% { opacity: 1; } 49%, 100% { opacity: 0; } }
+
+    .composer-footer {
+      padding: 11px 28px 15px;
+      border-top: 1px solid var(--line);
+      background: var(--panel);
+    }
+
+    .composer {
+      width: min(820px, calc(100% - 8px));
+      height: 90px;
+      margin: 0 auto;
+      display: grid;
+      grid-template-rows: 1fr 34px;
+      border: 1px solid var(--line-strong);
+      border-radius: 10px;
+      background: var(--panel);
+      box-shadow: 0 5px 18px var(--shadow);
+      transition: border-color 150ms ease, box-shadow 150ms ease;
+    }
+
+    .composer:focus-within { border-color: var(--amber); box-shadow: 0 0 0 3px var(--focus), 0 5px 18px var(--shadow); }
+
+    .composer textarea {
+      width: 100%;
+      min-height: 0;
+      padding: 13px 14px 6px;
+      resize: none;
+      border: 0;
+      outline: 0;
+      background: var(--transparent);
+      color: var(--ink);
+      font-size: 13px;
+      line-height: 1.45;
+    }
+
+    .composer textarea::placeholder { color: var(--faint); opacity: 1; }
+
+    .composer-tools { padding: 0 8px 7px 9px; display: flex; align-items: center; gap: 2px; }
+
+    .composer-tool {
+      height: 27px;
+      min-width: 29px;
+      padding: 0 7px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 5px;
+      border: 1px solid var(--transparent);
+      border-radius: 5px;
+      background: var(--transparent);
+      color: var(--muted);
+      font-size: 10px;
+      cursor: pointer;
+    }
+
+    .composer-tool:hover { border-color: var(--line); background: var(--surface-muted); color: var(--ink); }
+    .composer-tool svg { width: 15px; height: 15px; }
+
+    .composer-spacer { flex: 1; }
+
+    .send-button {
+      width: 28px;
+      height: 28px;
+      display: grid;
+      place-items: center;
+      border: 0;
+      border-radius: 6px;
+      background: var(--ink);
+      color: var(--white);
+      cursor: pointer;
+    }
+
+    .send-button:hover { background: var(--amber-deep); }
+    .send-button svg { width: 15px; height: 15px; }
+
+    @media (max-height: 810px) {
+      .conversation { padding-top: 16px; }
+      .message-row + .message-row, .message-row + .work-block, .work-block + .message-row { margin-top: 10px; }
+      .plan-item { min-height: 26px; }
+      .tool-row summary { height: 31px; }
+      .approval { min-height: 68px; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { animation: none !important; transition-duration: 0.01ms !important; }
+    }
+  </style>
+</head>
+<body class="bg-[var(--page)] text-[var(--ink)]">
+  <div class="app-shell">
+    <aside class="sidebar" aria-label="工作台侧边栏">
+      <div class="brand-row">
+        <a class="brand" href="workbench-mode.html" aria-label="Leemo 工作台">
+          <span class="brand-mark" aria-hidden="true">
+            <svg viewBox="0 0 20 20" fill="none">
+              <path d="M5 3.5v13h9.5M5 12h6.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </span>
+          <span>Leemo</span>
+        </a>
+        <button class="collapse-button" type="button" aria-label="收起侧边栏">
+          <svg viewBox="0 0 20 20" fill="none" aria-hidden="true">
+            <rect x="3" y="3.5" width="14" height="13" rx="2" stroke="currentColor" stroke-width="1.4"/>
+            <path d="M7 4v12M12 8l-2 2 2 2" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </button>
+      </div>
+
+      <div class="new-chat-wrap">
+        <button class="new-chat" type="button">
+          <svg viewBox="0 0 20 20" fill="none" aria-hidden="true">
+            <path d="M10 4v12M4 10h12" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+          </svg>
+          新对话
+        </button>
+      </div>
+
+      <div class="sidebar-scroll">
+        <section class="side-section" aria-labelledby="notebooks-label">
+          <div class="section-label" id="notebooks-label">
+            <span>本子</span>
+            <button class="sidebar-icon-button" type="button" aria-label="新建本子">
+              <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M10 5v10M5 10h10" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+            </button>
+          </div>
+
+          <a class="side-item active" href="#" aria-expanded="true">
+            <span class="book-icon" aria-hidden="true"></span>
+            <span class="label">数据结构</span>
+            <svg class="side-chevron" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="m4 6 4 4 4-4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </a>
+          <div class="thread-list">
+            <a class="side-item active" href="#" aria-current="page">
+              <span class="thread-state" aria-hidden="true"></span>
+              <span class="label">整理第五章复习笔记</span>
+            </a>
+            <a class="side-item" href="#">
+              <span class="label">期中复习范围梳理</span>
+            </a>
+          </div>
+
+          <a class="side-item" href="#">
+            <span class="book-icon green" aria-hidden="true"></span>
+            <span class="label">高等数学</span>
+            <svg class="side-chevron" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="m6 4 4 4-4 4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </a>
+          <a class="side-item" href="#">
+            <span class="book-icon red" aria-hidden="true"></span>
+            <span class="label">毛概</span>
+            <svg class="side-chevron" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="m6 4 4 4-4 4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </a>
+        </section>
+
+        <section class="side-section" aria-labelledby="loose-label">
+          <div class="section-label" id="loose-label"><span>放养对话</span></div>
+          <a class="side-item" href="#">
+            <svg class="loose-icon" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M4 5.5h12v8.5H9l-3.5 2v-2H4V5.5Z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>
+            <span class="label">周末去哪儿走走</span>
+          </a>
+          <a class="side-item" href="#">
+            <svg class="loose-icon" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M4 5.5h12v8.5H9l-3.5 2v-2H4V5.5Z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>
+            <span class="label">简历自我介绍怎么写</span>
+          </a>
+        </section>
+      </div>
+
+      <div class="sidebar-footer">
+        <svg class="mini-avatar" viewBox="0 0 96 96" role="img" aria-label="momo">
+          <path d="M24 10h38c5 0 8 1 11 4l11 11c2 2 3 5 3 9v34c0 11-8 19-19 19H26C15 87 8 79 8 68V28c0-10 7-18 16-18Z" fill="var(--amber-soft)"/>
+          <path d="M27 14h32c4 0 5 1 5 5v8c0 3 2 5 5 5h8c4 0 6 2 6 6v28c0 10-7 17-17 17H28c-10 0-16-7-16-17V30c0-10 6-16 15-16Z" fill="var(--amber)"/>
+          <rect x="22" y="29" width="52" height="40" rx="18" fill="var(--amber-pale)"/>
+          <path d="M34 46v3M61 46v3" stroke="var(--ink)" stroke-width="3.4" stroke-linecap="round"/>
+          <path d="M39 57c5 4 13 4 18 0" fill="none" stroke="var(--ink)" stroke-width="2.6" stroke-linecap="round"/>
+          <path d="M70 14 83 27H73c-2 0-3-1-3-3V14Z" fill="var(--panel)"/>
+        </svg>
+        <div class="profile-copy">
+          <span class="profile-name">momo</span>
+          <span class="profile-status">正在整理复习笔记</span>
+        </div>
+        <button class="sidebar-icon-button" type="button" aria-label="设置">
+          <svg viewBox="0 0 20 20" fill="none" aria-hidden="true">
+            <path d="M7.8 3.5h4.4l.5 1.8 1.7 1 .1 2 1.5 1.2-1.5 3 .1 2-1.9.6-.5 1.4H7.8l-.5-1.4-1.9-.6.1-2L4 9.5l1.5-1.2.1-2 1.7-1 .5-1.8Z" stroke="currentColor" stroke-width="1.25" stroke-linejoin="round"/>
+            <circle cx="10" cy="10" r="2.2" stroke="currentColor" stroke-width="1.25"/>
+          </svg>
+        </button>
+      </div>
+    </aside>
+
+    <main class="workspace">
+      <header class="workspace-header">
+        <div class="header-title">
+          <div class="breadcrumb">数据结构本子</div>
+          <div class="conversation-title">整理第五章复习笔记</div>
+        </div>
+        <nav class="mode-switch" aria-label="切换模式">
+          <a href="buddy-mode.html">搭子</a>
+          <a href="workbench-mode.html" aria-current="page">工作台</a>
+        </nav>
+        <button class="header-more" type="button" aria-label="更多操作">
+          <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><circle cx="4.5" cy="10" r="1.2"/><circle cx="10" cy="10" r="1.2"/><circle cx="15.5" cy="10" r="1.2"/></svg>
+        </button>
+      </header>
+
+      <div class="conversation-scroll">
+        <div class="conversation">
+          <div class="message-row user">
+            <div class="user-bubble">把第五章 PPT 里的重点整理成复习笔记，存到本子里</div>
+          </div>
+
+          <div class="message-row">
+            <svg class="tiny-momo" viewBox="0 0 96 96" role="img" aria-label="momo">
+              <path d="M24 10h38c5 0 8 1 11 4l11 11c2 2 3 5 3 9v34c0 11-8 19-19 19H26C15 87 8 79 8 68V28c0-10 7-18 16-18Z" fill="var(--amber-soft)"/>
+              <path d="M27 14h32c4 0 5 1 5 5v8c0 3 2 5 5 5h8c4 0 6 2 6 6v28c0 10-7 17-17 17H28c-10 0-16-7-16-17V30c0-10 6-16 15-16Z" fill="var(--amber)"/>
+              <rect x="22" y="29" width="52" height="40" rx="18" fill="var(--amber-pale)"/>
+              <path d="M34 46v3M61 46v3" stroke="var(--ink)" stroke-width="3.4" stroke-linecap="round"/>
+              <path d="M39 57c5 4 13 4 18 0" fill="none" stroke="var(--ink)" stroke-width="2.6" stroke-linecap="round"/>
+              <path d="M70 14 83 27H73c-2 0-3-1-3-3V14Z" fill="var(--panel)"/>
+            </svg>
+            <div class="momo-message">
+              <p class="message-copy">好，我先读 PPT，再对照本子里已有的笔记整理，完成前会让你确认保存位置。</p>
+              <div class="usage-note">↑1.2k ↓0.8k tokens · ¥0.003</div>
+            </div>
+          </div>
+
+          <section class="work-block" aria-label="momo 的执行过程">
+            <div class="plan-card">
+              <div class="plan-header">
+                <div class="plan-title">
+                  <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><rect x="3.5" y="3.5" width="13" height="13" rx="2" stroke="currentColor" stroke-width="1.4"/><path d="m6.5 8 1.3 1.3 2.2-2.4M6.5 13h7" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                  整理计划
+                </div>
+                <span class="plan-progress">2 / 4 完成</span>
+              </div>
+              <ol class="plan-list">
+                <li class="plan-item">
+                  <span class="state-icon done" aria-label="已完成"><svg viewBox="0 0 14 14" fill="none" aria-hidden="true"><path d="m3 7 2.4 2.4L11 4.5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+                  读取第五章课件并提取章节结构
+                </li>
+                <li class="plan-item">
+                  <span class="state-icon done" aria-label="已完成"><svg viewBox="0 0 14 14" fill="none" aria-hidden="true"><path d="m3 7 2.4 2.4L11 4.5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+                  对照本子内已有笔记，去掉重复内容
+                </li>
+                <li class="plan-item running">
+                  <span class="state-icon running" aria-label="进行中"></span>
+                  整理树、二叉树与遍历方法的复习重点
+                </li>
+                <li class="plan-item pending">
+                  <span class="state-icon" aria-label="等待中"></span>
+                  写入复习笔记并检查格式
+                </li>
+              </ol>
+            </div>
+
+            <div class="tool-stack" aria-label="工具调用">
+              <details class="tool-row">
+                <summary>
+                  <span class="tool-status" aria-label="已完成"><svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="1.3"/><path d="m5 8 2 2 4-4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+                  <span class="tool-label">读取 第五章-树与二叉树.pptx</span>
+                  <span class="tool-time">1.8 秒</span>
+                  <svg class="tool-chevron" viewBox="0 0 14 14" fill="none" aria-hidden="true"><path d="m5 3 4 4-4 4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                </summary>
+                <p class="tool-detail">已读取 26 页课件，识别出树的基本概念、二叉树性质与遍历三部分。</p>
+              </details>
+              <details class="tool-row">
+                <summary>
+                  <span class="tool-status" aria-label="已完成"><svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="1.3"/><path d="m5 8 2 2 4-4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+                  <span class="tool-label">搜索 本子内相关笔记</span>
+                  <span class="tool-time">0.6 秒</span>
+                  <svg class="tool-chevron" viewBox="0 0 14 14" fill="none" aria-hidden="true"><path d="m5 3 4 4-4 4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                </summary>
+                <p class="tool-detail">找到“课堂笔记-第五周.md”和“作业错题整理.md”两份相关内容。</p>
+              </details>
+              <details class="tool-row">
+                <summary>
+                  <span class="tool-status running" aria-label="进行中"><svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M13 8a5 5 0 1 1-2-4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><path d="M10 2.8h2.7v2.7" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+                  <span class="tool-label">整理 树与二叉树复习提纲</span>
+                  <span class="tool-time">进行中</span>
+                  <svg class="tool-chevron" viewBox="0 0 14 14" fill="none" aria-hidden="true"><path d="m5 3 4 4-4 4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                </summary>
+                <p class="tool-detail">正在按“概念、性质、遍历、易错点”的顺序组织内容。</p>
+              </details>
+            </div>
+
+            <div class="approval" role="group" aria-label="文件写入审批">
+              <div class="approval-copy">
+                <p class="approval-title">momo 想把成果写入这个位置</p>
+                <code class="approval-path">数据结构/笔记/第五章-复习笔记.md</code>
+              </div>
+              <div class="approval-actions">
+                <button class="approval-button primary" type="button">允许一次</button>
+                <button class="approval-button" type="button">本对话总是允许</button>
+                <button class="approval-button danger" type="button">拒绝</button>
+              </div>
+            </div>
+          </section>
+
+          <div class="message-row">
+            <svg class="tiny-momo" viewBox="0 0 96 96" role="img" aria-label="momo">
+              <path d="M24 10h38c5 0 8 1 11 4l11 11c2 2 3 5 3 9v34c0 11-8 19-19 19H26C15 87 8 79 8 68V28c0-10 7-18 16-18Z" fill="var(--amber-soft)"/>
+              <path d="M27 14h32c4 0 5 1 5 5v8c0 3 2 5 5 5h8c4 0 6 2 6 6v28c0 10-7 17-17 17H28c-10 0-16-7-16-17V30c0-10 6-16 15-16Z" fill="var(--amber)"/>
+              <rect x="22" y="29" width="52" height="40" rx="18" fill="var(--amber-pale)"/>
+              <path d="M34 46v3M61 46v3" stroke="var(--ink)" stroke-width="3.4" stroke-linecap="round"/>
+              <path d="M39 57c5 4 13 4 18 0" fill="none" stroke="var(--ink)" stroke-width="2.6" stroke-linecap="round"/>
+              <path d="M70 14 83 27H73c-2 0-3-1-3-3V14Z" fill="var(--panel)"/>
+            </svg>
+            <div class="momo-message">
+              <div class="streaming">笔记结构已经整理好了，等你确认后我就保存。<span class="typing-caret" aria-label="正在生成"></span></div>
+              <div class="usage-note">↑2.6k ↓1.4k tokens · ¥0.007</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <footer class="composer-footer">
+        <div class="composer">
+          <textarea aria-label="给 momo 发消息" placeholder="继续交代，或补充你想保留的重点…"></textarea>
+          <div class="composer-tools">
+            <button class="composer-tool" type="button" aria-label="引用本子或文件">
+              <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M12.8 7.7v4.1a2.8 2.8 0 1 1-5.6 0V7a4.1 4.1 0 1 1 8.2 0v4.8a5.4 5.4 0 1 1-10.8 0V8" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+              <span>@引用</span>
+            </button>
+            <button class="composer-tool" type="button" aria-label="选择技能">
+              <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M12.5 3 7.2 17M4 12.5 1.8 10 4 7.5M16 7.5l2.2 2.5-2.2 2.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              <span>/技能</span>
+            </button>
+            <button class="composer-tool" type="button" aria-label="添加附件">
+              <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="m7 10.5 4.8-4.8a2.6 2.6 0 0 1 3.7 3.7l-6.2 6.2a4 4 0 0 1-5.7-5.7l6-6" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+            </button>
+            <span class="composer-spacer"></span>
+            <button class="send-button" type="button" aria-label="发送">
+              <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M10 15V5M6 9l4-4 4 4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </button>
+          </div>
+        </div>
+      </footer>
+    </main>
+  </div>
+</body>
+</html>

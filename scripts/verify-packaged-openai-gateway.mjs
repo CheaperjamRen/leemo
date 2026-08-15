@@ -12,7 +12,7 @@ import { pathToFileURL } from "node:url";
 import WebSocket from "ws";
 
 const auditTag = process.env.LEEMO_AUDIT_TAG || "openai-gateway-r9-packaged";
-const outputDir = path.resolve(process.env.LEEMO_VERIFY_OUTPUT_DIR || "dist-verify/audit-shots");
+const outputDir = path.resolve("docs/research/audit-shots");
 const executablePath = path.resolve(
   process.env.LEEMO_PACKAGED_EXE || "dist-package/win-unpacked/Leemo.exe",
 );

@@ -20,6 +20,14 @@ export default defineConfig({
   resolve: {
     alias: [{ find: /^@renderer\//, replacement: `${root}/src/renderer/` }],
   },
+  build: {
+    rollupOptions: {
+      input: {
+        main: path.resolve(root, "index.html"),
+        quickCapture: path.resolve(root, "quick-capture.html"),
+      },
+    },
+  },
   server: {
     watch: {
       // Dev Electron stores Claude sessions and the Playwright browser profile

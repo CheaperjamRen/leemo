@@ -61,6 +61,100 @@ function addPatternFinding(
   findings.push({ ...finding, file: file.path, line: lineFor(text, match.index) });
 }
 
+const INSTRUCTION_OVERRIDE_PATTERN = /(?:ignore|disregard|override|forget)\s+(?:all\s+)?(?:previous|prior|system|developer)\s+(?:instructions?|rules?|prompts?)|never\s+(?:tell|inform|show)\s+(?:the\s+)?user/giu;
+const APPROVED_DEFENSIVE_SCOPE_TAIL = "This applies to third-party URLs especially, but also to local dev servers that render untrusted user-generated content (admin dashboards, comment threads, support inboxes, etc.).";
+
+function maskQuotedSegments(value: string): string {
+  const quotePairs: Readonly<Record<string, string>> = {
+    '"': '"',
+    "`": "`",
+    "“": "”",
+    "‘": "’",
+  };
+  let closing: string | undefined;
+  let result = "";
+  for (const character of value) {
+    if (closing) {
+      if (character === closing) closing = undefined;
+      result += " ";
+      continue;
+    }
+    const nextClosing = quotePairs[character];
+    if (nextClosing) {
+      closing = nextClosing;
+      result += " ";
+      continue;
+    }
+    result += character;
+  }
+  return result;
+}
+
+function isQuotedDefensiveExample(text: string, start: number, end: number): boolean {
+  const quotePairs: Readonly<Record<string, string>> = {
+    '"': '"',
+    "`": "`",
+    "“": "”",
+    "‘": "’",
+  };
+  const opening = text[start - 1];
+  const closing = opening ? quotePairs[opening] : undefined;
+  if (!closing) return false;
+  const closeAt = text.indexOf(closing, end);
+  if (closeAt < end || closeAt - end > 160 || text.slice(end, closeAt).includes("\n")) return false;
+
+  const lineStart = text.lastIndexOf("\n", start - 1) + 1;
+  const nextLine = text.indexOf("\n", closeAt + 1);
+  const line = text.slice(lineStart, nextLine < 0 ? text.length : nextLine);
+  const afterQuote = line.slice(closeAt + 1 - lineStart);
+  const maskedAfterQuote = maskQuotedSegments(afterQuote);
+  const identifiesInjection = /(?:prompt[-\s]?injection|untrusted\s+(?:data|content)|提示词?注入|伪装成用户指令或系统提示)/iu.test(line);
+  let lastRejectionStart: number | undefined;
+  let lastRejectionEnd: number | undefined;
+  const rejectionPatterns = [
+    /(?:do\s+not|don't|never)\s+(?:act(?:\s+on)?|follow|obey|execute)\b(?:\s+(?:it|them|this|that|untrusted\s+(?:content|data)|the\s+(?:(?:quoted|cited)\s+)?(?:command|instruction|content)))?/giu,
+    /(?:一律\s*忽略|不得[^。；\n]{0,48}(?:执行|当作[^。；\n]{0,16}指令)|禁止[^。；\n]{0,48}执行)/gu,
+  ];
+  for (const pattern of rejectionPatterns) {
+    for (const rejection of maskedAfterQuote.matchAll(pattern)) {
+      const rejectionEnd = rejection.index + rejection[0].length;
+      if (lastRejectionEnd === undefined || rejectionEnd > lastRejectionEnd) {
+        lastRejectionStart = rejection.index;
+        lastRejectionEnd = rejectionEnd;
+      }
+    }
+  }
+  if (!identifiesInjection || lastRejectionStart === undefined || lastRejectionEnd === undefined) return false;
+  const beforeRejection = maskedAfterQuote.slice(0, lastRejectionStart);
+  const sentenceBoundary = Math.max(
+    ...[".", "!", "?", "。", "！", "？"].map((character) => beforeRejection.lastIndexOf(character)),
+  );
+  const rejectionPrefix = beforeRejection.slice(sentenceBoundary + 1)
+    .replace(/[*_~`#>]/gu, "")
+    .trim();
+  const hasDefensivePrefix = rejectionPrefix.length === 0
+    || /^Flag it to the user and$/iu.test(rejectionPrefix)
+    || /^这些不是用户的真实意图[，,]\s*一律\s*忽略[，,]?$/u.test(rejectionPrefix);
+  if (!hasDefensivePrefix) return false;
+  const tail = afterQuote.slice(lastRejectionEnd);
+  const normalizedTail = tail
+    .trim()
+    .replace(/^[*_~`#>\s]+/u, "")
+    .replace(/[*_~`#>\s]+$/u, "")
+    .replace(/^[.,!?，。；：！？、—–…]+\s*/u, "");
+  if (!normalizedTail) return true;
+  return normalizedTail === APPROVED_DEFENSIVE_SCOPE_TAIL;
+}
+
+function instructionOverrideAt(text: string): number | undefined {
+  for (const match of text.matchAll(INSTRUCTION_OVERRIDE_PATTERN)) {
+    const start = match.index;
+    const end = start + match[0].length;
+    if (!isQuotedDefensiveExample(text, start, end)) return start;
+  }
+  return undefined;
+}
+
 function unpinnedNpxAt(text: string): number | undefined {
   const command = /\bnpx\s+(?:-[^\s`]+\s+)*([^\s`]+)/gi;
   for (const match of text.matchAll(command)) {
@@ -99,24 +193,23 @@ export function scanSkillPackage(files: readonly SkillPackageFile[]): SkillSecur
     if (text === undefined) continue;
     analyzedFiles += 1;
 
-    addPatternFinding(
-      findings,
-      file,
-      text,
-      /(?:ignore|disregard|override|forget)\s+(?:all\s+)?(?:previous|prior|system|developer)\s+(?:instructions?|rules?|prompts?)|never\s+(?:tell|inform|show)\s+(?:the\s+)?user/iu,
-      {
+    const overrideAt = instructionOverrideAt(text);
+    if (overrideAt !== undefined) {
+      findings.push({
         rule: "instruction-override",
         severity: "high",
         title: "疑似覆盖上级指令",
         detail: "内容要求忽略既有规则或向用户隐藏行为，安装前需要人工复核。",
-      },
-    );
+        file: file.path,
+        line: lineFor(text, overrideAt),
+      });
+    }
 
     addPatternFinding(
       findings,
       file,
       text,
-      /(?:read|collect|extract|upload|send|steal)[^\n]{0,160}(?:\.ssh[\\/]id_|api[_-]?key|access[_-]?token|secret|process\.env|environment\s+variables?)/iu,
+      /(?<![.\w-])(?:read|collect|extract|upload|send|steal)\b[^\n]{0,160}(?:\.ssh[\\/]id_|api[_-]?key|access[_-]?token|secret|process\.env|environment\s+variables?)/iu,
       {
         rule: "credential-access",
         severity: "high",

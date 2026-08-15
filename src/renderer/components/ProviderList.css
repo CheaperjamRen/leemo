@@ -1,0 +1,239 @@
+.leemo-provider-brand {
+  position: relative;
+  display: grid;
+  width: 38px;
+  height: 38px;
+  flex: none;
+  place-items: center;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--leemo-line) 82%, transparent);
+  border-radius: 10px;
+  background:
+    radial-gradient(circle at 30% 15%, rgba(255, 255, 255, 0.98), rgba(255, 255, 255, 0.52) 46%, transparent 72%),
+    color-mix(in srgb, var(--leemo-card) 88%, var(--leemo-panel));
+  box-shadow:
+    0 5px 14px rgba(15, 27, 46, 0.07),
+    inset 0 1px 0 rgba(255, 255, 255, 0.9);
+}
+
+.leemo-provider-brand::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.36);
+  pointer-events: none;
+}
+
+.leemo-provider-brand > img,
+.leemo-provider-brand > svg {
+  width: 22px;
+  height: 22px;
+  object-fit: contain;
+}
+
+.leemo-provider-brand > svg {
+  color: var(--leemo-ink-2);
+  stroke-width: 1.55;
+}
+
+.leemo-provider-brand--kimi {
+  border-color: color-mix(in srgb, #1783ff 28%, #171b24);
+  background: linear-gradient(145deg, #242a35, #11141b);
+  box-shadow:
+    0 5px 14px rgba(15, 27, 46, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.14);
+}
+
+.leemo-provider-brand--kimi::after {
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+}
+
+.leemo-provider-brand--compact {
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
+  box-shadow: 0 2px 7px rgba(15, 27, 46, 0.055), inset 0 1px 0 rgba(255, 255, 255, 0.86);
+}
+
+.leemo-provider-brand--compact > img,
+.leemo-provider-brand--compact > svg {
+  width: 18px;
+  height: 18px;
+}
+
+.leemo-provider-catalog {
+  container-type: inline-size;
+  background:
+    radial-gradient(circle at 88% 0%, color-mix(in srgb, var(--leemo-amber-bg) 76%, transparent), transparent 35%),
+    color-mix(in srgb, var(--leemo-card) 96%, var(--leemo-panel));
+}
+
+.leemo-provider-catalog__header {
+  padding-bottom: 18px;
+  border-bottom: 1px solid var(--leemo-line-soft);
+}
+
+.leemo-provider-catalog__eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--leemo-amber-ink);
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+}
+
+.leemo-provider-catalog__eyebrow::before {
+  content: "";
+  width: 14px;
+  height: 1px;
+  background: currentColor;
+  opacity: 0.62;
+}
+
+.leemo-provider-catalog__search {
+  display: flex;
+  width: min(340px, 100%);
+  min-height: 40px;
+  align-items: center;
+  gap: 9px;
+  padding: 0 12px;
+  border: 1px solid color-mix(in srgb, var(--leemo-line) 88%, transparent);
+  border-radius: 11px;
+  background: color-mix(in srgb, var(--leemo-card) 92%, transparent);
+  color: var(--leemo-ink-3);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.86), 0 2px 7px rgba(15, 27, 46, 0.035);
+  transition: border-color 150ms ease, box-shadow 150ms ease, background-color 150ms ease;
+}
+
+.leemo-provider-catalog__search:focus-within {
+  border-color: color-mix(in srgb, var(--leemo-amber) 48%, var(--leemo-line));
+  background: var(--leemo-card);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--leemo-amber) 9%, transparent), 0 4px 12px rgba(15, 27, 46, 0.045);
+}
+
+.leemo-provider-catalog__search input {
+  outline: 0;
+}
+
+.leemo-provider-group + .leemo-provider-group {
+  margin-top: 24px;
+}
+
+.leemo-provider-group__title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 9px;
+  color: var(--leemo-ink-2);
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.leemo-provider-group__title::after {
+  content: "";
+  height: 1px;
+  flex: 1;
+  background: linear-gradient(90deg, var(--leemo-line-soft), transparent);
+}
+
+.leemo-provider-offer-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.leemo-provider-offer-card {
+  position: relative;
+  display: flex;
+  min-height: 108px;
+  min-width: 0;
+  flex-direction: column;
+  justify-content: space-between;
+  overflow: hidden;
+  padding: 11px 12px;
+  border: 1px solid color-mix(in srgb, var(--leemo-line) 88%, transparent);
+  border-radius: 12px;
+  background:
+    linear-gradient(155deg, rgba(255, 255, 255, 0.96), rgba(255, 255, 255, 0.76)),
+    var(--leemo-card);
+  box-shadow: 0 5px 18px rgba(15, 27, 46, 0.045), inset 0 1px 0 rgba(255, 255, 255, 0.9);
+  color: inherit;
+  text-align: left;
+  transition: transform 150ms ease, border-color 150ms ease, box-shadow 150ms ease, background-color 150ms ease;
+}
+
+.leemo-provider-offer-card::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 3px;
+  background: linear-gradient(180deg, transparent 8%, var(--leemo-amber) 48%, transparent 92%);
+  opacity: 0;
+  transform: scaleY(0.64);
+  transition: opacity 150ms ease, transform 150ms ease;
+}
+
+.leemo-provider-offer-card:hover,
+.leemo-provider-offer-card:focus-visible {
+  outline: 0;
+  transform: translateY(-2px);
+  border-color: color-mix(in srgb, var(--leemo-amber) 40%, var(--leemo-line));
+  box-shadow: 0 12px 28px rgba(15, 27, 46, 0.085), 0 0 0 3px color-mix(in srgb, var(--leemo-amber) 7%, transparent);
+}
+
+.leemo-provider-offer-card:hover::before,
+.leemo-provider-offer-card:focus-visible::before {
+  opacity: 1;
+  transform: scaleY(1);
+}
+
+.leemo-provider-offer-card:active {
+  transform: translateY(0);
+}
+
+.leemo-provider-offer-card:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.leemo-provider-offer-card__arrow {
+  display: grid;
+  width: 25px;
+  height: 25px;
+  place-items: center;
+  border: 1px solid var(--leemo-line-soft);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--leemo-panel) 78%, white);
+  color: var(--leemo-ink-3);
+  transition: color 150ms ease, background-color 150ms ease, transform 150ms ease;
+}
+
+.leemo-provider-offer-card:hover .leemo-provider-offer-card__arrow,
+.leemo-provider-offer-card:focus-visible .leemo-provider-offer-card__arrow {
+  color: var(--leemo-amber-ink);
+  background: var(--leemo-amber-bg);
+  transform: translateX(2px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .leemo-provider-catalog__search,
+  .leemo-provider-offer-card,
+  .leemo-provider-offer-card::before,
+  .leemo-provider-offer-card__arrow {
+    transition: none;
+  }
+}
+
+@container (max-width: 440px) {
+  .leemo-provider-offer-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@container (min-width: 441px) and (max-width: 599px) {
+  .leemo-provider-offer-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

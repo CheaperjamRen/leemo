@@ -20,6 +20,11 @@ const ENV_NAMES = [
   "METASO_API_KEY",
   "GOOGLE_SEARCH_API_KEY",
   "GOOGLE_SEARCH_ENGINE_ID",
+  "EXA_API_KEY",
+  "BRAVE_SEARCH_API_KEY",
+  "SERPAPI_API_KEY",
+  "SERPER_API_KEY",
+  "FIRECRAWL_API_KEY",
 ] as const;
 
 describe("loadSearchKeys", () => {
@@ -45,6 +50,11 @@ describe("loadSearchKeys", () => {
       metaso: "metaso-key",
       google: "google-key",
       googleCx: "google-cx",
+      exa: "exa-key",
+      brave: "brave-key",
+      serpapi: "serpapi-key",
+      serper: "serper-key",
+      firecrawl: "firecrawl-key",
     }));
     expect(keys.tavilyKey).toBe("tvly-stored");
     expect(keys.bochaKey).toBe("sk-b");
@@ -52,6 +62,11 @@ describe("loadSearchKeys", () => {
     expect(keys.metasoKey).toBe("metaso-key");
     expect(keys.googleKey).toBe("google-key");
     expect(keys.googleCx).toBe("google-cx");
+    expect(keys.exaKey).toBe("exa-key");
+    expect(keys.braveKey).toBe("brave-key");
+    expect(keys.serpapiKey).toBe("serpapi-key");
+    expect(keys.serperKey).toBe("serper-key");
+    expect(keys.firecrawlKey).toBe("firecrawl-key");
   });
 
   it("加密件优先于环境变量 —— 用户在界面上明确存过的东西，不该被一个陈旧的环境变量悄悄盖掉", () => {
@@ -99,6 +114,11 @@ describe("loadSearchKeys", () => {
       metasoKey: undefined,
       googleKey: undefined,
       googleCx: undefined,
+      exaKey: undefined,
+      braveKey: undefined,
+      serpapiKey: undefined,
+      serperKey: undefined,
+      firecrawlKey: undefined,
     });
   });
 });

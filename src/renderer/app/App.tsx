@@ -6,6 +6,8 @@ import { IpcPersistenceClient } from "../persistence/ipc-persistence-client";
 import { IpcWorkspaceClient } from "../workspace/ipc-workspace-client";
 import { IpcSchedulerClient } from "../scheduler/client";
 import { IpcLearningClient } from "../learning/client";
+import { IpcCaptureClient } from "../capture/client";
+import { IpcTaskClient } from "../tasks/client";
 import BuddyShell from "../components/BuddyShell";
 import WorkbenchShell from "../components/WorkbenchShell";
 import { OnboardingWizard } from "../components/OnboardingWizard";
@@ -32,6 +34,8 @@ export default function App() {
   const workspaceApi = typeof window !== "undefined" ? window.leemoWorkspace : undefined;
   const schedulerApi = typeof window !== "undefined" ? window.leemoScheduler : undefined;
   const learningApi = typeof window !== "undefined" ? window.leemoLearning : undefined;
+  const captureApi = typeof window !== "undefined" ? window.leemoCapture : undefined;
+  const tasksApi = typeof window !== "undefined" ? window.leemoTasks : undefined;
   const wsLive = import.meta.env.VITE_LEEMO_LIVE === "1";
   const live = Boolean(ipcApi) || wsLive;
 
@@ -64,9 +68,17 @@ export default function App() {
     () => (learningApi ? new IpcLearningClient(learningApi) : undefined),
     [learningApi],
   );
+  const capture = useMemo(
+    () => (captureApi ? new IpcCaptureClient(captureApi) : undefined),
+    [captureApi],
+  );
+  const tasks = useMemo(
+    () => (tasksApi ? new IpcTaskClient(tasksApi) : undefined),
+    [tasksApi],
+  );
 
   return (
-    <BridgeProvider client={client} live={live} persist={persist} workspace={workspace} scheduler={scheduler} learning={learning}>
+    <BridgeProvider client={client} live={live} persist={persist} workspace={workspace} scheduler={scheduler} learning={learning} capture={capture} tasks={tasks}>
       <AppShell />
     </BridgeProvider>
   );

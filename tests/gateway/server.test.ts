@@ -18,7 +18,7 @@ import { startGateway, waitForDrain } from "@gateway/server";
 import { ProviderRegistry } from "@gateway/registry";
 
 // A fake but well-shaped provider key. NEVER a real-looking secret (key discipline).
-const REAL_KEY = "sk-test-0000000000000000000000000000";
+const REAL_KEY = "test-key-0000000000000000000000000000";
 
 // ---- in-process mock OpenAI upstream ---------------------------------------
 

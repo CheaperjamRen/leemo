@@ -26,6 +26,7 @@ import { skillsRootFor } from "./skills";
 import {
   COMMUNITY_SKILL_CATALOG,
   type CommunitySkillCatalogEntry,
+  type CommunitySkillCatalogFamilyEntry,
 } from "./community-skill-catalog";
 
 export type SkillSourceKind = "local-folder" | "local-archive" | "github" | "skillsh";
@@ -52,6 +53,8 @@ export interface SkillSourceInspection {
 export interface ManagedSkillRecord {
   id: string;
   name: string;
+  /** Catalog-only presentation title; never used to address the runtime. */
+  displayName?: string;
   description: string;
   dir: string;
   trust: SkillTrust;
@@ -65,6 +68,15 @@ export interface ManagedSkillRecord {
   category?: string;
   categoryLabel?: string;
   catalogId?: string;
+  packageId?: string;
+  familyCatalogId?: string;
+  familyLabel?: string;
+  qualifiedName?: string;
+  /** Computed from the package on read; never trusted as persisted state. */
+  available?: boolean;
+  unavailableReason?: string;
+  setupRequired?: boolean;
+  setupMessage?: string;
   installedAt: number;
   updatedAt: number;
   repository?: string;
@@ -85,14 +97,21 @@ export interface SkillInstallResult {
 export interface CommunitySkillCatalogView {
   id: string;
   name: string;
+  displayName?: string;
   description: string;
   category: string;
   categoryLabel: string;
+  featured: boolean;
   author: string;
   repository: string;
   revision: string;
   license: string;
   sourceUrl: string;
+  kind?: "skill" | "family";
+  memberCount?: number;
+  members?: readonly { id: string; name: string; displayName?: string; description: string }[];
+  setupRequired?: boolean;
+  setupMessage?: string;
   installed: boolean;
   scanStatus: "scanned";
 }
@@ -101,15 +120,41 @@ export interface SkillAdminService {
   inspect(source: string, options?: { securityScan?: boolean }): Promise<SkillSourceInspection>;
   install(request: SkillInstallRequest): Promise<SkillInstallResult>;
   listCatalog(): CommunitySkillCatalogView[];
+  loadCatalogDetails(idOrName: string): Promise<{ markdown: string }>;
   installCatalog(idOrName: string): Promise<SkillInstallResult>;
   scanManaged(idOrName: string): ManagedSkillRecord;
   listManaged(): ManagedSkillRecord[];
   remove(idOrName: string): void;
   metadataForDir(dir: string): ManagedSkillRecord | undefined;
+  pluginPathForQualifiedName(qualifiedName: string): string | undefined;
+}
+
+export interface ManagedSkillPackageRecord {
+  id: string;
+  kind: "family";
+  catalogId: string;
+  label: string;
+  root: string;
+  pluginName: string;
+  repository: string;
+  revision: string;
+  license: string;
+  sourceUrl: string;
+  memberIds: string[];
+  setupRequired?: boolean;
+  setupMessage?: string;
+  installedAt: number;
+  updatedAt: number;
+}
+
+interface RegistryFileV1 {
+  version: 1;
+  skills: ManagedSkillRecord[];
 }
 
 interface RegistryFile {
-  version: 1;
+  version: 2;
+  packages: ManagedSkillPackageRecord[];
   skills: ManagedSkillRecord[];
 }
 
@@ -238,6 +283,15 @@ function isManagedSkillDirectory(skillsRoot: string, candidate: string): boolean
   return /^[^\\/]+$/u.test(rel) && /^managed-[a-f0-9]{12}$/iu.test(rel);
 }
 
+function packagesRootFor(memoryDir: string): string {
+  return join(memoryDir, ".leemo", "packages");
+}
+
+function isManagedPackageDirectory(packagesRoot: string, candidate: string): boolean {
+  const rel = relative(resolve(packagesRoot), resolve(candidate));
+  return /^[^\\/]+$/u.test(rel) && /^managed-[a-f0-9]{12}$/iu.test(rel);
+}
+
 function registryFor(memoryDir: string): string {
   return join(memoryDir, ".leemo", "skills", "registry.json");
 }
@@ -263,23 +317,104 @@ function cloneRecord(record: ManagedSkillRecord): ManagedSkillRecord {
   return { ...record, findings: record.findings.map((finding) => ({ ...finding })) };
 }
 
+function clonePackage(record: ManagedSkillPackageRecord): ManagedSkillPackageRecord {
+  return { ...record, memberIds: [...record.memberIds] };
+}
+
+type RuntimeFamilyMember = CommunitySkillCatalogFamilyEntry["members"][number] & {
+  upstreamPath: string;
+  category?: string;
+  categoryLabel?: string;
+};
+
+type RuntimeFamilyEntry = Omit<CommunitySkillCatalogFamilyEntry, "members"> & {
+  members: readonly RuntimeFamilyMember[];
+};
+
+function isFamilyEntry(entry: CommunitySkillCatalogEntry): entry is RuntimeFamilyEntry {
+  return entry.kind === "family";
+}
+
+function catalogSetupFields(entry: CommunitySkillCatalogEntry): {
+  setupRequired: true;
+  setupMessage: string;
+} | Record<string, never> {
+  const explicit = entry.setupMessage?.trim();
+  if (explicit) return { setupRequired: true, setupMessage: explicit };
+  if (!isFamilyEntry(entry)) return {};
+  const paths = entry.files.map((file) => file.path.replace(/\\/gu, "/").toLocaleLowerCase());
+  const needsPython = paths.includes("pyproject.toml") || paths.includes("uv.lock");
+  const needsExtension = paths.some((path) => path.startsWith("extension/"));
+  if (!needsPython && !needsExtension) return {};
+  const what = needsPython && needsExtension
+    ? "Python / uv 环境与 Chrome 扩展"
+    : needsPython ? "Python / uv 环境" : "Chrome 扩展";
+  return {
+    setupRequired: true,
+    setupMessage: `首次使用需先完成 ${what}设置。`,
+  };
+}
+
 function rawCatalogFileUrl(entry: CommunitySkillCatalogEntry, file: CommunitySkillCatalogEntry["files"][number]): string {
   const [owner, repo] = entry.repository.split("/");
-  const fullPath = (file.sourcePath ?? `${entry.upstreamPath}/${file.path}`).split("/").map(encodeURIComponent).join("/");
+  const defaultPath = isFamilyEntry(entry) ? file.path : `${entry.upstreamPath}/${file.path}`;
+  const fullPath = (file.sourcePath ?? defaultPath).split("/").map(encodeURIComponent).join("/");
   return `https://raw.githubusercontent.com/${owner}/${repo}/${entry.revision}/${fullPath}`;
+}
+
+const CATALOG_DOWNLOAD_CONCURRENCY = 8;
+
+async function mapWithConcurrency<T, R>(
+  values: readonly T[],
+  concurrency: number,
+  worker: (value: T, index: number) => Promise<R>,
+): Promise<R[]> {
+  if (values.length === 0) return [];
+  const results = new Array<R>(values.length);
+  let cursor = 0;
+  let failed = false;
+  let firstError: unknown;
+  const run = async (): Promise<void> => {
+    while (!failed) {
+      const index = cursor;
+      cursor += 1;
+      if (index >= values.length) return;
+      try {
+        results[index] = await worker(values[index], index);
+      } catch (error) {
+        if (!failed) firstError = error;
+        failed = true;
+      }
+    }
+  };
+  await Promise.all(Array.from(
+    { length: Math.min(Math.max(1, concurrency), values.length) },
+    () => run(),
+  ));
+  if (failed) throw firstError;
+  return results;
 }
 
 function readRegistry(path: string): RegistryFile {
   try {
-    const value = JSON.parse(readFileSync(path, "utf8")) as RegistryFile;
+    const value = JSON.parse(readFileSync(path, "utf8")) as RegistryFile | RegistryFileV1;
+    if (value.version === 2 && Array.isArray(value.packages) && Array.isArray(value.skills)) {
+      return {
+        version: 2,
+        packages: value.packages.map(clonePackage),
+        skills: value.skills.map(cloneRecord),
+      };
+    }
     if (value.version === 1 && Array.isArray(value.skills)) {
-      return { version: 1, skills: value.skills.map(cloneRecord) };
+      // v1 is normalized only in memory. Startup never rewrites user state;
+      // the next real mutation persists the v2 package-aware shape.
+      return { version: 2, packages: [], skills: value.skills.map(cloneRecord) };
     }
   } catch {
     // First run and a damaged optional registry both degrade to no managed
     // Skills. Existing user folders remain untouched and still scan normally.
   }
-  return { version: 1, skills: [] };
+  return { version: 2, packages: [], skills: [] };
 }
 
 function chooseCandidate(candidates: readonly SkillPackageCandidate[], requested: string | undefined): SkillPackageCandidate {
@@ -300,6 +435,36 @@ function writeCandidate(root: string, candidate: SkillPackageCandidate): void {
     mkdirSync(dirname(destination), { recursive: true });
     writeFileSync(destination, file.contents);
   }
+}
+
+function writeFamilyPackage(
+  root: string,
+  files: readonly { path: string; contents: Buffer }[],
+  pluginName: string,
+  revision: string,
+): void {
+  mkdirSync(root, { recursive: true });
+  for (const file of files) {
+    const normalized = file.path.replace(/\\/gu, "/");
+    if (normalized === ".claude-plugin" || normalized.startsWith(".claude-plugin/")) {
+      throw new Error("社区技能套装包含保留的运行时目录，已停止安装。");
+    }
+    const destination = resolve(root, ...normalized.split("/"));
+    if (!isInside(root, destination)) throw new Error(`Skill 包含不安全路径：${file.path}`);
+    mkdirSync(dirname(destination), { recursive: true });
+    writeFileSync(destination, file.contents);
+  }
+  const manifestDir = join(root, ".claude-plugin");
+  mkdirSync(manifestDir, { recursive: true });
+  writeFileSync(
+    join(manifestDir, "plugin.json"),
+    `${JSON.stringify({
+      name: pluginName,
+      description: "Leemo 社区技能套装",
+      version: revision,
+    }, null, 2)}\n`,
+    "utf8",
+  );
 }
 
 function candidateInspection(
@@ -357,15 +522,61 @@ function localSource(source: string, securityScan: boolean): LoadedSource {
 export function createSkillAdminService(options: SkillAdminServiceOptions): SkillAdminService {
   const memoryDir = resolve(options.memoryDir);
   const skillsRoot = skillsRootFor(memoryDir);
+  const packagesRoot = packagesRootFor(memoryDir);
   const registryPath = registryFor(memoryDir);
   const now = options.now ?? Date.now;
   const fetchFn = options.fetchFn ?? globalThis.fetch;
   const communityCatalog = options.communityCatalog ?? COMMUNITY_SKILL_CATALOG;
+  const catalogDetailsCache = new Map<string, string>();
   let registry = readRegistry(registryPath);
 
   const writeRegistry = (next: RegistryFile): void => {
     atomicWrite(registryPath, `${JSON.stringify(next, null, 2)}\n`);
     registry = next;
+  };
+
+  const familyUnavailableReason = (packageRecord: ManagedSkillPackageRecord): string | undefined => {
+    const reason = "技能套装文件不完整，请重新安装。";
+    if (!isManagedPackageDirectory(packagesRoot, packageRecord.root) || !existsSync(packageRecord.root)) return reason;
+    try {
+      if (lstatSync(packageRecord.root).isSymbolicLink() || !lstatSync(packageRecord.root).isDirectory()) return reason;
+      const manifest = join(packageRecord.root, ".claude-plugin", "plugin.json");
+      if (!existsSync(manifest) || lstatSync(manifest).isSymbolicLink() || !lstatSync(manifest).isFile()) return reason;
+      const parsed = JSON.parse(readFileSync(manifest, "utf8")) as { name?: unknown };
+      if (parsed.name !== packageRecord.pluginName) return reason;
+      const members = registry.skills.filter((record) => record.packageId === packageRecord.id);
+      if (
+        members.length !== packageRecord.memberIds.length
+        || packageRecord.memberIds.some((id) => !members.some((record) => record.id === id))
+      ) return reason;
+      for (const record of members) {
+        const skillFile = join(record.dir, "SKILL.md");
+        if (
+          !isInside(packageRecord.root, record.dir)
+          || normalizePath(record.dir) === normalizePath(packageRecord.root)
+          || !existsSync(record.dir)
+          || lstatSync(record.dir).isSymbolicLink()
+          || !lstatSync(record.dir).isDirectory()
+          || !existsSync(skillFile)
+          || lstatSync(skillFile).isSymbolicLink()
+          || !lstatSync(skillFile).isFile()
+          || record.qualifiedName !== `${packageRecord.pluginName}:${record.candidate}`
+        ) return reason;
+      }
+      return undefined;
+    } catch {
+      return reason;
+    }
+  };
+
+  const presentedRecord = (record: ManagedSkillRecord): ManagedSkillRecord => {
+    const cloned = cloneRecord(record);
+    if (!record.packageId) return cloned;
+    const packageRecord = registry.packages.find((candidate) => candidate.id === record.packageId);
+    const unavailableReason = packageRecord ? familyUnavailableReason(packageRecord) : "技能套装注册信息不完整，请重新安装。";
+    return unavailableReason
+      ? { ...cloned, available: false, unavailableReason }
+      : { ...cloned, available: true };
   };
 
   const request = async (url: string, accept: string): Promise<Response> => {
@@ -564,6 +775,7 @@ export function createSkillAdminService(options: SkillAdminServiceOptions): Skil
     const record: ManagedSkillRecord = {
       id,
       name: catalog?.name ?? candidate.name,
+      ...(catalog?.displayName ? { displayName: catalog.displayName } : {}),
       description: catalog?.description ?? candidate.description,
       dir: destination,
       trust,
@@ -577,11 +789,16 @@ export function createSkillAdminService(options: SkillAdminServiceOptions): Skil
       installedAt: timestamp,
       updatedAt: timestamp,
       ...(catalog ? { category: catalog.category, categoryLabel: catalog.categoryLabel, catalogId: catalog.id } : {}),
+      ...(catalog ? catalogSetupFields(catalog) : {}),
       ...(inspection.repository ? { repository: inspection.repository } : {}),
       ...(inspection.revision ? { revision: inspection.revision } : {}),
       ...(inspection.license ? { license: inspection.license } : {}),
     };
-    const next = { version: 1 as const, skills: [...registry.skills, record] };
+    const next: RegistryFile = {
+      version: 2,
+      packages: registry.packages.map(clonePackage),
+      skills: [...registry.skills, record],
+    };
     try {
       writeRegistry(next);
     } catch (error) {
@@ -589,6 +806,137 @@ export function createSkillAdminService(options: SkillAdminServiceOptions): Skil
       throw error;
     }
     return cloneRecord(record);
+  };
+
+  const installFamily = (
+    entry: RuntimeFamilyEntry,
+    files: readonly { path: string; contents: Buffer }[],
+  ): SkillInstallResult => {
+    const setupFields = catalogSetupFields(entry);
+    if (registry.packages.some((record) => record.catalogId === entry.id)) {
+      throw new Error(`技能套装“${entry.name}”已经安装。`);
+    }
+    if (entry.members.length === 0 || entry.memberCount !== entry.members.length) {
+      throw new Error(`社区技能套装“${entry.name}”的成员清单不完整，已停止安装。`);
+    }
+    // Trusted catalog manifests are generated under their own stricter byte and
+    // archive caps. A family may legitimately contain many small shared files
+    // (the pinned Lark suite has more than the personal-import limit), so keep
+    // the generic byte/depth limits but admit exactly the vetted manifest size.
+    const loaded = loadSkillFiles(files, { maxFiles: entry.files.length });
+    const memberIds = new Set<string>();
+    const memberRoots = new Set<string>();
+    const candidateNames = new Set<string>();
+    const members = entry.members.map((member) => {
+      const idKey = member.id.toLocaleLowerCase();
+      const rootKey = member.upstreamPath.replace(/\\/gu, "/").replace(/^\/+|\/+$/gu, "");
+      if (!member.id.trim() || memberIds.has(idKey) || !rootKey || memberRoots.has(rootKey.toLocaleLowerCase())) {
+        throw new Error(`社区技能套装“${entry.name}”的成员清单有冲突，已停止安装。`);
+      }
+      memberIds.add(idKey);
+      memberRoots.add(rootKey.toLocaleLowerCase());
+      const candidate = loaded.candidates.find((item) => item.root === rootKey);
+      if (!candidate) throw new Error(`社区技能套装“${entry.name}”缺少成员“${member.name}”，已停止安装。`);
+      const candidateKey = candidate.name.toLocaleLowerCase();
+      if (candidateKey !== idKey) {
+        throw new Error(`社区技能套装“${entry.name}”的成员“${member.name}”名称与固定清单不一致，已停止安装。`);
+      }
+      if (candidateNames.has(candidateKey)) {
+        throw new Error(`社区技能套装“${entry.name}”包含重名成员，已停止安装。`);
+      }
+      candidateNames.add(candidateKey);
+      if (registry.skills.some((record) => (
+        record.name.toLocaleLowerCase() === member.name.toLocaleLowerCase()
+        || record.candidate.toLocaleLowerCase() === candidateKey
+      )) || findUnmanagedSkill(candidate.name)) {
+        throw new Error(`技能目录里已经有同名 Skill“${member.name}”；请先重命名或移除其中一个。`);
+      }
+      return { member, candidate, root: rootKey };
+    });
+
+    const scan = scanSkillPackage(files);
+    if (scan.status !== "scanned") {
+      throw new Error(`社区可信技能套装“${entry.name}”没有通过 Leemo 预审，已停止从精选目录安装。`);
+    }
+
+    mkdirSync(packagesRoot, { recursive: true });
+    const packageHash = createHash("sha256")
+      .update(`${entry.id}\n${entry.repository}\n${entry.revision}`)
+      .digest("hex")
+      .slice(0, 12);
+    const packageId = `package:${packageHash}`;
+    const destination = join(packagesRoot, `managed-${packageHash}`);
+    const staging = join(packagesRoot, `.install-${randomUUID()}`);
+    const pluginName = `leemo-community-${packageHash}`;
+    if (existsSync(destination)) throw new Error("技能套装目录已经存在，但注册信息缺失；请先在文件夹中检查。");
+    try {
+      writeFamilyPackage(staging, files, pluginName, entry.revision);
+      renameSync(staging, destination);
+    } catch (error) {
+      rmSync(staging, { recursive: true, force: true });
+      throw error;
+    }
+
+    const timestamp = now();
+    const records: ManagedSkillRecord[] = members.map(({ member, candidate, root }) => {
+      const hash = createHash("sha256").update(`${entry.id}\n${member.id}`).digest("hex").slice(0, 12);
+      return {
+        id: `managed:${hash}`,
+        name: member.name,
+        ...(member.displayName ? { displayName: member.displayName } : {}),
+        description: member.description,
+        dir: join(destination, ...root.split("/")),
+        trust: "community",
+        sourceKind: "github",
+        sourceLabel: entry.author,
+        source: entry.sourceUrl,
+        resolvedSource: entry.sourceUrl,
+        candidate: candidate.name,
+        scanStatus: scan.status,
+        findings: scan.findings.map((finding) => ({ ...finding })),
+        category: member.category ?? entry.category,
+        categoryLabel: member.categoryLabel ?? entry.categoryLabel,
+        catalogId: member.id,
+        packageId,
+        familyCatalogId: entry.id,
+        familyLabel: entry.name,
+        qualifiedName: `${pluginName}:${candidate.name}`,
+        ...setupFields,
+        installedAt: timestamp,
+        updatedAt: timestamp,
+        repository: entry.repository,
+        revision: entry.revision,
+        license: entry.license,
+      };
+    });
+    const packageRecord: ManagedSkillPackageRecord = {
+      id: packageId,
+      kind: "family",
+      catalogId: entry.id,
+      label: entry.name,
+      root: destination,
+      pluginName,
+      repository: entry.repository,
+      revision: entry.revision,
+      license: entry.license,
+      sourceUrl: entry.sourceUrl,
+      memberIds: records.map((record) => record.id),
+      ...setupFields,
+      installedAt: timestamp,
+      updatedAt: timestamp,
+    };
+    const next: RegistryFile = {
+      version: 2,
+      packages: [...registry.packages, packageRecord],
+      skills: [...registry.skills, ...records],
+    };
+    try {
+      writeRegistry(next);
+    } catch (error) {
+      rmSync(destination, { recursive: true, force: true });
+      throw error;
+    }
+    return { installed: records.map(presentedRecord) };
   };
 
   return {
@@ -607,25 +955,76 @@ export function createSkillAdminService(options: SkillAdminServiceOptions): Skil
       return communityCatalog.map((entry) => ({
         id: entry.id,
         name: entry.name,
+        ...(entry.displayName ? { displayName: entry.displayName } : {}),
         description: entry.description,
         category: entry.category,
         categoryLabel: entry.categoryLabel,
+        featured: entry.featured,
         author: entry.author,
         repository: entry.repository,
         revision: entry.revision,
         license: entry.license,
         sourceUrl: entry.sourceUrl,
-        installed: registry.skills.some((record) => record.catalogId === entry.id),
+        ...(isFamilyEntry(entry) ? {
+          kind: "family" as const,
+          memberCount: entry.memberCount,
+          members: entry.members.map(({ id, name, displayName, description }) => ({
+            id,
+            name,
+            ...(displayName ? { displayName } : {}),
+            description,
+          })),
+        } : { kind: "skill" as const }),
+        ...catalogSetupFields(entry),
+        installed: isFamilyEntry(entry)
+          ? registry.packages.some((record) => record.catalogId === entry.id)
+          : registry.skills.some((record) => record.catalogId === entry.id),
         scanStatus: "scanned" as const,
       }));
+    },
+
+    async loadCatalogDetails(idOrName) {
+      const key = idOrName.trim().toLocaleLowerCase();
+      const entry = communityCatalog.find((candidate) => (
+        candidate.id.toLocaleLowerCase() === key || candidate.name.toLocaleLowerCase() === key
+      ));
+      if (!entry) throw new Error("这个 Skill 不在 Leemo 的社区可信目录中。");
+      const cached = catalogDetailsCache.get(entry.id);
+      if (cached !== undefined) return { markdown: cached };
+
+      const skillFiles = entry.files.filter((file) => (
+        file.path === "SKILL.md" || file.path.endsWith("/SKILL.md")
+      ));
+      if (skillFiles.length === 0) throw new Error("这个 Skill 暂时没有可展示的说明文档。");
+      const documents = await Promise.all(skillFiles.map(async (file) => {
+        const response = await request(rawCatalogFileUrl(entry, file), "text/markdown, text/plain;q=0.9");
+        const contents = Buffer.from(await response.arrayBuffer());
+        const digest = createHash("sha256").update(contents).digest("hex");
+        if (contents.byteLength !== file.bytes || digest !== file.sha256) {
+          throw new Error(`社区 Skill“${entry.name}”的说明文档校验失败。`);
+        }
+        return { path: file.path, markdown: contents.toString("utf8") };
+      }));
+      const markdown = isFamilyEntry(entry)
+        ? documents.map((document) => {
+          const member = entry.members.find((candidate) => document.path === `${candidate.upstreamPath}/SKILL.md`);
+          const title = member?.displayName ?? member?.name ?? document.path.replace(/\/SKILL\.md$/u, "");
+          return `# ${title}\n\n${document.markdown}`;
+        }).join("\n\n---\n\n")
+        : documents[0].markdown;
+      catalogDetailsCache.set(entry.id, markdown);
+      return { markdown };
     },
 
     async installCatalog(idOrName) {
       const key = idOrName.trim().toLocaleLowerCase();
       const entry = communityCatalog.find((candidate) => candidate.id.toLocaleLowerCase() === key || candidate.name.toLocaleLowerCase() === key);
       if (!entry) throw new Error("这个 Skill 不在 Leemo 的社区可信目录中。");
-      if (registry.skills.some((record) => record.catalogId === entry.id)) throw new Error(`Skill“${entry.name}”已经安装。`);
-      const files = await Promise.all(entry.files.map(async (file) => {
+      if (
+        registry.skills.some((record) => record.catalogId === entry.id)
+        || registry.packages.some((record) => record.catalogId === entry.id)
+      ) throw new Error(`Skill“${entry.name}”已经安装。`);
+      const files = await mapWithConcurrency(entry.files, CATALOG_DOWNLOAD_CONCURRENCY, async (file) => {
         const response = await request(rawCatalogFileUrl(entry, file), "application/octet-stream, text/plain;q=0.9");
         const contents = Buffer.from(await response.arrayBuffer());
         const digest = createHash("sha256").update(contents).digest("hex");
@@ -633,8 +1032,9 @@ export function createSkillAdminService(options: SkillAdminServiceOptions): Skil
           throw new Error(`社区 Skill“${entry.name}”的固定版本校验失败，已停止安装。`);
         }
         return { path: file.path, contents };
-      }));
-      const loaded = loadSkillFiles(files);
+      });
+      if (isFamilyEntry(entry)) return installFamily(entry, files);
+      const loaded = loadSkillFiles(files, { maxFiles: entry.files.length });
       const upstream = chooseCandidate(loaded.candidates, undefined);
       const candidate: SkillPackageCandidate = {
         ...renameSkillFrontmatter(upstream, entry.name),
@@ -665,7 +1065,14 @@ export function createSkillAdminService(options: SkillAdminServiceOptions): Skil
         return candidate.id.toLocaleLowerCase() === key || candidate.name.toLocaleLowerCase() === key;
       });
       if (record) {
-        if (!isManagedSkillDirectory(skillsRoot, record.dir) || !existsSync(record.dir)) throw new Error("已安装 Skill 的目录不可用。");
+        const safeManagedDirectory = record.packageId
+          ? registry.packages.some((packageRecord) => (
+            packageRecord.id === record.packageId
+            && isManagedPackageDirectory(packagesRoot, packageRecord.root)
+            && isInside(packageRecord.root, record.dir)
+          ))
+          : isManagedSkillDirectory(skillsRoot, record.dir);
+        if (!safeManagedDirectory || !existsSync(record.dir)) throw new Error("已安装 Skill 的目录不可用。");
       }
       const unmanaged = record ? undefined : findUnmanagedSkill(idOrName);
       if (!record && !unmanaged) throw new Error("没有找到这个已安装的 Skill。");
@@ -700,24 +1107,53 @@ export function createSkillAdminService(options: SkillAdminServiceOptions): Skil
         findings: scan.findings.map((finding) => ({ ...finding })),
         updatedAt: now(),
       };
-      writeRegistry({ version: 1, skills: registry.skills.map((candidateRecord) => candidateRecord.id === record.id ? updated : candidateRecord) });
-      return cloneRecord(updated);
+      writeRegistry({
+        version: 2,
+        packages: registry.packages.map(clonePackage),
+        skills: registry.skills.map((candidateRecord) => candidateRecord.id === record.id ? updated : candidateRecord),
+      });
+      return presentedRecord(updated);
     },
 
     listManaged() {
-      return registry.skills.map(cloneRecord).sort((left, right) => left.name.localeCompare(right.name));
+      return registry.skills.map(presentedRecord).sort((left, right) => left.name.localeCompare(right.name));
     },
 
     remove(idOrName) {
       const key = idOrName.trim().toLocaleLowerCase();
       const record = registry.skills.find((candidate) => candidate.id.toLocaleLowerCase() === key || candidate.name.toLocaleLowerCase() === key);
       if (!record) throw new Error("这个 Skill 不由 Leemo 管理，不能替你删除文件。");
+      if (record.packageId) {
+        const packageRecord = registry.packages.find((candidate) => candidate.id === record.packageId);
+        if (!packageRecord || !isManagedPackageDirectory(packagesRoot, packageRecord.root)) {
+          throw new Error("技能套装注册目录不安全，已停止删除。");
+        }
+        const backup = `${packageRecord.root}.remove-${randomUUID()}`;
+        const existed = existsSync(packageRecord.root);
+        if (existed) renameSync(packageRecord.root, backup);
+        try {
+          writeRegistry({
+            version: 2,
+            packages: registry.packages.filter((candidate) => candidate.id !== packageRecord.id),
+            skills: registry.skills.filter((candidate) => candidate.packageId !== packageRecord.id),
+          });
+          if (existed) rmSync(backup, { recursive: true, force: true });
+        } catch (error) {
+          if (existed && existsSync(backup) && !existsSync(packageRecord.root)) renameSync(backup, packageRecord.root);
+          throw error;
+        }
+        return;
+      }
       if (!isManagedSkillDirectory(skillsRoot, record.dir)) throw new Error("Skill 注册目录不安全，已停止删除。");
       const backup = `${record.dir}.remove-${randomUUID()}`;
       const existed = existsSync(record.dir);
       if (existed) renameSync(record.dir, backup);
       try {
-        writeRegistry({ version: 1, skills: registry.skills.filter((candidate) => candidate.id !== record.id) });
+        writeRegistry({
+          version: 2,
+          packages: registry.packages.map(clonePackage),
+          skills: registry.skills.filter((candidate) => candidate.id !== record.id),
+        });
         if (existed) rmSync(backup, { recursive: true, force: true });
       } catch (error) {
         if (existed && existsSync(backup) && !existsSync(record.dir)) renameSync(backup, record.dir);
@@ -728,7 +1164,16 @@ export function createSkillAdminService(options: SkillAdminServiceOptions): Skil
     metadataForDir(dir) {
       const normalized = normalizePath(dir);
       const record = registry.skills.find((candidate) => normalizePath(candidate.dir) === normalized);
-      return record ? cloneRecord(record) : undefined;
+      return record ? presentedRecord(record) : undefined;
+    },
+
+    pluginPathForQualifiedName(qualifiedName) {
+      const key = qualifiedName.trim().toLocaleLowerCase();
+      const record = registry.skills.find((candidate) => candidate.qualifiedName?.toLocaleLowerCase() === key);
+      if (!record?.packageId) return undefined;
+      const packageRecord = registry.packages.find((candidate) => candidate.id === record.packageId);
+      if (!packageRecord || familyUnavailableReason(packageRecord)) return undefined;
+      return packageRecord.root;
     },
   };
 }

@@ -5,6 +5,7 @@ import {
   workspaceRootFor,
   listNotebooks,
   createNotebook,
+  updateNotebookPresentation,
   readTree,
   dropFiles,
   moveFile,
@@ -13,6 +14,7 @@ import {
   readTextFile,
   readPreview,
   planWorkspaceReveal,
+  resolveWorkspaceOpenFile,
   writeMarkdownFile,
   looksLikeText,
   PREVIEW_TEXT_MAX_BYTES,
@@ -368,6 +370,41 @@ describe("createNotebook", () => {
   });
 });
 
+describe("notebook presentation metadata", () => {
+  it("renames only the displayed title, archives and restores without moving or deleting the real folder", () => {
+    const { io, dirs, files } = fakeFs({ dirs: [ROOT, j("科研项目")] });
+
+    const renamed = updateNotebookPresentation(ROOT, "科研项目", { title: "毕业论文" }, io);
+    expect(renamed).toMatchObject({ id: "科研项目", title: "毕业论文", archived: false });
+    expect(dirs.has(j("科研项目"))).toBe(true);
+    expect(dirs.has(j("毕业论文"))).toBe(false);
+
+    const archived = updateNotebookPresentation(ROOT, "科研项目", { archived: true }, io);
+    expect(archived).toMatchObject({ id: "科研项目", title: "毕业论文", archived: true });
+    expect(listNotebooks(ROOT, io)).toContainEqual(expect.objectContaining({
+      id: "科研项目",
+      title: "毕业论文",
+      archived: true,
+    }));
+
+    updateNotebookPresentation(ROOT, "科研项目", { archived: false }, io);
+    expect(listNotebooks(ROOT, io)[0]).toMatchObject({ archived: false });
+    expect(files.get(j(".leemo", "notebooks.json"))).toContain("毕业论文");
+  });
+
+  it("falls back to physical folder names when presentation metadata is damaged", () => {
+    const { io } = fakeFs({
+      dirs: [ROOT, j("数据结构"), j(".leemo")],
+      files: { [j(".leemo", "notebooks.json")]: "{broken" },
+    });
+    expect(listNotebooks(ROOT, io)).toContainEqual(expect.objectContaining({
+      id: "数据结构",
+      title: "数据结构",
+      archived: false,
+    }));
+  });
+});
+
 describe("ensureStarterNotebook", () => {
   it("creates a real example notebook with useful starter files", () => {
     const { io, dirs, files } = fakeFs({ dirs: [ROOT] });
@@ -657,6 +694,7 @@ describe("readPreview", () => {
       mimeType: "application/pdf",
       base64: pdf.toString("base64"),
       size: pdf.length,
+      mtimeMs: 0,
     });
     // 承重：base64 解回来必须和原字节逐字节相同。
     if (out.kind !== "binary") throw new Error("unreachable");
@@ -735,6 +773,37 @@ describe("planWorkspaceReveal", () => {
   it("keeps renderer paths inside the selected workspace", () => {
     const { io } = fakeFs({ dirs: [ROOT] });
     expect(() => planWorkspaceReveal(ROOT, "../secret.txt", io)).toThrow(/路径不合法/);
+  });
+});
+
+describe("resolveWorkspaceOpenFile", () => {
+  it("returns only an existing regular file after canonical boundary validation", () => {
+    const target = j("本", "报告.pdf");
+    const { io } = fakeFs({ dirs: [ROOT, j("本")], files: { [target]: "%PDF-1.7" } });
+
+    expect(resolveWorkspaceOpenFile(ROOT, "本/报告.pdf", io, {
+      canonicalize: path.resolve,
+      isFile: (candidate) => candidate === target,
+    })).toBe(target);
+    expect(() => resolveWorkspaceOpenFile(ROOT, "本", io, {
+      canonicalize: path.resolve,
+      isFile: () => false,
+    })).toThrow(/普通文件/);
+    expect(() => resolveWorkspaceOpenFile(ROOT, "本/不存在.pdf", io, {
+      canonicalize: path.resolve,
+      isFile: () => true,
+    })).toThrow(/读不到这个文件/);
+  });
+
+  it("rejects a symlink or junction whose canonical target escapes the workspace", () => {
+    const link = j("本", "外部.pdf");
+    const outside = path.join(HOME, "outside", "外部.pdf");
+    const { io } = fakeFs({ dirs: [ROOT, j("本")], files: { [link]: "%PDF-1.7" } });
+
+    expect(() => resolveWorkspaceOpenFile(ROOT, "本/外部.pdf", io, {
+      canonicalize: (candidate) => candidate === link ? outside : path.resolve(candidate),
+      isFile: () => true,
+    })).toThrow(/真实位置越出了当前工作区/);
   });
 });
 

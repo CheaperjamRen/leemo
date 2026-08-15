@@ -40,7 +40,10 @@ import { LEEMO_ACADEMIC_SEARCH_TOOL } from "./academic-search-mcp";
 import { LEEMO_DOCUMENT_TOOL_NAMES } from "./document-mcp";
 import { LEEMO_SKILL_ADMIN_TOOL_NAMES } from "./skill-admin-mcp";
 import { LEEMO_LEARNING_TOOL_NAMES } from "./learning-mcp";
+import { LEEMO_SCHEDULED_TASK_TOOL_NAMES } from "./scheduled-task-mcp";
+import { LEEMO_CAPTURE_TASK_TOOL_NAMES } from "./capture-task-mcp";
 import { LEEMO_VISUALIZATION_TOOL_NAME } from "./visualization-spec";
+import { LEEMO_WORK_OVERVIEW_TOOL } from "./work-overview";
 import { resolvePathWithinBoundary } from "./filesystem-boundary";
 
 // ===========================================================================
@@ -60,6 +63,18 @@ const ASK_USER_TOOL = "ask_user";
 /** The qualified name the MODEL calls, and the renderer anchors question cards
  *  to. Exported so the timeline and the broker agree on one spelling. */
 export const LEEMO_ASK_USER_TOOL = `mcp__${ASK_USER_SERVER}__${ASK_USER_TOOL}`;
+
+/** Model-facing semantic boundary for the structured question card.
+ * Keep this explicit: the runtime cannot reliably infer a missed card from
+ * final prose after the turn has already completed. */
+export const ASK_USER_TOOL_DESCRIPTION =
+  "Ask the user a structured question when their answer determines the next action or conversation path " +
+  "and the useful choices fit in 2-3 concise options. This includes guided interviews and onboarding, " +
+  "not only ambiguous task scope. Apply this on every qualifying round, including later rounds after earlier cards; " +
+  "if the choice changes subsequent execution or memory, do not switch back to prose. Give every option a short concrete explanation. The card also provides " +
+  "an Other free-text field and blocks until the user answers. Do not use it for rhetorical questions, " +
+  "open-ended reflection, ordinary conversational follow-ups after a conclusion, or questions where the " +
+  "user's own unrestricted wording is the point.";
 
 /** Runtime capability switches that carry user-facing setting semantics into
  * tool exposure and permission decisions. The host passes one mutable object
@@ -335,6 +350,10 @@ const BUILTIN_TOOL_CAPABILITIES: ReadonlyMap<string, CapabilityGate> = new Map([
   [LEEMO_SKILL_ADMIN_TOOL_NAMES.scan, "always"],
   [LEEMO_SKILL_ADMIN_TOOL_NAMES.listCatalog, "always"],
   [LEEMO_SKILL_ADMIN_TOOL_NAMES.scanInstalled, "always"],
+  [LEEMO_SCHEDULED_TASK_TOOL_NAMES.list, "always"],
+  [LEEMO_CAPTURE_TASK_TOOL_NAMES.listNotes, "always"],
+  [LEEMO_CAPTURE_TASK_TOOL_NAMES.listTasks, "always"],
+  [LEEMO_WORK_OVERVIEW_TOOL, "always"],
   ...Object.values(LEEMO_MEMORY_TOOL_NAMES).map((toolName) => [toolName, "rememberMode"] as const),
   ...Object.values(LEEMO_LEARNING_TOOL_NAMES).map((toolName) => [toolName, "always"] as const),
 ]);
@@ -396,6 +415,46 @@ const COMMAND_DANGER_PATTERNS: RegExp[] = [
   /:\(\)\s*\{\s*:\s*\|\s*:?\s*&\s*\}\s*;/, // classic fork-bomb :(){ :|:& };:
 ];
 
+/**
+ * A deliberately narrow no-prompt lane for Leemo-owned maintenance.
+ *
+ * The model must provide one literal, absolute target and nothing else. We do
+ * not expand variables or globs, and the path must name both Leemo and a
+ * recognisable temp/cache/staging location. This keeps routine renderer/build
+ * cleanup quiet without turning a generic shell delete into a hidden grant.
+ */
+function isRoutineLeemoCleanup(toolName: string, input: Record<string, unknown>): boolean {
+  if (toolName !== "Bash" && toolName !== "PowerShell") return false;
+  const command = typeof input.command === "string" ? input.command.trim() : "";
+  if (!command || command.length > 2_048 || /[\r\n;&|`$*?\[\]]/.test(command)) return false;
+
+  let target: string | undefined;
+  if (/^Remove-Item\b/i.test(command)) {
+    const literal = /-LiteralPath\s+(["'])([^"']+)\1/i.exec(command);
+    if (!literal) return false;
+    target = literal[2];
+    const remainder = command
+      .replace(/^Remove-Item\b/i, "")
+      .replace(literal[0], "")
+      .replace(/-(?:Recurse|Force)\b/gi, "")
+      .replace(/-ErrorAction\s+(?:SilentlyContinue|Stop)\b/gi, "")
+      .trim();
+    if (remainder) return false;
+  } else {
+    const remove = /^rm\s+-(?:rf|fr)\s+(["'])([^"']+)\1\s*$/i.exec(command);
+    if (!remove) return false;
+    target = remove[2];
+  }
+
+  const normalized = target.replace(/\\/g, "/").toLowerCase();
+  if (!/^(?:[a-z]:\/|\/)/.test(normalized) || normalized.split("/").includes("..")) return false;
+  if (!normalized.includes("leemo")) return false;
+  const segments = normalized.split("/").filter(Boolean);
+  return normalized.includes("/temp/")
+    || normalized.startsWith("/tmp/")
+    || segments.some((segment) => /^(?:\.?cache|\.?staging|\.?tmp[^/]*|node-compile-cache|clipboard-attachments|\.npm-cache[^/]*)$/i.test(segment));
+}
+
 /** Tools whose invocation mutates state or executes code (⇒ at least moderate). */
 const MUTATING_TOOLS: ReadonlySet<string> = new Set([
   "Bash",
@@ -409,6 +468,19 @@ const MUTATING_TOOLS: ReadonlySet<string> = new Set([
   LEEMO_DOCUMENT_TOOL_NAMES.createPresentation,
   LEEMO_DOCUMENT_TOOL_NAMES.createSpreadsheet,
   LEEMO_VISUALIZATION_TOOL_NAME,
+  LEEMO_SCHEDULED_TASK_TOOL_NAMES.create,
+  LEEMO_SCHEDULED_TASK_TOOL_NAMES.update,
+  LEEMO_SCHEDULED_TASK_TOOL_NAMES.setStatus,
+  LEEMO_SCHEDULED_TASK_TOOL_NAMES.delete,
+  LEEMO_SCHEDULED_TASK_TOOL_NAMES.runNow,
+  LEEMO_CAPTURE_TASK_TOOL_NAMES.createNote,
+  LEEMO_CAPTURE_TASK_TOOL_NAMES.updateNote,
+  LEEMO_CAPTURE_TASK_TOOL_NAMES.deleteNote,
+  LEEMO_CAPTURE_TASK_TOOL_NAMES.createTask,
+  LEEMO_CAPTURE_TASK_TOOL_NAMES.createTasks,
+  LEEMO_CAPTURE_TASK_TOOL_NAMES.updateTask,
+  LEEMO_CAPTURE_TASK_TOOL_NAMES.setTaskCompleted,
+  LEEMO_CAPTURE_TASK_TOOL_NAMES.deleteTask,
 ]);
 
 /**
@@ -452,6 +524,7 @@ const EDIT_TOOLS: ReadonlySet<string> = new Set([
  */
 export function classifyRisk(toolName: string, input: Record<string, unknown>): RiskLevel {
   if (toolName === "Bash" || toolName === "PowerShell") {
+    if (isRoutineLeemoCleanup(toolName, input)) return "safe";
     const command = typeof input.command === "string" ? input.command : "";
     if (COMMAND_DANGER_PATTERNS.some((re) => re.test(command))) return "dangerous";
     return "moderate";
@@ -523,6 +596,15 @@ export const DEFAULT_PERMISSION_POLICY: PermissionPolicy = {
  *  outcome; not a persisted tier. */
 export type ApprovalTier = "allow-once" | "allow-conversation" | "allow-permanent" | "deny";
 
+/** Runtime-owned meaning of an `allow-conversation` decision. The renderer
+ * must display the same scope the broker will actually cache instead of
+ * reverse-engineering it from a growing list of tool names. */
+export type ApprovalTaskScope =
+  | "tool-class"
+  | "shell-command"
+  | "exact-input"
+  | "computer-control";
+
 /** A request the broker sends the host for a decision. `conversationId` routes
  *  the card to its owning conversation; `inputSummary` is a short human-readable rendering of the tool input (truncated for display) so
  *  the user can identify what they are approving. It is NOT a redaction step —
@@ -534,6 +616,9 @@ export interface ApprovalRequest {
   toolName: string;
   inputSummary: string;
   risk: RiskLevel;
+  /** Exact task-level scope enforced by the broker. Optional so a newer
+   * renderer can still accept requests from an older host. */
+  taskScope?: ApprovalTaskScope;
   /** The SDK's `toolUseID` for the call being approved. Lets the renderer
    *  anchor the approval card to the exact tool item in the timeline instead
    *  of parking it at the end of the turn (where it read as "置底还很丑" and,
@@ -618,6 +703,13 @@ function cacheKey(toolName: string, risk: RiskLevel, input: Record<string, unkno
   return `${base} :: ${JSON.stringify(command)}`;
 }
 
+function approvalTaskScope(toolName: string, key: string): ApprovalTaskScope {
+  if (key === "mcp__computer__task") return "computer-control";
+  if (isShellToolName(toolName)) return "shell-command";
+  if (isMcpToolName(toolName)) return "exact-input";
+  return "tool-class";
+}
+
 /** Best-effort one-line summary of a tool input for the approval card
  *  (truncated for display, so the user can identify what they're approving —
  *  not a redaction step; the actual command is shown on purpose). Prefers a
@@ -625,7 +717,16 @@ function cacheKey(toolName: string, risk: RiskLevel, input: Record<string, unkno
 function summarizeInput(_toolName: string, input: Record<string, unknown>): string {
   const pick = (k: string): string | undefined =>
     typeof input[k] === "string" ? (input[k] as string) : undefined;
-  const head = pick("command") ?? pick("element") ?? pick("file_path") ?? pick("path") ?? pick("pattern");
+  const head = pick("command")
+    ?? pick("element")
+    ?? pick("name")
+    ?? pick("nameContains")
+    ?? pick("title")
+    ?? pick("filter")
+    ?? pick("automationId")
+    ?? pick("file_path")
+    ?? pick("path")
+    ?? pick("pattern");
   if (head !== undefined) {
     const trimmed = head.length > 200 ? head.slice(0, 197) + "…" : head;
     return trimmed;
@@ -761,6 +862,13 @@ export function createApprovalBroker(
     }
     if (builtinAccess === "allow") return allow();
 
+    // Pure cleanup of a single Leemo-owned temporary target is maintenance,
+    // not a user decision. Plan mode remains read-only and never uses this
+    // shortcut even if a stale runtime asks for permission unexpectedly.
+    if (policy.mode !== "plan" && isRoutineLeemoCleanup(toolName, input)) {
+      return allow();
+    }
+
     // (0) bypassPermissions short-circuit — zero card. The user opted fully out
     // of approvals: allow every tool, including dangerous ones, WITHOUT building
     // an ApprovalRequest or touching the transport. `plan` is enforced by the
@@ -817,6 +925,7 @@ export function createApprovalBroker(
       toolName,
       inputSummary: summarizeInput(toolName, input),
       risk,
+      taskScope: approvalTaskScope(toolName, key),
       // Carry the SDK's tool-call id so the UI can render this card next to the
       // tool it belongs to (sdk.d.ts: toolUseID is unique per call within an
       // assistant message). Guarded: options is untrusted runtime data.
@@ -944,6 +1053,9 @@ export interface AskUserMcpOptions {
  *  round-trip surface (also what tests drive directly). */
 export interface AskUserMcp {
   server: McpSdkServerConfigWithInstance;
+  /** Use the same card/waiter flow from a non-MCP local execution engine while
+   * preserving the user's selected options as structured data. */
+  requestAnswer(input: AskUserInput): Promise<AskUserAnswer>;
   /** Run one ask_user round (also the tool handler's body). Blocks until the
    *  host answers, cancels, or the timeout fires. */
   handle(input: AskUserInput): Promise<AskUserToolResult>;
@@ -990,31 +1102,32 @@ export function createAskUserMcp(
   transport: AskUserTransport,
   options: AskUserMcpOptions = {}
 ): AskUserMcp {
+  type AskOutcome = { answer: AskUserAnswer } | { error: string };
   interface Waiter {
-    resolve: (r: AskUserToolResult) => void;
+    resolve: (outcome: AskOutcome) => void;
     timer?: ReturnType<typeof setTimeout>;
   }
   const waiters = new Map<string, Waiter>();
 
-  function settle(id: string, result: AskUserToolResult): boolean {
+  function settle(id: string, outcome: AskOutcome): boolean {
     const w = waiters.get(id);
     if (!w) return false;
     if (w.timer) clearTimeout(w.timer);
     waiters.delete(id);
-    w.resolve(result);
+    w.resolve(outcome);
     return true;
   }
 
-  async function handle(input: AskUserInput): Promise<AskUserToolResult> {
+  async function requestAnswer(input: AskUserInput): Promise<AskUserAnswer> {
     const id = randomUUID();
     const payload: AskUserPayload = { id, conversationId, questions: input.questions };
 
-    const pending = new Promise<AskUserToolResult>((resolve) => {
+    const pending = new Promise<AskOutcome>((resolve) => {
       const w: Waiter = { resolve };
       if (options.timeoutMs !== undefined) {
         w.timer = setTimeout(() => {
           waiters.delete(id);
-          resolve(textResult(`ask_user timed out after ${options.timeoutMs}ms`, true));
+          resolve({ error: `ask_user timed out after ${options.timeoutMs}ms` });
         }, options.timeoutMs);
         // Don't keep the process alive purely for this timer.
         w.timer.unref?.();
@@ -1027,18 +1140,28 @@ export function createAskUserMcp(
     } catch (e: unknown) {
       // Host channel failed to even accept the ask → settle now (don't hang).
       const msg = e instanceof Error ? e.message : String(e);
-      settle(id, textResult(`ask_user transport error: ${msg}`, true));
+      settle(id, { error: `ask_user transport error: ${msg}` });
     }
 
-    return pending;
+    const outcome = await pending;
+    if ("error" in outcome) throw new Error(outcome.error);
+    return outcome.answer;
+  }
+
+  async function handle(input: AskUserInput): Promise<AskUserToolResult> {
+    try {
+      return textResult(renderAnswer(await requestAnswer(input)));
+    } catch (error: unknown) {
+      return textResult(error instanceof Error ? error.message : String(error), true);
+    }
   }
 
   function provideAnswer(id: string, answer: AskUserAnswer): boolean {
-    return settle(id, textResult(renderAnswer(answer)));
+    return settle(id, { answer });
   }
 
   function failAsk(id: string, reason: string): boolean {
-    return settle(id, textResult(`ask_user cancelled: ${reason}`, true));
+    return settle(id, { error: `ask_user cancelled: ${reason}` });
   }
 
   // The SDK tool: schema mirrors AskUserQuestion (zod 4, the SDK's own zod
@@ -1056,10 +1179,7 @@ export function createAskUserMcp(
   });
   const askUserTool = tool(
     ASK_USER_TOOL,
-    "Ask the user a structured multiple-choice question when the request is " +
-      "ambiguous. Renders as an in-conversation option card (single/multi select " +
-      "+ an Other free-text field). Blocks until the user answers. Prefer this " +
-      "over asking in prose when confirming scope or picking among options.",
+    ASK_USER_TOOL_DESCRIPTION,
     { questions: z.array(questionSchema) },
     async (args) => {
       const result = await handle({ questions: args.questions as AskUserQuestion[] });
@@ -1074,5 +1194,5 @@ export function createAskUserMcp(
     tools: [askUserTool],
   });
 
-  return { server, handle, provideAnswer, failAsk };
+  return { server, requestAnswer, handle, provideAnswer, failAsk };
 }

@@ -1,0 +1,59 @@
+{
+  "checkedAt": "2026-07-31T02:10:22.056Z",
+  "isolatedRoot": "C:\\Users\\Rengar\\AppData\\Local\\Temp\\leemo-e2e-r10-memory-restart-QdJrfL",
+  "externalApiCalls": 0,
+  "oldValueSuperseded": true,
+  "currentValueSurvivedRestart": true,
+  "globalMemoryAvailableInsideNotebook": true,
+  "notebookMemoryIsolated": true,
+  "ordinaryResearchArtifact": "默认工作区\\restart-research-note.md",
+  "legacyArtifactMovedToDefaultWorkspace": true,
+  "migrationManifest": ".leemo\\migrations\\memory-v1.json",
+  "migrationArchivedMappings": 1,
+  "migrationArtifactMappings": 1,
+  "globalRuntimeFiles": [
+    "MEMORY.md",
+    "ledger.jsonl"
+  ],
+  "notebookRuntimeFiles": [
+    "MEMORY.md",
+    "ledger.jsonl"
+  ],
+  "screenshot": "docs/research/audit-shots/r10-memory-restart.png",
+  "startupMs": {
+    "first": 1323,
+    "restart": 1243
+  },
+  "idleProcesses": {
+    "processCount": 4,
+    "totalWorkingSetBytes": 540012544,
+    "processes": [
+      {
+        "name": "Leemo.exe",
+        "pid": 29408,
+        "parentPid": 51700,
+        "workingSetBytes": 203399168
+      },
+      {
+        "name": "Leemo.exe",
+        "pid": 47440,
+        "parentPid": 29408,
+        "workingSetBytes": 176586752
+      },
+      {
+        "name": "Leemo.exe",
+        "pid": 55908,
+        "parentPid": 29408,
+        "workingSetBytes": 55537664
+      },
+      {
+        "name": "Leemo.exe",
+        "pid": 48712,
+        "parentPid": 29408,
+        "workingSetBytes": 104488960
+      }
+    ]
+  },
+  "rendererConsoleErrors": 0,
+  "mockRequests": 14
+}

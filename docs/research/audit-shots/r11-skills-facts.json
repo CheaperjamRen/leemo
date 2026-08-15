@@ -1,0 +1,151 @@
+{
+  "checks": {
+    "catalog30": true,
+    "defaultCount12": true,
+    "realProvenance": true,
+    "claudeApiHidden": true,
+    "runtimeLibraryComplete": true,
+    "searchAndCategory": true,
+    "fourViewports": true,
+    "slashUsesEnabledSet": true,
+    "skillBodyLoaded": true,
+    "officeFriendlyAlias": true,
+    "officeSkillBodyLoaded": true,
+    "hotToggle": true,
+    "menuHotSynced": true,
+    "restartRestored": true,
+    "noLooseSkillFiles": true
+  },
+  "screenshots": {
+    "1440x900": "docs/research/audit-shots/r11-skills-1440x900.png",
+    "1280x720": "docs/research/audit-shots/r11-skills-1280x720.png",
+    "1024x768": "docs/research/audit-shots/r11-skills-1024x768.png",
+    "720x640": "docs/research/audit-shots/r11-skills-720x640.png"
+  },
+  "layouts": {
+    "1440x900": {
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "documentHorizontalOverflow": 0,
+      "shellHorizontalOverflow": 0,
+      "shellInsideViewport": true,
+      "mainInsideViewport": true,
+      "searchInsideViewport": true,
+      "mainWidth": 1180
+    },
+    "1280x720": {
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "documentHorizontalOverflow": 0,
+      "shellHorizontalOverflow": 0,
+      "shellInsideViewport": true,
+      "mainInsideViewport": true,
+      "searchInsideViewport": true,
+      "mainWidth": 1020.0000610351562
+    },
+    "1024x768": {
+      "viewport": {
+        "width": 1024,
+        "height": 768
+      },
+      "documentHorizontalOverflow": 0,
+      "shellHorizontalOverflow": 0,
+      "shellInsideViewport": true,
+      "mainInsideViewport": true,
+      "searchInsideViewport": true,
+      "mainWidth": 764.0000610351562
+    },
+    "720x640": {
+      "viewport": {
+        "width": 720,
+        "height": 640
+      },
+      "documentHorizontalOverflow": 0,
+      "shellHorizontalOverflow": 0,
+      "shellInsideViewport": true,
+      "mainInsideViewport": true,
+      "searchInsideViewport": true,
+      "mainWidth": 531.6160888671875
+    }
+  },
+  "rendererErrors": [],
+  "runtime": {
+    "initial": [
+      "algorithmic-art",
+      "baoyu-article-illustrator",
+      "baoyu-comic",
+      "baoyu-compress-image",
+      "baoyu-cover-image",
+      "baoyu-format-markdown",
+      "baoyu-image-gen",
+      "baoyu-infographic",
+      "baoyu-markdown-to-html",
+      "baoyu-post-to-wechat",
+      "baoyu-post-to-x",
+      "baoyu-slide-deck",
+      "baoyu-url-to-markdown",
+      "baoyu-xhs-images",
+      "brand-guidelines",
+      "canvas-design",
+      "doc-coauthoring",
+      "frontend-design",
+      "ima-skill",
+      "internal-comms",
+      "mcp-builder",
+      "skill-creator",
+      "slack-gif-creator",
+      "theme-factory",
+      "web-artifacts-builder",
+      "webapp-testing"
+    ],
+    "restarted": [
+      "algorithmic-art",
+      "baoyu-article-illustrator",
+      "baoyu-comic",
+      "baoyu-compress-image",
+      "baoyu-cover-image",
+      "baoyu-format-markdown",
+      "baoyu-image-gen",
+      "baoyu-infographic",
+      "baoyu-markdown-to-html",
+      "baoyu-post-to-wechat",
+      "baoyu-post-to-x",
+      "baoyu-slide-deck",
+      "baoyu-url-to-markdown",
+      "baoyu-xhs-images",
+      "brand-guidelines",
+      "canvas-design",
+      "doc-coauthoring",
+      "frontend-design",
+      "ima-skill",
+      "internal-comms",
+      "mcp-builder",
+      "skill-creator",
+      "slack-gif-creator",
+      "theme-factory",
+      "web-artifacts-builder",
+      "webapp-testing"
+    ],
+    "cache": {
+      "root": "C:\\Users\\Rengar\\AppData\\Local\\Temp\\leemo-e2e-r11-skills-OSxeq9\\user-data\\workspace\\data\\bundled-skills\\runtime\\leemo-library",
+      "files": 552,
+      "bytes": 8291690
+    }
+  },
+  "package": {
+    "unpackedPhysicalFiles": 498,
+    "unpackedBytes": 756587635,
+    "installerBytes": 190113755,
+    "appAsarBytes": 93570026,
+    "looseBundledSkillFiles": 0
+  },
+  "startupMs": {
+    "first": 2922,
+    "restart": 1507
+  },
+  "workingSetBytes": 241090560
+}

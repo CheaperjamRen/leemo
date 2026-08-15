@@ -1,7 +1,8 @@
 import { describe, it, expect, vi } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
+import { useContext } from "react";
 import userEvent from "@testing-library/user-event";
-import { BridgeProvider } from "../bridge/context";
+import { BridgeContext, BridgeProvider, type BridgeStores } from "../bridge/context";
 import type { BridgeClient } from "../bridge/client";
 import BuddyShell from "./BuddyShell";
 import type { BridgeEventEnvelope } from "../../bridge/contract";
@@ -58,7 +59,7 @@ function openDrawer(user: ReturnType<typeof userEvent.setup>): Promise<void> {
 function storedConversation(
   id: string,
   title: string,
-  options: { bookId?: string | null; archived?: boolean; lastOpenedAt?: number } = {},
+  options: { bookId?: string | null; archived?: boolean; lastOpenedAt?: number; pinned?: boolean } = {},
 ) {
   const timestamp = options.lastOpenedAt ?? 1;
   return {
@@ -75,6 +76,7 @@ function storedConversation(
       lastActivityAt: timestamp,
       lastOpenedAt: timestamp,
       unread: false,
+      pinned: options.pinned ?? false,
       archived: options.archived ?? false,
     },
     timeline: [
@@ -99,6 +101,54 @@ function persistenceWith(...conversations: ReturnType<typeof storedConversation>
 }
 
 describe("HistoryDrawer — real conversations, not fixtures", () => {
+  it("uses the approved buddy drawer hierarchy without duplicating settings", async () => {
+    const user = userEvent.setup();
+    const persist = persistenceWith(storedConversation("current", "今天该先做什么", { lastOpenedAt: Date.now() }));
+    render(<BridgeProvider client={createClient()} persist={persist}><BuddyShell /></BridgeProvider>);
+    await screen.findByText("今天该先做什么");
+
+    await openDrawer(user);
+
+    const dialog = screen.getByRole("dialog", { name: "对话" });
+    expect(dialog).toHaveAttribute("data-history-drawer", "buddy");
+    expect(within(dialog).getByRole("heading", { name: "对话" })).toBeInTheDocument();
+    expect(within(dialog).getByRole("button", { name: "关闭对话" })).toBeInTheDocument();
+    expect(within(dialog).getByRole("button", { name: "开始新对话" })).toHaveTextContent("新对话");
+    expect(within(dialog).getByRole("searchbox", { name: "搜索对话" })).toBeInTheDocument();
+    expect(within(dialog).getByPlaceholderText("搜索对话")).not.toHaveFocus();
+    expect(within(dialog).queryByRole("button", { name: "设置" })).not.toBeInTheDocument();
+    expect(screen.getByTestId("buddy-history-scrim")).toBeInTheDocument();
+  });
+
+  it("groups only real conversations into pinned, today, recent and earlier sections", async () => {
+    const user = userEvent.setup();
+    const now = Date.now();
+    const day = 24 * 60 * 60 * 1_000;
+    const persist = persistenceWith(
+      storedConversation("today", "今天的安排", { lastOpenedAt: now - 60_000 }),
+      storedConversation("recent", "前几天的想法", { lastOpenedAt: now - (3 * day) }),
+      storedConversation("earlier", "上个月的复盘", { lastOpenedAt: now - (30 * day) }),
+      storedConversation("pinned", "长期关注", { lastOpenedAt: now - (60 * day), pinned: true }),
+    );
+    render(<BridgeProvider client={createClient()} persist={persist}><BuddyShell /></BridgeProvider>);
+    await screen.findByText("今天的安排");
+
+    await openDrawer(user);
+
+    const dialog = screen.getByRole("dialog", { name: "对话" });
+    const groups = within(dialog).getAllByTestId("buddy-history-group");
+    expect(groups.map((group) => group.getAttribute("data-group"))).toEqual([
+      "pinned",
+      "today",
+      "recent",
+      "earlier",
+    ]);
+    expect(within(groups[0]).getByRole("button", { name: "长期关注" })).toBeInTheDocument();
+    expect(within(groups[1]).getByRole("button", { name: "今天的安排" })).toBeInTheDocument();
+    expect(within(groups[2]).getByRole("button", { name: "前几天的想法" })).toBeInTheDocument();
+    expect(within(groups[3]).getByRole("button", { name: "上个月的复盘" })).toBeInTheDocument();
+  });
+
   it("lists nothing but an empty state before any conversation exists", async () => {
     const user = userEvent.setup();
     render(<BridgeProvider client={createClient()}><BuddyShell /></BridgeProvider>);
@@ -210,7 +260,8 @@ describe("HistoryDrawer — real conversations, not fixtures", () => {
     await waitFor(() => expect(persist.loadAll).toHaveBeenCalled());
 
     await openDrawer(user);
-    expect(await screen.findByRole("status", { name: "上次没聊完的事：等待继续" })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "上次没聊完的事" })).toBeInTheDocument();
+    expect(screen.queryByText("等待继续")).not.toBeInTheDocument();
     await user.click(await screen.findByRole("button", { name: "上次没聊完的事" }));
 
     // Opening a recovery point is navigation, not consent to spend quota or
@@ -248,6 +299,38 @@ describe("HistoryDrawer — real conversations, not fixtures", () => {
     await waitFor(() => expect(screen.queryByLabelText("搜索对话")).not.toBeInTheDocument());
     // Fresh conversation → the greeting (empty-timeline state) is back.
     expect(screen.queryByText("买菜清单")).not.toBeInTheDocument();
+  });
+
+  it("routes a missing-model failure from the drawer to model setup", async () => {
+    const user = userEvent.setup();
+    const client = createClient();
+    client.invoke.mockImplementation(async (channel: string) => {
+      if (channel === "bridge:createConversation") {
+        throw new Error("「DeepSeek」还没有配置 API Key，先去设置页填一个再开始对话。");
+      }
+      if (channel === "bridge:listWhitelist") return [];
+      return undefined;
+    });
+    let stores!: BridgeStores;
+    function CaptureStores() {
+      stores = useContext(BridgeContext) as BridgeStores;
+      return null;
+    }
+    render(
+      <BridgeProvider client={client}>
+        <CaptureStores />
+        <BuddyShell />
+      </BridgeProvider>,
+    );
+
+    await openDrawer(user);
+    await user.click(screen.getByRole("button", { name: "开始新对话" }));
+
+    await waitFor(() => expect(stores.ui.getState()).toMatchObject({
+      settingsOpen: true,
+      settingsSection: "models",
+    }));
+    expect(screen.queryByRole("dialog", { name: "对话" })).not.toBeInTheDocument();
   });
 
   it("keeps buddy history global and puts archived conversations in a separate section", async () => {

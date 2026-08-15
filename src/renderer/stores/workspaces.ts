@@ -10,6 +10,7 @@ export const HOME_WORKSPACE: WorkspaceRootInfo = {
   kind: "home",
   available: true,
   lastOpenedAt: 0,
+  archived: false,
 };
 
 export interface WorkspacesState {
@@ -22,6 +23,8 @@ export interface WorkspacesState {
   refresh(): Promise<void>;
   openFolder(): Promise<string | null>;
   select(id: string): Promise<boolean>;
+  rename(id: string, name: string): Promise<boolean>;
+  setArchived(id: string, archived: boolean): Promise<boolean>;
   forget(id: string): Promise<boolean>;
   dismissNotice(): void;
 }
@@ -123,6 +126,50 @@ export function createWorkspacesStore(
           error: null,
           status: "ready",
           justOpenedId: null,
+        });
+        return true;
+      } catch (error: unknown) {
+        set({ error: errorMessage(error), status: "error" });
+        return false;
+      }
+    },
+
+    rename: async (id, name) => {
+      const trimmed = name.trim();
+      if (!trimmed) {
+        set({ error: "本子显示名称不能为空。" });
+        return false;
+      }
+      if (!workspace?.updateWorkspace) {
+        set({ error: "当前环境不能修改本子名称。" });
+        return false;
+      }
+      try {
+        const updated = await workspace.updateWorkspace(id, { name: trimmed });
+        set({
+          list: normalizeList([...get().list.filter((entry) => entry.id !== id), updated]),
+          error: null,
+          status: "ready",
+        });
+        return true;
+      } catch (error: unknown) {
+        set({ error: errorMessage(error), status: "error" });
+        return false;
+      }
+    },
+
+    setArchived: async (id, archived) => {
+      if (!workspace?.updateWorkspace) {
+        set({ error: "当前环境不能归档这个本子。" });
+        return false;
+      }
+      try {
+        const updated = await workspace.updateWorkspace(id, { archived });
+        set({
+          list: normalizeList([...get().list.filter((entry) => entry.id !== id), updated]),
+          activeId: archived && get().activeId === id ? HOME_WORKSPACE.id : get().activeId,
+          error: null,
+          status: "ready",
         });
         return true;
       } catch (error: unknown) {

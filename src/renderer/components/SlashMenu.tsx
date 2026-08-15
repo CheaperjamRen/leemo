@@ -22,7 +22,7 @@ export default function SlashMenu({ skills, selectedIndex, onPick, onHover }: Sl
 
   return (
     <div
-      className="absolute bottom-full left-0 z-20 mb-2 max-h-64 w-[320px] overflow-y-auto rounded-lg border border-[var(--leemo-line)] bg-white p-1 shadow-lg"
+      className="absolute bottom-[calc(100%+8px)] left-2 right-2 z-40 max-h-[min(360px,58vh)] overflow-y-auto rounded-[14px] border border-[var(--leemo-line)] bg-[var(--leemo-card)] p-1.5 shadow-[var(--leemo-shadow-popover)] sm:right-auto sm:w-[360px]"
       data-testid="slash-menu"
     >
       <ul role="listbox" aria-label="技能命令">
@@ -38,13 +38,13 @@ export default function SlashMenu({ skills, selectedIndex, onPick, onHover }: Sl
               onPick(skill);
             }}
             onMouseEnter={() => onHover(index)}
-            className={`cursor-pointer rounded-md px-2.5 py-1.5 ${
-              index === selectedIndex ? "bg-[var(--leemo-amber-bg)]" : "hover:bg-[var(--leemo-hover)]"
+            className={`cursor-pointer rounded-[9px] px-3 py-2 transition-[background-color,color] duration-150 ${
+              index === selectedIndex ? "bg-[var(--leemo-amber-soft)]" : "hover:bg-[var(--leemo-hover)]"
             }`}
           >
-            <div className="text-[13px] font-medium text-[var(--leemo-ink)]">/{skill.name}</div>
+            <div className="text-[13px] font-medium leading-5 text-[var(--leemo-ink)]">/{skill.name}</div>
             {skill.description && (
-              <div className="truncate text-[11.5px] text-[var(--leemo-ink-3)]">
+              <div className="truncate text-[11.5px] leading-[18px] text-[var(--leemo-ink-3)]">
                 {skill.description}
               </div>
             )}

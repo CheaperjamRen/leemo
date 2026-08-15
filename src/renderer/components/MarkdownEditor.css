@@ -1,0 +1,317 @@
+.markdown-editor {
+  display: flex;
+  min-height: 240px;
+  flex: 1;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--leemo-bg, #fff);
+  color: var(--leemo-ink, #122033);
+  font-family: "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
+}
+
+.markdown-editor__topline {
+  display: flex;
+  min-height: 46px;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+  border-bottom: 1px solid var(--leemo-line, #e1e5e8);
+  padding: 0 14px;
+  background: color-mix(in srgb, var(--leemo-bg, #fff) 96%, var(--leemo-panel, #f6f7f8));
+}
+
+.markdown-editor__toolbar {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  align-items: center;
+  gap: 1px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.markdown-editor__toolbar::-webkit-scrollbar { display: none; }
+
+.markdown-editor__tool-button,
+.markdown-editor__save-button {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  flex: none;
+  place-items: center;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--leemo-ink-2, #4b5968);
+  cursor: pointer;
+}
+
+.markdown-editor__tool-button svg,
+.markdown-editor__save-button svg {
+  width: 15px;
+  height: 15px;
+  stroke-width: 1.8;
+}
+
+.markdown-editor__tool-button:hover,
+.markdown-editor__tool-button:focus-visible,
+.markdown-editor__save-button:hover,
+.markdown-editor__save-button:focus-visible {
+  background: var(--leemo-side-hover, #edf0f2);
+  color: var(--leemo-ink, #122033);
+  outline: none;
+}
+
+.markdown-editor__tool-button:focus-visible,
+.markdown-editor__save-button:focus-visible,
+.markdown-editor__toolbar select:focus-visible {
+  box-shadow: 0 0 0 2px var(--leemo-amber-line, rgb(244 128 20 / 24%));
+}
+
+.markdown-editor__tool-button:disabled,
+.markdown-editor__save-button:disabled,
+.markdown-editor__toolbar select:disabled {
+  cursor: default;
+  opacity: 0.35;
+}
+
+.markdown-editor__toolbar select {
+  height: 30px;
+  flex: none;
+  border: 0;
+  border-radius: 6px;
+  padding: 0 24px 0 9px;
+  background: transparent;
+  color: var(--leemo-ink-2, #4b5968);
+  font: inherit;
+  font-size: 12px;
+  outline: none;
+  cursor: pointer;
+}
+
+.markdown-editor__toolbar select:hover { background: var(--leemo-side-hover, #edf0f2); }
+
+.markdown-editor__divider {
+  width: 1px;
+  height: 20px;
+  flex: none;
+  margin: 0 5px;
+  background: var(--leemo-line, #e1e5e8);
+}
+
+.markdown-editor__save-state {
+  flex: none;
+  color: var(--leemo-ink-3, #7d8791);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.markdown-editor__save-state--dirty { color: var(--leemo-amber, #e8770b); }
+.markdown-editor__save-state--error { color: var(--leemo-danger, #c53b2f); }
+
+.markdown-editor__canvas {
+  position: relative;
+  min-height: 0;
+  flex: 1;
+  overflow: auto;
+  background: var(--leemo-bg, #fff);
+}
+
+.markdown-editor__content {
+  min-height: 100%;
+  padding: 25px clamp(26px, 5vw, 54px) 48px;
+  outline: none;
+  color: var(--leemo-ink, #122033);
+  font-size: 14.5px;
+  line-height: 1.78;
+  overflow-wrap: anywhere;
+  caret-color: var(--leemo-amber, #e8770b);
+}
+
+.markdown-editor__content::selection,
+.markdown-editor__content *::selection {
+  background: #cfe3fb;
+}
+
+.markdown-editor__placeholder {
+  position: absolute;
+  top: 25px;
+  left: clamp(26px, 5vw, 54px);
+  margin: 0;
+  pointer-events: none;
+  color: var(--leemo-ink-3, #7d8791);
+  font-size: 14.5px;
+}
+
+.markdown-editor__paragraph { margin: 0 0 0.72em; }
+.markdown-editor__h1,
+.markdown-editor__h2,
+.markdown-editor__h3,
+.markdown-editor__h4,
+.markdown-editor__h5,
+.markdown-editor__h6 {
+  margin: 1.05em 0 0.48em;
+  color: var(--leemo-ink, #122033);
+  font-weight: 700;
+  line-height: 1.38;
+}
+.markdown-editor__h1:first-child,
+.markdown-editor__h2:first-child,
+.markdown-editor__h3:first-child { margin-top: 0; }
+.markdown-editor__h1 { font-size: 25px; letter-spacing: -0.025em; }
+.markdown-editor__h2 { font-size: 20px; letter-spacing: -0.015em; }
+.markdown-editor__h3 { font-size: 17px; }
+.markdown-editor__h4,
+.markdown-editor__h5,
+.markdown-editor__h6 { font-size: 15px; }
+
+.markdown-editor__bold { font-weight: 700; }
+.markdown-editor__italic { font-style: italic; }
+.markdown-editor__underline { text-decoration: underline; text-underline-offset: 2px; }
+.markdown-editor__strikethrough { text-decoration: line-through; }
+.markdown-editor__highlight { border-radius: 2px; background: #fff0b5; padding: 0 2px; }
+.markdown-editor__inline-code {
+  border-radius: 4px;
+  background: var(--leemo-bg-deep, #f2f4f6);
+  padding: 1px 4px;
+  font-family: "Cascadia Code", Consolas, monospace;
+  font-size: 0.9em;
+}
+.markdown-editor__link {
+  color: var(--leemo-amber-ink, #a74f0b);
+  text-decoration: underline;
+  text-decoration-color: var(--leemo-amber-line, #f1b979);
+  text-underline-offset: 3px;
+}
+
+.markdown-editor__quote {
+  margin: 0.8em 0;
+  border-left: 3px solid var(--leemo-line, #dfe4e8);
+  border-radius: 0 7px 7px 0;
+  padding: 8px 13px;
+  background: var(--leemo-bg-deep, #f5f6f7);
+  color: var(--leemo-ink-2, #4b5968);
+}
+
+.markdown-editor__ordered-list,
+.markdown-editor__unordered-list,
+.markdown-editor__checklist {
+  margin: 0 0 0.78em;
+  padding-left: 24px;
+}
+.markdown-editor__ordered-list { list-style: decimal; }
+.markdown-editor__unordered-list { list-style: disc; }
+.markdown-editor__checklist { list-style: none; padding-left: 2px; }
+.markdown-editor__list-item { margin: 4px 0; }
+.markdown-editor__list-item--nested { list-style: none; }
+.markdown-editor__list-item--checked,
+.markdown-editor__list-item--unchecked {
+  position: relative;
+  margin: 5px 0;
+  padding-left: 28px;
+  list-style: none;
+}
+.markdown-editor__list-item--checked::before,
+.markdown-editor__list-item--unchecked::before {
+  position: absolute;
+  top: 0.31em;
+  left: 2px;
+  box-sizing: border-box;
+  width: 16px;
+  height: 16px;
+  border: 1px solid #aeb5bc;
+  border-radius: 4px;
+  content: "";
+}
+.markdown-editor__list-item--checked::before {
+  border-color: var(--leemo-amber, #e8770b);
+  background: var(--leemo-amber, #e8770b);
+  box-shadow: inset 0 0 0 3px #fff;
+}
+.markdown-editor__list-item--checked { color: var(--leemo-ink-3, #7d8791); }
+
+.markdown-editor__code {
+  display: block;
+  margin: 0.85em 0;
+  border: 1px solid var(--leemo-line, #e1e5e8);
+  border-radius: 8px;
+  background: var(--leemo-bg-deep, #f5f6f7);
+  padding: 13px 15px;
+  color: var(--leemo-ink-2, #4b5968);
+  font-family: "Cascadia Code", Consolas, monospace;
+  font-size: 12.5px;
+  line-height: 1.65;
+  tab-size: 2;
+  white-space: pre-wrap;
+}
+
+.markdown-editor__math-inline { display: inline-flex; margin: 0 2px; vertical-align: -0.12em; }
+.markdown-editor__math-block {
+  display: block;
+  margin: 1em auto;
+  overflow-x: auto;
+  padding: 8px 12px;
+  text-align: center;
+}
+.markdown-editor__mermaid {
+  margin: 0.9em 0;
+  border-radius: 8px;
+}
+.markdown-editor__mermaid [data-testid="mermaid-diagram"] { margin: 0; background: var(--leemo-bg-deep, #f5f6f7); }
+
+.markdown-editor__gfm-table {
+  margin: 0.85em 0;
+  overflow-x: auto;
+}
+.markdown-editor__gfm-table > * { margin: 0; }
+.markdown-editor__gfm-table table { width: 100%; font-size: 0.94em; }
+
+.markdown-editor__status {
+  display: flex;
+  min-height: 31px;
+  flex: none;
+  align-items: center;
+  justify-content: space-between;
+  border-top: 1px solid var(--leemo-line, #e1e5e8);
+  padding: 0 16px;
+  background: var(--leemo-card, #fff);
+  color: var(--leemo-ink-3, #7d8791);
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.markdown-editor__error {
+  display: flex;
+  flex: none;
+  align-items: flex-start;
+  gap: 8px;
+  border-top: 1px solid var(--leemo-line, #e1e5e8);
+  padding: 8px 14px;
+  color: var(--leemo-danger, #c53b2f);
+  font-size: 11px;
+  line-height: 1.45;
+}
+.markdown-editor__error p { min-width: 0; flex: 1; margin: 0; }
+.markdown-editor__error button {
+  display: inline-flex;
+  height: 25px;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+  border: 0;
+  border-radius: 5px;
+  padding: 0 7px;
+  background: transparent;
+  color: var(--leemo-ink-3, #7d8791);
+  font: inherit;
+  cursor: pointer;
+}
+.markdown-editor__error button:hover { background: var(--leemo-side-hover, #edf0f2); color: var(--leemo-ink-2, #4b5968); }
+.markdown-editor__error svg { width: 12px; height: 12px; }
+
+@media (max-width: 780px) {
+  .markdown-editor__topline { padding-inline: 8px; }
+  .markdown-editor__save-state { display: none; }
+  .markdown-editor__content { padding-inline: 24px; }
+  .markdown-editor__placeholder { left: 24px; }
+}

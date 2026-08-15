@@ -98,6 +98,8 @@ describe("OnboardingWizard", () => {
     renderFirstRun();
     expect(await screen.findByRole("dialog", { name: "首次设置" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /DeepSeek/ })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByTestId("provider-brand-deepseek").querySelector("img")).not.toBeNull();
+    expect(screen.getByTestId("provider-brand-glm").querySelector("img")).not.toBeNull();
     expect(screen.getByText("推荐")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /获取 API Key/ })).toHaveAttribute("target", "_blank");
   });

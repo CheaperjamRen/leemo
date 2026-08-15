@@ -123,8 +123,10 @@ describe("buildMomoSystemPrompt — dynamic branches", () => {
   it("states the verified local-document boundary without exposing the underlying harness", () => {
     const prompt = build();
     expect(prompt).toContain("Read PDF, Word, PowerPoint, and Excel");
-    expect(prompt).toContain("create new Word, PowerPoint, and Excel files");
-    expect(prompt).toContain("exact text changes to a new Word copy");
+    expect(prompt).toContain("create Word, PowerPoint, and Excel files");
+    expect(prompt).toContain("exactly edit a Word copy");
+    expect(prompt).toContain("Prefer Leemo tools");
+    expect(prompt).toContain("Optional commands may be unavailable");
     expect(prompt).toContain("Never claim arbitrary layout or complex in-place editing");
     expect(prompt).not.toContain("Claude Code");
   });
@@ -199,6 +201,17 @@ describe("buildMomoSystemPrompt — dynamic branches", () => {
 });
 
 describe("buildMomoSystemPrompt — identity regression (验收②)", () => {
+  it("uses structured question cards for bounded branches without turning ordinary conversation into a form", () => {
+    const p = build();
+    expect(p).toContain("determines a bounded next action or conversation path");
+    expect(p).toContain("use the Leemo ask-user tool");
+    expect(p).toContain("every qualifying round");
+    expect(p).toContain("after earlier cards");
+    expect(p).toContain("changes subsequent execution or memory");
+    expect(p).toContain("Do not use a card for rhetorical questions");
+    expect(p).toContain("user's unrestricted wording is the point");
+  });
+
   it("names momo and never self-identifies as Claude", () => {
     for (const mode of ["buddy", "workbench"] as const) {
       const p = build({ mode });

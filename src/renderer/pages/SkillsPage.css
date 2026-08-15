@@ -1,0 +1,492 @@
+.leemo-skill-card {
+  position: relative;
+  isolation: isolate;
+  border: 1px solid color-mix(in srgb, var(--leemo-line-2) 76%, transparent);
+  border-radius: 10px;
+  background:
+    linear-gradient(160deg, color-mix(in srgb, var(--leemo-bg) 96%, var(--leemo-amber-soft)) 0%, var(--leemo-bg) 72%),
+    var(--leemo-bg);
+  box-shadow:
+    0 1px 1px color-mix(in srgb, var(--leemo-ink) 5%, transparent),
+    0 8px 20px color-mix(in srgb, var(--leemo-ink) 4%, transparent);
+  transition:
+    transform 160ms cubic-bezier(0.2, 0.75, 0.2, 1),
+    border-color 160ms ease,
+    box-shadow 160ms ease;
+}
+
+.leemo-skill-card::before {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 2px;
+  border-radius: 10px 0 0 10px;
+  background: linear-gradient(180deg, var(--leemo-amber), color-mix(in srgb, var(--leemo-amber) 18%, transparent));
+  content: "";
+  opacity: 0;
+  transition: opacity 160ms ease;
+}
+
+.leemo-skill-card:hover,
+.leemo-skill-card:focus-within {
+  border-color: color-mix(in srgb, var(--leemo-amber) 30%, var(--leemo-line-2));
+  box-shadow:
+    0 1px 2px color-mix(in srgb, var(--leemo-ink) 6%, transparent),
+    0 12px 28px color-mix(in srgb, var(--leemo-ink) 8%, transparent);
+  transform: translateY(-2px);
+}
+
+.leemo-skill-card:hover::before,
+.leemo-skill-card:focus-within::before {
+  opacity: 1;
+}
+
+.leemo-skill-card__cap {
+  border-bottom: 1px solid var(--leemo-line-soft);
+  background:
+    radial-gradient(circle at 12% 0%, color-mix(in srgb, var(--leemo-amber-soft) 78%, transparent), transparent 58%),
+    color-mix(in srgb, var(--leemo-panel) 88%, var(--leemo-bg));
+}
+
+.leemo-skill-card__icon,
+.leemo-skill-detail__icon {
+  border: 1px solid color-mix(in srgb, var(--leemo-amber) 18%, var(--leemo-line-2));
+  background: color-mix(in srgb, var(--leemo-bg) 88%, var(--leemo-amber-soft));
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, white 72%, transparent),
+    0 3px 8px color-mix(in srgb, var(--leemo-ink) 6%, transparent);
+}
+
+.leemo-skill-card__title {
+  transition: color 140ms ease;
+}
+
+.leemo-skill-card__title:hover,
+.leemo-skill-card__title:focus-visible {
+  color: var(--leemo-amber-strong);
+  outline: none;
+}
+
+.leemo-skill-card__install {
+  border: 1px solid color-mix(in srgb, var(--leemo-ink) 86%, white);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--leemo-ink) 88%, white) 0%, var(--leemo-ink) 100%);
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, white 18%, transparent),
+    0 2px 5px color-mix(in srgb, var(--leemo-ink) 16%, transparent);
+  transition: transform 140ms ease, box-shadow 140ms ease, filter 140ms ease;
+}
+
+.leemo-skill-card__install:hover:not(:disabled) {
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, white 22%, transparent),
+    0 4px 9px color-mix(in srgb, var(--leemo-ink) 20%, transparent);
+  filter: brightness(1.08);
+  transform: translateY(-1px);
+}
+
+.leemo-skill-card__install:active:not(:disabled) {
+  box-shadow: inset 0 1px 2px color-mix(in srgb, black 24%, transparent);
+  transform: translateY(0);
+}
+
+.leemo-skill-card--installed {
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 100% 0%, color-mix(in srgb, var(--leemo-amber-soft) 44%, transparent), transparent 46%),
+    linear-gradient(155deg, color-mix(in srgb, var(--leemo-bg) 98%, var(--leemo-panel)), var(--leemo-bg));
+}
+
+.leemo-skill-card--installed .leemo-skill-card__source {
+  border: 1px solid color-mix(in srgb, var(--leemo-line-2) 80%, transparent);
+  background: color-mix(in srgb, var(--leemo-panel) 72%, var(--leemo-bg));
+}
+
+.leemo-skill-collection {
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--leemo-line-2) 88%, transparent);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--leemo-panel) 42%, var(--leemo-bg));
+  box-shadow: 0 10px 26px color-mix(in srgb, var(--leemo-ink) 4%, transparent);
+}
+
+.leemo-skill-collection + .leemo-skill-collection {
+  margin-top: 14px;
+}
+
+.leemo-skill-collection__header {
+  border-bottom: 1px solid var(--leemo-line-soft);
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--leemo-amber-soft) 40%, var(--leemo-bg)), color-mix(in srgb, var(--leemo-panel) 70%, var(--leemo-bg)));
+}
+
+.leemo-skill-detail__back {
+  transition: background-color 140ms ease, color 140ms ease;
+}
+
+.leemo-skill-detail__back:hover,
+.leemo-skill-detail__back:focus-visible {
+  background: var(--leemo-side-hover);
+  color: var(--leemo-ink-2);
+  outline: none;
+}
+
+.leemo-skill-detail__main {
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--leemo-line-2) 82%, transparent);
+  border-radius: 12px;
+  background:
+    linear-gradient(145deg, color-mix(in srgb, var(--leemo-bg) 96%, var(--leemo-amber-soft)), var(--leemo-bg) 68%),
+    var(--leemo-bg);
+  box-shadow:
+    0 1px 1px color-mix(in srgb, var(--leemo-ink) 4%, transparent),
+    0 12px 30px color-mix(in srgb, var(--leemo-ink) 5%, transparent);
+}
+
+.leemo-skill-detail__hero {
+  display: flex;
+  min-height: 92px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 18px 20px;
+  background:
+    radial-gradient(circle at 0% 0%, color-mix(in srgb, var(--leemo-amber-soft) 62%, transparent), transparent 42%),
+    color-mix(in srgb, var(--leemo-bg) 95%, var(--leemo-panel));
+}
+
+.leemo-skill-detail__facts {
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--leemo-line-2) 82%, transparent);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--leemo-bg) 92%, var(--leemo-panel));
+  padding: 4px 14px;
+}
+
+.leemo-skill-detail__actions {
+  justify-content: flex-end;
+}
+
+.leemo-skill-detail__source-chip,
+.leemo-skill-detail__category {
+  border: 1px solid color-mix(in srgb, var(--leemo-amber) 18%, var(--leemo-line));
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--leemo-amber-soft) 58%, var(--leemo-bg));
+  padding: 2px 7px;
+  color: var(--leemo-amber-strong);
+  transition: background-color 140ms ease, border-color 140ms ease;
+}
+
+.leemo-skill-detail__source-chip {
+  border-color: color-mix(in srgb, var(--leemo-ink) 10%, var(--leemo-line));
+  background: color-mix(in srgb, var(--leemo-panel) 72%, var(--leemo-bg));
+  color: var(--leemo-ink-3);
+}
+
+.leemo-skill-detail__source-chip:hover,
+.leemo-skill-detail__source-chip:focus-visible,
+.leemo-skill-detail__category:hover,
+.leemo-skill-detail__category:focus-visible {
+  border-color: color-mix(in srgb, var(--leemo-amber) 42%, var(--leemo-line));
+  background: var(--leemo-amber-soft);
+  outline: none;
+}
+
+.leemo-skill-detail__setup {
+  border: 1px solid color-mix(in srgb, var(--leemo-amber) 22%, var(--leemo-line));
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--leemo-amber-soft) 44%, var(--leemo-bg));
+  padding: 9px 10px;
+}
+
+.leemo-skill-detail__tabs {
+  display: flex;
+  min-height: 43px;
+  align-items: end;
+  gap: 4px;
+  border-top: 1px solid var(--leemo-line-soft);
+  border-bottom: 1px solid var(--leemo-line-soft);
+  padding: 0 20px;
+  background: color-mix(in srgb, var(--leemo-panel) 48%, var(--leemo-bg));
+}
+
+.leemo-skill-detail__tabs button {
+  position: relative;
+  height: 42px;
+  padding: 0 13px;
+  color: var(--leemo-ink-3);
+  font-size: 11.5px;
+  font-weight: 560;
+  transition: color 140ms ease, background-color 140ms ease;
+}
+
+.leemo-skill-detail__tabs button::after {
+  position: absolute;
+  right: 10px;
+  bottom: -1px;
+  left: 10px;
+  height: 2px;
+  border-radius: 999px 999px 0 0;
+  background: var(--leemo-amber-strong);
+  content: "";
+  opacity: 0;
+  transform: scaleX(0.55);
+  transition: opacity 140ms ease, transform 140ms ease;
+}
+
+.leemo-skill-detail__tabs button:hover,
+.leemo-skill-detail__tabs button:focus-visible {
+  color: var(--leemo-ink);
+  outline: none;
+}
+
+.leemo-skill-detail__tabs button[aria-selected="true"] {
+  color: var(--leemo-ink);
+}
+
+.leemo-skill-detail__tabs button[aria-selected="true"]::after {
+  opacity: 1;
+  transform: scaleX(1);
+}
+
+.leemo-skill-detail__panel {
+  min-height: 280px;
+  padding: 18px 20px 22px;
+}
+
+.leemo-skill-detail__overview-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.leemo-skill-detail__overview-card {
+  border: 1px solid color-mix(in srgb, var(--leemo-line-2) 82%, transparent);
+  border-radius: 10px;
+  background:
+    linear-gradient(155deg, color-mix(in srgb, var(--leemo-bg) 96%, var(--leemo-panel)), var(--leemo-bg));
+  padding: 15px 16px;
+  box-shadow: 0 5px 16px color-mix(in srgb, var(--leemo-ink) 3.5%, transparent);
+}
+
+.leemo-skill-detail__overview-card--lead {
+  min-height: 150px;
+  background:
+    radial-gradient(circle at 0% 0%, color-mix(in srgb, var(--leemo-amber-soft) 46%, transparent), transparent 52%),
+    var(--leemo-bg);
+}
+
+.leemo-skill-detail__overview-card--members {
+  grid-column: 1 / -1;
+}
+
+.leemo-skill-detail__overview-card h3 {
+  color: var(--leemo-ink);
+  font-size: 12.5px;
+  font-weight: 650;
+}
+
+.leemo-skill-detail__overview-card > p {
+  margin-top: 10px;
+  color: var(--leemo-ink-2);
+  font-size: 12px;
+  line-height: 1.8;
+}
+
+.leemo-skill-detail__steps {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.leemo-skill-detail__steps li {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  color: var(--leemo-ink-2);
+  font-size: 11px;
+  line-height: 1.55;
+}
+
+.leemo-skill-detail__steps li > span {
+  display: grid;
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 1px solid color-mix(in srgb, var(--leemo-amber) 28%, var(--leemo-line));
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--leemo-amber-soft) 52%, var(--leemo-bg));
+  color: var(--leemo-amber-strong);
+  font-size: 9.5px;
+  font-weight: 700;
+}
+
+.leemo-skill-detail__starter {
+  margin-top: 10px;
+  border-left: 2px solid color-mix(in srgb, var(--leemo-amber) 62%, transparent);
+  border-radius: 0 7px 7px 0;
+  background: color-mix(in srgb, var(--leemo-amber-soft) 36%, var(--leemo-bg));
+  padding: 9px 11px;
+  color: var(--leemo-ink-2);
+  font-size: 11.5px;
+  line-height: 1.6;
+}
+
+.leemo-skill-detail__member-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.leemo-skill-detail__member-grid > div {
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--leemo-panel) 72%, var(--leemo-bg));
+  padding: 9px 10px;
+}
+
+.leemo-skill-detail__member-grid p {
+  color: var(--leemo-ink);
+  font-size: 11.5px;
+  font-weight: 600;
+}
+
+.leemo-skill-detail__member-grid span {
+  display: -webkit-box;
+  margin-top: 3px;
+  overflow: hidden;
+  color: var(--leemo-ink-3);
+  font-size: 10.5px;
+  line-height: 1.5;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.leemo-skill-detail__source-panel {
+  display: grid;
+  grid-template-columns: minmax(0, 0.75fr) minmax(310px, 1.25fr);
+  gap: 22px;
+  align-items: start;
+}
+
+.leemo-skill-detail__eyebrow {
+  color: var(--leemo-amber-strong);
+  font-size: 10px;
+  font-weight: 650;
+  letter-spacing: 0.08em;
+}
+
+.leemo-skill-detail__source-panel > div > h3 {
+  margin-top: 7px;
+  color: var(--leemo-ink);
+  font-size: 14px;
+  font-weight: 650;
+  line-height: 1.5;
+}
+
+.leemo-skill-detail__source-panel > div > p:last-child {
+  margin-top: 8px;
+  color: var(--leemo-ink-3);
+  font-size: 11px;
+  line-height: 1.7;
+}
+
+.leemo-skill-detail__document {
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--leemo-line-2) 88%, transparent);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--leemo-panel) 58%, var(--leemo-bg));
+}
+
+.leemo-skill-detail__document-heading {
+  display: flex;
+  min-height: 38px;
+  align-items: center;
+  gap: 7px;
+  border-bottom: 1px solid var(--leemo-line-soft);
+  padding: 0 12px;
+  color: var(--leemo-ink-2);
+}
+
+.leemo-skill-detail__document-title {
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.leemo-skill-detail__document-heading span {
+  margin-left: auto;
+  font-size: 10px;
+  color: var(--leemo-ink-3);
+}
+
+.leemo-skill-detail__markdown {
+  padding: 14px 16px 18px;
+}
+
+.leemo-skill-detail__markdown [data-testid="markdown-frontmatter"] {
+  margin-bottom: 14px;
+}
+
+.leemo-skill-detail__document-loading,
+.leemo-skill-detail__document-error {
+  padding: 18px 16px;
+  font-size: 11.5px;
+  color: var(--leemo-ink-3);
+}
+
+.leemo-skill-detail__source {
+  border: 1px solid color-mix(in srgb, var(--leemo-amber) 20%, var(--leemo-line));
+  background: color-mix(in srgb, var(--leemo-amber-soft) 36%, var(--leemo-bg));
+  transition: border-color 140ms ease, background-color 140ms ease;
+}
+
+.leemo-skill-detail__source:hover,
+.leemo-skill-detail__source:focus-visible {
+  border-color: color-mix(in srgb, var(--leemo-amber) 44%, var(--leemo-line));
+  background: var(--leemo-amber-soft);
+  outline: none;
+}
+
+@media (max-width: 760px) {
+  .leemo-skill-detail__hero {
+    align-items: flex-start;
+    flex-direction: column;
+    padding: 16px;
+  }
+
+  .leemo-skill-detail__actions {
+    justify-content: flex-start;
+  }
+
+  .leemo-skill-detail__tabs {
+    padding: 0 12px;
+  }
+
+  .leemo-skill-detail__panel {
+    padding: 14px;
+  }
+
+  .leemo-skill-detail__overview-grid,
+  .leemo-skill-detail__source-panel,
+  .leemo-skill-detail__member-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .leemo-skill-detail__overview-card--lead {
+    min-height: auto;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .leemo-skill-card,
+  .leemo-skill-card::before,
+  .leemo-skill-card__install,
+  .leemo-skill-card__title,
+  .leemo-skill-detail__back,
+  .leemo-skill-detail__source-chip,
+  .leemo-skill-detail__category,
+  .leemo-skill-detail__source,
+  .leemo-skill-detail__tabs button,
+  .leemo-skill-detail__tabs button::after {
+    transition-duration: 0.01ms;
+  }
+}

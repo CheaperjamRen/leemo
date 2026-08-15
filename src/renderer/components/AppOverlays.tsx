@@ -1,10 +1,27 @@
-import { useCallback, useEffect, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useState } from "react";
 import { X } from "lucide-react";
 import { useUi, useWikiEntries } from "../bridge/context";
 import GlobalSearchPage from "../pages/GlobalSearchPage";
-import { SettingsPage } from "../pages/SettingsPage";
 import { NotificationPanel } from "./NotificationPanel";
+import AnchoredLayer from "./AnchoredLayer";
 import WikiPopup from "./WikiPopup";
+
+const SettingsPage = lazy(async () => {
+  const module = await import("../pages/SettingsPage");
+  return { default: module.SettingsPage };
+});
+
+function SettingsLoading(): React.JSX.Element {
+  return (
+    <div
+      className="grid min-h-0 flex-1 place-items-center text-sm text-[var(--leemo-ink-3)]"
+      role="status"
+      aria-label="正在打开设置"
+    >
+      正在打开设置…
+    </div>
+  );
+}
 
 /** Shared, app-level surfaces. Both shells operate on the same stores and must
  * expose the same settings/search/notification behavior without duplicating
@@ -77,7 +94,9 @@ export default function AppOverlays() {
             >
               <X className="h-4 w-4" aria-hidden />
             </button>
-            <SettingsPage onDirtyChange={setSettingsDirty} onBusyChange={setSettingsBusy} />
+            <Suspense fallback={<SettingsLoading />}>
+              <SettingsPage onDirtyChange={setSettingsDirty} onBusyChange={setSettingsBusy} />
+            </Suspense>
             {confirmSettingsClose && (
               <div className="absolute inset-0 z-40 grid place-items-center bg-black/25 p-4" role="alertdialog" aria-label="关闭设置">
                 <div className="w-full max-w-sm rounded-md border border-black/10 bg-white p-4 shadow-xl">
@@ -112,17 +131,20 @@ export default function AppOverlays() {
         </div>
       )}
 
-      {notifPanelOpen && (
-        <div className="fixed inset-0 z-50" onClick={closeTopOverlay}>
-          <div
-            className="absolute right-5 top-14"
-            data-testid="notif-panel-anchor"
-            onClick={(event) => event.stopPropagation()}
-          >
-            <NotificationPanel onClose={closeTopOverlay} />
-          </div>
+      <AnchoredLayer
+        open={notifPanelOpen}
+        anchor={() => document.querySelector<HTMLElement>('[data-layer-anchor="notifications"]')}
+        preferred="bottom-end"
+        gap={6}
+        padding={12}
+        onDismiss={closeTopOverlay}
+        ariaLabel="通知"
+        className="max-w-[calc(100vw-24px)]"
+      >
+        <div data-testid="notif-panel-anchor">
+          <NotificationPanel onClose={closeTopOverlay} />
         </div>
-      )}
+      </AnchoredLayer>
 
       {wikiActive && <WikiPopup />}
     </>

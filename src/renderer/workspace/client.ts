@@ -16,7 +16,7 @@
 export type NotebookColor = "blue" | "green" | "red";
 
 export interface WorkspaceNotebook {
-  /** Directory name — also the id AND the title (no sidecar metadata exists). */
+  /** Stable directory name. Display title may differ without moving files. */
   id: string;
   title: string;
   /** Absolute path, display-only. */
@@ -24,6 +24,8 @@ export interface WorkspaceNotebook {
   color: NotebookColor;
   /** Whether <notebook>/CLAUDE.md exists (06 §7.4 中期记忆层). */
   hasMemory: boolean;
+  /** Presentation-only; missing means false for older fixtures. */
+  archived?: boolean;
 }
 
 export interface WorkspaceFileNode {
@@ -51,6 +53,8 @@ export interface WorkspaceRootInfo {
   kind: "home" | "external";
   available: boolean;
   lastOpenedAt: number;
+  /** Presentation-only; missing means false for older saved data/fixtures. */
+  archived?: boolean;
 }
 
 /**
@@ -63,7 +67,7 @@ export interface WorkspaceRootInfo {
  */
 export type PreviewPayload =
   | { kind: "text"; text: string; truncated: boolean; size: number }
-  | { kind: "binary"; mimeType: string; base64: string; size: number }
+  | { kind: "binary"; mimeType: string; base64: string; size: number; mtimeMs?: number }
   | { kind: "unpreviewable"; reason: string; size: number };
 
 export type MarkdownWriteResult = Extract<PreviewPayload, { kind: "text" }>;
@@ -73,12 +77,15 @@ export interface WorkspaceClient {
   /** Opens Electron's native directory picker. Renderer cannot supply a path. */
   pickWorkspace?(): Promise<WorkspaceRootInfo | null>;
   touchWorkspace?(id: string): Promise<WorkspaceRootInfo>;
+  updateWorkspace?(id: string, input: { name?: string; archived?: boolean }): Promise<WorkspaceRootInfo>;
   /** Removes a recent entry only; never deletes the folder or its contents. */
   forgetWorkspace?(id: string): Promise<boolean>;
   listNotebooks(): Promise<{ root: string; notebooks: WorkspaceNotebook[] }>;
   /** Creates the real directory. Throws with a human-readable reason (duplicate
    *  name, illegal characters) rather than failing silently. */
   createNotebook(title: string): Promise<WorkspaceNotebook>;
+  /** Changes only sidebar presentation metadata; never renames or removes the directory. */
+  updateNotebook?(id: string, input: { title?: string; archived?: boolean }): Promise<WorkspaceNotebook>;
   /** Idempotently creates the fixed, deletable first-run example. This is a
    * narrow template operation, not a renderer-facing arbitrary file write. */
   ensureStarterNotebook(): Promise<WorkspaceNotebook>;
@@ -104,6 +111,8 @@ export interface WorkspaceClient {
   ): Promise<MarkdownWriteResult>;
   /** Reveal in the OS file manager; omit the path for the workspace root. */
   reveal(path?: string, workspaceId?: string): Promise<void>;
+  /** Open a guarded workspace file with its system default application. */
+  openFile?(path: string, workspaceId?: string): Promise<void>;
   /** Persists the current OS clipboard bitmap as a short-lived local file.
    * This keeps pasted screenshots on the same path-verified attachment route
    * as files chosen with the native picker. */

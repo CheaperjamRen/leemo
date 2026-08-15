@@ -30,11 +30,44 @@ function run(target: string) {
   return spawnSync(process.execPath, [script, target], { encoding: "utf8" });
 }
 
+function configuredPaths(value: unknown): string[] {
+  const entries = Array.isArray(value) ? value : value === undefined ? [] : [value];
+  return entries.flatMap((entry): string[] => {
+    if (typeof entry === "string") return [entry.replaceAll("\\", "/")];
+    if (!entry || typeof entry !== "object") return [];
+    const fileSet = entry as { from?: unknown; filter?: unknown };
+    const from = typeof fileSet.from === "string" ? fileSet.from.replaceAll("\\", "/") : "";
+    const filter = Array.isArray(fileSet.filter)
+      ? fileSet.filter.filter((item): item is string => typeof item === "string")
+      : typeof fileSet.filter === "string" ? [fileSet.filter] : [];
+    return [
+      ...(from ? [from] : []),
+      ...filter.map((item) => (from ? `${from}/${item}` : item).replaceAll("\\", "/")),
+    ];
+  });
+}
+
 afterEach(() => {
   for (const target of tempRoots.splice(0)) fs.rmSync(target, { recursive: true, force: true });
 });
 
 describe("bundled Skill build validator", () => {
+  it("keeps the offline Superpowers suite inside ASAR and gates base packaging before build", async () => {
+    const { getConfig } = await import("app-builder-lib/out/util/config/config.js");
+    const config = await getConfig(root, path.join(root, "electron-builder.yml"), null);
+    const files = configuredPaths(config.files);
+    const extraResources = configuredPaths(config.extraResources);
+    const packageJson = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8")) as {
+      scripts?: Record<string, string>;
+    };
+    const basePack = packageJson.scripts?.["electron:pack:base"] ?? "";
+
+    expect(files).toContain("bundled-skills/superpowers/release/**/*");
+    expect(extraResources.some((entry) => entry.startsWith("bundled-skills/superpowers/release"))).toBe(false);
+    expect(basePack).toMatch(/^npm run verify:superpowers-bundle && /u);
+    expect(basePack.indexOf("verify:superpowers-bundle")).toBeLessThan(basePack.indexOf("npm run build"));
+  });
+
   it("reports deterministic inventory data without a hardcoded skill-name list", () => {
     const target = tempRoot();
     writeSkill(target, "default-enabled", "one", "first-skill");
@@ -96,8 +129,15 @@ describe("bundled Skill build validator", () => {
 
     expect(result.status, result.stderr).toBe(0);
     expect(JSON.parse(result.stdout)).toMatchObject({
-      groups: { defaultEnabled: 8, optional: 17 },
-      skillCount: 25,
+      groups: { defaultEnabled: 9, optional: 19 },
+      skillCount: 28,
+      superpowers: {
+        revision: "3dcbd5c4b48e02263fbf4a3c01e3fe4f81d584d9",
+        skillCount: 14,
+        files: 51,
+        bytes: 353_462,
+        sha256: "f3355d5b89693b8337584fcb23a43a647e5fd388e6b7e03e3bffc180dba9a026",
+      },
     });
   });
 });

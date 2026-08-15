@@ -23,11 +23,61 @@ export interface PersonaCardDraft {
   promptText: string;
 }
 
+export type RelationshipStyle = "companion" | "friend" | "senior" | "mentor";
+
+export const RELATIONSHIP_STYLE_OPTIONS: ReadonlyArray<{
+  id: RelationshipStyle;
+  label: string;
+  description: string;
+  promptText: string;
+}> = [
+  {
+    id: "companion",
+    label: "搭档",
+    description: "一起想清楚，也一起把事做完",
+    promptText: "你与用户的关系定位是搭档：平等协作，一起想清楚，也一起把事情做完。",
+  },
+  {
+    id: "friend",
+    label: "朋友",
+    description: "自然聊天，也认真帮忙",
+    promptText: "你与用户的关系定位更像朋友：交流自然、有生活感，同时认真对待用户交代的事情。",
+  },
+  {
+    id: "senior",
+    label: "学长 / 学姐",
+    description: "讲清经验，也尊重你的选择",
+    promptText: "你与用户的关系定位更像可信的学长或学姐：解释经验、提醒盲点，但尊重用户自己的判断和选择。",
+  },
+  {
+    id: "mentor",
+    label: "导师",
+    description: "重视方法、判断和长期成长",
+    promptText: "你与用户的关系定位更像导师：重视方法、判断和长期成长，但不居高临下，也不替用户做决定。",
+  },
+];
+
+const RELATIONSHIP_STYLE_IDS = new Set<RelationshipStyle>(
+  RELATIONSHIP_STYLE_OPTIONS.map((option) => option.id),
+);
+
+/** Combine the user-selected persona card and relationship into the one
+ * existing prompt layer. Keeping one resolved string means current and new
+ * conversations share the same hot-update path. */
+export function resolveMomoPersonaText(
+  personaText: string,
+  relationshipStyle: RelationshipStyle,
+): string {
+  const relationship = RELATIONSHIP_STYLE_OPTIONS.find((option) => option.id === relationshipStyle);
+  return [personaText.trim(), relationship?.promptText ?? ""].filter(Boolean).join("\n");
+}
+
 export interface SettingsState {
   mode: "buddy" | "workbench";
   persona: string;
   personaCardId: string;
   personaCards: PersonaCard[];
+  relationshipStyle: RelationshipStyle;
   talkStyle: 1 | 2 | 3;
   defaultProviderId: string | null;
   defaultModelId: string | null;
@@ -46,7 +96,31 @@ export interface SettingsState {
   webFetchEnabled: boolean;
   searchKeySources: { kind: string; configured: boolean }[];
   rememberMode: boolean;
+  /** Keep long Agent rounds alive while still allowing the display to sleep. */
+  keepAwakeDuringTasks: boolean;
+  /** Native OS notifications are only emitted while Leemo is not foreground. */
+  desktopNotifications: boolean;
+  /** Allow one small provider request only when local task-time parsing is ambiguous. */
+  taskModelParsingEnabled: boolean;
+  /** Start the packaged desktop app after the user signs in to Windows. */
+  launchAtLogin: boolean;
+  /** Keep Leemo available from the tray after the main window is closed. */
+  continueInBackground: boolean;
+  /** Electron accelerator used to open the quiet quick-capture window. */
+  quickCaptureShortcut: string;
+  /** User-confirmed root for managed note images and copied files. Undefined
+   * means no growing content has been silently assigned to a system drive. */
+  captureStorageRoot?: string;
+  /** Folder used for new task artifacts when the user has not chosen a notebook. */
+  defaultWorkspaceId: string;
+  /** What future ordinary file drops do; pasted images are always managed. */
+  captureFileDropMode: "reference" | "copy";
   onboardingCompleted: boolean;
+  /** Whether the one-time calm invitation on the empty buddy screen was
+   * dismissed. The permanent top-bar entry remains available either way. */
+  relationshipInviteDismissed: boolean;
+  /** Stable conversation route for the reusable relationship ritual. */
+  relationshipConversationId: string | null;
   dataDir: string;
   /** Stable built-in/custom skill ids whose enabled state differs from the
    * catalog default. Kept separate from display names so renaming a skill does
@@ -55,6 +129,7 @@ export interface SettingsState {
 
   setMode(mode: SettingsState["mode"]): void;
   setPersonaCard(id: string): void;
+  setRelationshipStyle(style: RelationshipStyle): void;
   /** Create or edit a user-authored card. Returns its stable id, or null when
    * the draft is invalid or attempts to overwrite a built-in card. */
   upsertPersonaCard(draft: PersonaCardDraft): string | null;
@@ -71,7 +146,18 @@ export interface SettingsState {
   setWebSearchEnabled(enabled: boolean): void;
   setWebFetchEnabled(enabled: boolean): void;
   setRememberMode(enabled: boolean): void;
+  setKeepAwakeDuringTasks(enabled: boolean): void;
+  setDesktopNotifications(enabled: boolean): void;
+  setTaskModelParsingEnabled(enabled: boolean): void;
+  setLaunchAtLogin(enabled: boolean): void;
+  setContinueInBackground(enabled: boolean): void;
+  setQuickCaptureShortcut(shortcut: string): void;
+  setCaptureStorageRoot(root: string | undefined): void;
+  setDefaultWorkspaceId(id: string): void;
+  setCaptureFileDropMode(mode: "reference" | "copy"): void;
   completeOnboarding(): void;
+  dismissRelationshipInvite(): void;
+  setRelationshipConversationId(id: string | null): void;
   setSkillOverride(id: string, enabled: boolean): void;
   clearSkillOverride(id: string): void;
   /** 轮 7 A3 —— apply a persisted settings map on startup.
@@ -100,6 +186,7 @@ export interface SettingsState {
 export const PERSISTED_SETTING_KEYS = [
   "mode",
   "personaCardId",
+  "relationshipStyle",
   "talkStyle",
   "defaultProviderId",
   "defaultModelId",
@@ -110,7 +197,18 @@ export const PERSISTED_SETTING_KEYS = [
   "webSearchEnabled",
   "webFetchEnabled",
   "rememberMode",
+  "keepAwakeDuringTasks",
+  "desktopNotifications",
+  "taskModelParsingEnabled",
+  "launchAtLogin",
+  "continueInBackground",
+  "quickCaptureShortcut",
+  "captureStorageRoot",
+  "defaultWorkspaceId",
+  "captureFileDropMode",
   "onboardingCompleted",
+  "relationshipInviteDismissed",
+  "relationshipConversationId",
   "userPersonaCards",
   "skillOverrides",
 ] as const;
@@ -157,6 +255,7 @@ export interface SettingsInitial {
   persona?: string;
   personaCardId?: string;
   personaCards?: PersonaCard[];
+  relationshipStyle?: RelationshipStyle;
   talkStyle?: SettingsState["talkStyle"];
   defaultProviderId?: string | null;
   defaultModelId?: string | null;
@@ -168,7 +267,18 @@ export interface SettingsInitial {
   webFetchEnabled?: boolean;
   searchKeySources?: { kind: string; configured: boolean }[];
   rememberMode?: boolean;
+  keepAwakeDuringTasks?: boolean;
+  desktopNotifications?: boolean;
+  taskModelParsingEnabled?: boolean;
+  launchAtLogin?: boolean;
+  continueInBackground?: boolean;
+  quickCaptureShortcut?: string;
+  captureStorageRoot?: string;
+  defaultWorkspaceId?: string;
+  captureFileDropMode?: "reference" | "copy";
   onboardingCompleted?: boolean;
+  relationshipInviteDismissed?: boolean;
+  relationshipConversationId?: string | null;
   dataDir?: string;
   skillOverrides?: Record<string, boolean>;
 }
@@ -181,12 +291,66 @@ const DEFAULT_PERSONA_CARD: PersonaCard = {
   builtin: true,
 };
 
+const BUILTIN_PERSONA_CARDS: PersonaCard[] = [
+  DEFAULT_PERSONA_CARD,
+  {
+    id: "momo-entp",
+    name: "ENTP 灵感型",
+    tagline: "好奇、灵活，善于挑战盲点",
+    promptText: "你是 momo，带有 ENTP 风味：思路灵活、好奇，善于联想和挑战盲点。不要为了显得聪明而抬杠；用户任务明确时仍要忠实执行并把事情做完。",
+    builtin: true,
+  },
+  {
+    id: "momo-infj",
+    name: "INFJ 洞察型",
+    tagline: "细腻、耐心，关注长期方向",
+    promptText: "你是 momo，带有 INFJ 风味：细腻、耐心，善于理解隐含动机和长期方向。不要过度解读，也不要替用户做决定。",
+    builtin: true,
+  },
+  {
+    id: "momo-enfp",
+    name: "ENFP 活力型",
+    tagline: "开放、有活力，善于发现可能性",
+    promptText: "你是 momo，带有 ENFP 风味：开放、有活力，善于发现可能性并把兴趣转成下一步。不要用空泛鼓励替代真实行动。",
+    builtin: true,
+  },
+  {
+    id: "momo-entj",
+    name: "ENTJ 推进型",
+    tagline: "直接、清晰，帮助守住主线",
+    promptText: "你是 momo，带有 ENTJ 风味：直接、清晰，重视优先级和推进。可以指出偏离主线，但不能命令、曲解或拒绝用户的正常任务。",
+    builtin: true,
+  },
+];
+
 const isTalkStyle = (value: unknown): value is 1 | 2 | 3 => value === 1 || value === 2 || value === 3;
 const isMode = (value: unknown): value is SettingsState["mode"] => value === "buddy" || value === "workbench";
+const isRelationshipStyle = (value: unknown): value is RelationshipStyle => (
+  typeof value === "string" && RELATIONSHIP_STYLE_IDS.has(value as RelationshipStyle)
+);
 const isPermissionMode = (value: unknown): value is PermissionMode =>
   value === "default" || value === "acceptEdits" || value === "bypassPermissions" || value === "plan";
+const isCaptureFileDropMode = (value: unknown): value is "reference" | "copy" =>
+  value === "reference" || value === "copy";
 
-const PERSONA_LIMITS = { cards: 20, name: 30, tagline: 80, promptText: 2_000 } as const;
+function cleanCaptureStorageRoot(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const root = value.trim();
+  return root && !/[\u0000-\u001f\u007f]/u.test(root) ? root : undefined;
+}
+
+function cleanDefaultWorkspaceId(value: unknown): string | undefined {
+  if (value === "leemo-home") return value;
+  return typeof value === "string" && /^workspace-[a-f0-9]{20}$/u.test(value) ? value : undefined;
+}
+
+export const PERSONA_PROMPT_TEXT_MAX_LENGTH = 2_000;
+const PERSONA_LIMITS = {
+  cards: 20,
+  name: 30,
+  tagline: 80,
+  promptText: PERSONA_PROMPT_TEXT_MAX_LENGTH,
+} as const;
 const SAFE_PERSONA_ID = /^[a-z0-9][a-z0-9_-]{0,63}$/i;
 
 function cleanProviderOrder(value: unknown): string[] | undefined {
@@ -209,6 +373,27 @@ function validSkillOverrideId(value: unknown): value is string {
     && value.length > 0
     && value.length <= 160
     && !/[\u0000-\u0020]/.test(value);
+}
+
+function cleanConversationId(value: unknown): string | null | undefined {
+  if (value === null) return null;
+  if (typeof value !== "string") return undefined;
+  const clean = value.trim();
+  if (!clean || clean.length > 160 || /[\u0000-\u001f\u007f]/u.test(clean)) return undefined;
+  return clean;
+}
+
+function cleanGlobalShortcut(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const parts = value.trim().split("+").map((part) => part.trim()).filter(Boolean);
+  if (parts.length < 2 || parts.length > 5) return undefined;
+  const normalized = parts.map((part) => part.toLowerCase());
+  const modifiers = new Set(["alt", "ctrl", "control", "command", "commandorcontrol", "shift", "super", "meta"]);
+  if (!normalized.slice(0, -1).every((part) => modifiers.has(part))) return undefined;
+  if (new Set(normalized.slice(0, -1)).size !== normalized.length - 1) return undefined;
+  const key = parts.at(-1) ?? "";
+  if (!key || key.length > 24 || /[\s\u0000-\u001f\u007f+]/u.test(key) || modifiers.has(key.toLowerCase())) return undefined;
+  return parts.join("+");
 }
 
 function cleanSkillOverrides(value: unknown): Record<string, boolean> | undefined {
@@ -260,7 +445,7 @@ function readUserPersonaCards(value: unknown, builtinIds: Set<string>): PersonaC
 }
 
 export function createSettingsStore(initial: SettingsInitial = {}): StoreApi<SettingsState> {
-  const personaCards = (initial.personaCards ?? [DEFAULT_PERSONA_CARD]).map((card) => ({ ...card }));
+  const personaCards = (initial.personaCards ?? BUILTIN_PERSONA_CARDS).map((card) => ({ ...card }));
   const personaCardId = initial.personaCardId && personaCards.some((card) => card.id === initial.personaCardId)
     ? initial.personaCardId
     : personaCards[0]?.id ?? "momo";
@@ -270,6 +455,7 @@ export function createSettingsStore(initial: SettingsInitial = {}): StoreApi<Set
     persona: initial.persona ?? "momo",
     personaCardId,
     personaCards,
+    relationshipStyle: isRelationshipStyle(initial.relationshipStyle) ? initial.relationshipStyle : "companion",
     talkStyle: initial.talkStyle ?? 3,
     defaultProviderId: initial.defaultProviderId ?? null,
     defaultModelId: initial.defaultModelId ?? null,
@@ -284,7 +470,18 @@ export function createSettingsStore(initial: SettingsInitial = {}): StoreApi<Set
     webFetchEnabled: initial.webFetchEnabled ?? true,
     searchKeySources: (initial.searchKeySources ?? []).map((source) => ({ ...source })),
     rememberMode: initial.rememberMode ?? true,
+    keepAwakeDuringTasks: initial.keepAwakeDuringTasks ?? true,
+    desktopNotifications: initial.desktopNotifications ?? true,
+    taskModelParsingEnabled: initial.taskModelParsingEnabled ?? true,
+    launchAtLogin: initial.launchAtLogin ?? false,
+    continueInBackground: initial.continueInBackground ?? true,
+    quickCaptureShortcut: cleanGlobalShortcut(initial.quickCaptureShortcut) ?? "Alt+N",
+    captureStorageRoot: cleanCaptureStorageRoot(initial.captureStorageRoot),
+    defaultWorkspaceId: cleanDefaultWorkspaceId(initial.defaultWorkspaceId) ?? "leemo-home",
+    captureFileDropMode: isCaptureFileDropMode(initial.captureFileDropMode) ? initial.captureFileDropMode : "reference",
     onboardingCompleted: initial.onboardingCompleted ?? false,
+    relationshipInviteDismissed: initial.relationshipInviteDismissed ?? false,
+    relationshipConversationId: cleanConversationId(initial.relationshipConversationId) ?? null,
     dataDir: initial.dataDir ?? "",
     skillOverrides: cleanSkillOverrides(initial.skillOverrides) ?? {},
 
@@ -293,6 +490,9 @@ export function createSettingsStore(initial: SettingsInitial = {}): StoreApi<Set
     },
     setPersonaCard: (id) => {
       if (get().personaCards.some((card) => card.id === id)) set({ personaCardId: id });
+    },
+    setRelationshipStyle: (relationshipStyle) => {
+      if (isRelationshipStyle(relationshipStyle)) set({ relationshipStyle });
     },
     upsertPersonaCard: (draft) => {
       const clean = cleanPersonaDraft(draft);
@@ -368,7 +568,42 @@ export function createSettingsStore(initial: SettingsInitial = {}): StoreApi<Set
     setRememberMode: (rememberMode) => {
       if (typeof rememberMode === "boolean") set({ rememberMode });
     },
+    setKeepAwakeDuringTasks: (keepAwakeDuringTasks) => {
+      if (typeof keepAwakeDuringTasks === "boolean") set({ keepAwakeDuringTasks });
+    },
+    setDesktopNotifications: (desktopNotifications) => {
+      if (typeof desktopNotifications === "boolean") set({ desktopNotifications });
+    },
+    setTaskModelParsingEnabled: (taskModelParsingEnabled) => {
+      if (typeof taskModelParsingEnabled === "boolean") set({ taskModelParsingEnabled });
+    },
+    setLaunchAtLogin: (launchAtLogin) => {
+      if (typeof launchAtLogin === "boolean") set({ launchAtLogin });
+    },
+    setContinueInBackground: (continueInBackground) => {
+      if (typeof continueInBackground === "boolean") set({ continueInBackground });
+    },
+    setQuickCaptureShortcut: (value) => {
+      const quickCaptureShortcut = cleanGlobalShortcut(value);
+      if (quickCaptureShortcut) set({ quickCaptureShortcut });
+    },
+    setCaptureStorageRoot: (value) => {
+      const captureStorageRoot = cleanCaptureStorageRoot(value);
+      if (captureStorageRoot) set({ captureStorageRoot });
+    },
+    setDefaultWorkspaceId: (value) => {
+      const defaultWorkspaceId = cleanDefaultWorkspaceId(value);
+      if (defaultWorkspaceId) set({ defaultWorkspaceId });
+    },
+    setCaptureFileDropMode: (captureFileDropMode) => {
+      if (isCaptureFileDropMode(captureFileDropMode)) set({ captureFileDropMode });
+    },
     completeOnboarding: () => set({ onboardingCompleted: true }),
+    dismissRelationshipInvite: () => set({ relationshipInviteDismissed: true }),
+    setRelationshipConversationId: (value) => {
+      const relationshipConversationId = cleanConversationId(value);
+      if (relationshipConversationId !== undefined) set({ relationshipConversationId });
+    },
     setSkillOverride: (id, enabled) => {
       if (!validSkillOverrideId(id) || typeof enabled !== "boolean") return;
       set((state) => ({ skillOverrides: { ...state.skillOverrides, [id]: enabled } }));
@@ -398,6 +633,7 @@ export function createSettingsStore(initial: SettingsInitial = {}): StoreApi<Set
 
       if (isMode(persisted.mode)) patch.mode = persisted.mode;
       if (isTalkStyle(persisted.talkStyle)) patch.talkStyle = persisted.talkStyle;
+      if (isRelationshipStyle(persisted.relationshipStyle)) patch.relationshipStyle = persisted.relationshipStyle;
       if (isPermissionMode(persisted.permissionMode)) patch.permissionMode = persisted.permissionMode;
       const currentCards = get().personaCards;
       const builtinCards = currentCards.filter((card) => card.builtin);
@@ -429,7 +665,24 @@ export function createSettingsStore(initial: SettingsInitial = {}): StoreApi<Set
       bool("webSearchEnabled");
       bool("webFetchEnabled");
       bool("rememberMode");
+      bool("keepAwakeDuringTasks");
+      bool("desktopNotifications");
+      bool("taskModelParsingEnabled");
+      bool("launchAtLogin");
+      bool("continueInBackground");
+      const quickCaptureShortcut = cleanGlobalShortcut(persisted.quickCaptureShortcut);
+      if (quickCaptureShortcut) patch.quickCaptureShortcut = quickCaptureShortcut;
+      const captureStorageRoot = cleanCaptureStorageRoot(persisted.captureStorageRoot);
+      if (captureStorageRoot) patch.captureStorageRoot = captureStorageRoot;
+      const defaultWorkspaceId = cleanDefaultWorkspaceId(persisted.defaultWorkspaceId);
+      if (defaultWorkspaceId) patch.defaultWorkspaceId = defaultWorkspaceId;
+      if (isCaptureFileDropMode(persisted.captureFileDropMode)) {
+        patch.captureFileDropMode = persisted.captureFileDropMode;
+      }
       bool("onboardingCompleted");
+      bool("relationshipInviteDismissed");
+      const relationshipConversationId = cleanConversationId(persisted.relationshipConversationId);
+      if (relationshipConversationId !== undefined) patch.relationshipConversationId = relationshipConversationId;
       set(patch);
     },
   }));

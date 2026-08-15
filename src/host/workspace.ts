@@ -4,11 +4,10 @@
 // memory bank, on purpose: 本子、默认工作区和 Leemo internals all live under it.
 //
 // THREE LOAD-BEARING DECISIONS (see docs/sdd/progress.md 轮 3 卡 G):
-//  1. A notebook IS a directory. id === title === directory name, no sidecar
-//     metadata — anything we stored beside it would desync the moment the user
-//     renames a folder in Explorer. It also matches what the code already
-//     assumes: artifacts.ts bookForPath() reads the first path segment as the
-//     book id.
+//  1. A notebook IS a directory. Its id always remains the directory name, so
+//     file ownership never drifts when the user edits a display title. A small
+//     root-owned sidecar stores presentation-only title/archive state; it never
+//     renames, moves or deletes the real folder.
 //  2. Paths crossing IPC are workspace-RELATIVE with "/" separators. The
 //     renderer never holds an absolute path, and every op funnels through
 //     resolveInside() before touching fs — the renderer is a sandboxed,
@@ -76,6 +75,8 @@ export interface NotebookInfo {
   color: NotebookColor;
   /** Whether the notebook's temporal ledger currently contains a live fact. */
   hasMemory: boolean;
+  /** Sidebar-only lifecycle state. Archiving never touches the real folder. */
+  archived: boolean;
 }
 
 /** Structurally compatible with the renderer's FileNode, defined here so the
@@ -232,6 +233,41 @@ export function resolveInside(root: string, relPath: string): string {
   return resolved;
 }
 
+export interface WorkspaceOpenFileOptions {
+  canonicalize(p: string): string;
+  isFile(p: string): boolean;
+}
+
+/** Resolve a renderer-supplied file for launching with its system app.
+ * Lexical containment alone is insufficient here: a symlink or junction may
+ * live under the workspace while pointing outside it. Compare canonical paths
+ * before allowing Electron to hand the target to the operating system. */
+export function resolveWorkspaceOpenFile(
+  root: string,
+  relPath: string,
+  io: Pick<WorkspaceIO, "exists">,
+  options: WorkspaceOpenFileOptions,
+): string {
+  const target = resolveInside(root, relPath);
+  if (!io.exists(target)) throw new Error(`读不到这个文件：${relPath}`);
+
+  const canonicalRoot = options.canonicalize(path.resolve(root));
+  const canonicalTarget = options.canonicalize(target);
+  const relative = path.relative(canonicalRoot, canonicalTarget);
+  if (
+    relative === ""
+    || relative === ".."
+    || relative.startsWith(`..${path.sep}`)
+    || path.isAbsolute(relative)
+  ) {
+    throw new Error("这个文件的真实位置越出了当前工作区，不能打开。");
+  }
+  if (!options.isFile(canonicalTarget)) {
+    throw new Error("只能用系统默认程序打开普通文件。");
+  }
+  return canonicalTarget;
+}
+
 export type WorkspaceRevealPlan =
   | { kind: "show-item"; path: string }
   | { kind: "open-directory"; path: string };
@@ -306,6 +342,64 @@ function ledgerHasCurrentMemory(ledger: string, io: WorkspaceIO): boolean {
   return [...latest.values()].some((status) => status === "current");
 }
 
+const NOTEBOOK_PRESENTATION_FILE = "notebooks.json";
+
+interface NotebookPresentation {
+  title?: string;
+  archived?: boolean;
+}
+
+interface NotebookPresentationFile {
+  version: 1;
+  notebooks: Record<string, NotebookPresentation>;
+}
+
+function presentationPath(root: string): string {
+  return path.join(root, ".leemo", NOTEBOOK_PRESENTATION_FILE);
+}
+
+function validDisplayTitle(value: unknown): value is string {
+  return typeof value === "string"
+    && value.trim() === value
+    && value.length > 0
+    && value.length <= 80
+    && !/[\u0000-\u001f]/.test(value);
+}
+
+function readNotebookPresentation(root: string, io: WorkspaceIO): Record<string, NotebookPresentation> {
+  const file = presentationPath(root);
+  if (!io.exists(file)) return {};
+  try {
+    const parsed = JSON.parse(io.readFile(file)) as Partial<NotebookPresentationFile>;
+    if (parsed.version !== 1 || !parsed.notebooks || typeof parsed.notebooks !== "object") return {};
+    const result: Record<string, NotebookPresentation> = {};
+    for (const [id, value] of Object.entries(parsed.notebooks)) {
+      if (!isValidSegment(id) || RESERVED_NAMES.has(id) || !value || typeof value !== "object") continue;
+      const candidate = value as NotebookPresentation;
+      result[id] = {
+        ...(validDisplayTitle(candidate.title) ? { title: candidate.title } : {}),
+        ...(typeof candidate.archived === "boolean" ? { archived: candidate.archived } : {}),
+      };
+    }
+    return result;
+  } catch {
+    return {};
+  }
+}
+
+function writeNotebookPresentation(
+  root: string,
+  notebooks: Record<string, NotebookPresentation>,
+  io: WorkspaceIO,
+): void {
+  const file = presentationPath(root);
+  const previous = io.exists(file) ? io.readFile(file) : null;
+  const contents = `${JSON.stringify({ version: 1, notebooks } satisfies NotebookPresentationFile, null, 2)}\n`;
+  io.mkdirp(path.dirname(file));
+  if (previous === null) io.writeFile(file, contents);
+  else io.replaceTextFile(file, contents, previous);
+}
+
 /** Make sure the workspace root and default workspace exist. Idempotent. */
 export function ensureWorkspace(root: string, io: WorkspaceIO): void {
   io.mkdirp(root);
@@ -325,19 +419,22 @@ export function listNotebooks(root: string, io: WorkspaceIO): NotebookInfo[] {
     return [];
   }
 
+  const presentation = readNotebookPresentation(root, io);
   return entries
     .filter((e) => e.isDirectory && !e.name.startsWith(".") && !RESERVED_NAMES.has(e.name))
-    .sort(byName)
     .map((e) => {
       const dir = path.join(root, e.name);
+      const display = presentation[e.name];
       return {
         id: e.name,
-        title: e.name,
+        title: display?.title ?? e.name,
         dir,
         color: stableColor(e.name),
         hasMemory: ledgerHasCurrentMemory(path.join(dir, ".leemo", "memory", "ledger.jsonl"), io),
+        archived: display?.archived ?? false,
       };
-    });
+    })
+    .sort((left, right) => left.id < right.id ? -1 : left.id > right.id ? 1 : 0);
 }
 
 /** Create a notebook = create its directory. */
@@ -348,7 +445,33 @@ export function createNotebook(root: string, title: string, io: WorkspaceIO): No
   const dir = path.join(root, name);
   if (io.exists(dir)) throw new Error(`已经有一个叫「${name}」的本子了`);
   io.mkdirp(dir);
-  return { id: name, title: name, dir, color: stableColor(name), hasMemory: false };
+  return { id: name, title: name, dir, color: stableColor(name), hasMemory: false, archived: false };
+}
+
+/** Update presentation-only state for a real notebook. The physical directory
+ * remains the stable identity and is never renamed or removed here. */
+export function updateNotebookPresentation(
+  root: string,
+  id: string,
+  input: { title?: string; archived?: boolean },
+  io: WorkspaceIO,
+): NotebookInfo {
+  notebookDir(root, io, id);
+  const presentation = readNotebookPresentation(root, io);
+  const current = presentation[id] ?? {};
+  const next: NotebookPresentation = { ...current };
+  if (input.title !== undefined) {
+    const title = input.title.trim();
+    if (!validDisplayTitle(title)) throw new Error("本子显示名称不能为空，且不能超过 80 个字。");
+    next.title = title === id ? undefined : title;
+  }
+  if (input.archived !== undefined) next.archived = input.archived;
+  if (next.title === undefined && next.archived !== true) delete presentation[id];
+  else presentation[id] = next;
+  writeNotebookPresentation(root, presentation, io);
+  const updated = listNotebooks(root, io).find((book) => book.id === id);
+  if (!updated) throw new Error(`没有这个本子：${id}`);
+  return updated;
 }
 
 export const STARTER_NOTEBOOK_TITLE = "例：高等数学";
@@ -397,6 +520,7 @@ export function ensureStarterNotebook(root: string, io: WorkspaceIO): NotebookIn
     dir,
     color: stableColor(STARTER_NOTEBOOK_TITLE),
     hasMemory: false,
+    archived: false,
   };
 }
 
@@ -693,7 +817,7 @@ export function writeMarkdownFile(
  *  text (02 §十九 八态齐全禁空白屏). */
 export type PreviewPayload =
   | { kind: "text"; text: string; truncated: boolean; size: number }
-  | { kind: "binary"; mimeType: string; base64: string; size: number }
+  | { kind: "binary"; mimeType: string; base64: string; size: number; mtimeMs: number }
   | { kind: "unpreviewable"; reason: string; size: number };
 
 const PDF_MAGIC = Buffer.from("%PDF-");
@@ -734,7 +858,8 @@ export function readPreview(root: string, relPath: string, io: WorkspaceIO): Pre
   if (!io.exists(abs)) throw new Error(`读不到这个文件：${relPath}`);
   if (io.isDirectory(abs)) throw new Error(`这是个文件夹，不是文件：${relPath}`);
 
-  const size = io.stat(abs).size;
+  const metadata = io.stat(abs);
+  const { size, mtimeMs } = metadata;
   const isPdf = relPath.toLowerCase().endsWith(".pdf");
 
   if (isPdf) {
@@ -751,7 +876,7 @@ export function readPreview(root: string, relPath: string, io: WorkspaceIO): Pre
     if (!buf.subarray(0, PDF_MAGIC.length).equals(PDF_MAGIC)) {
       return { kind: "unpreviewable", reason: "文件名是 .pdf，但内容不是 PDF", size };
     }
-    return { kind: "binary", mimeType: "application/pdf", base64: buf.toString("base64"), size };
+    return { kind: "binary", mimeType: "application/pdf", base64: buf.toString("base64"), size, mtimeMs };
   }
 
   // Read at most one byte past the cap: that extra byte is how we know whether

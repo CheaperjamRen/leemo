@@ -1,7 +1,4 @@
-import type { SkillInfo } from "../../bridge/contract";
-import { applySlashPick } from "./slash-menu";
-
-const CHIPS = ["帮我规划今天", "继续昨天的复习", "随便聊聊"];
+const CHIPS = ["帮我规划今天", "继续昨天的复习", "随便聊聊", "帮我理清思路", "一起做个决定"];
 
 const CHIP_ICONS = [
   <svg key="cal" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round" className="leemo-chip-ico h-[13px] w-[13px] text-[var(--leemo-ink-3)] transition-colors" aria-hidden>
@@ -21,43 +18,35 @@ const CHIP_ICONS = [
     <path d="M7.5 6.2c0-1 .9-1.1 .9-2.1" />
     <path d="M11.2 6.2c0-1 .9-1.1 .9-2.1" />
   </svg>,
+  <svg key="thought" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round" className="leemo-chip-ico h-[13px] w-[13px] text-[var(--leemo-ink-3)] transition-colors" aria-hidden>
+    <path d="M9 18h6" />
+    <path d="M10 21h4" />
+    <path d="M8.2 14.6A7 7 0 1 1 15.8 14.6c-.8.7-1.3 1.4-1.5 2.2h-4.6c-.2-.8-.7-1.5-1.5-2.2Z" />
+  </svg>,
+  <svg key="decision" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round" className="leemo-chip-ico h-[13px] w-[13px] text-[var(--leemo-ink-3)] transition-colors" aria-hidden>
+    <circle cx="6" cy="12" r="2" />
+    <circle cx="18" cy="6" r="2" />
+    <circle cx="18" cy="18" r="2" />
+    <path d="M8 12h2.5c3 0 3.2-6 5.5-6" />
+    <path d="M8 12h2.5c3 0 3.2 6 5.5 6" />
+  </svg>,
 ];
-
-/** How many skill chips may ride along behind the three starters. The row is
- *  centred under the greeting; more than this and it wraps into a second line
- *  that competes with the input box for attention. */
-const MAX_SKILL_CHIPS = 3;
 
 export default function ChipRow({
   onPick,
-  skills = [],
   disabled = false,
 }: {
   onPick: (text: string) => void;
-  /** ENABLED skills. Empty (the zero-skill case) renders exactly the old row. */
-  skills?: SkillInfo[];
   disabled?: boolean;
 }) {
   return (
-    <div className="flex flex-wrap items-center justify-center gap-2.5 py-3">
+    <div className="leemo-buddy-starter-row flex flex-nowrap items-center justify-center gap-2.5 overflow-hidden py-3">
       {CHIPS.map((c, i) => (
         <button key={c} onClick={() => onPick(c)} disabled={disabled}
-          className="leemo-chip flex items-center gap-1.5 rounded-full border border-[var(--leemo-line)] bg-[var(--leemo-card)]/75 px-3.5 py-[7px] text-[12.5px] text-[var(--leemo-ink-2)] backdrop-blur disabled:cursor-wait disabled:opacity-45">
+          data-priority={i + 1}
+          className="leemo-chip flex shrink-0 items-center gap-1.5 rounded-full border border-[var(--leemo-line)] bg-[var(--leemo-card)]/75 px-3.5 py-[7px] text-[12.5px] text-[var(--leemo-ink-2)] backdrop-blur disabled:cursor-wait disabled:opacity-45">
           {CHIP_ICONS[i]}
           {c}
-        </button>
-      ))}
-      {skills.slice(0, MAX_SKILL_CHIPS).map((skill) => (
-        <button
-          key={skill.qualifiedName}
-          onClick={() => onPick(applySlashPick(skill))}
-          disabled={disabled}
-          title={skill.description}
-          aria-label={`触发技能 ${skill.name}`}
-          className="leemo-chip flex items-center gap-1.5 rounded-full border border-[var(--leemo-amber-line)] bg-[var(--leemo-amber-bg)]/75 px-3.5 py-[7px] text-[12.5px] text-[var(--leemo-ink-2)] backdrop-blur disabled:cursor-wait disabled:opacity-45"
-        >
-          {/* Bare name only — the leemo: prefix is internal (卡 E §二). */}
-          /{skill.name}
         </button>
       ))}
     </div>

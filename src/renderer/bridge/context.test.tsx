@@ -7,6 +7,8 @@ import { BridgeContext, BridgeProvider, type BridgeStores } from "./context";
 import type { PersistenceClient, PersistedSnapshot } from "../persistence/client";
 import type { WorkspaceClient } from "../workspace/client";
 import { conversationComposerScope, workspaceComposerScope } from "../stores/composer-drafts";
+import type { CaptureClient } from "../capture/client";
+import type { CaptureChange, Note } from "../../captures";
 
 const providers: ProviderSpec[] = [
   {
@@ -56,6 +58,99 @@ function CaptureStores({ onReady }: { onReady: (stores: BridgeStores) => void })
   onReady(useContext(BridgeContext) as BridgeStores);
   return null;
 }
+
+describe("BridgeProvider capture wiring", () => {
+  it("hydrates real notes and refreshes the shared store after an external change", async () => {
+    const original: Note = {
+      id: "note-1",
+      title: "论文问题",
+      markdown: "为什么这个结论成立？",
+      revision: 1,
+      createdAt: 1,
+      updatedAt: 1,
+    };
+    const updated = { ...original, title: "论文待确认", revision: 2, updatedAt: 2 };
+    let notes = [original];
+    let emitChange: ((change: CaptureChange) => void) | undefined;
+    const listNotes = vi.fn(async () => notes);
+    const capture = {
+      listNotes,
+      listArchivedNotes: vi.fn(async () => []),
+      onChanged: vi.fn((listener: (change: CaptureChange) => void) => {
+        emitChange = listener;
+        return vi.fn();
+      }),
+    } as unknown as CaptureClient;
+    let stores!: BridgeStores;
+
+    render(
+      <BridgeProvider capture={capture}>
+        <CaptureStores onReady={(value) => { stores = value; }} />
+      </BridgeProvider>,
+    );
+
+    await waitFor(() => expect(stores.captures!.getState().notes).toEqual([original]));
+    notes = [updated];
+    act(() => emitChange?.({
+      entity: "note",
+      action: "updated",
+      id: updated.id,
+      revision: updated.revision,
+    }));
+
+    await waitFor(() => expect(stores.captures!.getState().notes).toEqual([updated]));
+    expect(listNotes).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("BridgeProvider desktop notification navigation", () => {
+  it("opens the matching conversation or the tasks workboard", async () => {
+    let navigate: ((target: unknown) => void) | undefined;
+    Object.defineProperty(window, "leemoDesktop", {
+      configurable: true,
+      value: {
+        configure: vi.fn(),
+        chooseCaptureStorageRoot: vi.fn(),
+        onNavigate: vi.fn((listener: (target: unknown) => void) => {
+          navigate = listener;
+          return vi.fn();
+        }),
+      },
+    });
+    let stores!: BridgeStores;
+    render(
+      <BridgeProvider>
+        <CaptureStores onReady={(value) => { stores = value; }} />
+      </BridgeProvider>,
+    );
+    await waitFor(() => expect(navigate).toBeTypeOf("function"));
+    act(() => stores.conversations.setState({
+      byId: {
+        "conv-1": {
+          id: "conv-1",
+          title: "需要确认",
+          titleManuallyUpdated: false,
+          bookId: null,
+          source: "workbench",
+          providerId: "deepseek",
+          modelId: "deepseek-chat",
+          unread: true,
+          createdAt: 1,
+          lastActivityAt: 1,
+        },
+      },
+    } as never));
+
+    act(() => navigate?.({ kind: "conversation", conversationId: "conv-1" }));
+    expect(stores.conversations.getState().activeId).toBe("conv-1");
+    expect(stores.ui.getState().view).toBe("chat");
+
+    act(() => navigate?.({ kind: "task", taskId: "task-1" }));
+    expect(stores.ui.getState()).toMatchObject({ view: "organizer", organizerTab: "tasks" });
+
+    delete (window as Window & { leemoDesktop?: unknown }).leemoDesktop;
+  });
+});
 
 function workspaceClient(): WorkspaceClient & { listNotebooks: ReturnType<typeof vi.fn> } {
   const listNotebooks = vi.fn(async () => ({
@@ -178,6 +273,33 @@ describe("BridgeProvider settings wiring", () => {
     );
   });
 
+  it("applies the selected momo flavor and relationship to new and existing conversations", async () => {
+    const client = liveClient();
+    let stores!: BridgeStores;
+    render(
+      <BridgeProvider client={client} live>
+        <CaptureStores onReady={(value) => { stores = value; }} />
+      </BridgeProvider>,
+    );
+
+    await waitFor(() => expect(stores.providers.getState().status).toBe("ready"));
+    act(() => stores.settings.getState().setPersonaCard("momo-entp"));
+    await act(async () => {
+      await stores.conversations.getState().createConversation({ source: "buddy" });
+    });
+
+    expect(client.invoke).toHaveBeenCalledWith(
+      "bridge:createConversation",
+      expect.objectContaining({ personaText: expect.stringMatching(/ENTP 风味[\s\S]*搭档/) }),
+    );
+
+    act(() => stores.settings.getState().setRelationshipStyle("mentor"));
+    await waitFor(() => expect(client.invoke).toHaveBeenCalledWith(
+      "bridge:updateContext",
+      expect.objectContaining({ personaText: expect.stringMatching(/ENTP 风味[\s\S]*导师/) }),
+    ));
+  });
+
   it("uses the live provider store for new conversations under React StrictMode", async () => {
     const client = liveClient();
     let stores!: BridgeStores;
@@ -260,6 +382,72 @@ describe("BridgeProvider settings wiring", () => {
 });
 
 describe("BridgeProvider artifact hydration", () => {
+  it("restores only conversations that belong to the saved workbench scope", async () => {
+    const persist = persistence({
+      conversations: [
+        {
+          meta: {
+            id: "conv-math",
+            title: "数学",
+            titleManuallyUpdated: false,
+            bookId: "math",
+            source: "workbench",
+            providerId: "deepseek",
+            modelId: "deepseek-chat",
+            createdAt: 1,
+            lastActivityAt: 2,
+            unread: false,
+          },
+          timeline: [{ kind: "text", id: "math-text", runId: "run-math", role: "user", text: "q", streaming: false }],
+        },
+        {
+          meta: {
+            id: "conv-global",
+            title: "搭子",
+            titleManuallyUpdated: false,
+            bookId: null,
+            source: "buddy",
+            providerId: "deepseek",
+            modelId: "deepseek-chat",
+            createdAt: 1,
+            lastActivityAt: 2,
+            unread: false,
+          },
+          timeline: [{ kind: "text", id: "global-text", runId: "run-global", role: "user", text: "q", streaming: false }],
+        },
+      ],
+      wikiEntries: [],
+      settings: {
+        workbenchUi: {
+          activeScopeKey: "notebook:math",
+          scopeSessions: {
+            "notebook:math": {
+              openConversationIds: ["conv-math", "conv-global", "missing"],
+              activeConversationId: "conv-global",
+              fileTabs: [],
+              activeFileKey: null,
+              surfacePreference: "split",
+              splitRatio: 0.42,
+            },
+          },
+        },
+      },
+    });
+    let stores!: BridgeStores;
+
+    render(
+      <BridgeProvider persist={persist} workspace={workspaceClient()}>
+        <CaptureStores onReady={(value) => { stores = value; }} />
+      </BridgeProvider>,
+    );
+
+    await waitFor(() => expect(stores?.ui.getState().activeScopeKey).toBe("notebook:math"));
+    expect(stores.notebooks.getState().activeId).toBe("math");
+    expect(stores.conversations.getState().activeId).toBe("conv-math");
+    expect(stores.ui.getState().scopeSessions["notebook:math"]?.openConversationIds).toEqual(["conv-math"]);
+    expect(stores.ui.getState().scopeSessions["notebook:math"]?.activeConversationId).toBeNull();
+  });
+
   it("rebuilds artifacts only after persisted conversations and real notebooks are available", async () => {
     const workspace = workspaceClient();
     const persist = persistence({

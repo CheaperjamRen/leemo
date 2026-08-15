@@ -230,7 +230,7 @@ async function runConversation(page, prompt) {
     await page.getByRole("button", { name: "关闭设置", exact: true }).click();
   }
   if (!await page.getByTestId("workbench-shell").isVisible().catch(() => false)) {
-    await page.getByRole("button", { name: "工作台", exact: true }).click();
+    await page.getByRole("button", { name: "切换到工作台", exact: true }).click();
   }
   await page.getByRole("button", { name: "新建对话" }).click();
   const composer = page.locator('textarea[aria-label="输入消息"]');

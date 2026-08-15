@@ -25,13 +25,13 @@
   to { opacity: 1; }
 }
 
-/* momo keeps a quiet sense of life without adding a decorative backdrop. */
+/* momo stays quiet by default. State changes get one brief, restrained motion. */
 @keyframes leemo-breathe {
   0%, 100% { transform: translateY(0) scale(1); }
-  50% { transform: translateY(-3px) scale(1.028); }
+  50% { transform: translateY(-1.2px) scale(1.012); }
 }
 .leemo-breathe {
-  animation: leemo-breathe 5.2s ease-in-out infinite;
+  animation: leemo-breathe 6.4s ease-in-out infinite;
 }
 
 .leemo-halo {
@@ -39,24 +39,78 @@
 }
 
 @keyframes leemo-blink {
-  0%, 91.5%, 100% { transform: scaleY(1); }
-  94.5% { transform: scaleY(0.06); }
-  97.5% { transform: scaleY(1); }
+  0%, 92%, 100% { transform: scaleY(1); }
+  95% { transform: scaleY(0.08); }
+  98% { transform: scaleY(1); }
 }
 .leemo-blink {
   transform-box: fill-box;
   transform-origin: center;
-  animation: leemo-blink 4.6s ease-in-out infinite;
+  animation: leemo-blink 5.8s ease-in-out infinite;
 }
 
 @keyframes leemo-tw {
-  0%, 100% { transform: scale(1) rotate(0deg); opacity: 0.85; }
-  50% { transform: scale(1.28) rotate(10deg); opacity: 1; }
+  0% { transform: scale(0.72) rotate(-8deg); opacity: 0; }
+  65% { transform: scale(1.12) rotate(4deg); opacity: 1; }
+  100% { transform: scale(1) rotate(0deg); opacity: 1; }
 }
 .leemo-twinkle {
   transform-box: fill-box;
   transform-origin: center;
-  animation: leemo-tw 3.6s ease-in-out infinite;
+  animation: leemo-tw 0.72s cubic-bezier(0.22, 0.8, 0.32, 1) 1;
+}
+
+.leemo-momo-state-motion {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+@keyframes leemo-momo-attend {
+  0%, 100% { transform: translateX(0) rotate(0deg); }
+  45% { transform: translateX(1px) rotate(1deg); }
+}
+
+@keyframes leemo-momo-ponder {
+  0%, 100% { transform: rotate(0deg); }
+  45% { transform: rotate(-1.5deg); }
+}
+
+@keyframes leemo-momo-soft-pop {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.025, 0.985); }
+}
+
+@keyframes leemo-momo-settle {
+  0% { transform: translateY(-1px) scale(0.98); }
+  55% { transform: translateY(0) scale(1.02); }
+  100% { transform: translateY(0) scale(1); }
+}
+
+@keyframes leemo-momo-curious {
+  0%, 100% { transform: rotate(0deg); }
+  50% { transform: rotate(1.5deg); }
+}
+
+.leemo-momo--listening .leemo-momo-state-motion {
+  animation: leemo-momo-attend 0.72s ease-out 1;
+}
+
+.leemo-momo--thinking .leemo-momo-state-motion,
+.leemo-momo--concern .leemo-momo-state-motion {
+  animation: leemo-momo-ponder 0.82s ease-out 1;
+}
+
+.leemo-momo--happy .leemo-momo-state-motion,
+.leemo-momo--laugh .leemo-momo-state-motion {
+  animation: leemo-momo-soft-pop 0.68s ease-out 1;
+}
+
+.leemo-momo--completed .leemo-momo-state-motion {
+  animation: leemo-momo-settle 0.76s cubic-bezier(0.22, 0.8, 0.32, 1) 1;
+}
+
+.leemo-momo--curious .leemo-momo-state-motion {
+  animation: leemo-momo-curious 0.78s ease-out 1;
 }
 
 /* 转圈（K3 workbench .spin 转写：0.9s 线性无限） */
@@ -108,15 +162,20 @@
   flex: 0 0 2rem;
   border-radius: var(--leemo-radius-control);
   color: var(--leemo-ink-2);
-  transition: background 0.18s ease, color 0.18s ease;
+  transition: background 0.18s ease, color 0.18s ease, transform 0.18s ease;
 }
 .leemo-icon-btn:hover {
   background: var(--leemo-hover);
   color: var(--leemo-ink);
+  transform: translateY(-1px);
+}
+.leemo-icon-btn:active {
+  transform: translateY(0) scale(0.96);
 }
 
 .leemo-mode-switcher {
   display: inline-flex;
+  flex-shrink: 0;
   align-items: center;
   gap: 2px;
   min-height: 34px;
@@ -128,6 +187,7 @@
 
 .leemo-mode-switcher > button {
   display: inline-flex;
+  flex-shrink: 0;
   height: 26px;
   align-items: center;
   gap: 6px;
@@ -136,6 +196,7 @@
   color: var(--leemo-ink-3);
   font-size: 12px;
   line-height: 1;
+  white-space: nowrap;
   transition: color 0.16s ease, background 0.16s ease, box-shadow 0.16s ease;
 }
 
@@ -152,6 +213,19 @@
 
 .leemo-mode-switcher > button[aria-pressed="true"] svg {
   color: var(--leemo-amber);
+}
+
+.leemo-mode-switcher-compact {
+  min-height: 30px;
+  padding: 2px;
+  border-radius: 7px;
+}
+
+.leemo-mode-switcher-compact > button {
+  width: 27px;
+  height: 24px;
+  justify-content: center;
+  padding: 0;
 }
 
 .leemo-page {
@@ -181,9 +255,114 @@
   margin: 0 auto;
 }
 
-:where(button, summary, [tabindex]):focus-visible {
-  outline: 1px solid var(--leemo-amber);
-  outline-offset: 1px;
+:where(button, summary, [tabindex], input, textarea, select, [contenteditable="true"]):focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--leemo-amber) 68%, transparent);
+  outline-offset: 2px;
+}
+
+/* The composer surface owns its focus treatment. A second textarea outline
+ * creates a cheap nested rectangle and breaks the approved single-surface UI. */
+.leemo-composer-textarea:focus-visible {
+  outline: none;
+  outline-offset: 0;
+}
+
+/* The compact goal editor is one control surface. Keep keyboard focus visible
+ * without drawing a second heavy rectangle around the nested text field. */
+.leemo-goal-editor {
+  transition:
+    border-color 150ms ease,
+    box-shadow 150ms ease,
+    background-color 150ms ease;
+}
+
+.leemo-goal-editor:focus-within {
+  border-color: color-mix(in srgb, var(--leemo-amber) 46%, var(--leemo-line));
+  box-shadow:
+    0 0 0 3px color-mix(in srgb, var(--leemo-amber) 10%, transparent),
+    var(--leemo-shadow-input);
+}
+
+.leemo-goal-editor__input:focus-visible {
+  outline: none;
+  outline-offset: 0;
+}
+
+.leemo-composer-alert {
+  display: flex;
+  min-height: 34px;
+  align-items: center;
+  gap: 8px;
+  margin: 7px 6px 0;
+  padding: 4px 5px 4px 10px;
+  border: 1px solid color-mix(in srgb, var(--leemo-danger) 18%, var(--leemo-line));
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--leemo-danger) 5%, var(--leemo-card));
+  color: color-mix(in srgb, var(--leemo-danger) 72%, var(--leemo-ink));
+  font-size: 11.5px;
+  line-height: 1.35;
+  box-shadow: 0 7px 20px -19px rgba(113, 29, 29, 0.48);
+}
+
+.leemo-composer-alert__dismiss {
+  display: grid;
+  width: 26px;
+  height: 26px;
+  flex: 0 0 26px;
+  place-items: center;
+  border-radius: 7px;
+  color: var(--leemo-ink-3);
+  transition: background 140ms ease, color 140ms ease, transform 140ms ease;
+}
+
+.leemo-composer-alert__dismiss:hover {
+  background: color-mix(in srgb, var(--leemo-danger) 9%, transparent);
+  color: var(--leemo-danger);
+}
+
+.leemo-composer-alert__dismiss:active {
+  transform: scale(0.95);
+}
+
+.leemo-composer-submit {
+  border: 1px solid color-mix(in srgb, var(--leemo-ink) 82%, white);
+  background: color-mix(in srgb, var(--leemo-ink) 94%, var(--leemo-brand-signal));
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.12),
+    0 1px 2px rgb(15 27 46 / 0.16),
+    0 8px 18px -14px rgb(15 27 46 / 0.72);
+  transition:
+    transform 130ms ease,
+    background-color 150ms ease,
+    border-color 150ms ease,
+    box-shadow 150ms ease;
+}
+
+.leemo-composer-submit:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--leemo-ink) 92%, black);
+  background: color-mix(in srgb, var(--leemo-ink) 98%, black);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.1),
+    0 2px 4px rgb(15 27 46 / 0.18),
+    0 10px 20px -14px rgb(15 27 46 / 0.78);
+  transform: translateY(-1px);
+}
+
+.leemo-composer-submit:active:not(:disabled) {
+  box-shadow: inset 0 1px 2px rgb(0 0 0 / 0.18);
+  transform: translateY(0) scale(0.97);
+}
+
+.leemo-composer-submit:disabled {
+  border-color: var(--leemo-line);
+  color: var(--leemo-ink-4);
+  background: color-mix(in srgb, var(--leemo-panel) 86%, white);
+  box-shadow: none;
+}
+
+::selection {
+  color: var(--leemo-ink);
+  background: color-mix(in srgb, var(--leemo-amber) 24%, transparent);
 }
 
 @media (max-width: 760px) {
@@ -218,9 +397,19 @@
   .leemo-breathe,
   .leemo-blink,
   .leemo-twinkle,
+  .leemo-momo-state-motion,
   .leemo-spin,
   .leemo-caret {
     animation: none !important;
     opacity: 1 !important;
+  }
+
+  .leemo-icon-btn {
+    transition: none;
+  }
+
+  .leemo-icon-btn:hover,
+  .leemo-icon-btn:active {
+    transform: none;
   }
 }

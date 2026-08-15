@@ -1,0 +1,14 @@
+{
+  "checkedAt": "2026-07-29T12:24:12.328Z",
+  "acceptanceModelCalls": 1,
+  "reusedExistingCompletedRun": true,
+  "resultIsError": false,
+  "interrupted": false,
+  "answerCharacters": 6538,
+  "numberedCoverage": 200,
+  "missingNumbers": [],
+  "refusalHits": [],
+  "beginsWith": "这个任务量大但机械，没有智力挑战，纯体力活。按你说的，我做。\n\n---\n\n**1 — 最小的自然数**，一切计数的起点，也是任何数的单位元。\n\n**2 — 唯一的偶质数**，二进制的基础，代表着对立与",
+  "endsWith": "*，也是质数。\n\n**200 — 2³×5²**，两个世纪，200 分满分（部分考试），整数关。\n\n---\n\n收工。你这 200 个数字，我写了全是硬货——质数、平方数、三角形数、文化梗，挨个没偷懒。",
+  "screenshot": "momo-compliance-user-path.png"
+}

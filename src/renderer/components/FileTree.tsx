@@ -17,18 +17,22 @@ function FileRow({
   node,
   reveal,
   allowNotebookMove,
+  onOpenFile,
 }: {
   node: FileNode;
   reveal: (path: string) => Promise<void>;
   allowNotebookMove: boolean;
+  onOpenFile?: () => void;
 }) {
   const expandedPaths = useFileTree((s) => s.expandedPaths);
   const toggleExpand = useFileTree((s) => s.toggleExpand);
   const moveToBook = useFileTree((s) => s.moveToBook);
   const openPreview = useUi((s) => s.openPreview);
+  const previewActivePath = useUi((s) => s.previewActivePath);
   const notebooks = useNotebooks((s) => s.list);
 
   const isExpanded = expandedPaths.has(node.path);
+  const isActive = previewActivePath === node.path;
 
   const handleContextMenu = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -39,7 +43,7 @@ function FileRow({
     return (
       <div>
         <button
-          className="flex w-full items-center gap-1.5 rounded px-2 py-1 text-left text-xs text-[var(--leemo-ink-2)] hover:bg-[var(--leemo-side-hover)]"
+          className="flex h-7 w-full items-center gap-1.5 rounded-[6px] px-2 text-left text-[11.5px] text-[var(--leemo-ink-2)] hover:bg-[var(--leemo-side-hover)]"
           onClick={() => toggleExpand(node.path)}
           data-testid={`dir-row-${node.path}`}
         >
@@ -54,7 +58,7 @@ function FileRow({
         {isExpanded && node.children && (
           <div className="ml-3">
             {node.children.map((child) => (
-              <FileRow key={child.path} node={child} reveal={reveal} allowNotebookMove={allowNotebookMove} />
+              <FileRow key={child.path} node={child} reveal={reveal} allowNotebookMove={allowNotebookMove} onOpenFile={onOpenFile} />
             ))}
           </div>
         )}
@@ -71,9 +75,16 @@ function FileRow({
       allowNotebookMove={allowNotebookMove}
     >
       <button
-        className="flex w-full items-center gap-1.5 rounded px-2 py-1 text-left text-xs text-[var(--leemo-ink-2)] hover:bg-[var(--leemo-side-hover)]"
-        onClick={() => openPreview(node.path, node.name, kindFromName(node.name))}
+        className={`flex h-7 w-full items-center gap-1.5 rounded-[6px] border px-2 text-left text-[11.5px] transition-colors ${isActive
+          ? "border-[var(--leemo-amber-line)] bg-[var(--leemo-amber-soft)] text-[var(--leemo-ink)]"
+          : "border-transparent text-[var(--leemo-ink-2)] hover:bg-[var(--leemo-side-hover)]"
+        }`}
+        onClick={() => {
+          openPreview(node.path, node.name, kindFromName(node.name));
+          onOpenFile?.();
+        }}
         data-testid={`file-row-${node.path}`}
+        aria-current={isActive ? "page" : undefined}
         onContextMenu={handleContextMenu}
       >
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5 shrink-0" aria-hidden>
@@ -201,7 +212,15 @@ function ContextMenuWrapper({
 
 import React from "react";
 
-export default function FileTree() {
+export interface FileTreeProps {
+  /** The workbench activity panel owns its outer close affordance. */
+  embedded?: boolean;
+  onClose?: () => void;
+  /** Optional callback used by an overlay activity panel after opening a file. */
+  onOpenFile?: () => void;
+}
+
+export default function FileTree({ embedded = false, onClose, onOpenFile }: FileTreeProps = {}) {
   const roots = useFileTree((s) => s.roots);
   const error = useFileTree((s) => s.error);
   const loading = useFileTree((s) => s.loading);
@@ -290,14 +309,16 @@ export default function FileTree() {
               <path d="M21 3v5h-5" />
             </svg>
           </button>
-          <button
-            className="leemo-icon-btn h-6 w-6"
-            title="关闭全部文件"
-            aria-label="关闭文件树"
-            onClick={closeFiles}
-          >
-            <X className="h-3.5 w-3.5" aria-hidden />
-          </button>
+          {!embedded && (
+            <button
+              className="leemo-icon-btn h-6 w-6"
+              title="关闭全部文件"
+              aria-label="关闭文件树"
+              onClick={onClose ?? closeFiles}
+            >
+              <X className="h-3.5 w-3.5" aria-hidden />
+            </button>
+          )}
         </div>
       </div>
 
@@ -326,6 +347,7 @@ export default function FileTree() {
               node={node}
               reveal={reveal}
               allowNotebookMove={activeWorkspace?.kind !== "external"}
+              onOpenFile={onOpenFile}
             />
           ))}
         </div>

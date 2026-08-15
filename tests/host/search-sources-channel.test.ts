@@ -37,6 +37,11 @@ const ENV = [
   "METASO_API_KEY",
   "GOOGLE_SEARCH_API_KEY",
   "GOOGLE_SEARCH_ENGINE_ID",
+  "EXA_API_KEY",
+  "BRAVE_SEARCH_API_KEY",
+  "SERPAPI_API_KEY",
+  "SERPER_API_KEY",
+  "FIRECRAWL_API_KEY",
 ] as const;
 
 describe("搜索源 key 通道 (轮 4 卡 H)", () => {
@@ -45,7 +50,7 @@ describe("搜索源 key 通道 (轮 4 卡 H)", () => {
     for (const n of ENV) delete process.env[n];
   });
 
-  it("列出六个通用源，AnySearch 标为免 key —— 一把 key 都没配不是错误状态", async () => {
+  it("列出十二个通用源，AnySearch 免 key、Bing 明确标为已退役", async () => {
     const host = hostWith(makeStore().store);
     const list = (await host.handleInvoke("bridge:getSearchSources", undefined)) as SearchSourceStatus[];
     expect(list.map((s) => s.id)).toEqual([
@@ -55,9 +60,19 @@ describe("搜索源 key 通道 (轮 4 卡 H)", () => {
       "tavily",
       "bocha",
       "google",
+      "exa",
+      "brave",
+      "serpapi",
+      "serper",
+      "bing",
+      "firecrawl",
     ]);
     expect(list.find((s) => s.id === "anysearch")?.keyless).toBe(true);
     expect(list.find((s) => s.id === "tavily")?.keyless).toBe(false);
+    expect(list.find((s) => s.id === "bing")).toMatchObject({
+      configured: false,
+      blockedReason: expect.stringContaining("停止服务"),
+    });
   });
 
   it("状态里绝不含 key 本身 —— 明文 key 不出主进程（照 getProviderConfig 的同一条规矩）", async () => {
@@ -86,6 +101,27 @@ describe("搜索源 key 通道 (轮 4 卡 H)", () => {
     })) as SearchSourceStatus[];
     expect(current().searchKeys?.tavily).toBe("tvly-new");
     expect(list.find((s) => s.id === "tavily")?.configured).toBe(true);
+  });
+
+  it("新增来源配置写入后，重建 host 仍恢复已配置状态", async () => {
+    const { store, current } = makeStore();
+    await hostWith(store).handleInvoke("bridge:saveSearchKey", {
+      source: "exa",
+      apiKey: "exa-new",
+    });
+    expect(current().searchKeys?.exa).toBe("exa-new");
+
+    const restarted = hostWith(store);
+    const list = await restarted.handleInvoke("bridge:getSearchSources", undefined) as SearchSourceStatus[];
+    expect(list.find((source) => source.id === "exa")?.configured).toBe(true);
+  });
+
+  it("Bing Search API 已退役，拒绝保存并给出可理解原因", async () => {
+    const { store } = makeStore();
+    await expect(hostWith(store).handleInvoke("bridge:saveSearchKey", {
+      source: "bing",
+      apiKey: "must-not-store",
+    })).rejects.toThrow("停止服务");
   });
 
   it("空串 = 清除那把 key（用户要能撤回，而不是只能覆盖）", async () => {
@@ -162,7 +198,7 @@ describe("搜索源 key 通道 (轮 4 卡 H)", () => {
       "bridge:getSearchSources",
       undefined
     )) as SearchSourceStatus[];
-    expect(list).toHaveLength(6);
+    expect(list).toHaveLength(12);
     expect(list.every((s) => !s.configured)).toBe(true);
   });
 });

@@ -77,7 +77,9 @@ export default function ApprovalBar({
     if (r.kind !== "approval") return null;
     const outcomeLabels: Record<typeof r.outcome, string> = {
       "allow-once": "已允许一次",
-      "allow-conversation": isShellToolName(r.toolName)
+      "allow-conversation": r.taskScope === "computer-control"
+        ? "本次任务已允许电脑操作"
+        : isShellToolName(r.toolName)
         ? "本次任务已允许命令"
         : isMcpToolName(r.toolName)
           ? "本次任务已允许这项操作"
@@ -85,6 +87,7 @@ export default function ApprovalBar({
       "allow-permanent": "已始终允许此类操作",
       deny: "已拒绝",
       cancelled: "已取消",
+      expired: "已超时拒绝",
     };
     if (density === "buddy") {
       return (
@@ -117,10 +120,18 @@ export default function ApprovalBar({
   }
 
   const dangerLocked = pending.risk === "dangerous" && !dangerousCommandCaching;
-  const shellScoped = isShellToolName(pending.toolName);
-  const externalScoped = isMcpToolName(pending.toolName);
+  const mcpScoped = isMcpToolName(pending.toolName);
+  const taskScope = pending.taskScope
+    ?? (isShellToolName(pending.toolName)
+      ? "shell-command"
+      : mcpScoped
+        ? "exact-input"
+        : "tool-class");
+  const shellScoped = taskScope === "shell-command";
+  const exactScoped = taskScope === "exact-input";
+  const computerScoped = taskScope === "computer-control";
   const canRememberConversation = !dangerLocked;
-  const canPersist = !dangerLocked && pending.risk !== "dangerous" && !shellScoped && !externalScoped;
+  const canPersist = !dangerLocked && pending.risk !== "dangerous" && !shellScoped && !mcpScoped;
 
   const handleDecide = async (tier: ApprovalTier) => {
     try {
@@ -142,13 +153,17 @@ export default function ApprovalBar({
         data-input-summary={pending.inputSummary}
         className="grid grid-cols-[30px_minmax(0,1fr)] items-start gap-x-3 gap-y-2 rounded-[10px] border px-4 py-3"
         style={{
-          borderColor: dangerLocked ? "var(--leemo-danger-line)" : "var(--leemo-amber-line)",
-          background: dangerLocked ? "var(--leemo-danger-soft)" : "var(--leemo-amber-bg)",
+          borderColor: dangerLocked ? "var(--leemo-danger-line)" : "var(--leemo-line)",
+          background: dangerLocked ? "var(--leemo-danger-soft)" : "var(--leemo-card)",
         }}
       >
         <span
           className="grid h-[30px] w-[30px] shrink-0 place-items-center rounded-[8px] border"
-          style={{ background: "rgba(255,255,255,.8)" }}
+          style={{
+            background: dangerLocked ? "rgba(255,255,255,.72)" : "var(--leemo-amber-bg)",
+            borderColor: dangerLocked ? "var(--leemo-danger-line)" : "var(--leemo-amber-line)",
+            color: dangerLocked ? "var(--leemo-danger)" : "var(--leemo-amber-ink)",
+          }}
         >
           <Shield className="h-4 w-4" aria-hidden />
         </span>
@@ -157,8 +172,8 @@ export default function ApprovalBar({
             momo 想{verbOf(pending.toolName)}
           </p>
           <p
-            className="mono mt-1 max-w-full truncate rounded-[5px] border px-1.5 py-px text-[11.5px]"
-            style={{ background: "rgba(255,255,255,.8)" }}
+            data-testid="approval-input-summary"
+            className="mono mt-1 max-w-full truncate rounded-[6px] border border-[var(--leemo-line)] bg-[var(--leemo-panel)] px-2.5 py-1.5 text-[11.5px] text-[var(--leemo-ink-2)]"
           >
             {pending.inputSummary}
           </p>
@@ -167,11 +182,15 @@ export default function ApprovalBar({
               危险操作，每次都会问你（可在设置→权限里调整）
             </p>
           )}
-          {shellScoped ? (
+          {computerScoped ? (
+            <p className="mt-1 text-[11px]" style={{ color: "var(--leemo-ink-3)" }}>
+              本次任务内，查看、切换、输入等普通电脑操作不再重复询问；启动程序和最终动作仍会单独确认
+            </p>
+          ) : shellScoped ? (
             <p className="mt-1 text-[11px]" style={{ color: "var(--leemo-ink-3)" }}>
               授权范围：仅这条命令；不会跨对话永久放行
             </p>
-          ) : externalScoped ? (
+          ) : exactScoped ? (
             <p className="mt-1 text-[11px]" style={{ color: "var(--leemo-ink-3)" }}>
               授权范围：仅当前目标与参数；下个任务会重新确认
             </p>
@@ -208,9 +227,11 @@ export default function ApprovalBar({
               >
                 {shellScoped
                   ? "本次任务允许命令"
-                  : externalScoped
-                    ? "本次任务允许这项操作"
-                    : "本次任务允许此类操作"}
+                  : computerScoped
+                    ? "本次任务允许电脑操作"
+                    : exactScoped
+                      ? "本次任务允许这项操作"
+                      : "本次任务允许此类操作"}
               </button>
             )}
             {canPersist && (

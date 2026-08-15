@@ -8,6 +8,8 @@ import {
   Eye,
   EyeOff,
   GripVertical,
+  LogIn,
+  LogOut,
   Plus,
   RefreshCw,
   Save,
@@ -200,6 +202,10 @@ export default function ProviderConfigForm({
   const saveProviderAction = useProviders((state) => state.saveProvider);
   const testConnectionAction = useProviders((state) => state.testConnection);
   const listRemoteModelsAction = useProviders((state) => state.listRemoteModels);
+  const getLoginStatusAction = useProviders((state) => state.getLoginStatus);
+  const loginProviderAction = useProviders((state) => state.loginProvider);
+  const logoutProviderAction = useProviders((state) => state.logoutProvider);
+  const loginStatuses = useProviders((state) => state.loginStatuses);
 
   const targetId = providerId ?? preset?.id;
   const [loading, setLoading] = useState(targetId !== undefined);
@@ -291,6 +297,11 @@ export default function ProviderConfigForm({
       cancelled = true;
     };
   }, [getConfig, preferredModelId, preset?.apiKeyUrl, targetId]);
+
+  useEffect(() => {
+    if (authMode !== "oauth-subscription" || !targetId) return;
+    void getLoginStatusAction(targetId);
+  }, [authMode, getLoginStatusAction, targetId]);
 
   const draft = useMemo<ProviderDraft>(() => {
     const headers: Record<string, string> = {};
@@ -401,6 +412,13 @@ export default function ProviderConfigForm({
   const isCustomProvider = kind === "custom" || existing?.category === "custom";
   const isLocalProvider = authMode === "none";
   const isPlanProvider = authMode === "plan-key";
+  const isSubscriptionProvider = authMode === "oauth-subscription";
+  const loginState = targetId ? loginStatuses[targetId] : undefined;
+  const loginPending = loginState !== undefined && "pending" in loginState;
+  const loginStatus = loginState && !("pending" in loginState) ? loginState : undefined;
+  const subscriptionConnected = loginStatus?.state === "connected";
+  const subscriptionLoginUnavailable = loginStatus?.state === "unavailable";
+  const subscriptionName = (existing?.name ?? name).trim() || "订阅";
   const canDiscoverModels = modelsUrl.trim().length > 0;
 
   const addRemoteModel = (id: string) => {
@@ -479,6 +497,28 @@ export default function ProviderConfigForm({
     setLocalTest({ fingerprint, value: result });
     if (result.ok && result.capabilityProbes) {
       setModelCapabilityEvidence((current) => mergeCapabilityProbeResults(current, modelId, result.capabilityProbes!));
+    }
+  };
+
+  const handleLogin = async () => {
+    if (!targetId) return;
+    setSaveError(null);
+    onBusyChange?.(true);
+    try {
+      await loginProviderAction(targetId);
+    } finally {
+      onBusyChange?.(false);
+    }
+  };
+
+  const handleLogout = async () => {
+    if (!targetId) return;
+    setSaveError(null);
+    onBusyChange?.(true);
+    try {
+      await logoutProviderAction(targetId);
+    } finally {
+      onBusyChange?.(false);
     }
   };
 
@@ -568,16 +608,19 @@ export default function ProviderConfigForm({
     ? capabilityLabel(modelCapabilityEvidence[firstModelId], modelCapabilities[firstModelId]?.thinking, "reasoning")
     : "未确认";
   const testImageDetail = testResult?.capabilityProbes?.image.detail;
+  const showingAdvanced = advancedOpen || Boolean(revealAdvanced);
 
   return (
-    <div data-testid="provider-config-form" aria-busy={saving || deleting} className="flex h-full min-h-0 min-w-0 flex-1 flex-col bg-white">
-      <fieldset disabled={saving || deleting} className="contents">
-        <header className="flex min-h-12 shrink-0 flex-wrap items-center justify-between gap-2 border-b border-[var(--leemo-line)] px-4 py-2 sm:px-5">
+    <div data-testid="provider-config-form" aria-busy={saving || deleting || loginPending} className="flex h-full min-h-0 min-w-0 flex-1 flex-col bg-white">
+      <fieldset disabled={saving || deleting || loginPending} className="contents">
+        <header className="provider-config-header flex min-h-12 shrink-0 flex-wrap items-center justify-between gap-2 border-b border-[var(--leemo-line)] px-4 py-2 sm:px-5">
           <div className="min-w-0">
             <h3 className="truncate text-[13.5px] font-medium text-[var(--leemo-ink)]">{title}</h3>
             <p className="mt-0.5 text-[10.5px] text-[var(--leemo-ink-3)]">
               {isLocalProvider
                 ? "本地连接，无需 API Key"
+                : isSubscriptionProvider
+                  ? subscriptionConnected ? "订阅已连接" : "使用已有订阅登录，无需 API Key"
                 : existing?.hasApiKey
                   ? "凭据已安全保存"
                   : "完成连接后即可在对话中选择模型"}
@@ -585,8 +628,14 @@ export default function ProviderConfigForm({
           </div>
         </header>
 
-        <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-5">
-          <div className="mx-auto max-w-[720px] space-y-7 pb-2">
+        <div className="provider-config-tabs flex h-11 shrink-0 items-end gap-6 border-b border-[var(--leemo-line)] px-5" role="tablist" aria-label="模型服务设置">
+          <button type="button" role="tab" aria-selected={!showingAdvanced} onClick={() => setAdvancedOpen(false)}>连接与模型</button>
+          <button type="button" role="tab" aria-selected={showingAdvanced} onClick={() => setAdvancedOpen(true)}>高级设置</button>
+        </div>
+
+        <div className="provider-config-scroll min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-5">
+          <div className="provider-config-content mx-auto max-w-[720px] space-y-7 pb-2">
+            {!showingAdvanced && <>
             <section aria-labelledby="provider-connection-heading">
               <h4 id="provider-connection-heading" className="mb-3 text-[13px] font-medium text-[var(--leemo-ink)]">连接信息</h4>
               <div className="space-y-4">
@@ -619,7 +668,7 @@ export default function ProviderConfigForm({
                   </div>
                 )}
 
-                {!isLocalProvider && <div>
+                {!isLocalProvider && !isSubscriptionProvider && <div>
                   <FieldLabel hint={existing?.hasApiKey ? "留空不改" : undefined}>{isPlanProvider ? "套餐 Key" : "API Key"}</FieldLabel>
                   <div className="relative">
                     <input aria-label={isPlanProvider ? "套餐 Key" : "API Key"} type={showApiKey ? "text" : "password"} value={apiKey} onChange={(event) => setApiKey(event.target.value)} placeholder={existing?.hasApiKey ? `已配置 ${existing.apiKeyMasked ?? ""}`.trim() : isPlanProvider ? "粘贴套餐 Key" : "粘贴 API Key"} className={`${inputClass} pr-10`} />
@@ -630,6 +679,38 @@ export default function ProviderConfigForm({
                   {apiKeyUrl && <a href={apiKeyUrl} target="_blank" rel="noreferrer" className="mt-1.5 inline-flex items-center gap-1 text-[10.5px] text-[var(--leemo-amber-strong)] hover:underline">{isPlanProvider ? "查看套餐与 Key" : "获取 API Key"} <ExternalLink className="h-3 w-3" aria-hidden /></a>}
                   {existing?.hasApiKey && <p className="mt-1.5 text-[10.5px] text-[var(--leemo-ink-3)]">当前凭据 {existing.apiKeyMasked ?? "已配置"}，留空不会修改。</p>}
                 </div>}
+
+                {isSubscriptionProvider && (
+                  <div className="rounded-md border border-[var(--leemo-line)] bg-[var(--leemo-bg)] px-3.5 py-3">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className={`text-[12px] font-medium ${subscriptionConnected ? "text-[var(--leemo-ok)]" : "text-[var(--leemo-ink)]"}`}>
+                          {loginPending
+                            ? "正在检查登录状态…"
+                            : subscriptionConnected
+                              ? "订阅已连接"
+                              : loginStatus?.state === "unavailable"
+                                ? "需要先安装本机客户端"
+                                : "尚未登录"}
+                        </p>
+                        <p className="mt-1 text-[10.5px] leading-4 text-[var(--leemo-ink-3)]">
+                          {loginStatus?.message ?? (subscriptionConnected
+                            ? "Leemo 将使用这个订阅完成对话和任务。"
+                            : "登录时会打开本机客户端，完成后回到 Leemo 即可。")}
+                        </p>
+                      </div>
+                      {subscriptionConnected ? (
+                        <button type="button" onClick={() => void handleLogout()} className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-md border border-[var(--leemo-line)] bg-white px-3 text-[11px] text-[var(--leemo-ink-2)] hover:border-[var(--leemo-ink-3)]">
+                          <LogOut className="h-3.5 w-3.5" aria-hidden />退出登录
+                        </button>
+                      ) : (
+                        <button type="button" onClick={() => void handleLogin()} disabled={subscriptionLoginUnavailable} className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-md bg-[var(--leemo-ink)] px-3 text-[11px] font-medium text-white hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40">
+                          <LogIn className="h-3.5 w-3.5" aria-hidden />登录 {subscriptionName}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
             </section>
 
@@ -720,10 +801,9 @@ export default function ProviderConfigForm({
                 </ul>
               )}
             </section>
+            </>}
 
-            <details open={advancedOpen} onToggle={(event) => setAdvancedOpen(event.currentTarget.open)} className="border-t border-[var(--leemo-line)] pt-4">
-              <summary className="cursor-pointer list-none text-[13px] font-medium text-[var(--leemo-ink)]">高级设置</summary>
-              {advancedOpen && <div className="mt-4 space-y-5">
+            {showingAdvanced && <div className="provider-config-advanced space-y-5">
                 <section>
                   <h5 className="mb-3 text-[12.5px] font-medium text-[var(--leemo-ink)]">任务安排</h5>
                   <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
@@ -746,7 +826,7 @@ export default function ProviderConfigForm({
                   </div>
                 </section>
 
-                <section>
+                {!isSubscriptionProvider && <section>
                   <h5 className="mb-3 text-[12.5px] font-medium text-[var(--leemo-ink)]">高级连接参数</h5>
                   <div className="space-y-4">
                     {!isCustomProvider && !isLocalProvider && (
@@ -760,17 +840,16 @@ export default function ProviderConfigForm({
                       {!isLocalProvider && <div><FieldLabel hint="帮助链接">获取 API Key 地址</FieldLabel><input aria-label="获取 API Key 地址" value={apiKeyUrl} onChange={(event) => setApiKeyUrl(event.target.value)} placeholder="https://console.example.com/keys" className={inputClass} /></div>}
                     </div>
                   </div>
-                </section>
+                </section>}
 
-                <section>
+                {!isSubscriptionProvider && <section>
                   <div className="mb-2.5 flex items-center justify-between gap-3">
                     <div><h5 className="text-[12.5px] font-medium text-[var(--leemo-ink)]">自定义请求头</h5><p className="mt-0.5 text-[10.5px] text-[var(--leemo-ink-3)]">认证类值只写入主进程，不会回显到界面</p></div>
                     <button type="button" onClick={() => setHeaderRows((rows) => [...rows, { key: "", value: "", savedSecret: false }])} aria-label="添加请求头" title="添加请求头" className="grid h-8 w-8 place-items-center rounded-md border border-[var(--leemo-line)] text-[var(--leemo-ink-2)] hover:border-[var(--leemo-amber)]"><Plus className="h-4 w-4" aria-hidden /></button>
                   </div>
                   {headerRows.length === 0 ? <div className="border-y border-dashed border-[var(--leemo-line)] py-5 text-center text-[11px] text-[var(--leemo-ink-3)]">没有自定义请求头</div> : <div className="divide-y divide-[var(--leemo-line)] border-y border-[var(--leemo-line)]">{headerRows.map((row, index) => { const secret = row.savedSecret || !READABLE_HEADER_NAMES.has(row.key.trim().toLowerCase()); const label = row.key || String(index + 1); return <div key={`${index}-${row.savedSecret ? "saved" : "draft"}`} className="grid min-h-[52px] grid-cols-1 items-center gap-2 py-2 sm:grid-cols-[minmax(110px,0.8fr)_minmax(150px,1.2fr)_auto]"><input aria-label={`header key ${label}`} value={row.key} onChange={(event) => updateHeader(index, "key", event.target.value)} placeholder="Header 名" className={inputClass} /><div className="relative"><input aria-label={`header value ${label}`} type={secret ? "password" : "text"} value={row.value} onChange={(event) => updateHeader(index, "value", event.target.value)} placeholder={row.savedSecret ? "已保存，留空不改" : "Header 值"} className={`${inputClass} ${row.savedSecret ? "pr-20" : ""}`} />{row.savedSecret && <span className="absolute inset-y-0 right-2 flex items-center text-[9.5px] text-[var(--leemo-ok)]">已安全保存</span>}</div><button type="button" onClick={() => setHeaderRows((rows) => rows.filter((_, rowIndex) => rowIndex !== index))} aria-label={`删除 header ${label}`} title="删除请求头" className="grid h-8 w-8 place-items-center text-[var(--leemo-ink-3)] hover:text-[var(--leemo-danger)]"><Trash2 className="h-3.5 w-3.5" aria-hidden /></button></div>; })}</div>}
-                </section>
+                </section>}
               </div>}
-            </details>
           </div>
         </div>
       </fieldset>
@@ -783,15 +862,15 @@ export default function ProviderConfigForm({
 
       {saveError && <p role="alert" className="shrink-0 border-t border-[var(--leemo-line)] px-5 py-2 text-[11px] text-[var(--leemo-danger)]">{saveError}</p>}
 
-      <footer className="flex min-h-[56px] shrink-0 flex-wrap items-center justify-between gap-2 border-t border-[var(--leemo-line)] px-4 py-2.5 sm:px-5">
+      <footer className="provider-config-footer flex min-h-[56px] shrink-0 flex-wrap items-center justify-between gap-2 border-t border-[var(--leemo-line)] px-4 py-2.5 sm:px-5">
         <div className="flex items-center gap-2">
           {existing?.saved && onDelete && !confirmingDelete && <button type="button" onClick={() => setConfirmingDelete(true)} disabled={saving || deleting} aria-label="删除服务商" title="删除服务商" className="grid h-8 w-8 place-items-center rounded-md text-[var(--leemo-ink-3)] hover:bg-red-50 hover:text-[var(--leemo-danger)] disabled:opacity-50"><Trash2 className="h-4 w-4" aria-hidden /></button>}
           {confirmingDelete && <div className="flex items-center gap-2 text-[10.5px] text-[var(--leemo-danger)]"><span>确定删除？</span><button type="button" aria-label="确认删除服务商" onClick={() => void handleDelete()} disabled={deleting} className="rounded-md bg-[var(--leemo-danger)] px-2 py-1 text-white disabled:opacity-50">{deleting ? "删除中" : "确认"}</button><button type="button" aria-label="取消删除服务商" onClick={() => setConfirmingDelete(false)} className="px-1 py-1 text-[var(--leemo-ink-3)]">取消</button></div>}
         </div>
         <div className="ml-auto flex min-w-0 flex-wrap items-center justify-end gap-2">
           <button type="button" onClick={onCancel} disabled={saving || deleting} className="h-8 rounded-md border border-[var(--leemo-line)] px-3 text-[11.5px] text-[var(--leemo-ink-2)] hover:bg-[var(--leemo-bg)] disabled:opacity-50">取消</button>
-          <button type="button" onClick={() => void handleTestConnection()} disabled={saving || deleting || testPending || !name.trim() || !baseUrl.trim() || modelRows.length === 0} className="inline-flex h-8 items-center gap-1.5 rounded-md border border-[var(--leemo-line)] px-3 text-[11.5px] text-[var(--leemo-ink-2)] hover:border-[var(--leemo-amber)] disabled:opacity-50"><TestTube2 className="h-3.5 w-3.5" aria-hidden />{testPending ? "测试中" : "测试连接"}</button>
-          <button type="button" onClick={() => void handleSave()} disabled={saving || deleting || !name.trim() || !baseUrl.trim() || modelRows.length === 0} className="inline-flex h-8 items-center gap-1.5 rounded-md bg-[var(--leemo-ink)] px-3.5 text-[11.5px] font-medium text-white disabled:opacity-50"><Save className="h-3.5 w-3.5" aria-hidden />{saving ? "保存中" : "保存设置"}</button>
+          {!isSubscriptionProvider && <button type="button" onClick={() => void handleTestConnection()} disabled={saving || deleting || testPending || !name.trim() || !baseUrl.trim() || modelRows.length === 0} className="inline-flex h-8 items-center gap-1.5 rounded-md border border-[var(--leemo-line)] px-3 text-[11.5px] text-[var(--leemo-ink-2)] hover:border-[var(--leemo-amber)] disabled:opacity-50"><TestTube2 className="h-3.5 w-3.5" aria-hidden />{testPending ? "测试中" : "测试连接"}</button>}
+          <button type="button" onClick={() => void handleSave()} disabled={saving || deleting || !name.trim() || (!isSubscriptionProvider && !baseUrl.trim()) || (isSubscriptionProvider && !subscriptionConnected) || modelRows.length === 0} className="inline-flex h-8 items-center gap-1.5 rounded-md bg-[var(--leemo-ink)] px-3.5 text-[11.5px] font-medium text-white disabled:opacity-50"><Save className="h-3.5 w-3.5" aria-hidden />{saving ? "保存中" : "保存设置"}</button>
         </div>
       </footer>
     </div>

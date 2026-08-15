@@ -21,6 +21,13 @@ export interface ComposerDraft {
   retryPending: boolean;
   submitError: string | null;
   pendingStageCount: number;
+  /** False applies only to the next submitted turn. Omitted is the normal
+   * automatic helper behavior and keeps legacy persisted drafts compatible. */
+  allowSubagents?: boolean;
+  /** Keeps planning separate from the approval policy. When true, the next
+   * turns use the runtime's real plan mode until the user turns it off from
+   * the composer + menu. */
+  planMode?: boolean;
   /** A first-turn conversation exists in the host but is deliberately not
    * active until its send acknowledgement succeeds. Keeping this association
    * makes a failed draft survive workspace, mode, and sidebar navigation. */

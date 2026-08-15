@@ -122,6 +122,28 @@ describe("AskUserCard — pending (interactive, amber)", () => {
     expect(card.className).toContain("var(--leemo-amber-line)");
   });
 
+  it("keeps the buddy question as a compact decision card with a clear interaction label", async () => {
+    const { container } = render(
+      <BridgeProvider>
+        <AskUserCard
+          density="buddy"
+          interaction={{
+            kind: "question",
+            id: "ask-buddy",
+            conversationId: "conv-buddy",
+            runId: "run-buddy",
+            questions: ONE_QUESTION,
+            receivedAt: 0,
+          } as QuestionInteraction}
+        />
+      </BridgeProvider>,
+    );
+
+    expect(await screen.findByText("需要你选一下")).toBeInTheDocument();
+    expect(container.firstElementChild).toHaveClass("max-w-[520px]");
+    expect(screen.getByText("dev 环境")).toBeInTheDocument();
+  });
+
   it("renders multi-select question with independently toggleable options", async () => {
     const user = userEvent.setup();
     renderPending(MULTI_QUESTION);
@@ -149,7 +171,10 @@ describe("AskUserCard — pending (interactive, amber)", () => {
     for (const option of [shortOption, longOption]) {
       expect(option.className).toContain("w-full");
       expect(option.className).toContain("text-left");
+      expect(option.className).toContain("min-h-[54px]");
+      expect(option.className).toContain("text-[13px]");
       expect(option.className).not.toContain("rounded-full");
+      expect(option.firstElementChild).toHaveAttribute("data-ask-option-marker");
     }
   });
 

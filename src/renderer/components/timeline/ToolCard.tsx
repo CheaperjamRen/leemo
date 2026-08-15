@@ -1,6 +1,8 @@
 import type { TimelineItem } from "../../stores/message-model";
+import { useState } from "react";
 import BrowserCapturePreview from "./BrowserCapturePreview";
-import { toolActionLabel, toolResultLabel } from "../tool-labels";
+import { toolActionLabel, toolOutcomeLabel, toolResultLabel } from "../tool-labels";
+import RawToolDetails from "./RawToolDetails";
 
 const STATUS_LABEL = { running: "进行中…", ok: "完成", error: "失败" } as const;
 
@@ -58,10 +60,22 @@ export default function ToolCard({
   item: Extract<TimelineItem, { kind: "tool" }>;
   stale?: boolean;
 }) {
+  const [expanded, setExpanded] = useState(false);
   const paused = stale && item.status === "running";
+  const neutralStop = item.outcome === "denied" || item.outcome === "cancelled" || item.outcome === "interrupted";
+  const resultLabel = toolOutcomeLabel(
+    item.outcome,
+    toolResultLabel(item.name, item.status, item.summary ?? STATUS_LABEL[item.status]),
+  );
   return (
-    <div className="w-full rounded-[8px] border border-[var(--leemo-line-2)] bg-[var(--leemo-panel)] px-3 py-[6px] transition-colors hover:border-[var(--leemo-line)] hover:bg-[var(--leemo-card)]">
-      <div className="flex items-center gap-2.5">
+    <div className="w-full overflow-hidden rounded-[8px] border border-[var(--leemo-line-2)] bg-[var(--leemo-panel)] transition-colors hover:border-[var(--leemo-line)] hover:bg-[var(--leemo-card)]">
+      <button
+        type="button"
+        aria-label={expanded ? "收起工具详情" : "展开工具详情"}
+        aria-expanded={expanded}
+        onClick={() => setExpanded((value) => !value)}
+        className="flex w-full items-center gap-2.5 px-3 py-[6px] text-left"
+      >
         {paused ? (
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round"
             className="h-[13px] w-[13px] shrink-0 text-[var(--leemo-ink-3)]" aria-hidden>
@@ -78,6 +92,12 @@ export default function ToolCard({
             className="h-[13px] w-[13px] shrink-0 text-[var(--leemo-ok)]" aria-hidden>
             <path d="m4.8 12.6 4.6 4.6 9.8-10.4" />
           </svg>
+        ) : neutralStop ? (
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round"
+            className="h-[13px] w-[13px] shrink-0 text-[var(--leemo-ink-3)]" aria-hidden>
+            <circle cx="12" cy="12" r="8.5" />
+            <path d="M8.5 12h7" />
+          </svg>
         ) : (
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round"
             className="h-[13px] w-[13px] shrink-0 text-[var(--leemo-danger)]" aria-hidden>
@@ -89,10 +109,11 @@ export default function ToolCard({
         {typeIcon(item.name)}
         <span className="shrink-0 whitespace-nowrap text-[12.5px] font-medium text-[var(--leemo-ink-2)]">{toolActionLabel(item.name)}</span>
         <span className="ml-auto min-w-0 flex-1 truncate text-right text-[11px] text-[var(--leemo-ink-3)]">
-          {paused ? "上次停在这里" : toolResultLabel(item.name, item.status, item.summary ?? STATUS_LABEL[item.status])}
+          {paused ? "上次停在这里" : resultLabel}
         </span>
-      </div>
-      {item.browserCapture ? <BrowserCapturePreview capture={item.browserCapture} /> : null}
+      </button>
+      {item.browserCapture ? <div className="px-3 pb-2"><BrowserCapturePreview capture={item.browserCapture} /></div> : null}
+      {expanded ? <RawToolDetails item={item} /> : null}
     </div>
   );
 }

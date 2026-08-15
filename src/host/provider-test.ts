@@ -35,6 +35,15 @@ export interface ProviderTestDeps {
   now?: () => number;
 }
 
+export interface ProviderTextRequestDeps {
+  fetchFn: typeof fetch;
+  maxTokens?: number;
+}
+
+export type ProviderTextRequestResult =
+  | { ok: true; text: string }
+  | { ok: false; error: ProviderError };
+
 const ANTHROPIC_VERSION = "2023-06-01";
 
 function buildAuthHeaders(target: ProviderTestTarget): Record<string, string> {
@@ -215,6 +224,73 @@ async function postJson(
 
 function joinEndpoint(baseUrl: string, path: string): string {
   return `${baseUrl.replace(/\/+$/, "")}/${path.replace(/^\/+/, "")}`;
+}
+
+/**
+ * Make one small text-only request through an already configured provider.
+ * This is intentionally not a second agent runtime: no tools, streaming or
+ * conversation state are created, and provider credentials stay in Host.
+ */
+export async function requestProviderText(
+  target: ProviderTestTarget,
+  prompt: string,
+  deps: ProviderTextRequestDeps,
+): Promise<ProviderTextRequestResult> {
+  const maxTokens = deps.maxTokens ?? 512;
+  const isAnthropic = target.apiFormat === "anthropic";
+  const isResponses = target.apiFormat === "openai-responses";
+
+  try {
+    const url = joinEndpoint(
+      target.baseUrl,
+      isAnthropic ? "/v1/messages" : isResponses ? "/responses" : "/chat/completions",
+    );
+    const headers = isAnthropic ? buildAnthropicHeaders(target) : buildOpenAIHeaders(target);
+    const payload = isAnthropic
+      ? {
+          model: target.modelId,
+          max_tokens: maxTokens,
+          messages: [{ role: "user", content: prompt }],
+        }
+      : isResponses
+        ? {
+            model: target.modelId,
+            max_output_tokens: maxTokens,
+            store: false,
+            input: [{ role: "user", content: [{ type: "input_text", text: prompt }] }],
+          }
+        : {
+            model: target.modelId,
+            max_tokens: maxTokens,
+            messages: [{ role: "user", content: prompt }],
+          };
+    const result = await postJson(deps.fetchFn, url, headers, payload);
+    if (result.status < 200 || result.status >= 300) {
+      return {
+        ok: false,
+        error: classifyProviderError({
+          httpStatus: result.status,
+          body: result.body,
+          rawText: result.rawText,
+          apiKey: target.apiKey,
+        }),
+      };
+    }
+    const text = replyTextOf(target.apiFormat, result.body).trim();
+    if (!text) {
+      return {
+        ok: false,
+        error: classifyProviderError({
+          body: result.body,
+          rawText: result.rawText,
+          apiKey: target.apiKey,
+        }),
+      };
+    }
+    return { ok: true, text };
+  } catch (thrown) {
+    return { ok: false, error: classifyProviderError({ thrown, apiKey: target.apiKey }) };
+  }
 }
 
 /**

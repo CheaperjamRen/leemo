@@ -42,10 +42,10 @@ describe("bundled Skill library provisioning", () => {
     if (result.status !== "ready") {
       throw new Error(result.status === "error" ? result.error : "expected ready bundled Skill runtime");
     }
-    expect(result.skills).toHaveLength(25);
-    expect(result.skills.filter((skill) => skill.defaultEnabled)).toHaveLength(8);
+    expect(result.skills).toHaveLength(28);
+    expect(result.skills.filter((skill) => skill.defaultEnabled)).toHaveLength(9);
     expect(fs.readdirSync(path.join(result.pluginPath, "skills"), { withFileTypes: true })
-      .filter((entry) => entry.isDirectory())).toHaveLength(25);
+      .filter((entry) => entry.isDirectory())).toHaveLength(28);
     expect(fs.existsSync(path.join(result.pluginPath, "default-enabled"))).toBe(false);
     expect(fs.existsSync(path.join(result.pluginPath, "optional"))).toBe(false);
   });

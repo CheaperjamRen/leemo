@@ -16,6 +16,28 @@ export interface ConversationStatus {
   runId: string | null;
 }
 
+export type ConversationMarker = "running" | "error" | "unread" | null;
+
+/**
+ * Reduce the internal lifecycle detail to the one signal a conversation row
+ * needs. A blocked interaction is an unread-style attention point: the user
+ * needs to come back, but momo is not actively consuming tokens while it
+ * waits. Keeping this rule here prevents buddy/workbench/header copies from
+ * drifting apart.
+ */
+export function deriveConversationMarker({
+  status,
+  unread,
+}: {
+  status: ConversationStatus;
+  unread: boolean;
+}): ConversationMarker {
+  if (status.kind === "running") return "running";
+  if (status.kind === "failed") return "error";
+  if (status.kind === "blocked" || unread) return "unread";
+  return null;
+}
+
 function latestTimelineRunId(timeline: TimelineItem[]): string | null {
   for (let index = timeline.length - 1; index >= 0; index -= 1) {
     const item = timeline[index];

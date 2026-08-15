@@ -1,0 +1,56 @@
+{
+  "notebookId": "诊断",
+  "conversationId": "5368e69f-4044-45b8-ac19-a7715939d872",
+  "archive": "诊断\\.leemo\\conversations\\NTM2OGU2OWYtNDA0NC00NWI4LWFjMTktYTc3MTU5MzlkODcy.json",
+  "selected": {
+    "providerId": "qwen",
+    "modelId": "qwen3.7-flash"
+  },
+  "attachment": {
+    "name": "custom-mcp-connected.png",
+    "size": 222180,
+    "mimeType": "image/png"
+  },
+  "persistedAttachmentPath": false,
+  "round": {
+    "runId": "run-54",
+    "tools": [
+      {
+        "name": "Read",
+        "status": "ok",
+        "summary": "[{\"type\":\"image\",\"source\":{\"type\":\"base64\",\"data\":\"[628048 base64 characters omitted]\",\"media_type\":\"image/png\"}}]"
+      }
+    ],
+    "plans": [],
+    "activities": [],
+    "approvals": [],
+    "replies": [
+      "连接器"
+    ],
+    "usage": {
+      "providerId": "qwen",
+      "modelId": "qwen3.7-flash",
+      "inputTokens": 1715,
+      "outputTokens": 147,
+      "cacheReadTokens": 0,
+      "cacheCreationTokens": 64173,
+      "costSource": "sdk",
+      "tokensEstimated": false,
+      "durationMs": 6977,
+      "costUsd": "0.413331"
+    },
+    "result": {
+      "kind": "result",
+      "id": "m6",
+      "runId": "run-54",
+      "isError": false,
+      "interrupted": false,
+      "finalText": "连接器",
+      "pathAudit": {
+        "claimed": []
+      }
+    },
+    "clickedApprovals": []
+  },
+  "at": "2026-07-29T08:51:02.097Z"
+}

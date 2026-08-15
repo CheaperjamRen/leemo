@@ -13,6 +13,12 @@ const SOURCES: SearchSourceStatus[] = [
   { id: "tavily", label: "Tavily", keyless: false, configured: true, configuredFields: ["apiKey"], note: "通用备用来源" },
   { id: "bocha", label: "博查", keyless: false, configured: false, configuredFields: [], note: "国内通用备用" },
   { id: "google", label: "Google Custom Search", keyless: false, configured: false, configuredFields: [], note: "兼容已有凭据" },
+  { id: "exa", label: "Exa", keyless: false, configured: false, configuredFields: [], note: "面向 AI 的语义搜索" },
+  { id: "brave", label: "Brave Search", keyless: false, configured: false, configuredFields: [], note: "独立网页索引" },
+  { id: "serpapi", label: "SerpAPI", keyless: false, configured: false, configuredFields: [], note: "Google 结果兼容来源" },
+  { id: "serper", label: "Serper", keyless: false, configured: false, configuredFields: [], note: "轻量 Google 搜索 API" },
+  { id: "bing", label: "Bing Search", keyless: false, configured: false, configuredFields: [], note: "服务已退役", blockedReason: "Bing Search API 已停止服务。" },
+  { id: "firecrawl", label: "Firecrawl", keyless: false, configured: false, configuredFields: [], note: "搜索与网页提取" },
 ];
 
 function client(saveImpl?: (request: unknown) => Promise<unknown>) {
@@ -57,16 +63,31 @@ async function waitForSources(): Promise<void> {
 }
 
 describe("SearchSourcesSection — source journey", () => {
-  it("按默认、中文增强、更多来源、学术四组展示六个网页源和免配置 arXiv", async () => {
+  it("同页折叠展示十二个网页源，并保持 arXiv 独立免配置", async () => {
     setup();
     await waitForSources();
     expect(within(screen.getByRole("group", { name: "默认来源" })).getByText("AnySearch")).toBeInTheDocument();
     expect(within(screen.getByRole("group", { name: "中文增强" })).getByText("豆包搜索")).toBeInTheDocument();
     expect(within(screen.getByRole("group", { name: "中文增强" })).getByText("秘塔搜索")).toBeInTheDocument();
     expect(within(screen.getByRole("group", { name: "更多来源" })).getByText("Google Custom Search")).toBeInTheDocument();
+    expect(within(screen.getByRole("group", { name: "更多来源" })).getByText("Exa")).toBeInTheDocument();
+    expect(within(screen.getByRole("group", { name: "更多来源" })).getByText("Brave Search")).toBeInTheDocument();
+    expect(within(screen.getByRole("group", { name: "更多来源" })).getByText("SerpAPI")).toBeInTheDocument();
+    expect(within(screen.getByRole("group", { name: "更多来源" })).getByText("Serper")).toBeInTheDocument();
+    expect(within(screen.getByRole("group", { name: "更多来源" })).getByText("Bing Search")).toBeInTheDocument();
+    expect(within(screen.getByRole("group", { name: "更多来源" })).getByText("Firecrawl")).toBeInTheDocument();
     expect(within(screen.getByRole("group", { name: "学术检索" })).getByText("arXiv")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "配置 arXiv" })).not.toBeInTheDocument();
     expect(screen.getByText("论文问题时自动使用")).toBeInTheDocument();
+  });
+
+  it("退役来源原位说明且不能展开填写伪凭据", async () => {
+    setup();
+    await waitForSources();
+    const button = screen.getByRole("button", { name: "Bing Search 暂不可用" });
+    expect(button).toBeDisabled();
+    expect(screen.getByText("Bing Search API 已停止服务。")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Bing Search API Key")).not.toBeInTheDocument();
   });
 
   it("AnySearch 显示开箱可用，不把未填可选 Key 说成错误", async () => {

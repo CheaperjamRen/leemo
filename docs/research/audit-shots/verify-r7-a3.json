@@ -1,0 +1,42 @@
+{
+ "nonce": "A3MS51MDDW",
+ "results": [
+  {
+   "name": "⓿ 前置条件：联网已关",
+   "ok": true,
+   "detail": "master was=true now=false"
+  },
+  {
+   "name": "① 默认关 → momo 明说不能联网（不假装）",
+   "ok": true,
+   "detail": " momo 的干活过程 1 步 展开 我不能联网。 我这边现在没有网络访问能力（搜索和抓取都被禁用了），所以查不了今天的天气。那个口令 A3MS51MDDW-A 也用不上。 "
+  },
+  {
+   "name": "④ 界面明说生效时机",
+   "ok": true,
+   "detail": "switch=master was=false now=true | sub was=true now=true hint=\"已保存 · 正在进行的 1 个对话下一轮起生效\""
+  },
+  {
+   "name": "④b 提示点名了活对话数（不是空口号）",
+   "ok": true,
+   "detail": "已保存 · 正在进行的 1 个对话下一轮起生效"
+  },
+  {
+   "name": "③ 同一对话下一轮真的能搜（核心）",
+   "ok": true,
+   "detail": "未再声称不能联网"
+  },
+  {
+   "name": "③b WebSearch 真的跑了并拿回真 URL（工具原始返回为证）",
+   "ok": true,
+   "detail": "ranWebSearch=true urls=3 https://www.sohu.com/a/998558018_122014422?scm=10008.1475_13-1475_13-11_11.4655001-0.0-1-0-0-0.0"
+  },
+  {
+   "name": "⑤ 设置已写进 SQLite（重启不丢的前提）",
+   "ok": true,
+   "detail": "webEnabled=true keys=11"
+  }
+ ],
+ "a1": "\nmomo 的干活过程\n1 步\n展开\n\n我不能联网。\n\n我这边现在没有网络访问能力（搜索和抓取都被禁用了），所以查不了今天的天气。那个口令 A3MS51MDDW-A 也用不上。\n\n要不你直接告诉我你在哪个城市，如果以后能联网了，我再帮你查？或者你手动看一眼天气告诉我，我帮你记下来 😄\n\n复制\n↑23.6k ↓244\nEnter 发送 · Shift+Enter 换行\n🧠 deepseek-v4-flash\n·\n标准权限",
+ "a2": "\nmomo 的干活过程\n5 步\n收起\n\nThe user wants me to search for the 2026 Turing Award winner. Let me use the WebSearch tool to find this information.\n\nWebSearch\nWeb search results for query: \"2026 图灵奖 得主\" Links: [{\"title\":\"图灵奖打破六十年祖制：计算领域的诺贝尔奖，头一次颁给了量子物理\",\"url\":\"https://www.sohu.com/a/998558018_122014422?scm=10008.1475_13-1475_13-11_11.4655001-0.0-1-0-0-0.0\"},{\"title\":\"马刚肖像画·图灵奖——中国科学家唯一获得者\",\"url\":\"http://shanxishengmeishujia.meishujia.cn/?act=usite&usid=246&inview=appid-13-mid-109994&said=402\"},{\"title\":\"Turing Award winners speak at Beijing AI conference\",\"url\":\"http://www.china.org.cn/2026-06/14/content_118547732.shtml\"},{\"title\":\"“保持玩心 保持深思”图灵奖得主Sutton送给青年八字箴言\",\"url\":\"http://www.why.com.cn/wx/article/2026/07/26/17850480731349859576.html\"},{\"title\":\"托尼·霍尔\",\"url\":\"https://baike.baidu.com/item/%E6%89%98%E5%B0%BC%C2%B7%E9%9C%8D%E5%B0%94/65848?fromtitle=%E4%B8%9C%E5%B0%BC%C2%B7%E9%9C%8D%E5%B0%94&fromid=9811542\"},{\"title\":\"曹操出行首次亮相WAIC，攜圖靈獎得主約瑟夫·希發基思共探可信Robotaxi規模化路徑\",\"url\":\"https://www.globenewswire.com/fr/news-release/2026/07/27/3333270/0/zh-hant/%e6%9b%b9%e6%93%8d%e5%87%ba%e8%a1%8c%e9%a6%96%e6%ac%a1%e4%ba%ae%e7%9b%b8waic-%e6%94%9c%e5%9c%96%e9%9d%88%e7%8d%8e%e5%be%97%e4%b8%bb%e7%b4%84%e7%91%9f%e5%a4%ab-%e5%b8%8c%e7%99%bc%e5%9f%ba%e6%80%9d%e5%85%b1%e6%8e%a2%e5%8f%af%e4%bf%a1robotaxi%e8%a6%8f%e6%a8%a1%e5%8c%96%e8%b7%af%e5%be%91.html\"},{\"title\":\"图灵奖得主\\\"倒戈\\\"：砸10亿美元证明「LLM是死路」，猫都比ChatGPT聪明\",\"url\":\"https://www.163.com/dy/article/L1JSV47I05568W0A.html?spss=dy_author&referFrom=\"},{\"title\":\"图灵奖得主Bengio斩获AAAI 2026大奖！5篇杰出论文，华人占3篇\",\"url\":\"https://www.thepaper.cn/newsDetail_forward_32443347\"},{\"title\":\"图灵奖\",\"url\":\"https://baike.baidu.com/item/%E5%9B%BE%E7%81%B5%E5%A5%96/324645\"},{\"title\":\"量子信息科学奠基者获图灵奖\",\"url\":\"http://www.xinhuanet.com/20260319/d8fb303107db4c33817a1ebe3d2bf83c/c.html\"}] 根据搜索结果，2026年颁发的图灵奖（实为2025年图灵奖，于2026年3月宣布）授予了**美国物理学家查尔斯·贝内特（Charles H. Bennett）** 和**加拿大计算机科学家吉勒斯·布拉萨德（Gilles Brassard）**，以表彰他们在**量子信息科学领域**的奠基性贡献以及推动安全通信和计算技术发展的杰出成就。这是图灵奖自1966年设立60年来，**首次将最高荣誉颁发给与量子物理直接相关的工作**，打破了长达六十年的历史惯例。 REMINDER: You MUST include the sources above in your response to the user using markdown hyperlinks.\n\nmomo 想使用 WebSearch\n\nWebSearch {\"query\":\"2026 图灵奖 得主\"}\n\n已允许一次\n\nLet me also open the specific articles to get more details and verify the information.\n\nWebFetch\n进行中…\nWebFetch\n## 2025年图灵奖得主（2026年3月公布） 根据新华网报道，美国计算机协会将2025年图灵奖授予了两位科学家： - **查尔斯·贝内特（Charles Bennett）** — 美国物理学家，IBM研究员 - **吉勒斯·布拉萨德（Gilles Brassard）** — 加拿大计算机科学家，蒙特利尔大学教授 该奖项表彰他们\"在量子信息科学领域的奠基性贡献以及推动安全通信和计算技术发展的杰出成就\"。 图灵奖被称为\"计算机界的诺贝尔奖\"，奖金为100万美元，由谷歌资助。 这篇报道发布于2026年3月19日，由新华社洛杉矶记者谭晶晶撰写。\n\nmomo 想使用 WebFetch\n\nWebFetch {\"url\":\"http://www.xinhuanet.com/20260319/d8fb303107db4c33817a1ebe3d2bf83c/c.html\",\"prompt\":\"2026年图灵奖得主是谁？具体信息？\"}\n\n已允许一次\nEnter 发送 · Shift+Enter 换行\n🧠 deepseek-v4-flash\n·\n标准权限"
+}

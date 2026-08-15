@@ -24,7 +24,8 @@ function client(over: Partial<WorkspaceClient> = {}): WorkspaceClient {
     listWorkspaces: async () => [HOME, PROJECT],
     pickWorkspace: async () => PROJECT,
     touchWorkspace: async (id) => id === HOME.id ? HOME : PROJECT,
-    forgetWorkspace: async () => true,
+  forgetWorkspace: async () => true,
+    updateWorkspace: async (id, input) => ({ ...(id === HOME.id ? HOME : PROJECT), ...input }),
     listNotebooks: async () => ({ root: HOME.displayPath, notebooks: [] }),
     createNotebook: async () => { throw new Error("unused"); },
     ensureStarterNotebook: async () => { throw new Error("unused"); },
@@ -102,6 +103,23 @@ describe("createWorkspacesStore", () => {
     await expect(store.getState().forget(PROJECT.id)).resolves.toBe(true);
     expect(store.getState().activeId).toBe(HOME.id);
     expect(store.getState().list).toEqual([HOME]);
+  });
+
+  it("renames and archives an external folder entry without forgetting it", async () => {
+    const updateWorkspace = vi.fn(async (_id: string, input: { name?: string; archived?: boolean }) => ({
+      ...PROJECT,
+      ...input,
+    }));
+    const store = createWorkspacesStore(client({ updateWorkspace }), [HOME, PROJECT]);
+    store.setState({ activeId: PROJECT.id });
+
+    await expect(store.getState().rename(PROJECT.id, "毕业论文资料")).resolves.toBe(true);
+    expect(store.getState().list.find((entry) => entry.id === PROJECT.id)?.name).toBe("毕业论文资料");
+
+    await expect(store.getState().setArchived(PROJECT.id, true)).resolves.toBe(true);
+    expect(store.getState().list.find((entry) => entry.id === PROJECT.id)?.archived).toBe(true);
+    expect(store.getState().activeId).toBe(HOME.id);
+    expect(updateWorkspace).toHaveBeenCalledTimes(2);
   });
 
   it("degrades to a truthful unsupported state outside Electron", async () => {

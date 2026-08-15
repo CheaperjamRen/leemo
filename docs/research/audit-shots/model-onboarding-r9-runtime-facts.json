@@ -1,0 +1,73 @@
+{
+  "checkedAt": "2026-08-03T03:51:45.496Z",
+  "packagedExecutable": "dist-rc-final3/win-unpacked/Leemo.exe",
+  "isolatedUserData": true,
+  "externalApiCalls": 0,
+  "coldStartupMs": 4031,
+  "warmStartupMs": 1401,
+  "idleProcessTree": {
+    "processCount": 4,
+    "workingSetBytes": 789528576
+  },
+  "providerCatalogCards": 5,
+  "remoteDiscovery": true,
+  "manualModel": true,
+  "automaticCapabilityProbes": {
+    "imageReachedUpstream": true,
+    "imageFailedAdvisoryOnly": true,
+    "reasoningReachedUpstream": true,
+    "userOverridePersisted": true
+  },
+  "persistedModelOrder": [
+    "mock-beta-retry",
+    "mock-alpha-vision-disputed",
+    "mock-manual-ultra-long-model-id-that-must-not-overflow-2026"
+  ],
+  "subtaskRouting": {
+    "explicitModelPersisted": true,
+    "packagedAgentToolExecuted": true,
+    "explicit": {
+      "parentModel": "mock-beta-retry",
+      "childModel": "mock-alpha-vision-disputed",
+      "agentToolName": "Agent"
+    },
+    "automatic": {
+      "parentModel": "mock-beta-retry",
+      "childModel": "mock-beta-retry",
+      "agentToolName": "Agent"
+    }
+  },
+  "retry": {
+    "failedAfterHostAck": true,
+    "userFacingErrorNormalized": true,
+    "originalTextPreserved": true,
+    "uiModelSwitchAndRetry": true,
+    "switchedFrom": "mock-beta-retry",
+    "switchedTo": "mock-alpha-vision-disputed",
+    "completed": true
+  },
+  "attachmentBridge": {
+    "failedAfterHostAck": true,
+    "sameAbsolutePathMetadataOnBothRounds": true,
+    "switchedFrom": "mock-beta-retry",
+    "switchedTo": "mock-alpha-vision-disputed",
+    "completed": true
+  },
+  "nativeAttachmentPickerAutomated": false,
+  "layoutFacts": "docs/research/audit-shots/model-onboarding-r9-layout-facts.json",
+  "mockRequests": 15,
+  "streamAttempts": 12,
+  "apiKeyRendererVisible": false,
+  "apiKeyLogged": false,
+  "screenshots": [
+    "model-onboarding-r9-catalog.png",
+    "model-onboarding-r9-form-top.png",
+    "model-onboarding-r9-capability-disputed.png",
+    "model-onboarding-r9-capability-override.png",
+    "model-onboarding-r9-usage.png",
+    "model-onboarding-r9-retry-ready.png",
+    "model-onboarding-r9-retry.png",
+    "model-onboarding-r9-retry-success.png",
+    "model-onboarding-r9-after-restart.png"
+  ]
+}

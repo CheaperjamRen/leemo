@@ -80,6 +80,25 @@ afterEach(() => {
 // ---- DIRECT wiring ----------------------------------------------------------
 
 describe("pool — DIRECT wiring env reaches the SDK", () => {
+  it("steers the active SDK query without starting a second round", async () => {
+    const streamInput = vi.fn(async () => {});
+    let release!: () => void;
+    const done = new Promise<void>((resolve) => { release = resolve; });
+    const queryFn = vi.fn(() => Object.assign((async function* () {
+      await done;
+      yield { type: "result", session_id: "sess-steer" };
+    })(), { streamInput }));
+    const bridge = createBridge({ queryFn, dataDir: freshDataDir() });
+    const convo = bridge.createConversation({ provider: deepseekDirect, modelId: "deepseek-v4pro" });
+
+    const running = drain(convo.send("先整理资料"));
+    await vi.waitFor(() => expect(queryFn).toHaveBeenCalledTimes(1));
+    await expect(convo.guide("补充：先看第三章")).resolves.toBe("applied");
+    expect(streamInput).toHaveBeenCalledTimes(1);
+    release();
+    await running;
+  });
+
   it("hands queryFn the provider endpoint + real key + model aliases", async () => {
     const { queryFn, calls } = makeFakeQuery({
       scripts: [oneTurnStream("sess-d1", "hi from deepseek")],
@@ -94,10 +113,30 @@ describe("pool — DIRECT wiring env reaches the SDK", () => {
     const env = calls[0].options.env!;
     expect(env.ANTHROPIC_BASE_URL).toBe("https://api.deepseek.com/anthropic");
     expect(env.ANTHROPIC_AUTH_TOKEN).toBe(
-      "sk-test-deepseek-DIRECTKEY-000000000000"
+      "test-key-deepseek-DIRECTKEY-000000000000"
     );
     expect(env.ANTHROPIC_MODEL).toBe("deepseek-v4pro");
     expect(env.ANTHROPIC_API_KEY).toBe("");
+  });
+
+  it("caps native SDK reconnect attempts at the five attempts shown to users", async () => {
+    vi.stubEnv("CLAUDE_CODE_MAX_RETRIES", "50");
+    try {
+      const { queryFn, calls } = makeFakeQuery({
+        scripts: [oneTurnStream("sess-retry-cap", "x")],
+      });
+      const bridge = createBridge({ queryFn, dataDir: freshDataDir() });
+      const convo = bridge.createConversation({
+        provider: deepseekDirect,
+        modelId: "deepseek-v4pro",
+      });
+
+      await drain(convo.send("hi"));
+
+      expect(calls[0].options.env!.CLAUDE_CODE_MAX_RETRIES).toBe("5");
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 });
 
@@ -133,9 +172,9 @@ describe("pool — GATEWAY wiring never leaks the real key", () => {
     // the host may carry sibling-provider secrets. The SDK REPLACES the child
     // env, so the pool spreads process.env — which WOULD carry these keys into a
     // child that can printenv. This asserts the strip removes them.
-    vi.stubEnv("RELAY2_API_KEY", "sk-test-relay-HOST-LEAK-aaaaaaaaaaaa");
-    vi.stubEnv("SOME_VENDOR_API_KEY", "sk-test-vendor-HOST-LEAK-bbbbbbbb");
-    vi.stubEnv("SIBLING_AUTH_TOKEN", "sk-test-sibling-HOST-LEAK-cccccccc");
+    vi.stubEnv("RELAY2_API_KEY", "test-key-relay-HOST-LEAK-aaaaaaaaaaaa");
+    vi.stubEnv("SOME_VENDOR_API_KEY", "test-key-vendor-HOST-LEAK-bbbbbbbb");
+    vi.stubEnv("SIBLING_AUTH_TOKEN", "test-key-sibling-HOST-LEAK-cccccccc");
     try {
       const { queryFn, calls } = makeFakeQuery({
         scripts: [oneTurnStream("sess-g2", "x")],
@@ -164,8 +203,8 @@ describe("pool — GATEWAY wiring never leaks the real key", () => {
     // deepseek is direct: its own key rides ANTHROPIC_AUTH_TOKEN (applied after
     // the strip). A sibling provider's key sitting in process.env must NOT ride
     // along.
-    vi.stubEnv("GLM_API_KEY", "sk-test-glm-SIBLING-HOST-dddddddddddd");
-    vi.stubEnv("RELAY2_API_KEY", "sk-test-relay-SIBLING-HOST-eeeeeeee");
+    vi.stubEnv("GLM_API_KEY", "test-key-glm-SIBLING-HOST-dddddddddddd");
+    vi.stubEnv("RELAY2_API_KEY", "test-key-relay-SIBLING-HOST-eeeeeeee");
     try {
       const { queryFn, calls } = makeFakeQuery({
         scripts: [oneTurnStream("sess-g3", "x")],

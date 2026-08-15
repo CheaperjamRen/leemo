@@ -42,9 +42,41 @@ function seededPlanClient(): BridgeClient & { emitPlan(): void; emitFinished(): 
 
 function PlanSeeder({ client }: { client: ReturnType<typeof seededPlanClient> }) {
   const createConversation = useConversations((state) => state.createConversation);
+  const send = useConversations((state) => state.send);
   useEffect(() => {
-    void createConversation({ source: "buddy" }).then(() => client.emitPlan());
-  }, [client, createConversation]);
+    void createConversation({ source: "buddy" }).then(async (conversationId) => {
+      await send(conversationId, "执行当前任务");
+      client.emitPlan();
+    });
+  }, [client, createConversation, send]);
+  return <PinnedPlan />;
+}
+
+function RestartedPlanSeeder() {
+  const hydrate = useConversations((state) => state.hydrate);
+  useEffect(() => {
+    hydrate([{
+      meta: {
+        id: "restored",
+        title: "恢复的会话",
+        titleManuallyUpdated: false,
+        bookId: null,
+        source: "buddy",
+        providerId: "fixture",
+        modelId: "fixture",
+        createdAt: 1,
+        lastActivityAt: 2,
+        unread: false,
+      },
+      timeline: [{
+        kind: "plan",
+        id: "old-plan",
+        runId: "old-run",
+        toolUseId: "old-todo",
+        todos: [{ text: "重启前的旧计划", status: "active" }],
+      }],
+    }]);
+  }, [hydrate]);
   return <PinnedPlan />;
 }
 
@@ -72,5 +104,17 @@ describe("PinnedPlan", () => {
     expect(await screen.findByText(/当前任务/)).toBeInTheDocument();
     act(() => client.emitFinished());
     expect(screen.queryByText(/当前任务/)).not.toBeInTheDocument();
+  });
+
+  it("does not resurrect an unfinished-looking plan after app restart", async () => {
+    const noPlan = { invoke: async () => undefined as never, subscribe: () => () => {} } as BridgeClient;
+    const { container } = render(
+      <BridgeProvider client={noPlan}>
+        <RestartedPlanSeeder />
+      </BridgeProvider>,
+    );
+
+    await act(async () => undefined);
+    expect(container.textContent).not.toMatch(/当前任务|重启前的旧计划/);
   });
 });

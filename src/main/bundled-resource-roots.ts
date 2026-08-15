@@ -19,3 +19,13 @@ export function resolveOfficeBundleRoot(options: {
     ? path.join(options.appPath, "bundled-skills", "office", "release")
     : path.resolve(options.mainDirectory, "..", "bundled-skills", "office", "release");
 }
+
+export function resolveSuperpowersBundleRoot(options: {
+  packaged: boolean;
+  appPath: string;
+  mainDirectory: string;
+}): string {
+  return options.packaged
+    ? path.join(options.appPath, "bundled-skills", "superpowers", "release")
+    : path.resolve(options.mainDirectory, "..", "bundled-skills", "superpowers", "release");
+}

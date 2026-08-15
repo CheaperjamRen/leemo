@@ -87,7 +87,7 @@ describe("providers store", () => {
   });
 
   it("preserves old list and records a safe error when refresh fails", async () => {
-    const invoke = vi.fn().mockRejectedValue(new Error("apiKey=sk-live-secret"));
+    const invoke = vi.fn().mockRejectedValue(new Error("apiKey=test-live-secret"));
     const store = createProvidersStore(client(invoke), { list: [balanceProvider] });
 
     await expect(store.getState().refresh()).resolves.toBeUndefined();
@@ -95,7 +95,7 @@ describe("providers store", () => {
     expect(store.getState().list).toEqual([balanceProvider]);
     expect(store.getState().status).toBe("error");
     expect(store.getState().error).toBeTruthy();
-    expect(store.getState().error).not.toContain("sk-live-secret");
+    expect(store.getState().error).not.toContain("test-live-secret");
   });
 
   it("invokes balance only when the provider declares balanceApi", async () => {
@@ -186,7 +186,7 @@ describe("providers store — getConfig", () => {
 
 describe("providers store — saveProvider", () => {
   const draft: ProviderDraft = {
-    kind: "custom", name: "中转站", baseUrl: "https://relay.test", apiFormat: "openai", apiKey: "sk-live",
+    kind: "custom", name: "中转站", baseUrl: "https://relay.test", apiFormat: "openai", apiKey: "test-live",
   };
 
   it("saves, then refreshes so the UI sees the change immediately", async () => {

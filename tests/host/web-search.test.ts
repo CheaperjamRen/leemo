@@ -6,6 +6,11 @@ import {
   searchDoubao,
   searchMetaso,
   searchGoogle,
+  searchExa,
+  searchBrave,
+  searchSerpApi,
+  searchSerper,
+  searchFirecrawl,
   classifySearchHttpError,
   parseDdgLite,
   runSearchChain,
@@ -172,6 +177,106 @@ describe("searchGoogle", () => {
     expect(hits).toEqual([
       { title: "Google result", url: "https://example.com/google", snippet: "Plain snippet" },
     ]);
+  });
+});
+
+describe("新增公开搜索 API 适配", () => {
+  const query = "Leemo search parity";
+  const cases = [
+    {
+      name: "Exa",
+      response: { results: [{ title: "Exa result", url: "https://example.com/exa", highlights: ["Exa highlight"] }] },
+      run: (fetchFn: typeof fetch) => searchExa(query, { apiKey: "exa-key", fetchFn }),
+      assertRequest: (rawUrl: string, init: RequestInit) => {
+        expect(rawUrl).toBe("https://api.exa.ai/search");
+        expect(init.method).toBe("POST");
+        expect((init.headers as Record<string, string>)["x-api-key"]).toBe("exa-key");
+        expect(JSON.parse(String(init.body))).toEqual({
+          query,
+          type: "fast",
+          numResults: MAX_HITS,
+          contents: { highlights: true },
+        });
+      },
+      hit: { title: "Exa result", url: "https://example.com/exa", snippet: "Exa highlight" },
+    },
+    {
+      name: "Brave Search",
+      response: { web: { results: [{ title: "Brave result", url: "https://example.com/brave", description: "Brave description" }] } },
+      run: (fetchFn: typeof fetch) => searchBrave(query, { apiKey: "brave-key", fetchFn }),
+      assertRequest: (rawUrl: string, init: RequestInit) => {
+        const url = new URL(rawUrl);
+        expect(`${url.origin}${url.pathname}`).toBe("https://api.search.brave.com/res/v1/web/search");
+        expect(url.searchParams.get("q")).toBe(query);
+        expect(url.searchParams.get("count")).toBe(String(MAX_HITS));
+        expect(init.method).toBe("GET");
+        expect((init.headers as Record<string, string>)["X-Subscription-Token"]).toBe("brave-key");
+      },
+      hit: { title: "Brave result", url: "https://example.com/brave", snippet: "Brave description" },
+    },
+    {
+      name: "SerpAPI",
+      response: { organic_results: [{ title: "SerpAPI result", link: "https://example.com/serpapi", snippet: "SerpAPI snippet" }] },
+      run: (fetchFn: typeof fetch) => searchSerpApi(query, { apiKey: "serpapi-key", fetchFn }),
+      assertRequest: (rawUrl: string, init: RequestInit) => {
+        const url = new URL(rawUrl);
+        expect(`${url.origin}${url.pathname}`).toBe("https://serpapi.com/search.json");
+        expect(url.searchParams.get("engine")).toBe("google");
+        expect(url.searchParams.get("q")).toBe(query);
+        expect(url.searchParams.get("num")).toBe(String(MAX_HITS));
+        expect(url.searchParams.get("api_key")).toBe("serpapi-key");
+        expect(init.method).toBe("GET");
+      },
+      hit: { title: "SerpAPI result", url: "https://example.com/serpapi", snippet: "SerpAPI snippet" },
+    },
+    {
+      name: "Serper",
+      response: { organic: [{ title: "Serper result", link: "https://example.com/serper", snippet: "Serper snippet" }] },
+      run: (fetchFn: typeof fetch) => searchSerper(query, { apiKey: "serper-key", fetchFn }),
+      assertRequest: (rawUrl: string, init: RequestInit) => {
+        expect(rawUrl).toBe("https://google.serper.dev/search");
+        expect(init.method).toBe("POST");
+        expect((init.headers as Record<string, string>)["X-API-KEY"]).toBe("serper-key");
+        expect(JSON.parse(String(init.body))).toEqual({ q: query, num: MAX_HITS });
+      },
+      hit: { title: "Serper result", url: "https://example.com/serper", snippet: "Serper snippet" },
+    },
+    {
+      name: "Firecrawl",
+      response: { success: true, data: { web: [{ title: "Firecrawl result", url: "https://example.com/firecrawl", description: "Firecrawl description" }] } },
+      run: (fetchFn: typeof fetch) => searchFirecrawl(query, { apiKey: "firecrawl-key", fetchFn }),
+      assertRequest: (rawUrl: string, init: RequestInit) => {
+        expect(rawUrl).toBe("https://api.firecrawl.dev/v2/search");
+        expect(init.method).toBe("POST");
+        expect((init.headers as Record<string, string>).authorization).toBe("Bearer firecrawl-key");
+        expect(JSON.parse(String(init.body))).toEqual({ query, limit: MAX_HITS, sources: ["web"] });
+      },
+      hit: { title: "Firecrawl result", url: "https://example.com/firecrawl", snippet: "Firecrawl description" },
+    },
+  ];
+
+  it.each(cases)("$name 使用官方请求形态并只返回可引用字段", async ({ response, run, assertRequest, hit }) => {
+    const fetchFn = okJson(response);
+    const hits = await run(fetchFn);
+    const [rawUrl, init] = (fetchFn as unknown as { mock: { calls: unknown[][] } }).mock.calls[0] as [string, RequestInit];
+    assertRequest(rawUrl, init);
+    expect(hits).toEqual([hit]);
+  });
+
+  it("新增来源的失败只返回可行动的人话，不泄露密钥或响应正文", async () => {
+    const fetchFn = vi.fn(async () => ({
+      ok: false,
+      status: 401,
+      async text() { return "exa-secret and upstream diagnostic body"; },
+    })) as unknown as typeof fetch;
+    let message = "";
+    try {
+      await searchExa("q", { apiKey: "exa-secret", fetchFn });
+    } catch (error) {
+      message = error instanceof Error ? error.message : String(error);
+    }
+    expect(message).toContain("认证失败");
+    expect(message).not.toMatch(/exa-secret|upstream diagnostic/);
   });
 });
 
@@ -382,6 +487,25 @@ describe("buildSourceChain", () => {
       googleCx: "cx",
     }).map((s) => s.name);
     expect(names).toEqual(["anysearch", "doubao", "metaso", "tavily", "bocha", "google"]);
+  });
+
+  it("所有仍可用的已配置来源进入同一 fallback 链，已退役的 Bing 不伪造端点", () => {
+    const names = buildSourceChain({
+      exaKey: "exa",
+      braveKey: "brave",
+      serpapiKey: "serpapi",
+      serperKey: "serper",
+      firecrawlKey: "firecrawl",
+    }).map((source) => source.name);
+    expect(names).toEqual([
+      "anysearch",
+      "exa",
+      "brave",
+      "serpapi",
+      "serper",
+      "firecrawl",
+    ]);
+    expect(names).not.toContain("bing");
   });
 });
 

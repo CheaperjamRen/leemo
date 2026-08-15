@@ -4,12 +4,8 @@ import type { WorkspaceClient, WorkspaceNotebook } from "../workspace/client";
 /**
  * 本子 (notebook) = a DIRECTORY under ~/Leemo (06 §五, 轮 3 卡 G).
  *
- * There is no notebook metadata anywhere: `id === title === directory name`,
- * and the color is a stable hash of that name computed in main. That is what
- * keeps this store honest — anything we stored alongside would desync the moment
- * the user renames a folder in Explorer. It also matches the convention the code
- * already had: artifacts.ts `bookForPath` reads a path's first segment as the
- * book id.
+ * The directory name remains the stable id. Display rename/archive metadata is
+ * projected by main and never changes, moves or deletes the real folder.
  */
 export type Notebook = WorkspaceNotebook;
 
@@ -30,6 +26,8 @@ export interface NotebooksState {
   /** Create the real directory. Rejects (does not silently no-op) so the caller
    *  can show why — duplicate name, illegal characters. */
   createNotebook(title: string): Promise<string>;
+  renameNotebook(id: string, title: string): Promise<boolean>;
+  setNotebookArchived(id: string, archived: boolean): Promise<boolean>;
   setActive(id: string | null): void;
 }
 
@@ -110,6 +108,49 @@ export function createNotebooksStore(
         const error = e instanceof Error ? e.message : String(e);
         set({ error });
         throw e instanceof Error ? e : new Error(error);
+      }
+    },
+
+    renameNotebook: async (id, title) => {
+      const trimmed = title.trim();
+      if (!trimmed) {
+        set({ error: "本子显示名称不能为空" });
+        return false;
+      }
+      if (!workspace?.updateNotebook) {
+        set({ error: "当前环境不能修改本子名称。" });
+        return false;
+      }
+      try {
+        const updated = await workspace.updateNotebook(id, { title: trimmed });
+        set((state) => ({
+          list: state.list.map((book) => book.id === id ? updated : book)
+            .sort((left, right) => left.title.localeCompare(right.title, "zh-CN")),
+          error: null,
+        }));
+        return true;
+      } catch (e: unknown) {
+        set({ error: e instanceof Error ? e.message : String(e) });
+        return false;
+      }
+    },
+
+    setNotebookArchived: async (id, archived) => {
+      if (!workspace?.updateNotebook) {
+        set({ error: "当前环境不能归档这个本子。" });
+        return false;
+      }
+      try {
+        const updated = await workspace.updateNotebook(id, { archived });
+        set((state) => ({
+          list: state.list.map((book) => book.id === id ? updated : book),
+          activeId: archived && state.activeId === id ? null : state.activeId,
+          error: null,
+        }));
+        return true;
+      } catch (e: unknown) {
+        set({ error: e instanceof Error ? e.message : String(e) });
+        return false;
       }
     },
 

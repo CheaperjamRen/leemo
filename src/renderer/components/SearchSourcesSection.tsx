@@ -17,7 +17,10 @@ const SOURCE_GROUPS: Array<{
 }> = [
   { label: "默认来源", sourceIds: ["anysearch"] },
   { label: "中文增强", sourceIds: ["doubao", "metaso"] },
-  { label: "更多来源", sourceIds: ["tavily", "bocha", "google"] },
+  {
+    label: "更多来源",
+    sourceIds: ["tavily", "bocha", "google", "exa", "brave", "serpapi", "serper", "bing", "firecrawl"],
+  },
 ];
 
 function ToggleRow({
@@ -58,6 +61,7 @@ function ToggleRow({
 }
 
 function sourceStatus(source: SearchSourceStatus): string {
+  if (source.blockedReason) return "暂不可用";
   if (source.keyless) return source.configured ? "开箱可用 · 已增强" : "开箱可用";
   return source.configured ? "已配置" : "可选";
 }
@@ -156,6 +160,7 @@ export function SearchSourcesSection({
   };
 
   const renderSource = (source: SearchSourceStatus): React.JSX.Element => {
+    const blocked = !!source.blockedReason;
     const isOpen = openSource === source.id;
     const draft = drafts[source.id] ?? emptyDraft();
     const sourceError = validationError[source.id] ?? saveError[source.id];
@@ -165,13 +170,17 @@ export function SearchSourcesSection({
       <div key={source.id} className="bg-white">
         <button
           type="button"
-          aria-label={`配置 ${source.label}`}
-          aria-expanded={isOpen}
+          aria-label={blocked ? `${source.label} 暂不可用` : `配置 ${source.label}`}
+          aria-expanded={blocked ? false : isOpen}
+          disabled={blocked}
           onClick={() => {
+            if (blocked) return;
             setOpenSource(isOpen ? null : source.id);
             setConfirmClear(null);
           }}
-          className="flex min-h-16 w-full items-center justify-between gap-4 px-1 py-3 text-left hover:bg-[var(--leemo-work-hover)]"
+          className={`flex min-h-16 w-full items-center justify-between gap-4 px-1 py-3 text-left ${
+            blocked ? "cursor-not-allowed opacity-65" : "hover:bg-[var(--leemo-work-hover)]"
+          }`}
         >
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
@@ -180,17 +189,21 @@ export function SearchSourcesSection({
                 {sourceStatus(source)}
               </span>
             </div>
-            <p className="mt-1 text-xs leading-5 text-[var(--leemo-ink-3)]">{source.note}</p>
+            <p className="mt-1 text-xs leading-5 text-[var(--leemo-ink-3)]">
+              {source.blockedReason ?? source.note}
+            </p>
           </div>
-          <ChevronDown
-            aria-hidden="true"
-            size={16}
-            strokeWidth={1.8}
-            className={`shrink-0 text-[var(--leemo-ink-3)] transition-transform ${isOpen ? "rotate-180" : ""}`}
-          />
+          {!blocked && (
+            <ChevronDown
+              aria-hidden="true"
+              size={16}
+              strokeWidth={1.8}
+              className={`shrink-0 text-[var(--leemo-ink-3)] transition-transform ${isOpen ? "rotate-180" : ""}`}
+            />
+          )}
         </button>
 
-        {isOpen && (
+        {isOpen && !blocked && (
           <div className="border-t border-[var(--leemo-line-soft)] bg-[#FCFCFB] px-3 py-4 sm:px-4">
             <div className={`grid gap-3 ${source.id === "google" ? "sm:grid-cols-2" : ""}`}>
               <label className="min-w-0">

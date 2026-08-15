@@ -50,7 +50,7 @@ function memIO(seed?: Record<string, Buffer>): SecretsIO & { store: Map<string, 
 }
 
 const PATH = "/userData/secrets.enc";
-const REAL_KEY = "sk-deepseek-abcdef0123456789abcdef0123456789";
+const REAL_KEY = "test-deepseek-abcdef0123456789abcdef0123456789";
 const GLM_KEY = "sk-glm-999888777";
 
 describe("loadOrMigrateSecrets — reading the store", () => {

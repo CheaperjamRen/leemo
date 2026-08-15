@@ -19,7 +19,7 @@ describe("buildQueryFn", () => {
     const fakeQuery = (p: QueryParams) => { captured.push(p); return (async function* () {})(); };
     const extras = makeExtras();
     const qfn = buildQueryFn(extras, fakeQuery as never);
-    const env = { ANTHROPIC_AUTH_TOKEN: "sk-test-abc", PATH: "/usr/bin" };
+    const env = { ANTHROPIC_AUTH_TOKEN: "test-key-abc", PATH: "/usr/bin" };
     const abort = new AbortController();
     await qfn({ prompt: "hello", options: { env, abortController: abort } })[Symbol.asyncIterator]().next();
     expect(captured[0].options?.env).toBe(env);

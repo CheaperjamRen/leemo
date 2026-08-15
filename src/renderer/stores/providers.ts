@@ -9,6 +9,7 @@ import type {
   ListRemoteModelsResult,
   ListRemoteModelsRequest,
   ProviderError,
+  ProviderLoginStatus,
   RemoteModel,
 } from "../../bridge/contract";
 import type { BridgeClient } from "../bridge/client";
@@ -40,6 +41,7 @@ export interface ProvidersState {
   tests: Record<string, ConnectionTestResult | { pending: true }>;
   /** Remote-model-discovery results, same keying as `tests`. */
   remoteModels: Record<string, { models: RemoteModel[] } | { pending: true } | { error: ProviderError }>;
+  loginStatuses: Record<string, ProviderLoginStatus | { pending: true }>;
   refresh(): Promise<void>;
   fetchBalance(providerId: string): Promise<void>;
   /** GET side of the config form. Returns null for an unknown id (never
@@ -54,6 +56,9 @@ export interface ProvidersState {
   testConnection(req: ConnectionTestRequest): Promise<ConnectionTestResult>;
   /** Result lands in `remoteModels[key]`, same keying as `testConnection`. */
   listRemoteModels(req: ListRemoteModelsRequest): Promise<ListRemoteModelsResult>;
+  getLoginStatus(providerId: string): Promise<ProviderLoginStatus>;
+  loginProvider(providerId: string): Promise<ProviderLoginStatus>;
+  logoutProvider(providerId: string): Promise<ProviderLoginStatus>;
 }
 
 function safeError(fallback: string): string {
@@ -113,6 +118,7 @@ export function createProvidersStore(
     balances: {},
     tests: {},
     remoteModels: {},
+    loginStatuses: {},
 
     refresh: async () => {
       try {
@@ -251,6 +257,44 @@ export function createProvidersStore(
             [key]: { error: result.error! },
           },
         }));
+        return result;
+      }
+    },
+
+    getLoginStatus: async (providerId) => {
+      try {
+        const result = await client.invoke("bridge:getProviderLoginStatus", { providerId });
+        set((state) => ({ loginStatuses: { ...state.loginStatuses, [providerId]: result } }));
+        return result;
+      } catch {
+        const result: ProviderLoginStatus = { state: "unavailable", message: "暂时无法检查登录状态。" };
+        set((state) => ({ loginStatuses: { ...state.loginStatuses, [providerId]: result } }));
+        return result;
+      }
+    },
+
+    loginProvider: async (providerId) => {
+      set((state) => ({ loginStatuses: { ...state.loginStatuses, [providerId]: { pending: true } } }));
+      try {
+        const result = await client.invoke("bridge:loginProvider", { providerId });
+        set((state) => ({ loginStatuses: { ...state.loginStatuses, [providerId]: result } }));
+        return result;
+      } catch {
+        const result: ProviderLoginStatus = { state: "unavailable", message: "登录没有完成，可以重新尝试。" };
+        set((state) => ({ loginStatuses: { ...state.loginStatuses, [providerId]: result } }));
+        return result;
+      }
+    },
+
+    logoutProvider: async (providerId) => {
+      set((state) => ({ loginStatuses: { ...state.loginStatuses, [providerId]: { pending: true } } }));
+      try {
+        const result = await client.invoke("bridge:logoutProvider", { providerId });
+        set((state) => ({ loginStatuses: { ...state.loginStatuses, [providerId]: result } }));
+        return result;
+      } catch {
+        const result: ProviderLoginStatus = { state: "unavailable", message: "退出登录失败，请重试。" };
+        set((state) => ({ loginStatuses: { ...state.loginStatuses, [providerId]: result } }));
         return result;
       }
     },

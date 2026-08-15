@@ -4,10 +4,17 @@ import ToolCard from "./ToolCard";
 import PlanCard from "./PlanCard";
 import ActivityCard from "./ActivityCard";
 import CompactDivider from "./CompactDivider";
-import ThinkingCard from "./ThinkingCard";
 import ApprovalBar from "../ApprovalBar";
+import { isMcpToolName, toolActionLabel } from "../tool-labels";
+import MomoAvatar from "../momo/MomoAvatar";
 
-function renderProcess(item: TimelineItem, runId: string, density: ProcessDensity, stale: boolean) {
+function renderProcess(
+  item: TimelineItem,
+  runId: string,
+  density: ProcessDensity,
+  stale: boolean,
+  siblingIndex?: number,
+) {
   switch (item.kind) {
     // A tool awaiting permission renders its approval card right here, so the
     // question sits where the work is instead of at the end of the turn.
@@ -24,11 +31,48 @@ function renderProcess(item: TimelineItem, runId: string, density: ProcessDensit
       </div>
     );
     case "plan": return <PlanCard key={item.id} item={item} />;
-    case "activity": return <ActivityCard key={item.id} item={item} stale={stale} />;
+    case "activity": return <ActivityCard key={item.id} item={item} stale={stale} siblingIndex={siblingIndex} />;
+    case "retry": return <RetryStatus key={item.id} item={item} />;
     case "compact": return <CompactDivider key={item.id} item={item} />;
-    case "thinking": return <ThinkingCard key={item.id} item={item} />;
+    case "thinking": return null;
     default: return null;
   }
+}
+
+function RetryStatus({ item }: { item: Extract<TimelineItem, { kind: "retry" }> }) {
+  const [expanded, setExpanded] = useState(false);
+  const label = item.state === "recovered"
+    ? "连接已恢复"
+    : item.state === "failed"
+      ? "重新连接未成功"
+      : item.summary;
+  return (
+    <div className="overflow-hidden rounded-[9px] border border-[var(--leemo-line-2)] bg-[var(--leemo-card)]">
+      <button
+        type="button"
+        aria-label="查看重连错误详情"
+        aria-expanded={expanded}
+        onClick={() => setExpanded((value) => !value)}
+        className="flex w-full items-center gap-2 px-2.5 py-2 text-left"
+      >
+        <span
+          className={`h-1.5 w-1.5 shrink-0 rounded-full ${item.state === "failed" ? "bg-[var(--leemo-danger)]" : "bg-[var(--leemo-amber)]"}`}
+          aria-hidden
+        />
+        <span className="min-w-0 truncate text-[12px] text-[var(--leemo-ink-2)]">{label}</span>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8}
+          className={`ml-auto h-3.5 w-3.5 shrink-0 text-[var(--leemo-ink-3)] transition-transform ${expanded ? "rotate-180" : ""}`}
+          aria-hidden>
+          <path d="m6 9 6 6 6-6" />
+        </svg>
+      </button>
+      {expanded && (
+        <pre className="max-h-36 overflow-auto border-t border-[var(--leemo-line-2)] px-2.5 py-2 text-[11px] leading-5 text-[var(--leemo-ink-3)] whitespace-pre-wrap [overflow-wrap:anywhere]">
+          {item.detail}
+        </pre>
+      )}
+    </div>
+  );
 }
 
 type ProcessDensity = "workbench" | "buddy";
@@ -37,7 +81,9 @@ export type ProcessOutcome = "success" | "error" | "interrupted";
 function hasStaleWork(items: TimelineItem[]): boolean {
   return items.some((item) =>
     (item.kind === "tool" && item.status === "running")
-    || (item.kind === "activity" && item.tools.some((tool) => tool.status === "running"))
+    || (item.kind === "activity" && (
+      item.status === "running" || item.tools.some((tool) => tool.status === "running")
+    ))
     || (item.kind === "thinking" && item.streaming),
   );
 }
@@ -48,24 +94,28 @@ function buddySummary(
   stale: boolean,
   outcome?: ProcessOutcome,
 ): string {
+  const latest = [...items].reverse().find((item) => item.kind !== "thinking");
+  if (latest?.kind === "retry" && latest.state === "retrying") return latest.summary;
   if (outcome === "interrupted") return "momo 已停下这一步";
   if (outcome === "error") return "有一步没完成，点开看看";
   const hasError = items.some((item) =>
     (item.kind === "tool" && item.status === "error")
-    || (item.kind === "activity" && item.tools.some((tool) => tool.status === "error")),
+    || (item.kind === "activity" && (
+      item.status === "error" || item.tools.some((tool) => tool.status === "error")
+    )),
   );
   if (hasError) return "有一步没完成，点开看看";
   if (stale) return "上次停在这里";
 
   if (!activeTurn) {
-    if (items.some((item) => item.kind === "activity")) return "momo 和小助手核对过";
-    if (items.some((item) => item.kind === "plan")) return "momo 梳理过步骤";
-    return "momo 刚把过程收好了";
+    return "任务已完成";
   }
 
   const activeItem = [...items].reverse().find((item) =>
     (item.kind === "tool" && item.status === "running")
-    || (item.kind === "activity" && item.tools.some((tool) => tool.status === "running"))
+    || (item.kind === "activity" && (
+      item.status === "running" || item.tools.some((tool) => tool.status === "running")
+    ))
     || (item.kind === "plan" && item.todos.some((todo) => todo.status === "active"))
     || (item.kind === "thinking" && item.streaming),
   );
@@ -85,6 +135,7 @@ function buddySummary(
 }
 
 function toolAction(name: string): string {
+  if (isMcpToolName(name)) return toolActionLabel(name).replace(/^在/u, "");
   const lower = name.toLowerCase();
   if (/websearch|webfetch|browser|playwright|chrome/.test(lower)) return "查询资料";
   if (/grep|glob|search/.test(lower)) return "搜索内容";
@@ -101,30 +152,36 @@ function workbenchSummary(
   stale: boolean,
   outcome?: ProcessOutcome,
 ): string {
+  const latest = [...items].reverse().find((item) => item.kind !== "thinking");
+  if (latest?.kind === "retry" && latest.state === "retrying") return latest.summary;
   const lastAction = [...items].reverse().find((item) =>
     item.kind === "tool" || item.kind === "activity" || item.kind === "plan" || item.kind === "compact",
   );
   const pending = [...items].reverse().find((item) =>
     (item.kind === "tool" && item.status === "running")
-    || (item.kind === "activity" && item.tools.some((tool) => tool.status === "running"))
+    || (item.kind === "activity" && (
+      item.status === "running" || item.tools.some((tool) => tool.status === "running")
+    ))
     || (item.kind === "plan" && item.todos.some((todo) => todo.status === "active")),
   );
   if (outcome === "interrupted" && pending) {
     if (pending.kind === "tool") return `${toolAction(pending.name)}已停止`;
-    if (pending.kind === "activity") return "子任务已停止";
+    if (pending.kind === "activity") return "助手已停止";
     return "计划更新已停止";
   }
   if (outcome === "error" && pending) {
     if (pending.kind === "tool") return `${toolAction(pending.name)}未完成`;
-    if (pending.kind === "activity") return "子任务未完成";
+    if (pending.kind === "activity") return "助手未完成";
     return "计划更新未完成";
   }
   const failed = [...items].reverse().find((item) =>
     (item.kind === "tool" && item.status === "error")
-    || (item.kind === "activity" && item.tools.some((tool) => tool.status === "error")),
+    || (item.kind === "activity" && (
+      item.status === "error" || item.tools.some((tool) => tool.status === "error")
+    )),
   );
   if (failed?.kind === "tool") return `${toolAction(failed.name)}未完成`;
-  if (failed?.kind === "activity") return "子任务未完成";
+  if (failed?.kind === "activity") return "助手未完成";
   // With no concrete action status to preserve, the terminal event is the only
   // trustworthy description of what happened to the process block.
   if (!lastAction && outcome === "interrupted") return "处理过程已停止";
@@ -134,19 +191,28 @@ function workbenchSummary(
   if (activeTurn) {
     const activeItem = [...items].reverse().find((item) =>
       (item.kind === "tool" && item.status === "running")
-      || (item.kind === "activity" && item.tools.some((tool) => tool.status === "running"))
+      || (item.kind === "activity" && (
+        item.status === "running" || item.tools.some((tool) => tool.status === "running")
+      ))
       || (item.kind === "plan" && item.todos.some((todo) => todo.status === "active"))
       || (item.kind === "thinking" && item.streaming),
     );
     if (activeItem?.kind === "tool") return `正在${toolAction(activeItem.name)}`;
-    if (activeItem?.kind === "activity") return "正在运行子任务";
+    if (activeItem?.kind === "activity") return "助手正在处理";
     if (activeItem?.kind === "plan") return "正在更新计划";
     if (activeItem?.kind === "thinking") return "正在思考";
     return "正在继续处理";
   }
 
-  if (lastAction?.kind === "tool") return `${toolAction(lastAction.name)}已完成`;
-  if (lastAction?.kind === "activity") return "子任务已完成";
+  if (lastAction?.kind === "tool") {
+    const verifiedFileMutation = /read|notebook/i.test(lastAction.name)
+      && items.some((item) => item.kind === "tool"
+        && item.status === "ok"
+        && /write|edit/i.test(item.name));
+    if (verifiedFileMutation) return "处理文件已完成";
+    return `${toolAction(lastAction.name)}已完成`;
+  }
+  if (lastAction?.kind === "activity") return "助手已完成";
   if (lastAction?.kind === "plan") return "计划已更新";
   if (lastAction?.kind === "compact") return "上下文已整理";
   return "处理过程已完成";
@@ -191,20 +257,34 @@ export default function ProcessFold({
   const summary = summaryOverride ?? (buddy
     ? buddySummary(items, active, stale, outcome)
     : workbenchSummary(items, active, stale, outcome));
+  const plans = items.filter((item) => item.kind === "plan");
+  const retries = items.filter((item) => item.kind === "retry");
+  const tools = items.filter((item) => item.kind === "tool");
+  const activities = items.filter((item) => item.kind === "activity");
+  const otherItems = items.filter((item) => item.kind === "compact");
+  const latestPlan = plans.at(-1);
+  const planDone = latestPlan?.todos.filter((todo) => todo.status === "done").length ?? 0;
+  const planTotal = latestPlan?.todos.length ?? 0;
+  const planHasUnfinished = latestPlan?.todos.some((todo) => todo.status !== "done") ?? false;
+  // A successful terminal result is the source of truth for the turn. Keep the
+  // model's original plan visible when expanded, but do not advertise a stale
+  // partial fraction beside a completed delivery.
+  const showPlanProgress = planTotal > 0 && !(outcome === "success" && planHasUnfinished);
   return (
     <div
       data-testid="process-fold"
       className={buddy
         ? "my-1 overflow-hidden rounded-[8px]"
-        : "my-1.5 overflow-hidden rounded-[12px] border border-[var(--leemo-line-2)] bg-[var(--leemo-card)] leemo-card-shadow"}
+        : "my-1.5 overflow-hidden rounded-[9px] border border-[var(--leemo-line-2)] bg-[var(--leemo-card)]"}
     >
       <button
+        data-testid="process-fold-toggle"
         type="button"
         aria-label={buddy ? undefined : `momo 的干活过程：${summary}，${totalSteps} 步`}
         onClick={() => setCollapsed((v) => !v)}
         className={buddy
           ? "flex w-full items-center gap-2 px-1.5 py-1.5 text-left text-[12px] text-[var(--leemo-ink-3)] transition-colors hover:text-[var(--leemo-ink-2)]"
-          : "flex w-full items-center gap-2.5 px-3 py-2 text-left transition-colors hover:bg-[var(--leemo-panel)]"}
+          : "flex h-11 w-full items-center gap-2.5 px-3 text-left transition-colors hover:bg-[var(--leemo-panel)]"}
       >
         {buddy ? (
           <>
@@ -213,14 +293,23 @@ export default function ProcessFold({
           </>
         ) : (
           <>
-            <span className="grid h-[26px] w-[26px] shrink-0 place-items-center rounded-[8px] bg-[var(--leemo-amber-bg)] text-[var(--leemo-amber)] ring-1 ring-[var(--leemo-amber-line)]">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round"
-                className="h-[14px] w-[14px]" aria-hidden>
-                <path d="M4 5h11" /><path d="M4 12h16" /><path d="M4 19h8" />
-              </svg>
-            </span>
+            <MomoAvatar size={26} state={active ? "thinking" : "calm"} />
             <span className="min-w-0 truncate text-[12.5px] font-medium text-[var(--leemo-ink)]">{summary}</span>
-            <span className="text-[11px] text-[var(--leemo-ink-3)]">{totalSteps} 步</span>
+            {showPlanProgress ? (
+              <>
+                <span data-testid="process-fold-progress" className="shrink-0 text-[11px] tabular-nums text-[var(--leemo-ink-3)]">
+                  {planDone} / {planTotal}
+                </span>
+                <span className="relative h-1 w-14 shrink-0 overflow-hidden rounded-full bg-[var(--leemo-line-2)]" aria-hidden>
+                  <span
+                    className="absolute inset-y-0 left-0 rounded-full bg-[var(--leemo-amber)] transition-[width]"
+                    style={{ width: `${Math.round((planDone / planTotal) * 100)}%` }}
+                  />
+                </span>
+              </>
+            ) : (
+              <span className="text-[11px] text-[var(--leemo-ink-3)]">{totalSteps} 步</span>
+            )}
             {archivedCount > 0 && (
               <span className="text-[11px] text-[var(--leemo-ink-3)]">含 {archivedCount} 条确认记录</span>
             )}
@@ -236,7 +325,21 @@ export default function ProcessFold({
       </button>
       {!collapsed && (
         <div className="space-y-1.5 border-t border-[var(--leemo-line-2)] bg-[var(--leemo-panel)]/40 px-3 py-2.5">
-          {items.map((item) => renderProcess(item, runId, density, stale))}
+          {plans.map((item) => renderProcess(item, runId, density, stale))}
+          {retries.map((item) => renderProcess(item, runId, density, stale))}
+          {tools.length > 0 && (
+            <section className="space-y-1.5" aria-label={`工具与命令，${tools.length} 次`}>
+              <h4 className="pt-1 text-[11px] font-medium text-[var(--leemo-ink-3)]">工具与命令 · {tools.length} 次</h4>
+              {tools.map((item) => renderProcess(item, runId, density, stale))}
+            </section>
+          )}
+          {activities.length > 0 && (
+            <section className="space-y-1.5" aria-label={`助手协作，${activities.length}`}>
+              <h4 className="pt-1 text-[11px] font-medium text-[var(--leemo-ink-3)]">助手协作 · {activities.length}</h4>
+              {activities.map((item, siblingIndex) => renderProcess(item, runId, density, stale, siblingIndex))}
+            </section>
+          )}
+          {otherItems.map((item) => renderProcess(item, runId, density, stale))}
           {archivedContent}
         </div>
       )}

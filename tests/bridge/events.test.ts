@@ -3,6 +3,7 @@ import path from "node:path";
 import {
   normalizeSdkStream,
   buildUsageRecord,
+  createModelUsageCursor,
   auditClaimedPaths,
   type LeemoEvent,
 } from "../../src/bridge/events";
@@ -40,6 +41,50 @@ function fakeStream(msgs: TestMsgB2[]): AsyncIterable<TestMsgB2> {
 const CWD = path.resolve(__dirname, "fixtures"); // a real dir, guaranteed to exist
 
 describe("normalizeSdkStream — event-by-event mapping", () => {
+  it("surfaces a native Claude retry without replaying or ending the stream", async () => {
+    const messages = [
+      {
+        type: "system",
+        subtype: "api_retry",
+        attempt: 1,
+        max_retries: 5,
+        retry_delay_ms: 250,
+        error_status: null,
+        error: "Bearer test-key-secret-1234567890",
+        session_id: "session-retry",
+      },
+      {
+        type: "stream_event",
+        event: { type: "content_block_delta", delta: { type: "text_delta", text: "继续输出" } },
+        session_id: "session-retry",
+      },
+      {
+        type: "result",
+        subtype: "success",
+        is_error: false,
+        result: "继续输出",
+        session_id: "session-retry",
+      },
+    ] as unknown as TestMsgB2[];
+
+    const events = await drain(normalizeSdkStream(fakeStream(messages), {
+      providerId: "anthropic",
+      modelId: "claude-sonnet",
+      cwd: CWD,
+    }));
+
+    expect(events[0]).toEqual({
+      type: "stream.retry",
+      attempt: 1,
+      maxAttempts: 5,
+      summary: "正在重新连接 1/5",
+      detail: "Bearer [已隐藏] · 连接错误 · 250ms 后重试",
+      scope: "connection",
+    });
+    expect(events).toContainEqual({ type: "text.delta", text: "继续输出" });
+    expect(events.at(-1)).toMatchObject({ type: "run.finished", isError: false, finalText: "继续输出" });
+  });
+
   it("maps the full realistic stream to the expected LeemoEvent sequence, in order", async () => {
     const finalText = "Done. See leemo.config.json for the result.";
     const msgs = fullTurnStream({
@@ -667,6 +712,365 @@ describe("normalizeSdkStream — event-by-event mapping", () => {
   });
 });
 
+describe("normalizeSdkStream — Claude Agent SDK 0.3.227 structured status", () => {
+  const resultUsage = {
+    input_tokens: 80,
+    output_tokens: 12,
+    cache_read_input_tokens: 20,
+    cache_creation_input_tokens: 5,
+  };
+
+  it("classifies an exhausted 529 as retryable overload without exposing SDK wording", async () => {
+    const messages = [{
+      type: "result",
+      subtype: "error_during_execution",
+      is_error: true,
+      api_error_status: 529,
+      errors: ["API Error: 529 overloaded_error"],
+      result: "",
+      usage: resultUsage,
+      modelUsage: {},
+      permission_denials: [],
+      session_id: "status-529",
+    }] as unknown as TestMsgB2[];
+
+    const events = await drain(normalizeSdkStream(fakeStream(messages), {
+      providerId: "anthropic",
+      modelId: "claude-sonnet",
+      cwd: CWD,
+    }));
+
+    expect(events).toContainEqual({
+      type: "error",
+      message: "服务商当前过载（529）。自动重试仍未恢复，请稍后重试或换一个模型。",
+    });
+    expect(events.at(-1)).toMatchObject({
+      type: "run.finished",
+      outcome: "overloaded",
+      retryable: true,
+      statusCode: 529,
+      isError: true,
+    });
+    expect(JSON.stringify(events)).not.toMatch(/Claude Code|overloaded_error|API Error/i);
+  });
+
+  it("does not turn a recovered api_error_status on a success result into a failed run", async () => {
+    const messages = [{
+      type: "result",
+      subtype: "success",
+      is_error: false,
+      api_error_status: 429,
+      result: "已经恢复并完成。",
+      usage: resultUsage,
+      modelUsage: {},
+      permission_denials: [],
+      session_id: "recovered-429",
+    }] as unknown as TestMsgB2[];
+
+    const events = await drain(normalizeSdkStream(fakeStream(messages), {
+      providerId: "anthropic",
+      modelId: "claude-sonnet",
+      cwd: CWD,
+    }));
+
+    expect(events).toContainEqual({ type: "text.final", text: "已经恢复并完成。" });
+    expect(events.some((event) => event.type === "error")).toBe(false);
+    expect(events.at(-1)).toMatchObject({
+      type: "run.finished",
+      outcome: "completed",
+      retryable: false,
+      statusCode: 429,
+      isError: false,
+    });
+  });
+
+  it("treats an aborted assistant frame as cancellation and never publishes truncated text as final", async () => {
+    const messages = [
+      {
+        type: "assistant",
+        aborted: true,
+        message: { role: "assistant", content: [{ type: "text", text: "截断到一半" }] },
+        session_id: "aborted-frame",
+      },
+      {
+        type: "result",
+        subtype: "success",
+        is_error: false,
+        result: "截断到一半",
+        usage: resultUsage,
+        modelUsage: {},
+        permission_denials: [],
+        session_id: "aborted-frame",
+      },
+    ] as unknown as TestMsgB2[];
+
+    const events = await drain(normalizeSdkStream(fakeStream(messages), {
+      providerId: "anthropic",
+      modelId: "claude-sonnet",
+      cwd: CWD,
+    }));
+
+    expect(events.some((event) => event.type === "text.final")).toBe(false);
+    expect(events.some((event) => event.type === "error")).toBe(false);
+    expect(events.at(-1)).toMatchObject({
+      type: "run.finished",
+      subtype: "interrupted",
+      outcome: "cancelled",
+      isError: false,
+      finalText: "",
+    });
+  });
+
+  it("projects permission denials once while allowing an otherwise successful run to stay successful", async () => {
+    const denial = { tool_name: "Bash", tool_use_id: "tool-denied", tool_input: { command: "rm file" } };
+    const messages = [
+      {
+        type: "system",
+        subtype: "permission_denied",
+        tool_name: denial.tool_name,
+        tool_use_id: denial.tool_use_id,
+        message: "用户未允许这项操作。",
+        decision_reason_type: "mode",
+        session_id: "permission-denied",
+      },
+      {
+        type: "result",
+        subtype: "success",
+        is_error: false,
+        result: "我没有执行被拒绝的操作，其余检查已完成。",
+        usage: resultUsage,
+        modelUsage: {},
+        permission_denials: [denial],
+        session_id: "permission-denied",
+      },
+    ] as unknown as TestMsgB2[];
+
+    const events = await drain(normalizeSdkStream(fakeStream(messages), {
+      providerId: "anthropic",
+      modelId: "claude-sonnet",
+      cwd: CWD,
+    }));
+
+    expect(events.filter((event) => event.type === "tool.finished" && event.toolUseId === "tool-denied")).toEqual([{
+      type: "tool.finished",
+      toolUseId: "tool-denied",
+      isError: true,
+      outcome: "denied",
+      contentSummary: "用户未允许这项操作。",
+    }]);
+    expect(events.at(-1)).toMatchObject({ type: "run.finished", outcome: "completed", isError: false });
+  });
+
+  it("uses result.permission_denials as the authoritative fallback when no advisory event arrived", async () => {
+    const messages = [{
+      type: "result",
+      subtype: "success",
+      is_error: false,
+      result: "其余操作已完成。",
+      usage: resultUsage,
+      modelUsage: {},
+      permission_denials: [{ tool_name: "Write", tool_use_id: "result-denied", tool_input: { file_path: "a.md" } }],
+      session_id: "result-denial",
+    }] as unknown as TestMsgB2[];
+
+    const events = await drain(normalizeSdkStream(fakeStream(messages), {
+      providerId: "anthropic",
+      modelId: "claude-sonnet",
+      cwd: CWD,
+    }));
+
+    expect(events).toContainEqual({
+      type: "tool.finished",
+      toolUseId: "result-denied",
+      isError: true,
+      outcome: "denied",
+      contentSummary: "未获允许：Write",
+    });
+    expect(events.at(-1)).toMatchObject({ outcome: "completed", isError: false });
+  });
+
+  it("uses a defensive tool_result_meta sidecar to distinguish non-execution from an ordinary tool error", async () => {
+    const messages = [{
+      type: "user",
+      message: {
+        role: "user",
+        content: [
+          { type: "text", text: "保留的用户说明" },
+          { type: "tool_result", tool_use_id: "tool-cancelled", content: "未执行", is_error: true },
+        ],
+      },
+      tool_result_meta: [{
+        id: "tool-cancelled",
+        non_execution_kind: "cancelled",
+        user_feedback: "用户取消了这项操作。",
+      }],
+      session_id: "tool-meta",
+    }, {
+      type: "result",
+      subtype: "success",
+      is_error: false,
+      result: "已跳过取消的操作。",
+      usage: resultUsage,
+      modelUsage: {},
+      permission_denials: [],
+      session_id: "tool-meta",
+    }] as unknown as TestMsgB2[];
+
+    const events = await drain(normalizeSdkStream(fakeStream(messages), {
+      providerId: "anthropic",
+      modelId: "claude-sonnet",
+      cwd: CWD,
+    }));
+
+    expect(events).toContainEqual({
+      type: "tool.finished",
+      toolUseId: "tool-cancelled",
+      isError: true,
+      outcome: "cancelled",
+      contentSummary: "未执行",
+      userFeedback: "用户取消了这项操作。",
+    });
+  });
+
+  it("maps a user-rejected tool result to denied instead of a tool failure", async () => {
+    const messages = [{
+      type: "user",
+      message: {
+        role: "user",
+        content: [{ type: "tool_result", tool_use_id: "tool-rejected", content: "操作未执行", is_error: true }],
+      },
+      tool_result_meta: [{ id: "tool-rejected", non_execution_kind: "user-rejected" }],
+      session_id: "tool-rejected-session",
+    }, {
+      type: "result",
+      subtype: "success",
+      is_error: false,
+      result: "已保留现有内容。",
+      usage: resultUsage,
+      modelUsage: {},
+      permission_denials: [],
+      session_id: "tool-rejected-session",
+    }] as unknown as TestMsgB2[];
+
+    const events = await drain(normalizeSdkStream(fakeStream(messages), {
+      providerId: "anthropic",
+      modelId: "claude-sonnet",
+      cwd: CWD,
+    }));
+
+    expect(events).toContainEqual(expect.objectContaining({
+      type: "tool.finished",
+      toolUseId: "tool-rejected",
+      outcome: "denied",
+    }));
+  });
+
+  it("keeps subagent retry status separate from the main connection retry", async () => {
+    const messages = [{
+      type: "tool_progress",
+      tool_use_id: "agent-tool",
+      tool_name: "Agent",
+      subagent_retry: {
+        agent_id: "agent-a",
+        attempt: 2,
+        max_retries: 5,
+        retry_delay_ms: 500,
+        error_status: 529,
+        error_category: "overloaded",
+      },
+      session_id: "agent-retry",
+    }, {
+      type: "result",
+      subtype: "success",
+      is_error: false,
+      result: "子任务恢复后完成。",
+      usage: resultUsage,
+      modelUsage: {},
+      permission_denials: [],
+      session_id: "agent-retry",
+    }] as unknown as TestMsgB2[];
+
+    const events = await drain(normalizeSdkStream(fakeStream(messages), {
+      providerId: "anthropic",
+      modelId: "claude-sonnet",
+      cwd: CWD,
+    }));
+
+    expect(events[0]).toEqual({
+      type: "stream.retry",
+      scope: "subagent",
+      retryId: "agent-a",
+      attempt: 2,
+      maxAttempts: 5,
+      summary: "子任务正在重试 2/5",
+      detail: "HTTP 529 · overloaded · 500ms 后重试",
+    });
+  });
+
+  it("deltas cumulative modelUsage across turns and resets cleanly after an SDK lifecycle reset", async () => {
+    const cursor = createModelUsageCursor();
+    const result = (mainInput: number, mainOutput: number, mainCost: number) => ({
+      type: "result",
+      subtype: "success",
+      is_error: false,
+      result: "完成",
+      usage: resultUsage,
+      modelUsage: {
+        "claude-alias": {
+          inputTokens: mainInput,
+          outputTokens: mainOutput,
+          cacheReadInputTokens: 20,
+          cacheCreationInputTokens: 5,
+          webSearchRequests: 0,
+          costUSD: mainCost,
+          contextWindow: 200_000,
+          maxOutputTokens: 16_000,
+          canonicalModel: "claude-sonnet-4-6",
+          provider: "firstParty",
+        },
+        "claude-haiku-helper": {
+          inputTokens: 50,
+          outputTokens: 10,
+          cacheReadInputTokens: 0,
+          cacheCreationInputTokens: 0,
+          webSearchRequests: 0,
+          costUSD: 0.02,
+          contextWindow: 200_000,
+          maxOutputTokens: 8_000,
+          provider: "firstParty",
+        },
+      },
+      permission_denials: [],
+      session_id: "usage-cumulative",
+    });
+    const ctx = { providerId: "anthropic", modelId: "claude-alias", cwd: CWD, modelUsageCursor: cursor };
+
+    const first = await drain(normalizeSdkStream(fakeStream([result(100, 20, 0.10)] as unknown as TestMsgB2[]), ctx));
+    const second = await drain(normalizeSdkStream(fakeStream([result(150, 30, 0.15)] as unknown as TestMsgB2[]), ctx));
+    const reset = await drain(normalizeSdkStream(fakeStream([result(10, 2, 0.01)] as unknown as TestMsgB2[]), ctx));
+    const usageOf = (events: LeemoEvent[]) => events.find((event) => event.type === "usage.final") as Extract<LeemoEvent, { type: "usage.final" }>;
+
+    expect(usageOf(first).usage).toMatchObject({
+      inputTokens: 150,
+      outputTokens: 30,
+      costUsd: "0.120000",
+      contextInputTokens: 80,
+      modelBreakdown: [
+        expect.objectContaining({ modelId: "claude-sonnet-4-6", inputTokens: 100, costUsd: "0.100000" }),
+        expect.objectContaining({ modelId: "claude-haiku-helper", inputTokens: 50, costUsd: "0.020000" }),
+      ],
+    });
+    expect(usageOf(second).usage).toMatchObject({
+      inputTokens: 50,
+      outputTokens: 10,
+      costUsd: "0.050000",
+      modelBreakdown: [expect.objectContaining({ modelId: "claude-sonnet-4-6", inputTokens: 50 })],
+    });
+    expect(usageOf(second).usage.modelBreakdown).toHaveLength(1);
+    expect(usageOf(reset).usage).toMatchObject({ inputTokens: 60, outputTokens: 12, costUsd: "0.030000" });
+  });
+});
+
 describe("normalizeSdkStream — cost / estimated branches via ctx.pricing", () => {
   const pricing = { inputPerMTok: 0.14, outputPerMTok: 0.28, cacheReadPerMTok: 0.0028 };
 
@@ -834,6 +1238,15 @@ describe("auditClaimedPaths — unit tests with injected existsSyncFn", () => {
       "文件已创建，当前目录为 ...\\home\\Leemo\\r9-continuity-s6jjyjo。",
       "C:\\Users\\R\\AppData\\Local\\Temp\\leemo-e2e\\home\\Leemo\\r9-continuity-s6jjyjo",
       () => true,
+    );
+    expect(audit.claimed).toEqual([]);
+  });
+
+  it("does NOT audit an absolute path shortened with a display ellipsis", () => {
+    const audit = auditClaimedPaths(
+      "文件已创建：E:\\Temp\\...\\r9-continuity-sm4c62e",
+      "E:\\Temp\\leemo-e2e\\home\\Leemo\\r9-continuity-sm4c62e",
+      () => false,
     );
     expect(audit.claimed).toEqual([]);
   });

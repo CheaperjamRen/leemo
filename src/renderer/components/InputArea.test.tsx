@@ -1,13 +1,42 @@
 import { describe, it, expect, vi } from "vitest";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useState } from "react";
 import InputArea from "./InputArea";
 import type { SkillInfo } from "../../bridge/contract";
 import type { ComposerDraft } from "../stores/composer-drafts";
 import type { WorkspaceFileNode } from "../workspace/client";
+import type { Note } from "../../captures";
 
 describe("InputArea", () => {
+  it("shares one composer across surfaces with a real plus menu and standalone slash/reference actions", async () => {
+    const user = userEvent.setup();
+    const { rerender } = render(
+      <InputArea {...defaultProps} surface="workbench" resolveFilePath={resolveFilePath} />,
+    );
+
+    expect(screen.getByTestId("shared-composer")).toHaveAttribute("data-surface", "workbench");
+    expect(screen.getAllByRole("button", { name: "/ 技能" })).toHaveLength(1);
+    expect(screen.getAllByRole("button", { name: "@ 引用" })).toHaveLength(1);
+    await user.click(screen.getByRole("button", { name: "添加" }));
+    const menu = screen.getByRole("menu", { name: "添加到对话" });
+    const composer = screen.getByTestId("composer-surface");
+    expect(composer).toContainElement(menu);
+    expect(menu).toHaveClass("absolute", "bottom-[calc(100%+8px)]");
+    expect(menu).toHaveClass("sm:w-[440px]");
+    expect(within(menu).getByRole("menuitem", { name: /^文件/ })).toBeInTheDocument();
+    expect(within(menu).getByRole("menuitemcheckbox", { name: /计划模式/ })).toBeInTheDocument();
+    expect(within(menu).queryByText(/麦克风|塔罗|队列|浏览器|Skill|技能/)).not.toBeInTheDocument();
+
+    rerender(<InputArea {...defaultProps} surface="buddy" resolveFilePath={resolveFilePath} />);
+    expect(screen.getByTestId("shared-composer")).toHaveAttribute("data-surface", "buddy");
+    const buddySurface = screen.getByTestId("composer-surface");
+    expect(within(buddySurface).getByRole("button", { name: "切换模型" })).toBeInTheDocument();
+    expect(within(buddySurface).getByRole("button", { name: "权限模式：风险确认" })).toBeInTheDocument();
+    expect(within(buddySurface).getByRole("button", { name: "本轮自动召集助手" })).toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: "切换模型" })).toHaveLength(1);
+  });
+
   const resolveFilePath = (file: File) => `C:\\Users\\Rengar\\Downloads\\${file.name}`;
   const defaultProps = {
     conversationId: "conv-1",
@@ -28,17 +57,42 @@ describe("InputArea", () => {
 
   it("keeps the primary composer action right-aligned even when the shortcut hint is hidden", () => {
     const { rerender } = render(<InputArea {...defaultProps} />);
-    expect(screen.getByRole("button", { name: "发送" })).toHaveClass("ml-auto");
+    expect(screen.getByRole("button", { name: "发送" })).toHaveClass(
+      "ml-auto",
+      "h-[38px]",
+      "w-[38px]",
+      "rounded-[12px]",
+    );
+    expect(screen.getByRole("button", { name: "/ 技能" })).toHaveClass("h-8", "w-8");
+    expect(screen.getByRole("button", { name: "@ 引用" })).toHaveClass("h-8", "w-8");
+    expect(screen.getByRole("button", { name: "/ 技能" }).querySelector("span")).toHaveClass(
+      "leemo-composer-slash-glyph",
+      "leading-none",
+    );
 
     rerender(<InputArea {...defaultProps} busy />);
-    expect(screen.getByRole("button", { name: "停止" })).toHaveClass("ml-auto");
+    expect(screen.getByRole("button", { name: "停止" })).toHaveClass("ml-auto", "h-10", "w-10");
+  });
+
+  it("uses icon fallbacks for constrained workbench widths and exposes no fake voice action", () => {
+    render(<InputArea {...defaultProps} surface="workbench" currentModelId="deepseek-chat" />);
+
+    expect(screen.getByTestId("composer-model-label")).toHaveClass("leemo-composer-responsive-label");
+    expect(screen.getByTestId("composer-permission-label")).toHaveClass("leemo-composer-responsive-label");
+    expect(screen.getByTestId("composer-shortcut-hint")).toHaveClass("leemo-composer-shortcut");
+    expect(screen.queryByRole("button", { name: /语音|麦克风/ })).not.toBeInTheDocument();
   });
 
   it("renders textarea with placeholder", () => {
-    render(<InputArea {...defaultProps} resolveFilePath={resolveFilePath} />);
+    const { rerender } = render(<InputArea {...defaultProps} resolveFilePath={resolveFilePath} />);
     const textarea = screen.getByPlaceholderText("输入消息…");
     expect(textarea).toBeInTheDocument();
     expect(textarea.tagName).toBe("TEXTAREA");
+    expect(textarea).toHaveStyle({ minHeight: "66px" });
+    expect(textarea).toHaveClass("text-[14.5px]");
+
+    rerender(<InputArea {...defaultProps} surface="buddy" resolveFilePath={resolveFilePath} />);
+    expect(screen.getByPlaceholderText("输入消息…")).toHaveClass("text-[15.5px]");
   });
 
   it("displays current value", () => {
@@ -72,16 +126,304 @@ describe("InputArea", () => {
     expect(onChange).toHaveBeenCalledWith("");
   });
 
-  it("does not send on Enter when busy", async () => {
+  it("adds multiple @ note references as chips and sends only their stable ids", async () => {
     const user = userEvent.setup();
     const onSend = vi.fn();
-    render(<InputArea {...defaultProps} value="Test" busy={true} onSend={onSend} />);
+    const notes: Note[] = [
+      { id: "note-course", title: "课程计划", markdown: "复习第三章", revision: 1, createdAt: 1, updatedAt: 1 },
+      { id: "note-job", title: "求职记录", markdown: "投递两家公司", revision: 1, createdAt: 1, updatedAt: 1 },
+    ];
+    function ControlledComposer() {
+      const [value, setValue] = useState("请帮我整理 @课");
+      return <InputArea {...defaultProps} value={value} onChange={setValue} onSend={onSend} notes={notes} />;
+    }
+
+    render(<ControlledComposer />);
+    await user.click(screen.getByRole("button", { name: "引用便签 课程计划" }));
+    const textarea = screen.getByLabelText("输入消息");
+    await user.type(textarea, " @求");
+    await user.click(screen.getByRole("button", { name: "引用便签 求职记录" }));
+
+    expect(screen.getByRole("button", { name: "移除便签引用 课程计划" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "移除便签引用 求职记录" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "发送" }));
+    expect(onSend).toHaveBeenCalledWith(
+      "请帮我整理 @课程计划  @求职记录",
+      undefined,
+      undefined,
+      { noteReferences: ["note-course", "note-job"] },
+    );
+  });
+
+  it("opens one unified @ picker with both notes and workspace files", async () => {
+    const user = userEvent.setup();
+    const notes: Note[] = [
+      { id: "note-course", title: "课程计划", markdown: "复习第三章", revision: 1, createdAt: 1, updatedAt: 1 },
+    ];
+    const workspaceFiles: WorkspaceFileNode[] = [{
+      name: "课程",
+      path: "课程",
+      kind: "dir",
+      bookId: "课程",
+      children: [
+        { name: "复习清单.md", path: "课程/复习清单.md", kind: "file", bookId: "课程" },
+      ],
+    }];
+
+    function ControlledComposer() {
+      const [value, setValue] = useState("");
+      return (
+        <InputArea
+          {...defaultProps}
+          value={value}
+          onChange={setValue}
+          notes={notes}
+          workspaceFiles={workspaceFiles}
+          workspaceId="workspace-course"
+        />
+      );
+    }
+
+    render(<ControlledComposer />);
+    await user.click(screen.getByRole("button", { name: "@ 引用" }));
+
+    const picker = screen.getByRole("listbox", { name: "引用文件或便签" });
+    expect(within(picker).getByRole("option", { name: /便签 课程计划/ })).toBeInTheDocument();
+    expect(within(picker).getByRole("option", { name: /文件 复习清单\.md/ })).toBeInTheDocument();
+    expect(within(picker).queryByRole("option", { name: /文件 课程 课程/ })).not.toBeInTheDocument();
+
+    await user.click(within(picker).getByRole("option", { name: /文件 复习清单\.md/ }));
+    expect(screen.getByRole("button", { name: "移除引用 复习清单.md" })).toBeInTheDocument();
+    expect(screen.getByLabelText("输入消息")).toHaveValue("@复习清单.md ");
+  });
+
+  it("queues the next message on Enter when busy without calling ordinary send", async () => {
+    const user = userEvent.setup();
+    const onSend = vi.fn();
+    const onQueue = vi.fn();
+    const onChange = vi.fn();
+    render(<InputArea {...defaultProps} value="Test" busy onSend={onSend} onQueue={onQueue} onChange={onChange} />);
 
     const textarea = screen.getByPlaceholderText("输入消息…");
     await user.click(textarea);
     await user.keyboard("{Enter}");
 
     expect(onSend).not.toHaveBeenCalled();
+    expect(onQueue).toHaveBeenCalledWith("Test", undefined);
+    expect(onChange).toHaveBeenCalledWith("");
+  });
+
+  it("queues a busy turn with a note reference and its per-turn helper option intact", async () => {
+    const user = userEvent.setup();
+    const onQueue = vi.fn();
+    const notes: Note[] = [
+      { id: "note-course", title: "课程计划", markdown: "复习第三章", revision: 1, createdAt: 1, updatedAt: 1 },
+    ];
+    function ControlledComposer() {
+      const [value, setValue] = useState("运行中也整理 @课");
+      return (
+        <InputArea
+          {...defaultProps}
+          value={value}
+          onChange={setValue}
+          onQueue={onQueue}
+          notes={notes}
+          busy
+        />
+      );
+    }
+
+    render(<ControlledComposer />);
+    await user.click(screen.getByRole("button", { name: "引用便签 课程计划" }));
+    await user.click(screen.getByRole("button", { name: "本轮自动召集助手" }));
+    await user.click(screen.getByLabelText("输入消息"));
+    await user.keyboard("{Enter}");
+
+    expect(onQueue).toHaveBeenCalledWith(
+      "运行中也整理 @课程计划",
+      undefined,
+      undefined,
+      { allowSubagents: false, noteReferences: ["note-course"] },
+    );
+  });
+
+  it("shows one compact queued-turn row with icon actions and an honest rich-guide guard", async () => {
+    const user = userEvent.setup();
+    const onEditQueuedTurn = vi.fn();
+    const onDeleteQueuedTurn = vi.fn();
+    const onGuideQueuedTurn = vi.fn();
+    render(
+      <InputArea
+        {...defaultProps}
+        busy
+        queuedTurns={[{
+          id: "queued-1",
+          text: "按岗位要求继续修改这份简历并保留原版",
+          attachments: [{ name: "JD.pdf", path: "C:\\Temp\\JD.pdf", size: 1 }],
+          workspaceFiles: [],
+        }]}
+        onEditQueuedTurn={onEditQueuedTurn}
+        onDeleteQueuedTurn={onDeleteQueuedTurn}
+        onGuideQueuedTurn={onGuideQueuedTurn}
+      />,
+    );
+
+    const row = screen.getByTestId("queued-turn-row");
+    expect(row).toHaveTextContent("按岗位要求继续修改这份简历");
+    expect(row).toHaveTextContent("1 个文件");
+    expect(row.querySelector("img")).toBeNull();
+    expect(screen.getByRole("button", { name: "转为引导" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "转为引导" })).toHaveAttribute(
+      "title",
+      "含附件、文件或便签，不能转为引导",
+    );
+    await user.click(screen.getByRole("button", { name: "编辑排队消息" }));
+    expect(onEditQueuedTurn).toHaveBeenCalledWith("queued-1");
+    await user.click(screen.getByRole("button", { name: "删除排队消息" }));
+    expect(onDeleteQueuedTurn).toHaveBeenCalledWith("queued-1");
+    expect(onGuideQueuedTurn).not.toHaveBeenCalled();
+  });
+
+  it("expands later queued turns into a bounded list where every row remains actionable", async () => {
+    const user = userEvent.setup();
+    const onEditQueuedTurn = vi.fn();
+    const onDeleteQueuedTurn = vi.fn();
+    const onGuideQueuedTurn = vi.fn(async () => ({ delivery: "applied" as const }));
+    render(
+      <InputArea
+        {...defaultProps}
+        busy
+        queuedTurns={[
+          { id: "queued-1", text: "第一条排队消息", attachments: [], workspaceFiles: [] },
+          { id: "queued-2", text: "第二条排队消息", attachments: [], workspaceFiles: [] },
+          { id: "queued-3", text: "第三条排队消息", attachments: [], workspaceFiles: [] },
+        ]}
+        onEditQueuedTurn={onEditQueuedTurn}
+        onDeleteQueuedTurn={onDeleteQueuedTurn}
+        onGuideQueuedTurn={onGuideQueuedTurn}
+      />,
+    );
+
+    expect(screen.queryByText("第二条排队消息")).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "另有 2 条" }));
+
+    const extraRows = screen.getAllByTestId("queued-turn-extra-row");
+    expect(extraRows).toHaveLength(2);
+    expect(screen.getByTestId("queued-turn-list")).toHaveClass("max-h-36", "overflow-y-auto");
+    await user.click(within(extraRows[0]).getByRole("button", { name: "编辑排队消息" }));
+    await user.click(within(extraRows[0]).getByRole("button", { name: "转为引导" }));
+    await user.click(within(extraRows[1]).getByRole("button", { name: "删除排队消息" }));
+
+    expect(onEditQueuedTurn).toHaveBeenCalledWith("queued-2");
+    expect(onGuideQueuedTurn).toHaveBeenCalledWith("queued-2");
+    expect(onDeleteQueuedTurn).toHaveBeenCalledWith("queued-3");
+  });
+
+  it("guides a pure-text queued row and reports native queued delivery honestly", async () => {
+    const user = userEvent.setup();
+    const onGuideQueuedTurn = vi.fn(async () => ({ delivery: "queued" as const }));
+    render(
+      <InputArea
+        {...defaultProps}
+        busy
+        queuedTurns={[{ id: "queued-plain", text: "先不要改原文件", attachments: [], workspaceFiles: [] }]}
+        onGuideQueuedTurn={onGuideQueuedTurn}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "转为引导" }));
+    expect(onGuideQueuedTurn).toHaveBeenCalledWith("queued-plain");
+    expect(await screen.findByText("已排队，将在下一轮送达")).toBeInTheDocument();
+  });
+
+  it("uses Ctrl+Enter to guide the running task and keeps ordinary send untouched while idle", async () => {
+    const user = userEvent.setup();
+    const onGuide = vi.fn(async () => ({ delivery: "applied" as const }));
+    const onSend = vi.fn();
+    const onChange = vi.fn();
+    const { rerender } = render(
+      <InputArea {...defaultProps} value="先看第三章" busy onGuide={onGuide} onSend={onSend} onChange={onChange} />,
+    );
+    const textarea = screen.getByPlaceholderText("输入消息…");
+    await user.click(textarea);
+    await user.keyboard("{Control>}{Enter}{/Control}");
+    await waitFor(() => expect(onGuide).toHaveBeenCalledWith("先看第三章"));
+    expect(onSend).not.toHaveBeenCalled();
+    expect(onChange).toHaveBeenCalledWith("");
+    expect(screen.getByText("已加入当前任务")).toBeInTheDocument();
+
+    rerender(<InputArea {...defaultProps} value="普通消息" onGuide={onGuide} onSend={onSend} onChange={onChange} />);
+    await user.keyboard("{Control>}{Enter}{/Control}");
+    expect(onSend).toHaveBeenCalledWith("普通消息", undefined);
+  });
+
+  it("keeps guidance text when native steering fails", async () => {
+    const user = userEvent.setup();
+    const onGuide = vi.fn(async () => { throw new Error("暂时无法加入当前任务"); });
+    const onChange = vi.fn();
+    render(<InputArea {...defaultProps} value="别删除原文件" busy onGuide={onGuide} onChange={onChange} />);
+
+    await user.click(screen.getByPlaceholderText("输入消息…"));
+    await user.keyboard("{Control>}{Enter}{/Control}");
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("暂时无法加入当前任务");
+    expect(onChange).not.toHaveBeenCalledWith("");
+  });
+
+  it("keeps a composer error compact and dismissible without clearing the draft", async () => {
+    const user = userEvent.setup();
+
+    function Harness() {
+      const [draft, setDraft] = useState<ComposerDraft>({
+        text: "保留这段草稿",
+        attachments: [],
+        workspaceFiles: [],
+        submitPending: false,
+        retryPending: false,
+        submitError: "还没有配置 API Key，先去设置页完成模型接入。",
+        pendingStageCount: 0,
+        assignedConversationId: null,
+      });
+      return (
+        <InputArea
+          {...defaultProps}
+          value="保留这段草稿"
+          draftState={draft}
+          onDraftStateChange={setDraft}
+        />
+      );
+    }
+
+    render(<Harness />);
+
+    expect(screen.getByRole("alert")).toHaveClass("leemo-composer-alert");
+    await user.click(screen.getByRole("button", { name: "关闭错误提示" }));
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("输入消息")).toHaveValue("保留这段草稿");
+  });
+
+  it("keeps rich input out of Ctrl+Enter guidance and points it to the next-round queue", async () => {
+    const user = userEvent.setup();
+    const onGuide = vi.fn(async () => ({ delivery: "applied" as const }));
+    const file = new File(["jd"], "JD.pdf", { type: "application/pdf" });
+    render(
+      <InputArea
+        {...defaultProps}
+        value="结合附件继续"
+        busy
+        onGuide={onGuide}
+        resolveFilePath={resolveFilePath}
+      />,
+    );
+    await user.click(screen.getByRole("button", { name: "添加" }));
+    await user.click(screen.getByRole("menuitem", { name: /^文件/ }));
+    await user.upload(document.querySelector('input[type="file"]') as HTMLInputElement, file);
+
+    await user.click(screen.getByPlaceholderText("输入消息…"));
+    await user.keyboard("{Control>}{Enter}{/Control}");
+
+    expect(onGuide).not.toHaveBeenCalled();
+    expect(screen.getByText("引导只支持纯文字；附件、文件或便签可按 Enter 排到下一轮")).toBeInTheDocument();
   });
 
   it("inserts newline on Shift+Enter", async () => {
@@ -102,6 +444,8 @@ describe("InputArea", () => {
     render(<InputArea {...defaultProps} value="   " onSend={onSend} />);
 
     const sendButton = screen.getByLabelText("发送");
+    expect(sendButton).toHaveClass("leemo-composer-submit");
+    expect(sendButton).not.toHaveClass("bg-[var(--leemo-amber)]");
     await user.click(sendButton);
 
     expect(onSend).not.toHaveBeenCalled();
@@ -114,10 +458,36 @@ describe("InputArea", () => {
     render(<InputArea {...defaultProps} value="Button test" onSend={onSend} onChange={onChange} />);
 
     const sendButton = screen.getByLabelText("发送");
+    expect(sendButton).toHaveClass("leemo-composer-submit");
+    expect(sendButton).not.toHaveClass("bg-[var(--leemo-amber)]");
     await user.click(sendButton);
 
     expect(onSend).toHaveBeenCalledWith("Button test", undefined);
     expect(onChange).toHaveBeenCalledWith("");
+  });
+
+  it("lets the user disable helpers for this turn and resets after acknowledgement", async () => {
+    const user = userEvent.setup();
+    const onSend = vi.fn(async () => {});
+    render(<InputArea {...defaultProps} value="我自己和 momo 做" onSend={onSend} />);
+
+    const enabledButton = screen.getByRole("button", { name: "本轮自动召集助手" });
+    expect(enabledButton).toHaveAttribute("aria-pressed", "true");
+    expect(screen.queryByTestId("assistant-disabled-slash")).not.toBeInTheDocument();
+
+    await user.click(enabledButton);
+    const disabledButton = screen.getByRole("button", { name: "本轮不使用助手" });
+    expect(disabledButton).toHaveAttribute("aria-pressed", "false");
+    expect(screen.getByTestId("assistant-disabled-slash")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "发送" }));
+    expect(onSend).toHaveBeenCalledWith(
+      "我自己和 momo 做",
+      undefined,
+      undefined,
+      { allowSubagents: false },
+    );
+    expect(screen.getByRole("button", { name: "本轮自动召集助手" })).toBeInTheDocument();
   });
 
   it("shows stop button when busy", () => {
@@ -142,8 +512,8 @@ describe("InputArea", () => {
     const file = new File(["content"], "test.txt", { type: "text/plain" });
     render(<InputArea {...defaultProps} resolveFilePath={resolveFilePath} />);
 
-    const attachButton = screen.getByLabelText("附件");
-    await user.click(attachButton);
+    await user.click(screen.getByRole("button", { name: "添加" }));
+    await user.click(screen.getByRole("menuitem", { name: /^文件/ }));
 
     const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
     await user.upload(fileInput, file);
@@ -478,8 +848,8 @@ describe("InputArea", () => {
     const file = new File(["content"], "test.txt", { type: "text/plain" });
     render(<InputArea {...defaultProps} resolveFilePath={resolveFilePath} />);
 
-    const attachButton = screen.getByLabelText("附件");
-    await user.click(attachButton);
+    await user.click(screen.getByRole("button", { name: "添加" }));
+    await user.click(screen.getByRole("menuitem", { name: /^文件/ }));
 
     const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
     await user.upload(fileInput, file);
@@ -496,8 +866,8 @@ describe("InputArea", () => {
     const file = new File(["content"], "doc.pdf", { type: "application/pdf" });
     render(<InputArea {...defaultProps} value="With file" onSend={onSend} resolveFilePath={resolveFilePath} />);
 
-    const attachButton = screen.getByLabelText("附件");
-    await user.click(attachButton);
+    await user.click(screen.getByRole("button", { name: "添加" }));
+    await user.click(screen.getByRole("menuitem", { name: /^文件/ }));
 
     const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
     await user.upload(fileInput, file);
@@ -523,8 +893,8 @@ describe("InputArea", () => {
     const file = new File(["test"], "file.txt", { type: "text/plain" });
     render(<InputArea {...defaultProps} value="Message" resolveFilePath={resolveFilePath} />);
 
-    const attachButton = screen.getByLabelText("附件");
-    await user.click(attachButton);
+    await user.click(screen.getByRole("button", { name: "添加" }));
+    await user.click(screen.getByRole("menuitem", { name: /^文件/ }));
 
     const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
     await user.upload(fileInput, file);
@@ -580,7 +950,7 @@ describe("InputArea", () => {
 
     render(<Harness />);
     await userEvent.click(screen.getByRole("button", { name: "发送" }));
-    expect(screen.getByLabelText("附件")).toBeDisabled();
+    expect(screen.getByRole("button", { name: "添加" })).toBeDisabled();
     expect(screen.getByLabelText("/ 技能")).toBeDisabled();
 
     await userEvent.click(screen.getByRole("button", { name: "模拟稍后草稿" }));
@@ -685,12 +1055,58 @@ describe("InputArea", () => {
     // driven by the draft text — so the button's job is now to type the slash.
     const user = userEvent.setup();
     const onChange = vi.fn();
-    render(<InputArea {...defaultProps} onChange={onChange} />);
+    render(
+      <InputArea
+        {...defaultProps}
+        onChange={onChange}
+        skills={[{
+          name: "pdf",
+          description: "阅读 PDF",
+          qualifiedName: "leemo:pdf",
+          dir: "/skills/pdf",
+          source: "user",
+        }]}
+      />,
+    );
 
     await user.click(screen.getByLabelText("/ 技能"));
 
     expect(onChange).toHaveBeenCalledWith("/");
     expect(screen.queryByText("/ 技能选择（占位）")).not.toBeInTheDocument();
+  });
+
+  it("keeps every compact composer icon on one shared 32px control baseline", () => {
+    render(<InputArea {...defaultProps} />);
+
+    const controls = screen.getAllByTestId("composer-icon-control");
+    expect(controls).toHaveLength(4);
+    for (const control of controls) {
+      expect(control).toHaveClass("h-8", "w-8", "place-items-center");
+    }
+  });
+
+  it("explains why the / menu is empty instead of looking like a dead button", async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+    render(
+      <InputArea
+        {...defaultProps}
+        value="@"
+        onChange={onChange}
+        skills={[]}
+        workspaceId="book-1"
+        workspaceFiles={[{ name: "笔记.md", path: "/笔记.md", kind: "file", bookId: "book-1" }]}
+      />,
+    );
+
+    expect(screen.getByRole("listbox", { name: "引用工作区文件" })).toBeInTheDocument();
+
+    await user.click(screen.getByLabelText("/ 技能"));
+
+    expect(screen.getByRole("status")).toHaveTextContent("还没有启用技能");
+    expect(screen.getByRole("status")).toHaveTextContent("技能中心");
+    expect(screen.queryByRole("listbox", { name: "引用工作区文件" })).not.toBeInTheDocument();
+    expect(onChange).not.toHaveBeenCalledWith("/");
   });
 
   it("toggles model picker panel", async () => {
@@ -703,58 +1119,192 @@ describe("InputArea", () => {
     await user.click(statusBar);
 
     expect(screen.getByText(/还没有可用的模型/)).toBeInTheDocument();
+    const composer = screen.getByTestId("composer-surface");
+    const menu = screen.getByTestId("model-picker-menu");
+    expect(composer).toContainElement(menu);
+    expect(menu).toHaveClass("absolute", "bottom-[calc(100%+8px)]");
 
     await user.click(statusBar);
     expect(screen.queryByText(/还没有可用的模型/)).not.toBeInTheDocument();
   });
 
-  it("shows the active permission mode instead of a hardcoded standard label", () => {
+  it("keeps legacy plan state out of the approval selector", () => {
     render(<InputArea {...defaultProps} permissionMode="plan" />);
 
-    expect(screen.getByRole("button", { name: "权限模式：只规划" })).toBeInTheDocument();
-    expect(screen.queryByText("标准权限")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "权限模式：风险确认" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "权限模式：只规划" })).not.toBeInTheDocument();
   });
 
-  it("opens permission settings without toggling the model picker", async () => {
+  it("switches permission modes from a concise inline menu without opening settings", async () => {
     const user = userEvent.setup();
+    const onSelectPermissionMode = vi.fn();
     const onOpenPermissionSettings = vi.fn();
     render(
       <InputArea
         {...defaultProps}
         permissionMode="acceptEdits"
+        onSelectPermissionMode={onSelectPermissionMode}
         onOpenPermissionSettings={onOpenPermissionSettings}
       />,
     );
 
-    await user.click(screen.getByRole("button", { name: "权限模式：任务中少打扰" }));
+    await user.click(screen.getByRole("button", { name: "权限模式：风险确认" }));
 
-    expect(onOpenPermissionSettings).toHaveBeenCalledOnce();
+    const menu = screen.getByRole("menu", { name: "权限模式" });
+    expect(screen.getByTestId("composer-surface")).toContainElement(menu);
+    expect(menu).toHaveClass("absolute", "bottom-[calc(100%+8px)]");
+    expect(within(menu).getByText("常规改动直接做，风险操作再询问")).toBeInTheDocument();
+    expect(within(menu).queryByText("只分析与给方案，不执行改动")).not.toBeInTheDocument();
+
+    await user.click(within(menu).getByRole("menuitemradio", { name: /每次确认/ }));
+
+    expect(onSelectPermissionMode).toHaveBeenCalledWith("default");
+    expect(onOpenPermissionSettings).not.toHaveBeenCalled();
+    expect(screen.queryByRole("menu", { name: "权限模式" })).not.toBeInTheDocument();
     expect(screen.queryByText(/还没有可用的模型/)).not.toBeInTheDocument();
   });
 
-  it("shows full access in plain language and disables it directly", async () => {
+  it("keeps composer popovers mutually exclusive instead of stacking them", async () => {
     const user = userEvent.setup();
-    const onDisableFullAccess = vi.fn();
-    const onOpenPermissionSettings = vi.fn();
+    render(<InputArea {...defaultProps} permissionMode="acceptEdits" />);
+
+    await user.click(screen.getByRole("button", { name: "添加" }));
+    expect(screen.getByRole("menu", { name: "添加到对话" })).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "权限模式：风险确认" }));
+    expect(screen.queryByRole("menu", { name: "添加到对话" })).not.toBeInTheDocument();
+    expect(screen.getByRole("menu", { name: "权限模式" })).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "添加" }));
+    expect(screen.queryByRole("menu", { name: "权限模式" })).not.toBeInTheDocument();
+    expect(screen.getByRole("menu", { name: "添加到对话" })).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "切换模型" }));
+    expect(screen.queryByRole("menu", { name: "添加到对话" })).not.toBeInTheDocument();
+    expect(screen.getByTestId("model-picker-menu")).toBeInTheDocument();
+  });
+
+  it("closes button-opened composer popovers with Escape", async () => {
+    const user = userEvent.setup();
+    render(<InputArea {...defaultProps} permissionMode="acceptEdits" />);
+
+    await user.click(screen.getByRole("button", { name: "添加" }));
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("menu", { name: "添加到对话" })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "切换模型" }));
+    await user.keyboard("{Escape}");
+    expect(screen.queryByTestId("model-picker-menu")).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "权限模式：风险确认" }));
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("menu", { name: "权限模式" })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "@ 引用" }));
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("listbox", { name: "引用文件或便签" })).not.toBeInTheDocument();
+  });
+
+  it("enters plan mode from the plus menu and carries it with the turn", async () => {
+    const user = userEvent.setup();
+    const onSend = vi.fn().mockResolvedValue(undefined);
+    render(<InputArea {...defaultProps} value="先分析方案" onSend={onSend} permissionMode="acceptEdits" />);
+
+    await user.click(screen.getByRole("button", { name: "添加" }));
+    await user.click(screen.getByRole("menuitemcheckbox", { name: /计划模式/ }));
+
+    expect(screen.getByRole("button", { name: "添加，计划模式已开启" })).toBeInTheDocument();
+    expect(screen.getByTestId("composer-plan-mode-indicator")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "发送" }));
+
+    await waitFor(() => expect(onSend).toHaveBeenCalled());
+    expect(onSend.mock.calls[0]?.[3]).toMatchObject({ permissionMode: "plan" });
+  });
+
+  it("creates a persistent goal from the plus menu and keeps its compact card closest to the composer", async () => {
+    const user = userEvent.setup();
+    const queuedTurns = [{
+      id: "queued-before-goal",
+      text: "先补充竞品截图",
+      attachments: [],
+      workspaceFiles: [],
+    }];
+
+    function Harness() {
+      const [goal, setGoal] = useState<{
+        text: string;
+        status: "active" | "paused";
+        createdAt: number;
+        updatedAt: number;
+      }>();
+      return (
+        <InputArea
+          {...defaultProps}
+          queuedTurns={queuedTurns}
+          goal={goal}
+          onSaveGoal={(text) => setGoal((current) => ({
+            text,
+            status: current?.status ?? "active",
+            createdAt: current?.createdAt ?? Date.now() - 95_000,
+            updatedAt: Date.now(),
+          }))}
+          onToggleGoalPaused={() => setGoal((current) => current
+            ? { ...current, status: current.status === "active" ? "paused" : "active" }
+            : current)}
+          onDeleteGoal={() => setGoal(undefined)}
+        />
+      );
+    }
+
+    render(<Harness />);
+    await user.click(screen.getByRole("button", { name: "添加" }));
+    await user.click(screen.getByRole("menuitem", { name: /目标模式/ }));
+    await user.type(screen.getByRole("textbox", { name: "目标内容" }), "完成主界面视觉复现");
+    await user.click(screen.getByRole("button", { name: "保存目标" }));
+
+    const queue = screen.getByTestId("queued-turn-list");
+    const goalCard = screen.getByTestId("conversation-goal-card");
+    const composer = screen.getByTestId("composer-surface");
+    expect(goalCard).toHaveTextContent("进行中的目标");
+    expect(goalCard).toHaveTextContent("完成主界面视觉复现");
+    expect(queue.compareDocumentPosition(goalCard) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(goalCard.compareDocumentPosition(composer) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+
+    await user.click(screen.getByRole("button", { name: "暂停目标" }));
+    expect(goalCard).toHaveTextContent("已暂停的目标");
+    expect(screen.getByRole("button", { name: "继续目标" })).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "编辑目标" }));
+    expect(screen.getByRole("textbox", { name: "目标内容" })).toHaveValue("完成主界面视觉复现");
+    await user.click(screen.getByRole("button", { name: "取消编辑目标" }));
+    await user.click(screen.getByRole("button", { name: "删除目标" }));
+    expect(screen.queryByTestId("conversation-goal-card")).not.toBeInTheDocument();
+  });
+
+  it("keeps full access inside the same permission menu", async () => {
+    const user = userEvent.setup();
+    const onSelectPermissionMode = vi.fn();
     render(
       <InputArea
         {...defaultProps}
         permissionMode="bypassPermissions"
-        onDisableFullAccess={onDisableFullAccess}
-        onOpenPermissionSettings={onOpenPermissionSettings}
+        onSelectPermissionMode={onSelectPermissionMode}
       />,
     );
 
-    await user.click(screen.getByRole("button", { name: "关闭完全访问" }));
+    await user.click(screen.getByRole("button", { name: "权限模式：完全访问" }));
 
-    expect(onDisableFullAccess).toHaveBeenCalledOnce();
-    expect(onOpenPermissionSettings).not.toHaveBeenCalled();
+    const menu = screen.getByRole("menu", { name: "权限模式" });
+    expect(within(menu).getByRole("menuitemradio", { name: /完全访问/ })).toHaveAttribute("aria-checked", "true");
+    expect(within(menu).getByText("不再请求权限；仅在信任当前任务时使用")).toBeInTheDocument();
     expect(screen.queryByText("绕过权限")).not.toBeInTheDocument();
   });
 
-  it("disables attachments when no desktop path resolver exists", () => {
+  it("disables the real file action when no desktop path resolver exists", async () => {
     render(<InputArea {...defaultProps} />);
-    expect(screen.getByLabelText("附件")).toBeDisabled();
+    await userEvent.click(screen.getByRole("button", { name: "添加" }));
+    expect(screen.getByRole("menuitem", { name: /^文件/ })).toBeDisabled();
   });
 
   it("displays hint text for keyboard shortcuts", () => {
@@ -767,8 +1317,8 @@ describe("InputArea", () => {
     const file = new File([new ArrayBuffer(1024 * 1.5)], "test.txt");
     render(<InputArea {...defaultProps} resolveFilePath={resolveFilePath} />);
 
-    const attachButton = screen.getByLabelText("附件");
-    await user.click(attachButton);
+    await user.click(screen.getByRole("button", { name: "添加" }));
+    await user.click(screen.getByRole("menuitem", { name: /^文件/ }));
 
     const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
     await user.upload(fileInput, file);
@@ -824,6 +1374,26 @@ describe("InputArea", () => {
     expect(screen.getByRole("alert")).toHaveTextContent("秋招简历.pdf");
     expect(screen.getByRole("button", { name: "仍用当前模型重试" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "选择其他模型" })).toBeInTheDocument();
+  });
+
+  it("does not duplicate a retry notice already rendered by the terminal recovery card", () => {
+    render(
+      <InputArea
+        {...defaultProps}
+        retryRecoveryRendered
+        retryDraft={{
+          runId: "run-terminal",
+          text: "帮我看简历",
+          attachments: [],
+          providerId: "deepseek",
+          modelId: "deepseek-v4",
+          errorMessage: "服务暂时不可用",
+        }}
+      />,
+    );
+
+    expect(screen.queryByText("原消息和附件已保留")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "仍用当前模型重试" })).not.toBeInTheDocument();
   });
 
   it("keeps a many-attachment retry notice compact instead of expanding the composer", () => {

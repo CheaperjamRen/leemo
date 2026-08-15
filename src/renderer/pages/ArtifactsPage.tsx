@@ -7,12 +7,14 @@ import {
   FileText,
   LoaderCircle,
   MessageSquare,
+  Search,
   TriangleAlert,
 } from "lucide-react";
 import { useArtifacts, useConversations, useNotebooks, useUi, useWorkspaces } from "../bridge/context";
 import type { ArtifactEntry } from "../stores/artifacts";
 import type { Notebook } from "../stores/notebooks";
 import { HOME_WORKSPACE_ID } from "../stores/workspaces";
+import "./ArtifactsPage.css";
 
 type Filter = "all" | "files" | "visualizations";
 
@@ -31,10 +33,29 @@ function previewKind(entry: ArtifactEntry): "markdown" | "pdf" | "html" | "other
   return "other";
 }
 
-function formatDate(createdAt: number): string {
+function startOfLocalDay(timestamp: number): number {
+  const date = new Date(timestamp);
+  date.setHours(0, 0, 0, 0);
+  return date.getTime();
+}
+
+function startOfNextLocalDay(timestamp: number): number {
+  const date = new Date(startOfLocalDay(timestamp));
+  date.setDate(date.getDate() + 1);
+  return date.getTime();
+}
+
+function formatArtifactTime(createdAt: number, now: number): string {
   if (createdAt <= 0) return "较早";
-  return new Intl.DateTimeFormat("zh-CN", { year: "numeric", month: "short", day: "numeric" })
-    .format(new Date(createdAt));
+  const created = new Date(createdAt);
+  const todayStart = startOfLocalDay(now);
+  if (createdAt >= todayStart && createdAt < startOfNextLocalDay(now)) {
+    return `${String(created.getHours()).padStart(2, "0")}:${String(created.getMinutes()).padStart(2, "0")}`;
+  }
+  const dayDifference = Math.round((todayStart - startOfLocalDay(createdAt)) / (24 * 60 * 60 * 1_000));
+  if (dayDifference === 1) return "昨天";
+  if (dayDifference > 1 && dayDifference < 7) return `${dayDifference} 天前`;
+  return new Intl.DateTimeFormat("zh-CN", { year: "numeric", month: "short", day: "numeric" }).format(created);
 }
 
 export function ArtifactsPage() {
@@ -45,39 +66,50 @@ export function ArtifactsPage() {
   const conversations = useConversations((s) => s.byId);
   const switchActive = useConversations((s) => s.switchActive);
   const openPreview = useUi((s) => s.openPreview);
+  const previewActivePath = useUi((s) => s.previewActivePath);
   const setView = useUi((s) => s.setView);
   const activeWorkspaceId = useWorkspaces((s) => s.activeId);
   const activeWorkspaceKind = useWorkspaces((s) =>
     s.list.find((entry) => entry.id === s.activeId)?.kind ?? "home"
   );
   const [filter, setFilter] = useState<Filter>("all");
+  const [notebookFilter, setNotebookFilter] = useState("all");
+  const [query, setQuery] = useState("");
+  const renderedAt = Date.now();
+  const todayStart = startOfLocalDay(renderedAt);
+  const tomorrowStart = startOfNextLocalDay(renderedAt);
 
   const visibleArtifacts = useMemo(() => artifacts.filter((artifact) =>
     (artifact.workspaceId ?? HOME_WORKSPACE_ID) === activeWorkspaceId
   ), [activeWorkspaceId, artifacts]);
 
   const groupedArtifacts = useMemo(() => {
-    const filtered = visibleArtifacts.filter((artifact) => (
-      filter === "all"
-      || (filter === "files" && artifact.kind === "file")
-      || (filter === "visualizations" && artifact.kind === "visualization")
-    ));
-    const groups = new Map<string | null, ArtifactEntry[]>();
+    const normalizedQuery = query.trim().toLocaleLowerCase();
+    const filtered = visibleArtifacts.filter((artifact) => {
+      const kindMatches = filter === "all"
+        || (filter === "files" && artifact.kind === "file")
+        || (filter === "visualizations" && artifact.kind === "visualization");
+      const notebookMatches = notebookFilter === "all"
+        || (notebookFilter === "uncategorized" ? artifact.bookId === null : artifact.bookId === notebookFilter);
+      const queryMatches = !normalizedQuery
+        || artifact.title.toLocaleLowerCase().includes(normalizedQuery)
+        || artifact.path.toLocaleLowerCase().includes(normalizedQuery);
+      return kindMatches && notebookMatches && queryMatches;
+    }).sort((a, b) => b.createdAt - a.createdAt);
+    const today: ArtifactEntry[] = [];
+    const earlier: ArtifactEntry[] = [];
     for (const artifact of filtered) {
-      const group = groups.get(artifact.bookId) ?? [];
-      group.push(artifact);
-      groups.set(artifact.bookId, group);
+      if (artifact.createdAt >= todayStart && artifact.createdAt < tomorrowStart) {
+        today.push(artifact);
+      } else {
+        earlier.push(artifact);
+      }
     }
-    return Array.from(groups.entries()).map(([bookId, entries]) => ({
-      bookId,
-      bookTitle: activeWorkspaceKind === "external"
-        ? "当前本子"
-        : bookId
-          ? notebooks.find((book) => book.id === bookId)?.title ?? bookId
-          : "未分类",
-      artifacts: entries.sort((a, b) => b.createdAt - a.createdAt),
-    }));
-  }, [activeWorkspaceKind, filter, notebooks, visibleArtifacts]);
+    return [
+      { id: "today", title: "今天", artifacts: today },
+      { id: "earlier", title: "更早", artifacts: earlier },
+    ].filter((group) => group.artifacts.length > 0);
+  }, [filter, notebookFilter, query, todayStart, tomorrowStart, visibleArtifacts]);
 
   const openSource = (artifact: ArtifactEntry) => {
     switchActive(artifact.sourceConversationId);
@@ -85,33 +117,56 @@ export function ArtifactsPage() {
   };
 
   return (
-    <div className="leemo-page-scroll">
-      <div className="leemo-page-frame">
-      <header className="flex flex-wrap items-center gap-3 border-b border-[var(--leemo-line)] pb-4">
-        <div className="flex items-baseline gap-2">
-          <h1 className="text-[15px] font-semibold text-[var(--leemo-ink)]">成果</h1>
-          <span className="text-[11px] tabular-nums text-[var(--leemo-ink-3)]">{visibleArtifacts.length} 项</span>
+    <div className="leemo-page-scroll artifacts-page">
+      <div className="leemo-page-frame artifacts-page__frame">
+      <header className="artifacts-page__header">
+        <div>
+          <div className="artifacts-page__title-line">
+            <h1>成果</h1>
+            <span>{visibleArtifacts.length} 项</span>
+          </div>
+          <p>由 momo 生成、整理或修改的文件都在这里。</p>
         </div>
-        {visibleArtifacts.length > 0 && (
-          <div className="ml-auto inline-flex rounded-[6px] border border-[var(--leemo-line)] bg-[var(--leemo-panel)] p-0.5" aria-label="成果类型">
+      </header>
+
+      {visibleArtifacts.length > 0 && (
+        <div className="artifacts-page__controls">
+          <label className="artifacts-page__search">
+            <Search aria-hidden />
+            <input
+              type="search"
+              aria-label="搜索成果"
+              placeholder="搜索文件名或路径"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+            />
+          </label>
+          <select
+            aria-label="筛选本子"
+            value={notebookFilter}
+            onChange={(event) => setNotebookFilter(event.target.value)}
+          >
+            <option value="all">全部本子</option>
+            {notebooks.map((notebook) => (
+              <option key={notebook.id} value={notebook.id}>{notebook.title}</option>
+            ))}
+            <option value="uncategorized">未分类</option>
+          </select>
+          <div className="artifacts-page__filters" aria-label="成果类型">
           {FILTERS.map((item) => (
             <button
               key={item.id}
               type="button"
               aria-pressed={filter === item.id}
               onClick={() => setFilter(item.id)}
-              className={`h-7 rounded-[4px] px-2.5 text-[11.5px] transition-colors ${
-                filter === item.id
-                  ? "bg-[var(--leemo-card)] font-medium text-[var(--leemo-ink)] shadow-sm"
-                  : "text-[var(--leemo-ink-3)] hover:text-[var(--leemo-ink-2)]"
-              }`}
+              className={filter === item.id ? "is-active" : ""}
             >
               {item.label}
             </button>
           ))}
           </div>
-        )}
-      </header>
+        </div>
+      )}
 
       {status === "loading" ? (
         <div role="status" className="flex min-h-48 items-center justify-center gap-2 text-sm text-[var(--leemo-ink-3)]">
@@ -140,28 +195,45 @@ export function ArtifactsPage() {
       ) : groupedArtifacts.length === 0 ? (
         <div className="flex min-h-48 items-center justify-center text-sm text-[var(--leemo-ink-3)]">这个分类还没有成果</div>
       ) : (
-        <div className="py-2">
+        <div className="artifacts-page__groups">
           {groupedArtifacts.map((group) => (
-            <section key={group.bookId ?? "uncategorized"} className="py-3">
-              <h2 className="mb-2 text-[12px] font-semibold text-[var(--leemo-ink-2)]">{group.bookTitle}</h2>
-              <div className="divide-y divide-[var(--leemo-line)] border-y border-[var(--leemo-line)]">
+            <section key={group.id} className="artifacts-page__group">
+              <h2>{group.title}</h2>
+              <div className="artifacts-page__list" role="list" aria-label={`${group.title}的成果`}>
                 {group.artifacts.map((artifact) => {
                   const source = conversations[artifact.sourceConversationId];
                   const Icon = artifact.kind === "visualization" ? BarChart3 : FileText;
+                  const notebookTitle = activeWorkspaceKind === "external"
+                    ? "当前本子"
+                    : artifact.bookId
+                      ? notebooks.find((notebook) => notebook.id === artifact.bookId)?.title ?? artifact.bookId
+                      : "未分类";
                   return (
                     <div
                       key={artifact.id}
                       data-testid="artifact-card"
-                      className="group flex min-h-16 items-center gap-3 px-2 py-2.5 hover:bg-[var(--leemo-panel)]"
+                      className={`artifacts-page__row${previewActivePath === artifact.path ? " is-active" : ""}`}
+                      role="listitem"
+                      aria-current={previewActivePath === artifact.path ? "true" : undefined}
+                      tabIndex={artifact.escaped ? -1 : 0}
+                      onClick={() => {
+                        if (!artifact.escaped) openPreview(artifact.path, artifact.title, previewKind(artifact));
+                      }}
+                      onKeyDown={(event) => {
+                        if (!artifact.escaped && (event.key === "Enter" || event.key === " ")) {
+                          event.preventDefault();
+                          openPreview(artifact.path, artifact.title, previewKind(artifact));
+                        }
+                      }}
                     >
-                      <span className="grid h-8 w-8 shrink-0 place-items-center rounded-[6px] bg-[var(--leemo-bg-deep)] text-[var(--leemo-ink-3)]">
-                        <Icon className="h-4 w-4" aria-hidden />
+                      <span className="artifacts-page__icon">
+                        <Icon aria-hidden />
                       </span>
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate text-[12.5px] font-medium text-[var(--leemo-ink)]">{artifact.title}</p>
-                        <p className="mt-0.5 truncate text-[10.5px] text-[var(--leemo-ink-3)]">{artifact.path}</p>
-                        <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] text-[var(--leemo-ink-3)]">
-                          <span>{formatDate(artifact.createdAt)}</span>
+                      <div className="artifacts-page__row-copy">
+                        <p className="artifacts-page__row-title" title={artifact.path}>{artifact.title}</p>
+                        <span className="artifacts-page__path">{artifact.path}</span>
+                        <div className="artifacts-page__meta">
+                          <span>{notebookTitle}</span>
                           {source && <span>来自 {source.title}</span>}
                           {artifact.escaped && (
                             <span className="inline-flex items-center gap-1 text-[var(--leemo-danger)]">
@@ -171,14 +243,23 @@ export function ArtifactsPage() {
                           )}
                         </div>
                       </div>
-                      <div className="flex shrink-0 items-center gap-1">
+                      <time
+                        className="artifacts-page__time"
+                        dateTime={artifact.createdAt > 0 ? new Date(artifact.createdAt).toISOString() : undefined}
+                      >
+                        {formatArtifactTime(artifact.createdAt, renderedAt)}
+                      </time>
+                      <div className="artifacts-page__actions">
                         <button
                           type="button"
                           aria-label={`预览 ${artifact.title}`}
                           title={artifact.escaped ? "当前本子之外的文件不能在 Leemo 中预览" : "打开预览"}
                           disabled={artifact.escaped}
-                          onClick={() => openPreview(artifact.path, artifact.title, previewKind(artifact))}
-                          className="grid h-8 w-8 place-items-center rounded-[6px] text-[var(--leemo-ink-3)] hover:bg-[var(--leemo-side-hover)] hover:text-[var(--leemo-ink)] disabled:cursor-not-allowed disabled:opacity-35"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            openPreview(artifact.path, artifact.title, previewKind(artifact));
+                          }}
+                          className="artifacts-page__icon-button"
                         >
                           <Eye className="h-4 w-4" aria-hidden />
                         </button>
@@ -187,8 +268,11 @@ export function ArtifactsPage() {
                           aria-label={`回到 ${artifact.title} 的来源对话`}
                           title="回到来源对话"
                           disabled={!source}
-                          onClick={() => openSource(artifact)}
-                          className="grid h-8 w-8 place-items-center rounded-[6px] text-[var(--leemo-ink-3)] hover:bg-[var(--leemo-side-hover)] hover:text-[var(--leemo-ink)] disabled:cursor-not-allowed disabled:opacity-35"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            openSource(artifact);
+                          }}
+                          className="artifacts-page__icon-button"
                         >
                           <MessageSquare className="h-4 w-4" aria-hidden />
                         </button>

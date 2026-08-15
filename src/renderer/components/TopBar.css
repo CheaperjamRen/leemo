@@ -1,0 +1,163 @@
+.leemo-app-topbar.leemo-topbar-window-frame {
+  padding-left: 20px;
+  padding-right: 14px;
+  border-bottom-color: var(--leemo-line);
+  background: color-mix(in srgb, var(--leemo-bg) 94%, white);
+}
+
+.leemo-topbar-start,
+.leemo-topbar-actions,
+.leemo-topbar-auxiliary-controls,
+.leemo-topbar-primary-controls,
+.leemo-topbar-window-controls {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+}
+
+.leemo-topbar-window-controls {
+  gap: 3px;
+}
+
+.leemo-window-control {
+  display: grid;
+  width: 36px;
+  height: 36px;
+  flex: 0 0 36px;
+  place-items: center;
+  border-radius: 9px;
+  color: var(--leemo-ink-2);
+  transition: background 150ms ease, color 150ms ease, transform 150ms ease, box-shadow 150ms ease;
+}
+
+.leemo-window-control > svg {
+  width: 16px;
+  height: 16px;
+  stroke-width: 1.7;
+}
+
+.leemo-window-control:hover {
+  background: var(--leemo-hover);
+  color: var(--leemo-ink);
+  box-shadow: 0 7px 18px -15px rgba(15, 27, 46, 0.42);
+}
+
+.leemo-window-control:active {
+  transform: scale(0.94);
+}
+
+.leemo-window-control-close:hover {
+  background: color-mix(in srgb, var(--leemo-danger) 13%, transparent);
+  color: var(--leemo-danger);
+}
+
+.leemo-topbar-brand-divider {
+  margin-left: 4px;
+}
+
+.leemo-app-topbar .leemo-topbar-history {
+  width: 36px;
+  height: 36px;
+  flex-basis: 36px;
+  border-radius: 9px;
+}
+
+.leemo-app-topbar .leemo-topbar-history:hover {
+  border-color: var(--leemo-line);
+  background: var(--leemo-card);
+  box-shadow: 0 8px 18px -14px rgba(15, 27, 46, 0.36);
+}
+
+.leemo-topbar-actions {
+  gap: 9px;
+}
+
+.leemo-topbar-auxiliary-controls {
+  gap: 4px;
+}
+
+.leemo-topbar-relationship-action {
+  display: inline-flex;
+  height: 36px;
+  align-items: center;
+  gap: 6px;
+  border-radius: 10px;
+  padding-inline: 10px;
+  color: var(--leemo-ink-2);
+  font-size: 12.5px;
+  line-height: 1;
+  transition: background 160ms ease, color 160ms ease;
+}
+
+.leemo-topbar-relationship-action:hover {
+  background: var(--leemo-hover);
+  color: var(--leemo-ink);
+}
+
+.leemo-topbar-relationship-action:disabled {
+  cursor: wait;
+  opacity: 0.45;
+}
+
+.leemo-topbar-primary-controls {
+  gap: 6px;
+}
+
+.leemo-topbar-primary-divider {
+  width: 1px;
+  height: 24px;
+  margin-inline: 2px;
+  flex: 0 0 1px;
+  background: var(--leemo-line);
+}
+
+.leemo-app-topbar .leemo-mode-switcher-topbar {
+  min-height: 36px;
+  border-color: color-mix(in srgb, var(--leemo-line) 82%, transparent);
+  background: color-mix(in srgb, var(--leemo-panel) 82%, var(--leemo-book-blue) 3%);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.62);
+}
+
+.leemo-app-topbar .leemo-mode-switcher-topbar > button:not([aria-pressed="true"]):hover {
+  background: color-mix(in srgb, var(--leemo-hover) 62%, transparent);
+  color: var(--leemo-ink);
+}
+
+/* Both modes share one interaction grammar: a quiet raised card inside the
+ * segmented track. Shell color comes from the surrounding surface, while the
+ * small amber mark preserves Leemo's identity without a harsh status badge. */
+[data-shell="workbench"] .leemo-app-topbar .leemo-mode-switcher-topbar > button[aria-label="切换到工作台"][aria-pressed="true"],
+[data-shell="buddy"] .leemo-app-topbar .leemo-mode-switcher-topbar > button[aria-label="切换到搭子"][aria-pressed="true"] {
+  color: var(--leemo-ink);
+  background: color-mix(in srgb, var(--leemo-card) 94%, white);
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--leemo-line) 86%, var(--leemo-amber) 14%),
+    0 3px 9px -6px rgb(15 27 46 / 0.34),
+    inset 0 1px 0 rgb(255 255 255 / 0.82);
+}
+
+[data-shell="workbench"] .leemo-app-topbar .leemo-mode-switcher-topbar > button[aria-label="切换到工作台"][aria-pressed="true"] svg,
+[data-shell="buddy"] .leemo-app-topbar .leemo-mode-switcher-topbar > button[aria-label="切换到搭子"][aria-pressed="true"] svg {
+  color: var(--leemo-amber);
+}
+
+.leemo-app-topbar :is(button, nav):focus-visible {
+  outline: 2px solid var(--leemo-focus-ring);
+  outline-offset: 2px;
+}
+
+@media (max-width: 1023px) {
+  .leemo-topbar-actions {
+    gap: 8px;
+  }
+
+  .leemo-topbar-auxiliary-controls {
+    gap: 2px;
+  }
+
+  .leemo-topbar-relationship-action {
+    width: 36px;
+    justify-content: center;
+    padding-inline: 0;
+  }
+}

@@ -1,0 +1,829 @@
+{
+  "viewport": {
+    "width": 1267,
+    "height": 799,
+    "devicePixelRatio": 1.75
+  },
+  "tabs": {
+    "general": {
+      "selected": "通用",
+      "window": {
+        "x": 114,
+        "y": 40,
+        "width": 1040,
+        "height": 720
+      },
+      "panel": {
+        "width": 831,
+        "height": 655,
+        "scrollHeight": 655,
+        "scrollWidth": 831
+      },
+      "headings": [
+        "基调模式"
+      ],
+      "controls": [
+        {
+          "tag": "INPUT",
+          "type": "radio",
+          "checked": true,
+          "disabled": false
+        },
+        {
+          "tag": "INPUT",
+          "type": "radio",
+          "checked": false,
+          "disabled": false
+        }
+      ],
+      "horizontalOverflow": []
+    },
+    "models": {
+      "selected": "模型",
+      "window": {
+        "x": 114,
+        "y": 40,
+        "width": 1040,
+        "height": 720
+      },
+      "panel": {
+        "width": 831,
+        "height": 655,
+        "scrollHeight": 1029,
+        "scrollWidth": 816
+      },
+      "headings": [
+        "模型供应商",
+        "连接 DeepSeek",
+        "默认模型",
+        "用量与费用"
+      ],
+      "controls": [
+        {
+          "tag": "BUTTON",
+          "label": "添加自定义服务商",
+          "disabled": false
+        },
+        {
+          "tag": "BUTTON",
+          "label": "选择 DeepSeek",
+          "disabled": false
+        },
+        {
+          "tag": "BUTTON",
+          "label": "选择 GLM（智谱）",
+          "disabled": false
+        },
+        {
+          "tag": "BUTTON",
+          "label": "选择 Kimi（月之暗面）",
+          "disabled": false
+        },
+        {
+          "tag": "BUTTON",
+          "label": "选择 通义千问（百炼）",
+          "disabled": false
+        },
+        {
+          "tag": "BUTTON",
+          "label": "连接",
+          "disabled": false
+        },
+        {
+          "tag": "BUTTON",
+          "label": "模型与角色",
+          "disabled": false
+        },
+        {
+          "tag": "BUTTON",
+          "label": "高级",
+          "disabled": false
+        },
+        {
+          "tag": "INPUT",
+          "type": "text",
+          "label": "名称",
+          "disabled": false
+        },
+        {
+          "tag": "BUTTON",
+          "label": "Anthropic 兼容",
+          "disabled": false
+        },
+        {
+          "tag": "BUTTON",
+          "label": "OpenAI 兼容",
+          "disabled": false
+        },
+        {
+          "tag": "INPUT",
+          "type": "text",
+          "label": "Base URL",
+          "disabled": false
+        },
+        {
+          "tag": "INPUT",
+          "type": "password",
+          "label": "API Key",
+          "disabled": false
+        },
+        {
+          "tag": "BUTTON",
+          "label": "显示 API Key",
+          "disabled": false
+        },
+        {
+          "tag": "SELECT",
+          "label": "服务商默认模型",
+          "disabled": false
+        },
+        {
+          "tag": "BUTTON",
+          "label": "取消",
+          "disabled": false
+        },
+        {
+          "tag": "BUTTON",
+          "label": "测试连接",
+          "disabled": false
+        },
+        {
+          "tag": "BUTTON",
+          "label": "保存设置",
+          "disabled": false
+        },
+        {
+          "tag": "SELECT",
+          "label": "默认模型",
+          "disabled": false
+        },
+        {
+          "tag": "BUTTON",
+          "label": "今天",
+          "disabled": false
+        },
+        {
+          "tag": "BUTTON",
+          "label": "近 7 天",
+          "disabled": false
+        }
+      ],
+      "horizontalOverflow": []
+    },
+    "personalization": {
+      "selected": "个性化",
+      "window": {
+        "x": 114,
+        "y": 40,
+        "width": 1040,
+        "height": 720
+      },
+      "panel": {
+        "width": 831,
+        "height": 655,
+        "scrollHeight": 655,
+        "scrollWidth": 831
+      },
+      "headings": [
+        "人设卡片",
+        "话风档位",
+        "记忆设置"
+      ],
+      "controls": [
+        {
+          "tag": "BUTTON",
+          "label": "新建人设",
+          "disabled": false
+        },
+        {
+          "tag": "INPUT",
+          "type": "radio",
+          "checked": true,
+          "disabled": false
+        },
+        {
+          "tag": "INPUT",
+          "type": "range",
+          "disabled": false
+        },
+        {
+          "tag": "INPUT",
+          "type": "checkbox",
+          "checked": true,
+          "disabled": false
+        },
+        {
+          "tag": "BUTTON",
+          "label": "打开记忆目录",
+          "disabled": false
+        }
+      ],
+      "horizontalOverflow": []
+    },
+    "connectors": {
+      "selected": "连接器",
+      "window": {
+        "x": 114,
+        "y": 40,
+        "width": 1040,
+        "height": 720
+      },
+      "panel": {
+        "width": 831,
+        "height": 655,
+        "scrollHeight": 888,
+        "scrollWidth": 816
+      },
+      "headings": [
+        "MCP 与浏览器",
+        "联网"
+      ],
+      "controls": [
+        {
+          "tag": "BUTTON",
+          "label": "添加 MCP",
+          "disabled": false
+        },
+        {
+          "tag": "INPUT",
+          "type": "checkbox",
+          "label": "浏览器（Playwright） 启用",
+          "checked": true,
+          "disabled": false
+        },
+        {
+          "tag": "BUTTON",
+          "label": "测试",
+          "disabled": false
+        },
+        {
+          "tag": "INPUT",
+          "type": "checkbox",
+          "label": "联网功能",
+          "checked": false,
+          "disabled": false
+        },
+        {
+          "tag": "INPUT",
+          "type": "checkbox",
+          "label": "联网搜索 WebSearch",
+          "checked": false,
+          "disabled": true
+        },
+        {
+          "tag": "INPUT",
+          "type": "checkbox",
+          "label": "联网抓取 WebFetch",
+          "checked": false,
+          "disabled": true
+        },
+        {
+          "tag": "INPUT",
+          "type": "password",
+          "label": "AnySearch API Key",
+          "disabled": false
+        },
+        {
+          "tag": "BUTTON",
+          "label": "保存",
+          "disabled": false
+        },
+        {
+          "tag": "INPUT",
+          "type": "password",
+          "label": "Tavily API Key",
+          "disabled": false
+        },
+        {
+          "tag": "BUTTON",
+          "label": "保存",
+          "disabled": false
+        },
+        {
+          "tag": "INPUT",
+          "type": "password",
+          "label": "博查 API Key",
+          "disabled": false
+        },
+        {
+          "tag": "BUTTON",
+          "label": "保存",
+          "disabled": false
+        }
+      ],
+      "horizontalOverflow": []
+    },
+    "permissions": {
+      "selected": "权限",
+      "window": {
+        "x": 114,
+        "y": 40,
+        "width": 1040,
+        "height": 720
+      },
+      "panel": {
+        "width": 831,
+        "height": 655,
+        "scrollHeight": 655,
+        "scrollWidth": 831
+      },
+      "headings": [
+        "权限策略",
+        "已永久允许"
+      ],
+      "controls": [
+        {
+          "tag": "INPUT",
+          "type": "radio",
+          "checked": false,
+          "disabled": false
+        },
+        {
+          "tag": "INPUT",
+          "type": "radio",
+          "checked": true,
+          "disabled": false
+        },
+        {
+          "tag": "INPUT",
+          "type": "radio",
+          "checked": false,
+          "disabled": false
+        },
+        {
+          "tag": "BUTTON",
+          "label": "高级风险设置",
+          "disabled": false
+        }
+      ],
+      "horizontalOverflow": []
+    }
+  },
+  "providerEditorTabs": {
+    "connection": {
+      "form": {
+        "width": 531,
+        "height": 549,
+        "scrollWidth": 531,
+        "scrollHeight": 549
+      },
+      "panel": {
+        "scrollTop": 0,
+        "scrollHeight": 1029,
+        "clientHeight": 655
+      },
+      "controls": [
+        "连接",
+        "模型与角色",
+        "高级",
+        "名称",
+        "Anthropic 兼容",
+        "OpenAI 兼容",
+        "Base URL",
+        "API Key",
+        "显示 API Key",
+        "服务商默认模型",
+        "取消",
+        "测试连接",
+        "保存设置"
+      ],
+      "horizontalOverflow": []
+    },
+    "roles": {
+      "form": {
+        "width": 531,
+        "height": 549,
+        "scrollWidth": 531,
+        "scrollHeight": 549
+      },
+      "panel": {
+        "scrollTop": 0,
+        "scrollHeight": 1029,
+        "clientHeight": 655
+      },
+      "controls": [
+        "连接",
+        "模型与角色",
+        "高级",
+        "拉取模型列表",
+        "手敲模型名",
+        "添加模型",
+        "deepseek-v4-flash 思考能力",
+        "deepseek-v4-flash 视觉能力",
+        "移除模型 deepseek-v4-flash",
+        "deepseek-v4-pro 思考能力",
+        "deepseek-v4-pro 视觉能力",
+        "移除模型 deepseek-v4-pro",
+        "Fable",
+        "Sonnet",
+        "Opus",
+        "Haiku",
+        "子 Agent",
+        "取消",
+        "测试连接",
+        "保存设置"
+      ],
+      "horizontalOverflow": []
+    },
+    "advanced": {
+      "form": {
+        "width": 531,
+        "height": 549,
+        "scrollWidth": 531,
+        "scrollHeight": 549
+      },
+      "panel": {
+        "scrollTop": 0,
+        "scrollHeight": 1029,
+        "clientHeight": 655
+      },
+      "controls": [
+        "连接",
+        "模型与角色",
+        "高级",
+        "模型发现地址",
+        "获取 API Key 地址",
+        "添加请求头",
+        "INPUT",
+        "取消",
+        "测试连接",
+        "保存设置"
+      ],
+      "horizontalOverflow": []
+    }
+  },
+  "responsive": {
+    "1024x768": {
+      "connection": {
+        "viewport": {
+          "width": 1024,
+          "height": 768
+        },
+        "window": {
+          "left": 24,
+          "right": 1000,
+          "top": 24,
+          "bottom": 744,
+          "width": 976
+        },
+        "panel": {
+          "left": 233,
+          "right": 999,
+          "top": 89,
+          "bottom": 743,
+          "width": 767
+        },
+        "form": {
+          "left": 485,
+          "right": 952,
+          "top": 157,
+          "bottom": 706,
+          "width": 467,
+          "clientWidth": 467,
+          "scrollWidth": 467
+        },
+        "footer": {
+          "left": 485,
+          "right": 952,
+          "bottom": 706
+        },
+        "formInsidePanel": true,
+        "footerInsideForm": true,
+        "footerInitiallyVisible": true,
+        "horizontalOverflow": []
+      },
+      "roles": {
+        "viewport": {
+          "width": 1024,
+          "height": 768
+        },
+        "window": {
+          "left": 24,
+          "right": 1000,
+          "top": 24,
+          "bottom": 744,
+          "width": 976
+        },
+        "panel": {
+          "left": 233,
+          "right": 999,
+          "top": 89,
+          "bottom": 743,
+          "width": 767
+        },
+        "form": {
+          "left": 485,
+          "right": 952,
+          "top": 157,
+          "bottom": 706,
+          "width": 467,
+          "clientWidth": 467,
+          "scrollWidth": 467
+        },
+        "footer": {
+          "left": 485,
+          "right": 952,
+          "bottom": 706
+        },
+        "formInsidePanel": true,
+        "footerInsideForm": true,
+        "footerInitiallyVisible": true,
+        "horizontalOverflow": []
+      },
+      "advanced": {
+        "viewport": {
+          "width": 1024,
+          "height": 768
+        },
+        "window": {
+          "left": 24,
+          "right": 1000,
+          "top": 24,
+          "bottom": 744,
+          "width": 976
+        },
+        "panel": {
+          "left": 233,
+          "right": 999,
+          "top": 89,
+          "bottom": 743,
+          "width": 767
+        },
+        "form": {
+          "left": 485,
+          "right": 952,
+          "top": 157,
+          "bottom": 706,
+          "width": 467,
+          "clientWidth": 467,
+          "scrollWidth": 467
+        },
+        "footer": {
+          "left": 485,
+          "right": 952,
+          "bottom": 706
+        },
+        "formInsidePanel": true,
+        "footerInsideForm": true,
+        "footerInitiallyVisible": true,
+        "horizontalOverflow": []
+      }
+    },
+    "720x700": {
+      "connection": {
+        "viewport": {
+          "width": 720,
+          "height": 700
+        },
+        "window": {
+          "left": 24,
+          "right": 696,
+          "top": 24,
+          "bottom": 676,
+          "width": 672
+        },
+        "panel": {
+          "left": 233,
+          "right": 695,
+          "top": 89,
+          "bottom": 675,
+          "width": 463
+        },
+        "form": {
+          "left": 265,
+          "right": 648,
+          "top": 275,
+          "bottom": 676,
+          "width": 383,
+          "clientWidth": 383,
+          "scrollWidth": 383
+        },
+        "footer": {
+          "left": 265,
+          "right": 648,
+          "bottom": 676
+        },
+        "formInsidePanel": true,
+        "footerInsideForm": true,
+        "footerInitiallyVisible": true,
+        "horizontalOverflow": []
+      },
+      "roles": {
+        "viewport": {
+          "width": 720,
+          "height": 700
+        },
+        "window": {
+          "left": 24,
+          "right": 696,
+          "top": 24,
+          "bottom": 676,
+          "width": 672
+        },
+        "panel": {
+          "left": 233,
+          "right": 695,
+          "top": 89,
+          "bottom": 675,
+          "width": 463
+        },
+        "form": {
+          "left": 265,
+          "right": 648,
+          "top": 275,
+          "bottom": 676,
+          "width": 383,
+          "clientWidth": 383,
+          "scrollWidth": 383
+        },
+        "footer": {
+          "left": 265,
+          "right": 648,
+          "bottom": 676
+        },
+        "formInsidePanel": true,
+        "footerInsideForm": true,
+        "footerInitiallyVisible": true,
+        "horizontalOverflow": []
+      },
+      "advanced": {
+        "viewport": {
+          "width": 720,
+          "height": 700
+        },
+        "window": {
+          "left": 24,
+          "right": 696,
+          "top": 24,
+          "bottom": 676,
+          "width": 672
+        },
+        "panel": {
+          "left": 233,
+          "right": 695,
+          "top": 89,
+          "bottom": 675,
+          "width": 463
+        },
+        "form": {
+          "left": 265,
+          "right": 648,
+          "top": 275,
+          "bottom": 676,
+          "width": 383,
+          "clientWidth": 383,
+          "scrollWidth": 383
+        },
+        "footer": {
+          "left": 265,
+          "right": 648,
+          "bottom": 676
+        },
+        "formInsidePanel": true,
+        "footerInsideForm": true,
+        "footerInitiallyVisible": true,
+        "horizontalOverflow": []
+      }
+    },
+    "720x640": {
+      "connection": {
+        "viewport": {
+          "width": 720,
+          "height": 640
+        },
+        "window": {
+          "left": 24,
+          "right": 696,
+          "top": 24,
+          "bottom": 616,
+          "width": 672
+        },
+        "panel": {
+          "left": 233,
+          "right": 695,
+          "top": 89,
+          "bottom": 615,
+          "width": 463
+        },
+        "form": {
+          "left": 265,
+          "right": 648,
+          "top": 275,
+          "bottom": 616,
+          "width": 383,
+          "clientWidth": 383,
+          "scrollWidth": 383
+        },
+        "footer": {
+          "left": 265,
+          "right": 648,
+          "bottom": 616
+        },
+        "formInsidePanel": true,
+        "footerInsideForm": true,
+        "footerInitiallyVisible": true,
+        "horizontalOverflow": []
+      },
+      "roles": {
+        "viewport": {
+          "width": 720,
+          "height": 640
+        },
+        "window": {
+          "left": 24,
+          "right": 696,
+          "top": 24,
+          "bottom": 616,
+          "width": 672
+        },
+        "panel": {
+          "left": 233,
+          "right": 695,
+          "top": 89,
+          "bottom": 615,
+          "width": 463
+        },
+        "form": {
+          "left": 265,
+          "right": 648,
+          "top": 275,
+          "bottom": 616,
+          "width": 383,
+          "clientWidth": 383,
+          "scrollWidth": 383
+        },
+        "footer": {
+          "left": 265,
+          "right": 648,
+          "bottom": 616
+        },
+        "formInsidePanel": true,
+        "footerInsideForm": true,
+        "footerInitiallyVisible": true,
+        "horizontalOverflow": []
+      },
+      "advanced": {
+        "viewport": {
+          "width": 720,
+          "height": 640
+        },
+        "window": {
+          "left": 24,
+          "right": 696,
+          "top": 24,
+          "bottom": 616,
+          "width": 672
+        },
+        "panel": {
+          "left": 233,
+          "right": 695,
+          "top": 89,
+          "bottom": 615,
+          "width": 463
+        },
+        "form": {
+          "left": 265,
+          "right": 648,
+          "top": 275,
+          "bottom": 616,
+          "width": 383,
+          "clientWidth": 383,
+          "scrollWidth": 383
+        },
+        "footer": {
+          "left": 265,
+          "right": 648,
+          "bottom": 616
+        },
+        "formInsidePanel": true,
+        "footerInsideForm": true,
+        "footerInitiallyVisible": true,
+        "horizontalOverflow": []
+      }
+    }
+  },
+  "advancedRisk": {
+    "expanded": "false",
+    "bypassControlVisible": false,
+    "cacheControlVisible": false
+  },
+  "advancedRiskExpanded": {
+    "expanded": "true",
+    "bypassControlVisible": true,
+    "cacheControlVisible": true,
+    "panelScrollHeight": 655
+  },
+  "riskConfirmation": {
+    "visible": true,
+    "confirmDisabled": true,
+    "text": "确认开启绕过权限开启后，momo 可以在不询问的情况下执行所有工具。你仍可随时回到这里关闭。我了解 momo 将不再逐项询问，包括删除文件等高风险操作取消确认开启绕过权限"
+  },
+  "search": true,
+  "searchResult": {
+    "selected": "连接器",
+    "headings": [
+      "MCP 与浏览器",
+      "联网"
+    ]
+  }
+}

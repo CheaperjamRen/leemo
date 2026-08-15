@@ -108,6 +108,8 @@ export default function MemorySettingsSection({
   const [pendingActionIds, setPendingActionIds] = useState<string[]>([]);
   const [historyOpenId, setHistoryOpenId] = useState<string | null>(null);
   const [focusTarget, setFocusTarget] = useState<FocusTarget | null>(null);
+  const [understandingBusy, setUnderstandingBusy] = useState(false);
+  const [understandingError, setUnderstandingError] = useState<string | null>(null);
   const editorRef = useRef<HTMLTextAreaElement | null>(null);
   const sectionTitleRef = useRef<HTMLHeadingElement | null>(null);
   const editButtonRefs = useRef(new Map<string, HTMLButtonElement>());
@@ -129,7 +131,10 @@ export default function MemorySettingsSection({
       .map((workspace) => ({ type: "workspace" as const, workspaceId: workspace.id })),
   ], [notebooks, workspaces]);
   const refreshMemory = useCallback(async () => {
-    await store.getState().refresh(scopes);
+    // The normal prompt consumes current facts only. Settings additionally
+    // needs uncertain momo inferences so the user can confirm or reject them;
+    // superseded/deleted records remain history-only below.
+    await store.getState().refresh(scopes, true);
   }, [scopes, store]);
 
   useEffect(() => {
@@ -198,7 +203,10 @@ export default function MemorySettingsSection({
   };
 
   const normalizedQuery = query.trim().toLocaleLowerCase();
-  const filteredRecords = memory.records
+  const manageableRecords = memory.records.filter((record) => (
+    record.status === "current" || record.status === "uncertain"
+  ));
+  const filteredRecords = manageableRecords
     .filter((record) => (
       scopeFilter === "all"
       || (scopeFilter === "global" && record.scope.type === "global")
@@ -211,6 +219,54 @@ export default function MemorySettingsSection({
     })
     .sort((a, b) => Number(b.pinned) - Number(a.pinned)
       || (b.lastConfirmedAt ?? b.learnedAt) - (a.lastConfirmedAt ?? a.learnedAt));
+
+  // The summary is a projection of global memory only. Notebook facts remain
+  // visible in the scoped list below, but never become a claim about the user.
+  const globalUnderstandingRecords = manageableRecords
+    .filter((record) => record.scope.type === "global")
+    .sort((a, b) => (b.lastConfirmedAt ?? b.learnedAt) - (a.lastConfirmedAt ?? a.learnedAt));
+  const visibleUnderstandingRecords = globalUnderstandingRecords.slice(0, 12);
+  const uncertainUnderstandingRecords = globalUnderstandingRecords.filter((record) => record.status === "uncertain");
+  const understandingGroups = Array.from(new Set(visibleUnderstandingRecords.map((record) => record.kind)))
+    .map((kind) => ({
+      kind,
+      label: KIND_LABELS[kind],
+      records: visibleUnderstandingRecords.filter((record) => record.kind === kind),
+    }));
+  const hiddenUnderstandingCount = Math.max(0, globalUnderstandingRecords.length - visibleUnderstandingRecords.length);
+  const showUnderstanding = scopeFilter === "all" && !normalizedQuery && globalUnderstandingRecords.length > 0;
+
+  const editUnderstanding = (record: MemoryView) => {
+    setScopeFilter("all");
+    setQuery("");
+    setConfirmDeleteId(null);
+    setEditing({ id: record.id, statement: record.statement });
+  };
+
+  const confirmUnderstanding = async () => {
+    if (understandingBusy || uncertainUnderstandingRecords.length === 0) return;
+    setUnderstandingBusy(true);
+    setUnderstandingError(null);
+    let failed = 0;
+    try {
+      for (const record of uncertainUnderstandingRecords) {
+        try {
+          await memory.update({
+            scope: record.scope,
+            id: record.id,
+            statement: record.statement,
+          });
+        } catch {
+          failed += 1;
+        }
+      }
+      if (failed > 0) {
+        setUnderstandingError(`还有 ${failed} 条理解没有确认成功，可以稍后继续。`);
+      }
+    } finally {
+      setUnderstandingBusy(false);
+    }
+  };
 
   const openSelectedDirectory = async () => {
     const scope: MemoryScopeView = directoryValue === "global"
@@ -241,6 +297,22 @@ export default function MemorySettingsSection({
       setFocusTarget({ action: "edit", id: change.memory.id });
     } catch {
       // Keep the editor open so the user can retry without retyping.
+    } finally {
+      endAction(record.id);
+    }
+  };
+
+  const confirmInference = async (record: MemoryView) => {
+    beginAction(record.id);
+    try {
+      const change = await memory.update({
+        scope: record.scope,
+        id: record.id,
+        statement: record.statement,
+      });
+      setFocusTarget({ action: "edit", id: change.memory.id });
+    } catch {
+      // Keep the candidate visible with the store's error so it can be retried.
     } finally {
       endAction(record.id);
     }
@@ -405,9 +477,76 @@ export default function MemorySettingsSection({
         </div>
       )}
 
-      {memory.loading && memory.records.length === 0 ? (
+      {showUnderstanding && (
+        <section
+          data-testid="memory-understanding"
+          aria-labelledby="memory-understanding-title"
+          className="mt-6 rounded-md border border-[var(--leemo-line)] bg-[var(--leemo-bg)] px-4 py-4"
+        >
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div className="min-w-0">
+              <h3 id="memory-understanding-title" className="text-base font-medium text-[var(--leemo-ink)]">momo 对你的理解</h3>
+              <p className="mt-1 text-xs leading-5 text-[var(--leemo-ink-3)]">
+                这份理解只由关于你的记忆整理，不会另存一份副本；你可以随时逐段修改。
+              </p>
+            </div>
+            {uncertainUnderstandingRecords.length > 0 ? (
+              <button
+                type="button"
+                aria-label="确认这份理解"
+                disabled={understandingBusy}
+                onClick={() => void confirmUnderstanding()}
+                className="h-8 shrink-0 rounded-md bg-[var(--leemo-ink)] px-3 text-xs font-medium text-white disabled:cursor-wait disabled:opacity-50"
+              >
+                {understandingBusy ? "正在确认" : "确认这份理解"}
+              </button>
+            ) : (
+              <span role="status" className="shrink-0 text-xs text-[var(--leemo-ink-3)]">已确认 · 之后可以随时修改</span>
+            )}
+          </div>
+
+          {understandingError && (
+            <p role="alert" className="mt-3 text-xs text-[var(--leemo-danger)]">{understandingError}</p>
+          )}
+
+          <div className="mt-4 space-y-4">
+            {understandingGroups.map((group) => (
+              <div key={group.kind}>
+                <h4 className="text-[11px] font-medium uppercase tracking-wide text-[var(--leemo-ink-3)]">{group.label}</h4>
+                <ul className="mt-1.5 space-y-1.5">
+                  {group.records.map((record) => {
+                    const summary = actionSummary(record.statement);
+                    return (
+                      <li key={record.id} className="flex items-start gap-2 text-sm leading-6 text-[var(--leemo-ink)]">
+                        <span className="min-w-0 flex-1 break-words">{record.statement}</span>
+                        <span className={`mt-1 shrink-0 text-[11px] ${record.status === "uncertain" ? "text-[var(--leemo-amber-strong)]" : "text-[var(--leemo-ink-3)]"}`}>
+                          {record.status === "uncertain" ? "待确认" : record.sourceType === "explicit-user" ? "你说过" : "momo 整理"}
+                        </span>
+                        <button
+                          type="button"
+                          aria-label={`编辑这段理解：${summary}`}
+                          title="编辑这段理解"
+                          onClick={() => editUnderstanding(record)}
+                          className="grid h-7 w-7 shrink-0 place-items-center rounded-md text-[var(--leemo-ink-3)] hover:bg-white hover:text-[var(--leemo-ink)]"
+                        >
+                          <Pencil className="h-3.5 w-3.5" aria-hidden />
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            ))}
+          </div>
+          {hiddenUnderstandingCount > 0 && (
+            <p className="mt-3 text-xs text-[var(--leemo-ink-3)]">还有 {hiddenUnderstandingCount} 条，已在下方记忆列表中保留。</p>
+          )}
+        </section>
+      )}
+
+      {memory.loading && manageableRecords.length === 0 ? (
         <p role="status" className="py-10 text-center text-sm text-[var(--leemo-ink-3)]">正在读取 momo 的记忆…</p>
-      ) : memory.listError && memory.records.length === 0 ? null : memory.records.length === 0 ? (
+      ) : memory.listError && manageableRecords.length === 0 ? null : manageableRecords.length === 0 ? (
         <p className="py-10 text-center text-sm text-[var(--leemo-ink-3)]">momo 还没有需要长期记住的内容</p>
       ) : filteredRecords.length === 0 ? (
         <p className="py-10 text-center text-sm text-[var(--leemo-ink-3)]">
@@ -464,6 +603,46 @@ export default function MemorySettingsSection({
                         className="grid h-8 w-8 place-items-center rounded-md bg-[var(--leemo-ink)] text-white disabled:opacity-40"
                       >
                         <Check className="h-4 w-4" aria-hidden />
+                      </button>
+                    </div>
+                  </div>
+                ) : record.status === "uncertain" ? (
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                    <div className="min-w-0 flex-1">
+                      <p className="break-words text-sm leading-6 text-[var(--leemo-ink)]">{record.statement}</p>
+                      <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px]">
+                        <span className="text-[var(--leemo-amber-strong)]">momo 的理解</span>
+                        <span aria-hidden className="text-[var(--leemo-ink-3)]">·</span>
+                        <span className="text-[var(--leemo-ink-3)]">待你确认</span>
+                      </div>
+                    </div>
+                    <div className="flex shrink-0 flex-wrap items-center justify-end gap-1.5">
+                      <button
+                        type="button"
+                        aria-label="这条理解符合实际"
+                        disabled={busy}
+                        onClick={() => void confirmInference(record)}
+                        className="h-8 rounded-md bg-[var(--leemo-ink)] px-3 text-xs font-medium text-white disabled:opacity-50"
+                      >
+                        符合
+                      </button>
+                      <button
+                        type="button"
+                        aria-label={`修改 momo 的理解：${summary}`}
+                        disabled={busy}
+                        onClick={() => { setEditing({ id: record.id, statement: record.statement }); setConfirmDeleteId(null); }}
+                        className="h-8 rounded-md border border-[var(--leemo-line)] px-3 text-xs text-[var(--leemo-ink-2)] disabled:opacity-50"
+                      >
+                        修改
+                      </button>
+                      <button
+                        type="button"
+                        aria-label="这条理解不准确"
+                        disabled={busy}
+                        onClick={() => void deleteRecord(record)}
+                        className="h-8 rounded-md px-2 text-xs text-[var(--leemo-ink-3)] hover:bg-[var(--leemo-danger-soft)] hover:text-[var(--leemo-danger)] disabled:opacity-50"
+                      >
+                        不是这样
                       </button>
                     </div>
                   </div>

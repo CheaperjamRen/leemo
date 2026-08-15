@@ -34,6 +34,18 @@ describe("context usage store", () => {
     expect(next).not.toBe(prev);
   });
 
+  it("uses main-loop context fields instead of aggregate model usage that includes subagents", () => {
+    const prev: ContextUsageState = { byConversation: {} };
+    const event = usageEvent(1_000, 300, 20, 200);
+    if (event.type !== "usage.final") throw new Error("expected usage event");
+    event.usage.contextInputTokens = 80;
+    event.usage.contextCacheReadTokens = 20;
+    event.usage.contextCacheCreationTokens = 5;
+
+    const next = foldContextUsage(prev, event, "conversation-a");
+    expect(next.byConversation["conversation-a"]).toEqual({ currentTokens: 105, justCompacted: false });
+  });
+
   it("uses compact postTokens, preserves an explicit zero, and falls back to preTokens only when absent", () => {
     const prior: ContextUsageState = { byConversation: { "conversation-a": { currentTokens: 500, justCompacted: false } } };
     const compacted = foldContextUsage(prior, { type: "compact.boundary", trigger: "auto", preTokens: 400, postTokens: 0 }, "conversation-a");

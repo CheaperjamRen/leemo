@@ -23,7 +23,7 @@ function fakeFetchThrowing(err: unknown): typeof fetch {
   }) as unknown as typeof fetch;
 }
 
-const target = { modelsUrl: "https://open.bigmodel.cn/api/anthropic/v1/models", apiKey: "sk-test-DIRECTKEY-999" };
+const target = { modelsUrl: "https://open.bigmodel.cn/api/anthropic/v1/models", apiKey: "test-key-DIRECTKEY-999" };
 
 // ---------------------------------------------------------------------------
 // normalizeModelList — pure function tests

@@ -11,7 +11,7 @@ import { contextBridge, ipcRenderer, webUtils } from "electron";
 
 /** Push channels the host emits (BridgeEventMap keys). Allow-listed so a
  *  compromised renderer can't subscribe to arbitrary ipc channels. */
-const PUSH_CHANNELS = ["bridge:event", "bridge:approvalRequest", "bridge:askUser"] as const;
+const PUSH_CHANNELS = ["bridge:event", "bridge:approvalRequest", "bridge:approvalExpired", "bridge:askUser"] as const;
 type PushChannel = (typeof PUSH_CHANNELS)[number];
 
 contextBridge.exposeInMainWorld("leemoBridge", {
@@ -35,6 +35,116 @@ contextBridge.exposeInMainWorld("leemoBridge", {
 contextBridge.exposeInMainWorld("leemoPersist", {
   invoke(op: string, payload: unknown): Promise<{ ok: boolean; response?: unknown; error?: string }> {
     return ipcRenderer.invoke("leemo:persist", { op, payload });
+  },
+});
+
+/** Notes are durable local records with their own main-process authority. The
+ * renderer receives one explicit request channel and one invalidation event;
+ * it never receives the database or Electron primitives. */
+contextBridge.exposeInMainWorld("leemoCapture", {
+  invoke(op: string, payload?: unknown): Promise<{ ok: boolean; response?: unknown; error?: string }> {
+    return ipcRenderer.invoke("leemo:capture", { op, payload });
+  },
+
+  onChanged(cb: (payload: unknown) => void): () => void {
+    const listener = (_e: unknown, payload: unknown): void => cb(payload);
+    ipcRenderer.on("leemo:capture:changed", listener);
+    return () => ipcRenderer.removeListener("leemo:capture:changed", listener);
+  },
+});
+
+/** User-authored tasks share one narrow, main-owned SQLite service with momo.
+ * The renderer can request domain operations but never receives database or
+ * Electron access. */
+contextBridge.exposeInMainWorld("leemoTasks", {
+  invoke(op: string, payload?: unknown): Promise<{ ok: boolean; response?: unknown; error?: string }> {
+    return ipcRenderer.invoke("leemo:tasks", { op, payload });
+  },
+
+  onChanged(cb: () => void): () => void {
+    const listener = (): void => cb();
+    ipcRenderer.on("leemo:tasks:changed", listener);
+    return () => ipcRenderer.removeListener("leemo:tasks:changed", listener);
+  },
+});
+
+/** Recovery actions live on their own narrow channel so the renderer cannot
+ * call arbitrary capture or task operations while browsing deleted records. */
+contextBridge.exposeInMainWorld("leemoTrash", {
+  invoke(op: string, payload?: unknown): Promise<{ ok: boolean; response?: unknown; error?: string }> {
+    return ipcRenderer.invoke("leemo:trash", { op, payload });
+  },
+});
+
+/** OS-level desktop integration is kept separate from ordinary settings
+ * persistence. Main reports success only after the shortcut is registered and
+ * the confirmed values are durable. */
+contextBridge.exposeInMainWorld("leemoDesktop", {
+  configure(payload: {
+    continueInBackground?: boolean;
+    quickCaptureShortcut?: string;
+  }): Promise<{ ok: boolean; response?: unknown; error?: string }> {
+    return ipcRenderer.invoke("leemo:desktop", { op: "configure", payload });
+  },
+  chooseCaptureStorageRoot(): Promise<{ ok: boolean; response?: unknown; error?: string }> {
+    return ipcRenderer.invoke("leemo:choose-capture-storage-root");
+  },
+  openCaptureStorageRoot(): Promise<{ ok: boolean; error?: string }> {
+    return ipcRenderer.invoke("leemo:open-capture-storage-root");
+  },
+  onNavigate(cb: (payload: unknown) => void): () => void {
+    const listener = (_event: unknown, payload: unknown): void => cb(payload);
+    ipcRenderer.on("leemo:desktop:navigate", listener);
+    return () => ipcRenderer.removeListener("leemo:desktop:navigate", listener);
+  },
+});
+
+type WindowControlOperation = "minimize" | "toggleMaximize" | "close" | "getState";
+
+async function invokeWindowControl(op: WindowControlOperation): Promise<{ maximized: boolean }> {
+  const result = await ipcRenderer.invoke("leemo:window", { op }) as {
+    ok: boolean;
+    response?: { maximized?: boolean };
+    error?: string;
+  };
+  if (!result.ok) throw new Error(result.error ?? "窗口操作没有完成。");
+  return { maximized: result.response?.maximized === true };
+}
+
+contextBridge.exposeInMainWorld("leemoWindow", {
+  async minimize(): Promise<void> {
+    await invokeWindowControl("minimize");
+  },
+  toggleMaximize(): Promise<{ maximized: boolean }> {
+    return invokeWindowControl("toggleMaximize");
+  },
+  async close(): Promise<void> {
+    await invokeWindowControl("close");
+  },
+  getState(): Promise<{ maximized: boolean }> {
+    return invokeWindowControl("getState");
+  },
+  onMaximizedChanged(cb: (maximized: boolean) => void): () => void {
+    const listener = (_event: unknown, payload: unknown): void => {
+      const maximized = payload && typeof payload === "object"
+        ? (payload as { maximized?: unknown }).maximized
+        : undefined;
+      if (typeof maximized === "boolean") cb(maximized);
+    };
+    ipcRenderer.on("leemo:window:maximized-changed", listener);
+    return () => ipcRenderer.removeListener("leemo:window:maximized-changed", listener);
+  },
+});
+
+/** About and diagnostics expose only fixed runtime metadata and one main-owned
+ * logs-directory action. Paths, credentials and conversation data never cross
+ * this boundary. */
+contextBridge.exposeInMainWorld("leemoAbout", {
+  getInfo(): Promise<{ ok: boolean; response?: unknown; error?: string }> {
+    return ipcRenderer.invoke("leemo:about", { op: "getInfo" });
+  },
+  openLogsDirectory(): Promise<{ ok: boolean; error?: string }> {
+    return ipcRenderer.invoke("leemo:about", { op: "openLogsDirectory" });
   },
 });
 

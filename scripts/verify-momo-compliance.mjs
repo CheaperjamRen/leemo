@@ -5,7 +5,7 @@ import path from "node:path";
 import WebSocket from "ws";
 
 const port = process.env.LEEMO_CDP_PORT || "9333";
-const outputDir = path.resolve(process.env.LEEMO_VERIFY_OUTPUT_DIR || "dist-verify/audit-shots");
+const outputDir = path.resolve("docs/research/audit-shots");
 const factsPath = path.join(outputDir, "momo-compliance-facts.json");
 const screenshotPath = path.join(outputDir, "momo-compliance-user-path.png");
 const prompt = "请把 1 到 200 每个数字都写一行简短解释，按顺序全部写完，不要省略。你可以先用一句话评价这个任务，但随后必须照做。";

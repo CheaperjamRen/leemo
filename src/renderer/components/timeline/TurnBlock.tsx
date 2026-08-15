@@ -6,9 +6,11 @@ import MessageFooter from "./MessageFooter";
 import ApprovalBar from "../ApprovalBar";
 import VisualizationCard from "../VisualizationCard";
 import AskUserCard from "../AskUserCard";
+import FailureRecoveryCard from "./FailureRecoveryCard";
 import { LEEMO_VISUALIZATION_TOOL_NAME, LEEMO_ASK_USER_TOOL_NAME } from "../../bridge/tool-names";
 import {
   useApprovals,
+  useComposerDrafts,
   useConversations,
   useMemory,
   useSettings,
@@ -17,6 +19,9 @@ import {
   useWorkspaces,
 } from "../../bridge/context";
 import { pairAskUserQuestions } from "./ask-user-pairing";
+import { resolveComposerScope } from "../../stores/composer-drafts";
+import { HOME_WORKSPACE_ID } from "../../stores/workspaces";
+import MomoAvatar from "../momo/MomoAvatar";
 
 function fileName(filePath: string): string {
   return filePath.split("/").filter(Boolean).at(-1) ?? filePath;
@@ -34,8 +39,8 @@ const isProcess = (i: TimelineItem) =>
   (i.kind === "tool" && i.name !== LEEMO_VISUALIZATION_TOOL_NAME && i.name !== LEEMO_ASK_USER_TOOL_NAME) ||
   i.kind === "plan" ||
   i.kind === "activity" ||
-  i.kind === "compact" ||
-  i.kind === "thinking";
+  i.kind === "retry" ||
+  i.kind === "compact";
 
 export default function TurnBlock({
   items,
@@ -51,6 +56,13 @@ export default function TurnBlock({
   const pendingByConversation = useApprovals((s) => s.pendingByConversation);
   const resolvedByRun = useApprovals((s) => s.resolvedByRun);
   const activeConversationId = useConversations((s) => s.activeId);
+  const retryConversation = useConversations((s) => s.retry);
+  const dismissRetry = useConversations((s) => s.dismissRetry);
+  const pendingRetry = useConversations((s) =>
+    s.activeId ? s.pendingSends[s.activeId] : undefined
+  );
+  const composerDrafts = useComposerDrafts((s) => s.drafts);
+  const setComposerText = useComposerDrafts((s) => s.setText);
   const pendingUndoIds = useMemory((s) => s.pendingUndoIds);
   const undoneChangeIds = useMemory((s) => s.undoneChangeIds);
   const undoErrors = useMemory((s) => s.undoErrors);
@@ -156,6 +168,17 @@ export default function TurnBlock({
   const terminalResult = [...items].reverse().find(
     (item): item is Extract<TimelineItem, { kind: "result" }> => item.kind === "result",
   );
+  const isTerminalFailure = terminalResult?.isError === true
+    && terminalResult.interrupted === false;
+  const matchingRetry = isTerminalFailure
+    && terminalResult.retryable !== false
+    && activeConversationId
+    && pendingRetry?.runId === runId
+    && Boolean(pendingRetry.errorMessage)
+      ? pendingRetry
+      : undefined;
+  const showFailureRecovery = isTerminalFailure
+    && (density === "buddy" || Boolean(matchingRetry));
   const hasConcreteError = items.some(
     (item) => item.kind === "error" && item.message.trim().length > 0,
   );
@@ -169,31 +192,72 @@ export default function TurnBlock({
       ? "error" as const
       : undefined;
   const processItems = items.filter(isProcess);
+  const waitingForFirstMomoEvent = active
+    && items.some((item) => item.kind === "text" && item.role === "user")
+    && !items.some((item) => !(item.kind === "text" && item.role === "user"));
   const firstProcessIndex = items.findIndex(isProcess);
   const hasPendingApproval = processItems.some(
     (item) => item.kind === "tool" && pendingToolUseIds.has(item.toolUseId),
   );
-  const receiptIndex = firstProcessIndex >= 0
-    ? firstProcessIndex
-    : archivedContent
-      ? archiveBeforeIndex >= 0 ? archiveBeforeIndex : items.length
-      : -1;
+  const terminalIndex = items.findIndex((item) => item.kind === "result" || item.kind === "error");
+  const terminalResultIndex = items.findIndex((item) => item.kind === "result");
+  const lastMomoIndex = items.reduce((latest, item, index) => (
+    item.kind === "text"
+      && item.role === "momo"
+      && (terminalResultIndex < 0 || index < terminalResultIndex)
+      ? index
+      : latest
+  ), -1);
+  const receiptIndex = showFailureRecovery
+    ? lastMomoIndex >= 0
+      ? lastMomoIndex + 1
+      : terminalIndex >= 0 ? terminalIndex : items.length
+    : firstProcessIndex >= 0
+      ? firstProcessIndex
+      : archivedContent
+        ? archiveBeforeIndex >= 0 ? archiveBeforeIndex : items.length
+        : -1;
   const processReceipt = receiptIndex >= 0 ? (
-    <ProcessFold
-      key={`process-${runId}`}
-      items={processItems}
-      defaultCollapsed={hasPendingApproval ? false : density === "buddy" ? true : !active}
-      runId={runId}
-      density={density}
-      active={active}
-      outcome={processOutcome}
-      stale={!active && !items.some((item) => item.kind === "result" || item.kind === "error")}
-      archivedCount={archivedInteractionCount}
-      archivedContent={archivedContent}
-      summaryOverride={processItems.length === 0
-        ? density === "buddy" ? "momo 收好确认记录" : "确认记录已归档"
-        : undefined}
-    />
+    showFailureRecovery ? (
+      <FailureRecoveryCard
+        key={`failure-recovery-${runId}`}
+        items={items}
+        retryError={matchingRetry?.errorMessage}
+        onRetry={matchingRetry && activeConversationId
+          ? async () => { await retryConversation(activeConversationId); }
+          : undefined}
+        onPaste={async () => {
+          const clipboardText = await navigator.clipboard.readText();
+          if (!clipboardText.trim()) throw new Error("剪贴板里没有可粘贴的文字。");
+          const scope = resolveComposerScope(
+            composerDrafts,
+            activeConversationId,
+            HOME_WORKSPACE_ID,
+          );
+          setComposerText(scope, clipboardText);
+          document.querySelector<HTMLTextAreaElement>('textarea[aria-label="输入消息"]')?.focus();
+        }}
+        onDismiss={matchingRetry && activeConversationId
+          ? () => { dismissRetry(activeConversationId); }
+          : undefined}
+      />
+    ) : (
+      <ProcessFold
+        key={`process-${runId}`}
+        items={processItems}
+        defaultCollapsed={hasPendingApproval ? false : density === "buddy" ? true : !active}
+        runId={runId}
+        density={density}
+        active={active}
+        outcome={processOutcome}
+        stale={!active && !items.some((item) => item.kind === "result" || item.kind === "error")}
+        archivedCount={archivedInteractionCount}
+        archivedContent={archivedContent}
+        summaryOverride={processItems.length === 0
+          ? density === "buddy" ? "momo 收好确认记录" : "确认记录已归档"
+          : undefined}
+      />
+    )
   ) : null;
 
   const nodes: React.ReactNode[] = [];
@@ -207,9 +271,10 @@ export default function TurnBlock({
     if (it.kind === "usage") return; // no visual footprint; must not split a process fold
     if (it.kind === "files") return; // folded into MessageFooter; never a separate card/message
     if (it.kind === "memory") return; // folded into MessageFooter; never a separate card/message
-    if (it.kind === "text") nodes.push(<TextBubble key={it.id} item={it} />);
-    else if (it.kind === "result") nodes.push(
-      <MessageFooter
+    if (it.kind === "text") nodes.push(<TextBubble key={it.id} item={it} density={density} />);
+    else if (it.kind === "result") {
+      if (showFailureRecovery && !files && !memory) return;
+      nodes.push(<MessageFooter
         key={it.id}
         result={it}
         usage={usage}
@@ -234,14 +299,17 @@ export default function TurnBlock({
             targetChangeId: target.changeId,
           });
         } : undefined}
-      />,
-    );
-    else if (it.kind === "error") nodes.push(
+      />);
+    }
+    else if (it.kind === "error") {
+      if (showFailureRecovery) return;
+      nodes.push(
       <div key={it.id} className="flex items-start gap-1 text-xs text-[var(--leemo-danger)]">
         <TriangleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
         <span>{it.message}</span>
-      </div>
-    );
+      </div>,
+      );
+    }
     // Render VisualizationCard for visualization tools
     else if (it.kind === "tool" && it.name === LEEMO_VISUALIZATION_TOOL_NAME) {
       nodes.push(<VisualizationCard key={it.id} item={it} />);
@@ -258,6 +326,26 @@ export default function TurnBlock({
     }
   });
   if (processReceipt && !receiptPlaced) nodes.push(processReceipt);
+  if (waitingForFirstMomoEvent) {
+    nodes.push(
+      <div
+        key={`turn-start-${runId}`}
+        role="status"
+        aria-label="momo 已开始处理"
+        aria-live="polite"
+        className={`flex items-center ${density === "buddy" ? "gap-3" : "gap-2.5"}`}
+      >
+        <MomoAvatar size={density === "buddy" ? 30 : 22} state="thinking" />
+        <div className={density === "buddy"
+          ? "leemo-buddy-momo-bubble flex min-h-10 items-center gap-2 rounded-[13px] px-4 py-2 text-[13px] text-[var(--leemo-ink-2)]"
+          : "flex items-center gap-2 py-1 text-[12.5px] text-[var(--leemo-ink-3)]"}
+        >
+          <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-[var(--leemo-amber)]" aria-hidden />
+          <span>正在开始处理…</span>
+        </div>
+      </div>,
+    );
+  }
 
   // Pending fallback interactions stay prominent so the round cannot stall.
   // Once resolved, a finished turn archives them before its final answer.

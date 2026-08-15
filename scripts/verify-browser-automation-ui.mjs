@@ -206,7 +206,7 @@ try {
     facts.fixture.askUser[viewport.id] = geometry;
   }
 
-  await fixturePage.getByRole("button", { name: "工作台", exact: true }).click();
+  await fixturePage.getByRole("button", { name: "切换到工作台", exact: true }).click();
   await fixturePage.locator('[data-shell="workbench"]').waitFor({ state: "visible" });
   for (const viewport of [
     { id: "1920x1080", width: 1920, height: 1080 },

@@ -1,0 +1,91 @@
+{
+  "checkedAt": "2026-08-01T20:58:27.657Z",
+  "modelCalls": 0,
+  "liveElectron": {
+    "selectedMode": "Leemo 浏览器",
+    "readyText": "浏览器已就绪 · 42 项能力 · 317 ms",
+    "toolCount": 42
+  },
+  "fixture": {
+    "settings": {
+      "1440x900": {
+        "settingsInsideViewport": true,
+        "panelHorizontalOverflow": false,
+        "sectionInsidePanel": true,
+        "modeWidths": [
+          379,
+          379
+        ],
+        "modeCardsAligned": true,
+        "browserSectionUsesProductLanguage": true,
+        "customConnectorHeadingVisible": true,
+        "overflowing": []
+      },
+      "720x640": {
+        "settingsInsideViewport": true,
+        "panelHorizontalOverflow": false,
+        "sectionInsidePanel": true,
+        "modeWidths": [
+          195,
+          195
+        ],
+        "modeCardsAligned": true,
+        "browserSectionUsesProductLanguage": true,
+        "customConnectorHeadingVisible": true,
+        "overflowing": []
+      }
+    },
+    "askUser": {
+      "1280x860": {
+        "count": 2,
+        "widths": [
+          686,
+          686
+        ],
+        "equalWidth": true,
+        "alignedLeft": true,
+        "alignedRight": true,
+        "noTextOverflow": true,
+        "cardFullyVisible": true
+      },
+      "720x640": {
+        "count": 2,
+        "widths": [
+          638,
+          638
+        ],
+        "equalWidth": true,
+        "alignedLeft": true,
+        "alignedRight": true,
+        "noTextOverflow": true,
+        "cardFullyVisible": true
+      }
+    },
+    "workbenchComposer": {
+      "1920x1080": {
+        "composerWidth": 880,
+        "conversationWidth": 1740,
+        "maxWidthRespected": true,
+        "centered": true,
+        "inputInsideViewport": true,
+        "pageHorizontalOverflow": false
+      },
+      "1440x900": {
+        "composerWidth": 880,
+        "conversationWidth": 1183.84375,
+        "maxWidthRespected": true,
+        "centered": true,
+        "inputInsideViewport": true,
+        "pageHorizontalOverflow": false
+      },
+      "720x640": {
+        "composerWidth": 460.75,
+        "conversationWidth": 460.75,
+        "maxWidthRespected": true,
+        "centered": true,
+        "inputInsideViewport": true,
+        "pageHorizontalOverflow": false
+      }
+    }
+  }
+}

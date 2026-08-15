@@ -37,7 +37,37 @@ export interface UsageRecord {
   costUsd?: string; // 6-decimal TEXT (NewMax precision discipline); undefined when unpriced
   costSource: "sdk" | "local-pricing" | "unpriced";
   tokensEstimated: boolean; // usage.leemo_estimated === true (B0's gateway backfill marker)
+  /** Main-loop, per-turn prompt size. Unlike model totals, this is safe for
+   * the context meter and intentionally excludes subagents/sidechains. */
+  contextInputTokens?: number;
+  contextCacheReadTokens?: number;
+  contextCacheCreationTokens?: number;
+  /** Per-model delta for this Leemo round. `modelUsage` is cumulative in a
+   * streaming SDK session, so raw SDK totals never cross this boundary. */
+  modelBreakdown?: UsageModelRecord[];
 }
+
+export interface UsageModelRecord {
+  providerId: string;
+  modelId: string;
+  servingProvider?: string;
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheCreationTokens: number;
+  costUsd: string;
+}
+
+export type RunOutcome =
+  | "completed"
+  | "cancelled"
+  | "permission-denied"
+  | "rate-limited"
+  | "overloaded"
+  | "timeout"
+  | "budget"
+  | "max-turns"
+  | "failed";
 
 export interface PathClaim {
   path: string;
@@ -84,12 +114,25 @@ export type LeemoEvent =
   | { type: "text.delta"; text: string }
   | { type: "thinking.delta"; text: string }
   | { type: "text.final"; text: string }
+  | {
+      /** Passive progress from an upstream runtime retrying the same request.
+       * Leemo never uses this event as permission to resend the user turn. */
+      type: "stream.retry";
+      attempt: number;
+      maxAttempts: number;
+      summary: string;
+      detail: string;
+      scope?: "connection" | "subagent";
+      retryId?: string;
+    }
   | { type: "tool.started"; toolUseId: string; name: string; input: unknown; subagent: boolean; parentToolUseId?: string }
   | {
       type: "tool.finished";
       toolUseId: string;
       isError: boolean;
       contentSummary: string;
+      outcome?: "completed" | "failed" | "denied" | "cancelled" | "interrupted";
+      userFeedback?: string;
       /** Opaque app-data filename for a browser screenshot. The image bytes
        * stay out of renderer persistence and are fetched only when expanded. */
       browserCapture?: BrowserCaptureRef;
@@ -130,6 +173,9 @@ export type LeemoEvent =
       finalText: string;
       pathAudit: PathAudit;
       sessionId?: string;
+      outcome?: RunOutcome;
+      retryable?: boolean;
+      statusCode?: number;
     }
   | { type: "error"; message: string };
 
@@ -161,6 +207,35 @@ export interface BuildUsageRecordCtx {
   totalCostUsd?: number;
   durationMs?: number;
   pricing?: ModelPricing;
+}
+
+export interface RawModelUsageLike {
+  inputTokens?: number | null;
+  outputTokens?: number | null;
+  cacheReadInputTokens?: number | null;
+  cacheCreationInputTokens?: number | null;
+  costUSD?: number | null;
+  canonicalModel?: string;
+  provider?: string;
+  [key: string]: unknown;
+}
+
+interface ModelUsageSnapshot {
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheCreationTokens: number;
+  costUsd: number;
+  canonicalModel?: string;
+  servingProvider?: string;
+}
+
+export interface ModelUsageCursor {
+  previous: Record<string, ModelUsageSnapshot>;
+}
+
+export function createModelUsageCursor(): ModelUsageCursor {
+  return { previous: {} };
 }
 
 function num(v: unknown): number {
@@ -214,6 +289,105 @@ export function buildUsageRecord(usage: RawUsageLike, ctx: BuildUsageRecordCtx):
   }
 
   return base;
+}
+
+function snapshotModelUsage(modelUsage: Record<string, RawModelUsageLike>): Record<string, ModelUsageSnapshot> {
+  return Object.fromEntries(Object.entries(modelUsage).map(([modelId, usage]) => [modelId, {
+    inputTokens: num(usage.inputTokens),
+    outputTokens: num(usage.outputTokens),
+    cacheReadTokens: num(usage.cacheReadInputTokens),
+    cacheCreationTokens: num(usage.cacheCreationInputTokens),
+    costUsd: num(usage.costUSD),
+    ...(typeof usage.canonicalModel === "string" && usage.canonicalModel ? { canonicalModel: usage.canonicalModel } : {}),
+    ...(typeof usage.provider === "string" && usage.provider ? { servingProvider: usage.provider } : {}),
+  }]));
+}
+
+function modelUsageRegressed(
+  current: Record<string, ModelUsageSnapshot>,
+  previous: Record<string, ModelUsageSnapshot>,
+): boolean {
+  const previousIds = Object.keys(previous);
+  if (previousIds.length === 0) return false;
+  if (previousIds.some((modelId) => current[modelId] === undefined)) return true;
+  return Object.entries(current).some(([modelId, now]) => {
+    const before = previous[modelId];
+    return before !== undefined && (
+      now.inputTokens < before.inputTokens
+      || now.outputTokens < before.outputTokens
+      || now.cacheReadTokens < before.cacheReadTokens
+      || now.cacheCreationTokens < before.cacheCreationTokens
+      || now.costUsd + 1e-12 < before.costUsd
+    );
+  });
+}
+
+function buildModelUsageRecord(
+  mainUsage: RawUsageLike,
+  modelUsage: Record<string, RawModelUsageLike>,
+  ctx: NormalizeCtx,
+  durationMs?: number,
+): UsageRecord {
+  const current = snapshotModelUsage(modelUsage);
+  const cursor = ctx.modelUsageCursor;
+  const previous = cursor?.previous ?? {};
+  const reset = modelUsageRegressed(current, previous);
+  const baseline = reset ? {} : previous;
+  const modelBreakdown: UsageModelRecord[] = [];
+
+  for (const [rawModelId, now] of Object.entries(current)) {
+    const before = baseline[rawModelId];
+    const delta = {
+      inputTokens: Math.max(0, now.inputTokens - (before?.inputTokens ?? 0)),
+      outputTokens: Math.max(0, now.outputTokens - (before?.outputTokens ?? 0)),
+      cacheReadTokens: Math.max(0, now.cacheReadTokens - (before?.cacheReadTokens ?? 0)),
+      cacheCreationTokens: Math.max(0, now.cacheCreationTokens - (before?.cacheCreationTokens ?? 0)),
+      costUsd: Math.max(0, now.costUsd - (before?.costUsd ?? 0)),
+    };
+    if (
+      delta.inputTokens === 0
+      && delta.outputTokens === 0
+      && delta.cacheReadTokens === 0
+      && delta.cacheCreationTokens === 0
+      && delta.costUsd === 0
+    ) continue;
+    modelBreakdown.push({
+      providerId: ctx.providerId,
+      modelId: now.canonicalModel ?? rawModelId,
+      ...(now.servingProvider ? { servingProvider: now.servingProvider } : {}),
+      inputTokens: delta.inputTokens,
+      outputTokens: delta.outputTokens,
+      cacheReadTokens: delta.cacheReadTokens,
+      cacheCreationTokens: delta.cacheCreationTokens,
+      costUsd: delta.costUsd.toFixed(6),
+    });
+  }
+  if (cursor) cursor.previous = current;
+
+  const aggregate = modelBreakdown.reduce((sum, row) => ({
+    inputTokens: sum.inputTokens + row.inputTokens,
+    outputTokens: sum.outputTokens + row.outputTokens,
+    cacheReadTokens: sum.cacheReadTokens + row.cacheReadTokens,
+    cacheCreationTokens: sum.cacheCreationTokens + row.cacheCreationTokens,
+    costUsd: sum.costUsd + Number(row.costUsd),
+  }), { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0, costUsd: 0 });
+
+  return {
+    providerId: ctx.providerId,
+    modelId: ctx.modelId,
+    inputTokens: aggregate.inputTokens,
+    outputTokens: aggregate.outputTokens,
+    cacheReadTokens: aggregate.cacheReadTokens,
+    cacheCreationTokens: aggregate.cacheCreationTokens,
+    ...(durationMs !== undefined ? { durationMs } : {}),
+    costUsd: aggregate.costUsd.toFixed(6),
+    costSource: "sdk",
+    tokensEstimated: false,
+    contextInputTokens: num(mainUsage.input_tokens),
+    contextCacheReadTokens: num(mainUsage.cache_read_input_tokens),
+    contextCacheCreationTokens: num(mainUsage.cache_creation_input_tokens),
+    modelBreakdown,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -295,6 +469,10 @@ function stripWrappers(token: string): string {
   return token.replace(/[.,;:!?]+$/, "");
 }
 
+function isDisplayAbbreviation(token: string): boolean {
+  return token.split(/[\\/]/).some((segment) => segment === "..." || segment === "…");
+}
+
 /**
  * Extract path-like tokens from `finalText`, then check each against
  * `existsSyncFn` and whether it resolves inside `cwd`. `withinCwd=false` is
@@ -317,7 +495,7 @@ export function auditClaimedPaths(
     const raw = match[0];
     if (!hasWriteClaimContext(scrubbed, match.index, raw.length)) continue;
     const token = stripWrappers(raw);
-    if (!token || seen.has(token)) continue;
+    if (!token || isDisplayAbbreviation(token) || seen.has(token)) continue;
     seen.add(token);
 
     let exists = false;
@@ -350,6 +528,8 @@ export interface NormalizeCtx {
   /** Trusted Playwright output directory. Only screenshot paths contained by
    * this directory may become renderer-visible opaque capture ids. */
   browserOutputDir?: string;
+  /** Conversation-lifetime cursor for cumulative SDK `modelUsage`. */
+  modelUsageCursor?: ModelUsageCursor;
 }
 
 // Structural shapes read off incoming messages. Kept local/minimal (not
@@ -372,12 +552,35 @@ interface IncomingMsg extends SdkMessageLike {
   subtype?: string;
   model?: string;
   parent_tool_use_id?: string | null;
-  message?: { role?: string; content?: unknown };
   result?: string;
   is_error?: boolean;
   total_cost_usd?: number;
   duration_ms?: number;
   usage?: RawUsageLike;
+  modelUsage?: Record<string, RawModelUsageLike>;
+  permission_denials?: Array<{ tool_name?: string; tool_use_id?: string; tool_input?: Record<string, unknown> }>;
+  errors?: string[];
+  api_error_status?: number | null;
+  terminal_reason?: string;
+  aborted?: true;
+  tool_name?: string;
+  tool_use_id?: string;
+  message?: { role?: string; content?: unknown } | string;
+  decision_reason?: string;
+  tool_result_meta?: unknown;
+  subagent_retry?: {
+    agent_id?: string;
+    attempt?: number;
+    max_retries?: number;
+    retry_delay_ms?: number;
+    error_status?: number | null;
+    error_category?: string;
+  };
+  attempt?: number;
+  max_retries?: number;
+  retry_delay_ms?: number;
+  error_status?: number | null;
+  error?: string;
   compact_metadata?: { trigger?: string; pre_tokens?: number; post_tokens?: number };
   event?: {
     type?: string;
@@ -471,6 +674,40 @@ function browserCaptureOf(
   return { id, mimeType };
 }
 
+interface ToolResultMetaView {
+  outcome?: "denied" | "cancelled" | "interrupted";
+  userFeedback?: string;
+}
+
+function toolResultMetaOf(meta: unknown, toolUseId: string, index: number): ToolResultMetaView | undefined {
+  if (!meta || typeof meta !== "object") return undefined;
+  const root = meta as Record<string, unknown>;
+  const candidate = Array.isArray(meta)
+    ? meta.find((entry) => {
+        if (!entry || typeof entry !== "object") return false;
+        const fields = entry as Record<string, unknown>;
+        return fields.id === toolUseId || fields.tool_use_id === toolUseId || fields.toolUseId === toolUseId;
+      }) ?? meta[index]
+    : root[toolUseId] ?? root[String(index)] ?? (
+        root.tool_use_id === toolUseId || root.toolUseId === toolUseId ? root : undefined
+      );
+  if (!candidate || typeof candidate !== "object") return undefined;
+  const fields = candidate as Record<string, unknown>;
+  const rawKind = String(fields.non_execution_kind ?? fields.nonExecutionKind ?? "").toLowerCase();
+  const outcome = /den(?:y|ied)|permission|reject/.test(rawKind)
+    ? "denied" as const
+    : /interrupt/.test(rawKind)
+      ? "interrupted" as const
+      : /cancel|abort/.test(rawKind)
+        ? "cancelled" as const
+        : undefined;
+  const feedback = fields.user_feedback ?? fields.userFeedback;
+  return {
+    ...(outcome ? { outcome } : {}),
+    ...(typeof feedback === "string" && feedback.trim() ? { userFeedback: feedback.trim() } : {}),
+  };
+}
+
 /** Map one assistant/user message's content blocks to events. `parentToolUseId`
  *  is the message-level `parent_tool_use_id` (present ⇒ subagent activity,
  *  per the brief's "工具名注意": subagent detection uses this field's
@@ -482,6 +719,7 @@ function* eventsFromContentBlocks(
   parentToolUseId: string | null | undefined,
   cwd: string,
   browserOutputDir?: string,
+  toolResultMeta?: unknown,
 ): Generator<LeemoEvent> {
   const isSubagent = parentToolUseId != null && parentToolUseId !== "";
   if (isSubagent) {
@@ -489,7 +727,7 @@ function* eventsFromContentBlocks(
   }
 
   if (!Array.isArray(content)) return;
-  for (const block of content as ContentBlock[]) {
+  for (const [blockIndex, block] of (content as ContentBlock[]).entries()) {
     if (!block || typeof block !== "object") continue;
     if (block.type === "tool_use") {
       const event: LeemoEvent = {
@@ -502,12 +740,16 @@ function* eventsFromContentBlocks(
       if (isSubagent) event.parentToolUseId = parentToolUseId as string;
       yield event;
     } else if (block.type === "tool_result") {
+      const toolUseId = block.tool_use_id ?? "";
+      const meta = toolResultMetaOf(toolResultMeta, toolUseId, blockIndex);
       const event: LeemoEvent = {
         type: "tool.finished",
-        toolUseId: block.tool_use_id ?? "",
+        toolUseId,
         isError: block.is_error === true,
         contentSummary: contentSummaryOf(block.content),
+        outcome: meta?.outcome ?? (block.is_error === true ? "failed" : "completed"),
       };
+      if (meta?.userFeedback) event.userFeedback = meta.userFeedback;
       const browserCapture = browserCaptureOf(block.content, browserOutputDir, cwd);
       if (browserCapture) event.browserCapture = browserCapture;
       if (isSubagent) event.parentToolUseId = parentToolUseId as string;
@@ -568,6 +810,9 @@ export function toUserFacingRunError(error: unknown): string {
   if (status === "429" || /\brate[ -]?limit/i.test(unwrapped)) {
     return "服务商请求过于频繁（429）。请稍后重试，或换一个模型。";
   }
+  if (status === "529" || /\boverload(?:ed)?\b/i.test(unwrapped)) {
+    return "服务商当前过载（529）。自动重试仍未恢复，请稍后重试或换一个模型。";
+  }
   if (status) {
     return `服务商返回错误（${status}）。请检查模型配置、接口地址或额度后重试。`;
   }
@@ -583,15 +828,59 @@ export function toUserFacingRunError(error: unknown): string {
   return Array.from(unwrapped).slice(0, 240).join("");
 }
 
+interface RunClassification {
+  outcome: RunOutcome;
+  retryable: boolean;
+  statusCode?: number;
+}
+
+function classifyRun(result: IncomingMsg | undefined, streamError: string | undefined, aborted: boolean): RunClassification {
+  const statusCode = typeof result?.api_error_status === "number"
+    ? result.api_error_status
+    : (() => {
+        const haystack = `${streamError ?? ""} ${(result?.errors ?? []).join(" ")}`;
+        const match = haystack.match(/(?:API\s+Error:\s*)?(\d{3})(?:\b|\D)/i);
+        return match ? Number(match[1]) : undefined;
+      })();
+  if (aborted || result?.terminal_reason === "aborted_streaming" || result?.terminal_reason === "aborted_tools") {
+    return { outcome: "cancelled", retryable: false, ...(statusCode !== undefined ? { statusCode } : {}) };
+  }
+  const isError = streamError !== undefined || result?.is_error === true;
+  if (!isError) return { outcome: "completed", retryable: false, ...(statusCode !== undefined ? { statusCode } : {}) };
+  if (statusCode === 429) return { outcome: "rate-limited", retryable: true, statusCode };
+  if (statusCode === 529) return { outcome: "overloaded", retryable: true, statusCode };
+  if (statusCode === 408 || /\b(?:ETIMEDOUT|timed?\s*out|timeout)\b/i.test(streamError ?? "")) {
+    return { outcome: "timeout", retryable: true, ...(statusCode !== undefined ? { statusCode } : {}) };
+  }
+  if (result?.subtype === "error_max_budget_usd" || result?.terminal_reason === "budget_exhausted") {
+    return { outcome: "budget", retryable: false, ...(statusCode !== undefined ? { statusCode } : {}) };
+  }
+  if (result?.subtype === "error_max_turns" || result?.terminal_reason === "max_turns") {
+    return { outcome: "max-turns", retryable: false, ...(statusCode !== undefined ? { statusCode } : {}) };
+  }
+  if ((result?.permission_denials?.length ?? 0) > 0 && (result?.errors?.length ?? 0) === 0) {
+    return { outcome: "permission-denied", retryable: false, ...(statusCode !== undefined ? { statusCode } : {}) };
+  }
+  const apiRetryable = result?.terminal_reason === "api_error" || result?.subtype === "error_during_execution";
+  return { outcome: "failed", retryable: apiRetryable, ...(statusCode !== undefined ? { statusCode } : {}) };
+}
+
 function* terminalEvents(
   result: IncomingMsg | undefined,
   ctx: NormalizeCtx,
   sessionId: string | undefined,
   streamError?: string,
+  aborted = false,
+  reportedPermissionDenials: ReadonlySet<string> = new Set(),
 ): Generator<LeemoEvent> {
-  const rawFinalText = result?.result ?? "";
-  const isError = streamError !== undefined || result?.is_error === true;
-  const rawError = streamError ?? (result?.is_error === true ? rawFinalText || "run failed" : undefined);
+  const classification = classifyRun(result, streamError, aborted);
+  const cancelled = classification.outcome === "cancelled";
+  const rawFinalText = cancelled ? "" : result?.result ?? "";
+  const isError = classification.outcome !== "completed" && !cancelled;
+  const structuredError = classification.statusCode !== undefined
+    ? `API Error: ${classification.statusCode}`
+    : result?.errors?.find((error) => typeof error === "string" && error.trim());
+  const rawError = streamError ?? (isError ? (structuredError ?? (rawFinalText || "run failed")) : undefined);
   const errorMessage = rawError === undefined ? undefined : toUserFacingRunError(rawError);
   // An execution error is status, not momo-authored content. Rendering the raw
   // provider result as text.final creates a duplicate assistant bubble and
@@ -599,29 +888,62 @@ function* terminalEvents(
   const finalText = isError ? "" : rawFinalText;
 
   if (errorMessage) yield { type: "error", message: errorMessage };
+  for (const denial of result?.permission_denials ?? []) {
+    const toolUseId = denial.tool_use_id ?? "";
+    if (!toolUseId || reportedPermissionDenials.has(toolUseId)) continue;
+    yield {
+      type: "tool.finished",
+      toolUseId,
+      isError: true,
+      outcome: "denied",
+      contentSummary: `未获允许：${denial.tool_name ?? "工具操作"}`,
+    };
+  }
   if (result?.usage) {
     yield {
       type: "usage.final",
-      usage: buildUsageRecord(result.usage, {
-        providerId: ctx.providerId,
-        modelId: ctx.modelId,
-        totalCostUsd: result.total_cost_usd,
-        durationMs: result.duration_ms,
-        pricing: ctx.pricing,
-      }),
+      usage: result.modelUsage && Object.keys(result.modelUsage).length > 0
+        ? buildModelUsageRecord(result.usage, result.modelUsage, ctx, result.duration_ms)
+        : {
+            ...buildUsageRecord(result.usage, {
+              providerId: ctx.providerId,
+              modelId: ctx.modelId,
+              totalCostUsd: result.total_cost_usd,
+              durationMs: result.duration_ms,
+              pricing: ctx.pricing,
+            }),
+            contextInputTokens: num(result.usage.input_tokens),
+            contextCacheReadTokens: num(result.usage.cache_read_input_tokens),
+            contextCacheCreationTokens: num(result.usage.cache_creation_input_tokens),
+          },
     };
   }
   if (finalText) yield { type: "text.final", text: finalText };
 
   const finished: LeemoEvent = {
     type: "run.finished",
-    subtype: streamError !== undefined ? "error" : result?.subtype ?? "",
+    subtype: cancelled ? "interrupted" : streamError !== undefined ? "error" : result?.subtype ?? "",
     isError,
     finalText,
     pathAudit: auditClaimedPaths(finalText, ctx.cwd, ctx.existsSyncFn),
+    outcome: classification.outcome,
+    retryable: classification.retryable,
   };
+  if (classification.statusCode !== undefined) finished.statusCode = classification.statusCode;
   if (sessionId) finished.sessionId = sessionId;
   yield finished;
+}
+
+function positiveRetryCount(value: unknown, fallback: number): number {
+  return typeof value === "number" && Number.isFinite(value) && value > 0
+    ? Math.floor(value)
+    : fallback;
+}
+
+function safeRetryDetail(value: unknown): string {
+  return String(value ?? "unknown")
+    .replace(/\bBearer\s+\S+/gi, "Bearer [已隐藏]")
+    .replace(/\bsk-[A-Za-z0-9_-]{10,}\b/g, "[已隐藏凭据]");
 }
 
 /**
@@ -652,6 +974,8 @@ export async function* normalizeSdkStream(
   // ends the user turn; emitting run.finished early lets the next prompt race
   // the still-running SDK session and misattributes the delayed child output.
   let pendingResult: IncomingMsg | undefined;
+  let aborted = false;
+  const reportedPermissionDenials = new Set<string>();
   try {
     for await (const raw of sdkMessages) {
       const msg = raw as IncomingMsg;
@@ -661,6 +985,36 @@ export async function* normalizeSdkStream(
         case "system": {
           if (msg.subtype === "init") {
             yield { type: "conversation.started", sessionId: msg.session_id ?? "" };
+          } else if (msg.subtype === "api_retry") {
+            const maxAttempts = Math.min(5, positiveRetryCount(msg.max_retries, 5));
+            const attempt = Math.min(maxAttempts, positiveRetryCount(msg.attempt, 1));
+            const status = typeof msg.error_status === "number" ? `HTTP ${msg.error_status}` : "连接错误";
+            const delay = typeof msg.retry_delay_ms === "number" && Number.isFinite(msg.retry_delay_ms)
+              ? `${Math.max(0, Math.round(msg.retry_delay_ms))}ms 后重试`
+              : "稍后重试";
+            yield {
+              type: "stream.retry",
+              attempt,
+              maxAttempts,
+              summary: `正在重新连接 ${attempt}/${maxAttempts}`,
+              detail: `${safeRetryDetail(msg.error)} · ${status} · ${delay}`,
+              scope: "connection",
+            };
+          } else if (msg.subtype === "permission_denied") {
+            const toolUseId = msg.tool_use_id ?? "";
+            if (toolUseId && !reportedPermissionDenials.has(toolUseId)) {
+              reportedPermissionDenials.add(toolUseId);
+              const rawMessage = typeof msg.message === "string" ? msg.message : msg.decision_reason;
+              yield {
+                type: "tool.finished",
+                toolUseId,
+                isError: true,
+                outcome: "denied",
+                contentSummary: typeof rawMessage === "string" && rawMessage.trim()
+                  ? rawMessage.trim()
+                  : `未获允许：${msg.tool_name ?? "工具操作"}`,
+              };
+            }
           } else if (msg.subtype === "compact_boundary") {
             const meta = msg.compact_metadata;
             if (meta && typeof meta.pre_tokens === "number") {
@@ -684,7 +1038,39 @@ export async function* normalizeSdkStream(
 
         case "assistant":
         case "user": {
-          yield* eventsFromContentBlocks(msg.message?.content, msg.parent_tool_use_id, ctx.cwd, ctx.browserOutputDir);
+          if (msg.type === "assistant" && msg.aborted === true) aborted = true;
+          const messageContent = typeof msg.message === "object" && msg.message !== null
+            ? msg.message.content
+            : undefined;
+          yield* eventsFromContentBlocks(
+            messageContent,
+            msg.parent_tool_use_id,
+            ctx.cwd,
+            ctx.browserOutputDir,
+            msg.tool_result_meta,
+          );
+          break;
+        }
+
+        case "tool_progress": {
+          const retry = msg.subagent_retry;
+          if (retry) {
+            const maxAttempts = Math.min(5, positiveRetryCount(retry.max_retries, 5));
+            const attempt = Math.min(maxAttempts, positiveRetryCount(retry.attempt, 1));
+            const status = typeof retry.error_status === "number" ? `HTTP ${retry.error_status}` : "连接错误";
+            const delay = typeof retry.retry_delay_ms === "number" && Number.isFinite(retry.retry_delay_ms)
+              ? `${Math.max(0, Math.round(retry.retry_delay_ms))}ms 后重试`
+              : "稍后重试";
+            yield {
+              type: "stream.retry",
+              scope: "subagent",
+              retryId: retry.agent_id ?? msg.tool_use_id ?? "subagent",
+              attempt,
+              maxAttempts,
+              summary: `子任务正在重试 ${attempt}/${maxAttempts}`,
+              detail: `${status} · ${safeRetryDetail(retry.error_category)} · ${delay}`,
+            };
+          }
           break;
         }
 
@@ -699,13 +1085,15 @@ export async function* normalizeSdkStream(
           break;
       }
     }
-    if (pendingResult) yield* terminalEvents(pendingResult, ctx, sessionId);
+    if (pendingResult) yield* terminalEvents(pendingResult, ctx, sessionId, undefined, aborted, reportedPermissionDenials);
   } catch (e) {
     yield* terminalEvents(
       pendingResult,
       ctx,
       sessionId,
       e instanceof Error ? e.message : String(e),
+      aborted,
+      reportedPermissionDenials,
     );
   }
 }

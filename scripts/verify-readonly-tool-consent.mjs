@@ -8,7 +8,7 @@ import WebSocket from "ws";
 
 const port = process.env.LEEMO_CDP_PORT || "9333";
 const workspaceRoot = path.join(process.env.USERPROFILE || process.env.HOME || "", "Leemo");
-const outputDir = path.resolve(process.env.LEEMO_VERIFY_OUTPUT_DIR || "dist-verify/audit-shots");
+const outputDir = path.resolve("docs/research/audit-shots");
 const a2Facts = JSON.parse(fs.readFileSync(path.join(outputDir, "a2-workspace-conversation-facts.json"), "utf8"));
 const conversationId = a2Facts.create.conversationId;
 const prompts = [

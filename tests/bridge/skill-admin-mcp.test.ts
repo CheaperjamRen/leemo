@@ -126,6 +126,7 @@ describe("createSkillAdminMcp", () => {
       description: "逐问压力测试一个计划。",
       category: "thinking",
       categoryLabel: "思考与决策",
+      featured: true,
       author: "Matt Pocock",
       repository: "mattpocock/skills",
       revision: "abc123",

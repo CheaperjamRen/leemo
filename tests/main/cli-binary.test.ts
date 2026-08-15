@@ -8,6 +8,10 @@ import {
   resolveCliBinary,
   platformPackage,
   binaryName,
+  codexPlatformPackage,
+  codexTargetTriple,
+  codexBinaryName,
+  resolveExternalCodexBinary,
   type CliBinaryProbe,
 } from "../../src/main/cli-binary";
 
@@ -146,5 +150,72 @@ describe("resolveCliBinary", () => {
       probe: probeOf([want]),
     });
     expect(got).toBe(want);
+  });
+});
+
+describe("resolveExternalCodexBinary", () => {
+  it("maps supported platforms to the official optional package layout", () => {
+    expect(codexPlatformPackage("win32", "x64")).toBe("@openai/codex-win32-x64");
+    expect(codexTargetTriple("win32", "x64")).toBe("x86_64-pc-windows-msvc");
+    expect(codexTargetTriple("darwin", "arm64")).toBe("aarch64-apple-darwin");
+    expect(codexBinaryName("win32")).toBe("codex.exe");
+    expect(codexBinaryName("linux")).toBe("codex");
+  });
+
+  it("prefers a real executable already exposed on PATH", () => {
+    const want = "C:/Tools/codex.exe";
+    expect(resolveExternalCodexBinary({
+      platform: "win32",
+      arch: "x64",
+      env: { PATH: "C:/Tools;C:/Windows/System32" },
+      probe: probeOf([want]),
+    })).toBe(want);
+  });
+
+  it("finds the native executable behind a normal Windows global npm install", () => {
+    const npmRoot = "C:/Users/me/AppData/Roaming/npm";
+    const want = `${npmRoot}/node_modules/@openai/codex/node_modules/@openai/codex-win32-x64/vendor/x86_64-pc-windows-msvc/bin/codex.exe`;
+    expect(resolveExternalCodexBinary({
+      platform: "win32",
+      arch: "x64",
+      env: { APPDATA: "C:/Users/me/AppData/Roaming", PATH: npmRoot },
+      probe: probeOf([want]),
+    })).toBe(want);
+  });
+
+  it("skips a PATH entry that exists but Windows will not execute", () => {
+    const blocked = "C:/Program Files/WindowsApps/OpenAI.Codex/app/resources/codex.exe";
+    const npmRoot = "C:/Users/me/AppData/Roaming/npm";
+    const want = `${npmRoot}/node_modules/@openai/codex/node_modules/@openai/codex-win32-x64/vendor/x86_64-pc-windows-msvc/bin/codex.exe`;
+    expect(resolveExternalCodexBinary({
+      platform: "win32",
+      arch: "x64",
+      env: { APPDATA: "C:/Users/me/AppData/Roaming", PATH: `C:/Program Files/WindowsApps/OpenAI.Codex/app/resources;${npmRoot}` },
+      probe: probeOf([blocked, want]),
+    })).toBe(want);
+  });
+
+  it("honors an explicit local override before automatic discovery", () => {
+    const want = "D:/Portable/Codex/codex.exe";
+    expect(resolveExternalCodexBinary({
+      platform: "win32",
+      arch: "x64",
+      env: { LEEMO_CODEX_PATH: want, PATH: "C:/Tools" },
+      probe: probeOf([want, "C:/Tools/codex.exe"]),
+    })).toBe(want);
+  });
+
+  it("fails soft when unsupported or missing without looking in app resources", () => {
+    const checked: string[] = [];
+    expect(resolveExternalCodexBinary({
+      platform: "freebsd",
+      arch: "x64",
+      env: { PATH: R, APPDATA: "C:/Users/me/AppData/Roaming" },
+      probe: {
+        join: (...parts) => parts.join("/"),
+        exists: (candidate) => { checked.push(candidate); return false; },
+      },
+    })).toBeUndefined();
+    expect(checked.join("\n")).not.toMatch(/app\.asar|resources\/node_modules/);
   });
 });

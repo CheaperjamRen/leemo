@@ -7,7 +7,7 @@ import { buildCatalog } from "../../src/host/provider-catalog";
 import { emptyConfig, type ProviderConfigFile } from "../../src/host/provider-config";
 
 function makeHarness(over: Partial<HostDeps> = {}) {
-  const env = { DEEPSEEK_API_KEY: "sk-test", DEEPSEEK_MODEL: "deepseek-chat" };
+  const env = { DEEPSEEK_API_KEY: "test-key", DEEPSEEK_MODEL: "deepseek-chat" };
   let config: ProviderConfigFile = emptyConfig();
   let catalog = buildCatalog(env, config);
   const store: ProviderConfigStore = {
@@ -88,6 +88,7 @@ describe("bridge-host MCP channels", () => {
       "playwright",
       "leemo-documents",
       "leemo-visualization",
+      "leemo-work-overview",
     ]);
 
     const saved = await host.handleInvoke("bridge:saveMcpServer", {

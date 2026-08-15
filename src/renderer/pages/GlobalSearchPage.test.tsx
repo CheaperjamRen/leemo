@@ -1,9 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { render, screen, act } from "@testing-library/react";
+import { render, screen, act, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useContext } from "react";
 import GlobalSearchPage from "./GlobalSearchPage";
 import { BridgeProvider, BridgeContext, type BridgeStores } from "../bridge/context";
+import type { WorkspaceClient } from "../workspace/client";
 
 /** Test harness: seeds a conversation + artifact into the real stores via
  * BridgeContext before rendering GlobalSearchPage, so the search runs against
@@ -85,6 +86,26 @@ function renderSeeded() {
   );
 }
 
+function externalWorkspaceClient(): WorkspaceClient {
+  return {
+    listWorkspaces: async () => [{ id: "leemo-home", name: "Leemo", displayPath: "C:/Leemo", kind: "home", available: true, lastOpenedAt: 0 }, { id: "external", name: "毕业设计", displayPath: "D:/毕业设计", kind: "external", available: true, lastOpenedAt: 1 }],
+    touchWorkspace: async (id) => ({ id, name: id === "external" ? "毕业设计" : "Leemo", displayPath: id === "external" ? "D:/毕业设计" : "C:/Leemo", kind: id === "external" ? "external" : "home", available: true, lastOpenedAt: 2 }),
+    listNotebooks: async () => ({ root: "C:/Leemo", notebooks: [] }),
+    createNotebook: async () => { throw new Error("not used"); },
+    ensureStarterNotebook: async () => { throw new Error("not used"); },
+    readTree: async (workspaceId) => workspaceId === "external"
+      ? [{ path: "项目.md", name: "项目.md", kind: "file", bookId: null }]
+      : [],
+    dropFiles: async () => [],
+    moveFile: async () => { throw new Error("not used"); },
+    suggestNotebook: async () => null,
+    readTextFile: async () => "",
+    readPreview: async () => ({ kind: "text", text: "", truncated: false, size: 0 }),
+    reveal: async () => {},
+    pathForFile: () => "",
+  };
+}
+
 describe("GlobalSearchPage", () => {
   it("renders search input with placeholder", () => {
     renderSeeded();
@@ -97,12 +118,36 @@ describe("GlobalSearchPage", () => {
     expect(input).toHaveFocus();
   });
 
+  it("keeps the field, scope, and type controls in the approved order and clears in place", async () => {
+    const user = userEvent.setup();
+    render(
+      <BridgeProvider>
+        <Seed>
+          <GlobalSearchPage embedded initialScope="current" />
+        </Seed>
+      </BridgeProvider>,
+    );
+
+    const field = screen.getByTestId("global-search-field");
+    const scope = screen.getByRole("group", { name: "搜索范围" });
+    const types = screen.getByRole("group", { name: "结果类型" });
+    expect(field.compareDocumentPosition(scope) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(scope.compareDocumentPosition(types) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+
+    const input = screen.getByPlaceholderText("搜索对话、文件、成果...");
+    await user.type(input, "分析报告");
+    await user.click(screen.getByRole("button", { name: "清空搜索" }));
+    expect(input).toHaveValue("");
+    expect(input).toHaveFocus();
+  });
+
   it("renders all filter buttons", () => {
     renderSeeded();
-    expect(screen.getByText("全部")).toBeInTheDocument();
-    expect(screen.getByText("对话")).toBeInTheDocument();
-    expect(screen.getByText("文件")).toBeInTheDocument();
-    expect(screen.getByText("成果")).toBeInTheDocument();
+    const filters = within(screen.getByRole("group", { name: "结果类型" }));
+    expect(filters.getByRole("button", { name: "全部" })).toBeInTheDocument();
+    expect(filters.getByRole("button", { name: "对话" })).toBeInTheDocument();
+    expect(filters.getByRole("button", { name: "文件" })).toBeInTheDocument();
+    expect(filters.getByRole("button", { name: "成果" })).toBeInTheDocument();
   });
 
   it("shows empty state when query is empty", () => {
@@ -144,10 +189,77 @@ describe("GlobalSearchPage", () => {
     expect(screen.getByText("没找到相关内容")).toBeInTheDocument();
   });
 
+  it("defaults the embedded search to the current scope and lets the user widen it", async () => {
+    const user = userEvent.setup();
+    render(
+      <BridgeProvider>
+        <Seed>
+          <GlobalSearchPage embedded initialScope="current" />
+        </Seed>
+      </BridgeProvider>,
+    );
+
+    await user.type(screen.getByPlaceholderText("搜索对话、文件、成果..."), "新对话");
+    expect(screen.getByText("没找到相关内容")).toBeInTheDocument();
+
+    await user.click(within(screen.getByRole("group", { name: "搜索范围" })).getByRole("button", { name: "全部" }));
+    expect(screen.getByRole("button", { name: /新对话 1/ })).toBeInTheDocument();
+  });
+
+  it("switches workspace search results through the guarded scope transaction", async () => {
+    const user = userEvent.setup();
+    let stores!: BridgeStores;
+    function SeedExternal() {
+      stores = useContext(BridgeContext) as BridgeStores;
+      if (!stores.conversations.getState().byId.external) {
+        stores.conversations.setState({
+          byId: { external: { id: "external", title: "毕业设计讨论", titleManuallyUpdated: true, bookId: null, workspaceId: "external", source: "workbench", providerId: "deepseek", modelId: "deepseek-chat", createdAt: 1, lastActivityAt: 1, unread: false } },
+          order: ["external"], activeId: null,
+        });
+        stores.ui.getState().openPreview("旧文件.md", "旧文件.md", "markdown");
+      }
+      return <GlobalSearchPage />;
+    }
+    render(<BridgeProvider workspace={externalWorkspaceClient()}><SeedExternal /></BridgeProvider>);
+
+    await user.type(screen.getByPlaceholderText("搜索对话、文件、成果..."), "毕业设计");
+    await user.click(screen.getByRole("button", { name: /毕业设计讨论/ }));
+
+    await waitFor(() => expect(stores.workspaces?.getState().activeId).toBe("external"));
+    expect(stores.ui.getState().activeScopeKey).toBe("workspace:external");
+    expect(stores.ui.getState().previewTabs).toEqual([]);
+    expect(stores.fileTree.getState().roots).toEqual([{ path: "项目.md", name: "项目.md", kind: "file", bookId: null }]);
+  });
+
+  it("keeps the current workspace when a search jump would abandon a dirty Markdown draft", async () => {
+    const user = userEvent.setup();
+    let stores!: BridgeStores;
+    function SeedExternal() {
+      stores = useContext(BridgeContext) as BridgeStores;
+      if (!stores.conversations.getState().byId.external) {
+        stores.conversations.setState({
+          byId: { external: { id: "external", title: "毕业设计讨论", titleManuallyUpdated: true, bookId: null, workspaceId: "external", source: "workbench", providerId: "deepseek", modelId: "deepseek-chat", createdAt: 1, lastActivityAt: 1, unread: false } },
+          order: ["external"], activeId: null,
+        });
+        stores.previewContent.getState().beginEdit("草稿.md", "旧内容");
+        stores.previewContent.getState().updateDraft("草稿.md", "新内容");
+      }
+      return <GlobalSearchPage />;
+    }
+    render(<BridgeProvider workspace={externalWorkspaceClient()}><SeedExternal /></BridgeProvider>);
+
+    await user.type(screen.getByPlaceholderText("搜索对话、文件、成果..."), "毕业设计");
+    await user.click(screen.getByRole("button", { name: /毕业设计讨论/ }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Markdown 修改没有保存");
+    expect(stores.workspaces?.getState().activeId).toBe("leemo-home");
+    expect(stores.previewContent.getState().drafts["leemo-home\u0000草稿.md"]?.status).toBe("dirty");
+  });
+
   it("switches filter to conversations", async () => {
     const user = userEvent.setup();
     renderSeeded();
-    const conversationsBtn = screen.getByText("对话");
+    const conversationsBtn = within(screen.getByRole("group", { name: "结果类型" })).getByRole("button", { name: "对话" });
     await user.click(conversationsBtn);
     expect(conversationsBtn).toHaveClass("active");
   });
@@ -163,7 +275,7 @@ describe("GlobalSearchPage", () => {
     expect(screen.getByText("分析报告")).toBeInTheDocument();
 
     // 切换到对话模式
-    const conversationsBtn = screen.getByText("对话");
+    const conversationsBtn = within(screen.getByRole("group", { name: "结果类型" })).getByRole("button", { name: "对话" });
     await user.click(conversationsBtn);
 
     // 对话模式：不应该找到成果
@@ -259,7 +371,7 @@ describe("GlobalSearchPage", () => {
     );
     act(() => stores.ui.getState().toggleSearch());
 
-    await user.click(screen.getByRole("button", { name: "文件" }));
+    await user.click(within(screen.getByRole("group", { name: "结果类型" })).getByRole("button", { name: "文件" }));
     await user.type(screen.getByPlaceholderText("搜索对话、文件、成果..."), "课程/复习");
     await user.click(screen.getByRole("button", { name: /复习提纲\.md/ }));
 

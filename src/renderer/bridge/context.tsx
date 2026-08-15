@@ -2,9 +2,15 @@ import { createContext, useContext, useMemo, useEffect, useState, type ReactNode
 import { useStore } from "zustand";
 import type { BridgeClient } from "./client";
 import { FixtureBridgeClient } from "./fixture-client";
-import { FIXTURE_NOTIFICATIONS, FIXTURE_PROVIDERS, FIXTURE_FILE_TREE, FIXTURE_MCP_SERVERS } from "./fixtures";
+import { FIXTURE_NOTIFICATIONS, FIXTURE_PROVIDERS, FIXTURE_FILE_TREE, FIXTURE_MCP_SERVERS, FIXTURE_NOTEBOOKS, FIXTURE_PREVIEW_ENTRIES } from "./fixtures";
 import { createConversationsStore, type ConversationsState } from "../stores/conversations";
-import { createSettingsStore, webFetchActive, webSearchActive, type SettingsState } from "../stores/settings";
+import {
+  createSettingsStore,
+  resolveMomoPersonaText,
+  webFetchActive,
+  webSearchActive,
+  type SettingsState,
+} from "../stores/settings";
 import { createNotificationsStore, type NotificationsState } from "../stores/notifications";
 import { createApprovalsStore, type ApprovalsState } from "../stores/approvals";
 import { createArtifactsStore, deriveArtifactsFromConversations, type ArtifactsState } from "../stores/artifacts";
@@ -31,6 +37,10 @@ import { startPersistenceSync } from "../persistence/sync";
 import type { WorkspaceClient } from "../workspace/client";
 import type { SchedulerClient } from "../scheduler/client";
 import { MemorySchedulerClient } from "../scheduler/client";
+import type { CaptureClient } from "../capture/client";
+import { createCapturesStore, type CapturesState } from "../stores/captures";
+import type { TaskClient } from "../tasks/client";
+import { createTasksStore, type TasksState } from "../stores/tasks";
 
 export interface BridgeStores {
   conversations: ReturnType<typeof createConversationsStore>;
@@ -57,6 +67,10 @@ export interface BridgeStores {
   workspaces?: ReturnType<typeof createWorkspacesStore>;
   /** Optional only for old isolated component fixtures; BridgeProvider always supplies it. */
   composerDrafts?: ReturnType<typeof createComposerDraftsStore>;
+  /** Optional only for old isolated component fixtures; BridgeProvider always supplies it. */
+  captures?: ReturnType<typeof createCapturesStore>;
+  /** Optional only for old isolated component fixtures; BridgeProvider always supplies it. */
+  tasks?: ReturnType<typeof createTasksStore>;
 }
 
 const Ctx = createContext<BridgeStores | null>(null);
@@ -72,7 +86,7 @@ async function refreshAndSyncSkills(stores: BridgeStores, client: BridgeClient):
   await client.invoke("bridge:syncEnabledSkills", { enabledQualifiedNames });
 }
 
-export function BridgeProvider({ client, live, persist, workspace, scheduler, learning, children }: { client?: BridgeClient; live?: boolean; persist?: PersistenceClient; workspace?: WorkspaceClient; scheduler?: SchedulerClient; learning?: LearningClient; children: ReactNode }) {
+export function BridgeProvider({ client, live, persist, workspace, scheduler, learning, capture, tasks, children }: { client?: BridgeClient; live?: boolean; persist?: PersistenceClient; workspace?: WorkspaceClient; scheduler?: SchedulerClient; learning?: LearningClient; capture?: CaptureClient; tasks?: TaskClient; children: ReactNode }) {
   // A persisted workbench mode must be known before either shell renders. Apart
   // from the visible buddy→workbench flash, rendering early let a fast click
   // mutate defaults that hydration then overwrote a moment later.
@@ -119,7 +133,7 @@ export function BridgeProvider({ client, live, persist, workspace, scheduler, le
       const card = s.personaCards.find((c) => c.id === s.personaCardId);
       return {
         mode: s.mode,
-        personaText: card?.promptText ?? "",
+        personaText: resolveMomoPersonaText(card?.promptText ?? "", s.relationshipStyle),
         talkStyle: s.talkStyle,
         // 轮 4 卡 H2: 真读设置页的开关（此前钉死 false，于是层⑦ 恒说"不能搜"、
         // host 也永不发搜索工具 —— 联网能力在界面上根本到不了）。
@@ -172,7 +186,9 @@ export function BridgeProvider({ client, live, persist, workspace, scheduler, le
 
     const workspaces = createWorkspacesStore(workspace);
     const composerDrafts = createComposerDraftsStore();
-    const notebooks = createNotebooksStore(workspace);
+    const captures = createCapturesStore(capture);
+    const taskStore = createTasksStore(tasks);
+    const notebooks = createNotebooksStore(workspace, workspace ? [] : FIXTURE_NOTEBOOKS);
     const fileTree = createFileTreeStore(workspace, workspace ? [] : FIXTURE_FILE_TREE, {
       resolveWorkspaceId: () => workspaces.getState().activeId,
     });
@@ -266,13 +282,52 @@ export function BridgeProvider({ client, live, persist, workspace, scheduler, le
       learning: learningStore,
       workspaces,
       composerDrafts,
+      captures,
+      tasks: taskStore,
       // 轮 4「预览区通电」: 预览内容按 path 缓存。没有 workspace（浏览器 dev）时
       // 它会把每次 load 记成"这个环境读不了文件"，而不是留一个空白面板。
       previewContent: createPreviewContentStore(workspace, {
         resolveWorkspaceId: () => workspaces.getState().activeId,
+        initialEntries: workspace ? undefined : FIXTURE_PREVIEW_ENTRIES,
       }),
     };
-  }, [activeClient, activeLearning, activeScheduler, live, workspace]);
+  }, [activeClient, activeLearning, activeScheduler, capture, live, tasks, workspace]);
+
+  useEffect(() => {
+    const captures = stores.captures;
+    if (!captures) return;
+    void captures.getState().refresh();
+    if (!capture) return;
+    return capture.onChanged((change) => {
+      if (change.entity === "note") void captures.getState().refresh();
+    });
+  }, [capture, stores]);
+
+  useEffect(() => {
+    const taskStore = stores.tasks;
+    if (!taskStore) return;
+    void taskStore.getState().refresh();
+    if (!tasks?.onChanged) return;
+    return tasks.onChanged(() => {
+      void taskStore.getState().refresh();
+    });
+  }, [stores, tasks]);
+
+  useEffect(() => {
+    const desktop = window.leemoDesktop;
+    if (!desktop?.onNavigate) return;
+    return desktop.onNavigate((target) => {
+      if (target.kind === "conversation" && typeof target.conversationId === "string") {
+        stores.conversations.getState().openTab(target.conversationId);
+        stores.conversations.getState().switchActive(target.conversationId);
+        stores.ui.getState().setView("chat");
+        return;
+      }
+      if (target.kind === "task" && typeof target.taskId === "string") {
+        stores.ui.getState().openOrganizer("tasks");
+      }
+    });
+  }, [stores]);
 
   useEffect(() => {
     const guardDirtyPreviewDrafts = (event: BeforeUnloadEvent) => {
@@ -330,6 +385,7 @@ export function BridgeProvider({ client, live, persist, workspace, scheduler, le
       workspaces: stores.workspaces,
       previewContent: stores.previewContent,
       fileTree: stores.fileTree,
+      notifications: stores.notifications,
     });
     return unsubscribe;
   }, [activeClient, stores]);
@@ -377,7 +433,51 @@ export function BridgeProvider({ client, live, persist, workspace, scheduler, le
         }));
         // 轮 7 A3: 设置也要复原。必须在 startPersistenceSync 之前 —— sync 会把
         // 「当前状态」当作基线，反过来就会用默认值把用户存的设置覆盖回去。
-        if (snap.settings) stores.settings.getState().hydrate(snap.settings);
+        if (snap.settings) {
+          stores.settings.getState().hydrate(snap.settings);
+          stores.ui.getState().hydrateWorkbenchUi(
+            snap.settings.workbenchUi,
+            stores.conversations.getState().byId,
+          );
+        }
+        // The persisted scope is a UI preference, but it must also drive the
+        // real workspace/notebook stores before the first shell render. Without
+        // this bridge, a restart could show a highlighted notebook while new
+        // messages still landed in the old global folder.
+        const restoredScope = stores.ui.getState().activeScopeKey;
+        if (restoredScope === "global") {
+          stores.workspaces?.setState({ activeId: HOME_WORKSPACE_ID });
+          stores.notebooks.getState().setActive(null);
+          stores.conversations.getState().activateScope(HOME_WORKSPACE_ID, null);
+        } else if (restoredScope.startsWith("notebook:")) {
+          const notebookId = restoredScope.slice("notebook:".length);
+          const exists = stores.notebooks.getState().list.some((entry) => entry.id === notebookId);
+          if (exists) {
+            stores.workspaces?.setState({ activeId: HOME_WORKSPACE_ID });
+            stores.notebooks.getState().setActive(notebookId);
+            stores.conversations.getState().activateScope(HOME_WORKSPACE_ID, notebookId);
+            await stores.fileTree.getState().refresh();
+          } else {
+            stores.ui.getState().activateWorkbenchScope("global");
+            stores.notebooks.getState().setActive(null);
+            stores.workspaces?.setState({ activeId: HOME_WORKSPACE_ID });
+            stores.conversations.getState().activateScope(HOME_WORKSPACE_ID, null);
+          }
+        } else if (restoredScope.startsWith("workspace:")) {
+          const workspaceId = restoredScope.slice("workspace:".length);
+          const exists = stores.workspaces?.getState().list.some((entry) => entry.id === workspaceId && entry.available);
+          if (exists) {
+            stores.workspaces?.setState({ activeId: workspaceId });
+            stores.notebooks.getState().setActive(null);
+            stores.conversations.getState().activateScope(workspaceId, null);
+            await stores.fileTree.getState().refresh();
+          } else {
+            stores.ui.getState().activateWorkbenchScope("global");
+            stores.notebooks.getState().setActive(null);
+            stores.workspaces?.setState({ activeId: HOME_WORKSPACE_ID });
+            stores.conversations.getState().activateScope(HOME_WORKSPACE_ID, null);
+          }
+        }
         // The settings UI is the source of truth for Skill switches. Restore
         // that truth into the host before revealing the app, otherwise a
         // restart shows the saved switches while the runtime silently uses the
@@ -403,6 +503,7 @@ export function BridgeProvider({ client, live, persist, workspace, scheduler, le
           conversations: stores.conversations,
           wikiEntries: stores.wikiEntries,
           settings: stores.settings,
+          ui: stores.ui,
           ...(stores.workspaces ? { workspaces: stores.workspaces } : {}),
         },
         persist,
@@ -493,6 +594,12 @@ export const useWorkspaces = <T,>(sel: (s: WorkspacesState) => T): T =>
 const FALLBACK_COMPOSER_DRAFTS = createComposerDraftsStore();
 export const useComposerDrafts = <T,>(sel: (s: ComposerDraftsState) => T): T =>
   useStore(useStores().composerDrafts ?? FALLBACK_COMPOSER_DRAFTS, sel);
+const FALLBACK_CAPTURES = createCapturesStore();
+export const useCaptures = <T,>(sel: (s: CapturesState) => T): T =>
+  useStore(useStores().captures ?? FALLBACK_CAPTURES, sel);
+const FALLBACK_TASKS = createTasksStore();
+export const useTasks = <T,>(sel: (s: TasksState) => T): T =>
+  useStore(useStores().tasks ?? FALLBACK_TASKS, sel);
 
 /** The Workspace client itself (轮 3 卡 G), not a store: `pathForFile` and
  *  `reveal` are one-shot capabilities with no state to subscribe to. Undefined

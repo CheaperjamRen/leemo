@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import type { BridgeClient } from "../bridge/client";
@@ -45,6 +45,19 @@ const projectMemory: MemoryView = {
   pinned: false,
 };
 
+const uncertainMemory: MemoryView = {
+  id: "memory-uncertain",
+  scope: { type: "global" },
+  kind: "state",
+  topic: "近期计划",
+  statement: "用户可能准备搬到上海",
+  learnedAt: new Date("2026-08-01T08:00:00Z").getTime(),
+  sourceType: "native-auto",
+  sourceConversationId: "conversation-live",
+  status: "uncertain",
+  pinned: false,
+};
+
 function memoryClient(
   initial: MemoryView[] = [globalMemory, notebookMemory],
   history: MemoryView[] = [],
@@ -56,7 +69,13 @@ function memoryClient(
     if (channel === "bridge:updateMemory") {
       const input = request as { id: string; statement?: string };
       const before = records.find((record) => record.id === input.id)!;
-      const memory = { ...before, statement: input.statement ?? before.statement };
+      const memory = {
+        ...before,
+        statement: input.statement ?? before.statement,
+        status: "current" as const,
+        sourceType: "settings-edit" as const,
+        lastConfirmedAt: new Date("2026-08-02T08:00:00Z").getTime(),
+      };
       records = records.map((record) => record.id === input.id ? memory : record);
       return { changeId: `change-${++sequence}`, action: "updated", label: memory.statement, memory };
     }
@@ -110,6 +129,11 @@ function renderSection({
   return { ...view, store, client };
 }
 
+async function findMemoryStatement(statement: string): Promise<HTMLElement> {
+  const matches = await screen.findAllByText(statement);
+  return matches.at(-1)!;
+}
+
 describe("MemorySettingsSection", () => {
   it("loads global and both kinds of book memory without exposing the workspace distinction", async () => {
     const user = userEvent.setup();
@@ -119,9 +143,9 @@ describe("MemorySettingsSection", () => {
       onRememberModeChange,
     });
 
-    expect(await screen.findByText("用户喜欢先看结论")).toBeInTheDocument();
+    expect(await findMemoryStatement("用户喜欢先看结论")).toBeInTheDocument();
     expect(screen.getByText("本周完成两次模拟面试")).toBeInTheDocument();
-    expect(screen.getByText("偏好")).toBeInTheDocument();
+    expect(screen.getAllByText("偏好").length).toBeGreaterThan(0);
     expect(screen.getAllByText("秋招").length).toBeGreaterThan(0);
     expect(screen.queryByRole("button", { name: "只看项目记忆" })).not.toBeInTheDocument();
     expect(screen.getAllByRole("option").map((option) => option.textContent)).toEqual([
@@ -135,6 +159,7 @@ describe("MemorySettingsSection", () => {
         { type: "notebook", notebookId: "秋招" },
         { type: "workspace", workspaceId: "workspace-project" },
       ],
+      includeInactive: true,
     });
 
     expect(screen.getByText(/关闭后不会新增，也不会删除已有记忆/)).toBeInTheDocument();
@@ -154,10 +179,69 @@ describe("MemorySettingsSection", () => {
     });
   });
 
+  it("shows momo inferences as pending and lets the user confirm or reject them without an extra dialog", async () => {
+    const user = userEvent.setup();
+    const superseded = { ...globalMemory, id: "memory-old", status: "superseded" as const };
+    const deleted = { ...notebookMemory, id: "memory-deleted", status: "deleted" as const };
+    const { client } = renderSection({
+      client: memoryClient([globalMemory, uncertainMemory, superseded, deleted]),
+    });
+
+    expect(await findMemoryStatement("用户可能准备搬到上海")).toBeInTheDocument();
+    expect(screen.getByText("待你确认")).toBeInTheDocument();
+    expect(screen.getByText("momo 的理解")).toBeInTheDocument();
+    expect(screen.queryByText("已被新信息替代")).not.toBeInTheDocument();
+    expect(screen.queryByText("已删除")).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "这条理解符合实际" }));
+    await waitFor(() => expect(client.invoke).toHaveBeenCalledWith("bridge:updateMemory", {
+      scope: { type: "global" },
+      id: "memory-uncertain",
+      statement: "用户可能准备搬到上海",
+    }));
+    expect(screen.queryByText("待你确认")).not.toBeInTheDocument();
+
+    const rejectClient = memoryClient([uncertainMemory]);
+    renderSection({ client: rejectClient });
+    await findMemoryStatement("用户可能准备搬到上海");
+    await user.click(screen.getByRole("button", { name: "这条理解不准确" }));
+    await waitFor(() => expect(rejectClient.invoke).toHaveBeenCalledWith("bridge:deleteMemory", {
+      scope: { type: "global" },
+      id: "memory-uncertain",
+    }));
+    expect(screen.queryByRole("alertdialog", { name: "确认删除记忆" })).not.toBeInTheDocument();
+  });
+
+  it("builds a global understanding summary and confirms its pending inferences as one action", async () => {
+    const user = userEvent.setup();
+    const client = memoryClient([globalMemory, uncertainMemory, notebookMemory]);
+    renderSection({ client });
+
+    expect(await screen.findByRole("heading", { name: "momo 对你的理解" })).toBeInTheDocument();
+    const understanding = screen.getByTestId("memory-understanding");
+    expect(within(understanding).getByText("用户喜欢先看结论")).toBeInTheDocument();
+    expect(within(understanding).getByText("用户可能准备搬到上海")).toBeInTheDocument();
+    expect(within(understanding).queryByText("本周完成两次模拟面试")).not.toBeInTheDocument();
+    expect(within(understanding).getByText(/这份理解只由关于你的记忆整理/)).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "编辑这段理解：用户可能准备搬到上海" }));
+    expect(screen.getByRole("textbox", { name: "编辑记忆内容" })).toHaveValue("用户可能准备搬到上海");
+    await user.click(screen.getByRole("button", { name: "取消记忆修改" }));
+
+    await user.click(screen.getByRole("button", { name: "确认这份理解" }));
+    await waitFor(() => expect(client.invoke).toHaveBeenCalledWith("bridge:updateMemory", {
+      scope: { type: "global" },
+      id: "memory-uncertain",
+      statement: "用户可能准备搬到上海",
+    }));
+    await waitFor(() => expect(screen.queryByText("待你确认")).not.toBeInTheDocument());
+    expect(screen.getByText(/已确认/)).toBeInTheDocument();
+  });
+
   it("filters global memory from all book memory and distinguishes an empty search", async () => {
     const user = userEvent.setup();
     renderSection({ client: memoryClient([globalMemory, notebookMemory, projectMemory]) });
-    await screen.findByText("用户喜欢先看结论");
+    await findMemoryStatement("用户喜欢先看结论");
 
     await user.click(screen.getByRole("button", { name: "只看关于我的记忆" }));
     expect(screen.getByText("用户喜欢先看结论")).toBeInTheDocument();
@@ -177,7 +261,7 @@ describe("MemorySettingsSection", () => {
   it("edits and pins in place, then requires confirmation before forgetting", async () => {
     const user = userEvent.setup();
     const { client } = renderSection();
-    await screen.findByText("用户喜欢先看结论");
+    await findMemoryStatement("用户喜欢先看结论");
 
     await user.click(screen.getByRole("button", { name: "编辑记忆：用户喜欢先看结论" }));
     const editor = screen.getByRole("textbox", { name: "编辑记忆内容" });
@@ -185,7 +269,7 @@ describe("MemorySettingsSection", () => {
     await user.clear(editor);
     await user.type(editor, "用户喜欢先给结论，再给必要依据");
     await user.click(screen.getByRole("button", { name: "保存记忆修改" }));
-    expect(await screen.findByText("用户喜欢先给结论，再给必要依据")).toBeInTheDocument();
+    expect(await findMemoryStatement("用户喜欢先给结论，再给必要依据")).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "置顶记忆：用户喜欢先给结论，再给必要依据" }));
     expect(client.invoke).toHaveBeenCalledWith("bridge:pinMemory", expect.objectContaining({
@@ -195,7 +279,7 @@ describe("MemorySettingsSection", () => {
 
     await user.click(screen.getByRole("button", { name: "删除记忆：用户喜欢先给结论，再给必要依据" }));
     expect(screen.getByRole("alertdialog", { name: "确认删除记忆" })).toBeInTheDocument();
-    expect(screen.getByText("用户喜欢先给结论，再给必要依据")).toBeInTheDocument();
+    expect((screen.getAllByText("用户喜欢先给结论，再给必要依据").length)).toBeGreaterThan(0);
     await user.click(screen.getByRole("button", { name: "确认删除这条记忆" }));
     await waitFor(() => expect(screen.queryByText("用户喜欢先给结论，再给必要依据")).not.toBeInTheDocument());
   });
@@ -213,10 +297,10 @@ describe("MemorySettingsSection", () => {
     const client = memoryClient([globalMemory], [globalMemory, old]);
     const onOpenConversation = vi.fn();
     renderSection({ client, onOpenConversation });
-    await screen.findByText("用户喜欢先看结论");
+    await findMemoryStatement("用户喜欢先看结论");
 
     await user.click(screen.getByRole("button", { name: "查看记忆历史：用户喜欢先看结论" }));
-    expect(await screen.findByText("用户喜欢简洁回答")).toBeInTheDocument();
+    expect(await findMemoryStatement("用户喜欢简洁回答")).toBeInTheDocument();
     expect(screen.getAllByText("用户明确说")).toHaveLength(2);
     expect(screen.getByText("来源对话已不存在")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "查看来源对话：简历复盘" }));
@@ -258,13 +342,13 @@ describe("MemorySettingsSection", () => {
       return fallback(channel, request);
     });
     renderSection({ client });
-    await screen.findByText("用户喜欢先看结论");
+    await findMemoryStatement("用户喜欢先看结论");
 
     await user.click(screen.getByRole("button", { name: "查看记忆历史：用户喜欢先看结论" }));
     expect(await screen.findByRole("alert")).toHaveTextContent("历史读取失败");
     expect(screen.queryByText("还没有更早的版本")).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "重新读取这条记忆的历史" }));
-    expect(await screen.findByText("用户喜欢简洁回答")).toBeInTheDocument();
+    expect(await findMemoryStatement("用户喜欢简洁回答")).toBeInTheDocument();
     expect(attempts).toBe(2);
   });
 
@@ -282,7 +366,7 @@ describe("MemorySettingsSection", () => {
       return new Promise((resolve) => releases.set(input.id, resolve));
     });
     renderSection({ client });
-    await screen.findByText("用户喜欢先看结论");
+    await findMemoryStatement("用户喜欢先看结论");
 
     const globalPin = screen.getByRole("button", { name: "置顶记忆：用户喜欢先看结论" });
     const notebookPin = screen.getByRole("button", { name: "取消置顶记忆：本周完成两次模拟面试" });
@@ -315,7 +399,7 @@ describe("MemorySettingsSection", () => {
   it("returns keyboard focus after cancelling edit and delete confirmation", async () => {
     const user = userEvent.setup();
     renderSection({ client: memoryClient([globalMemory]) });
-    await screen.findByText("用户喜欢先看结论");
+    await findMemoryStatement("用户喜欢先看结论");
 
     const editButton = screen.getByRole("button", { name: "编辑记忆：用户喜欢先看结论" });
     await user.click(editButton);
@@ -334,7 +418,7 @@ describe("MemorySettingsSection", () => {
   it("returns focus after saving an edit and after deleting a record", async () => {
     const user = userEvent.setup();
     renderSection();
-    await screen.findByText("用户喜欢先看结论");
+    await findMemoryStatement("用户喜欢先看结论");
 
     await user.click(screen.getByRole("button", { name: "编辑记忆：用户喜欢先看结论" }));
     const editor = screen.getByRole("textbox", { name: "编辑记忆内容" });
@@ -352,7 +436,7 @@ describe("MemorySettingsSection", () => {
   it("bounds action labels while leaving the complete memory visible", async () => {
     const statement = `一段很长的记忆${"非常具体".repeat(80)}`;
     renderSection({ client: memoryClient([{ ...globalMemory, statement }]) });
-    expect(await screen.findByText(statement)).toBeInTheDocument();
+    expect(await findMemoryStatement(statement)).toBeInTheDocument();
 
     const edit = screen.getByTitle("编辑");
     expect(edit.getAttribute("aria-label")?.length).toBeLessThan(100);
@@ -373,10 +457,10 @@ describe("MemorySettingsSection", () => {
       return fallback(channel, request);
     });
     renderSection({ client });
-    await screen.findByText(statement);
+    await findMemoryStatement(statement);
 
     await user.click(screen.getByTitle("删除"));
-    expect(screen.getByText(statement)).toHaveClass("break-words");
+    expect(screen.getAllByText(statement).at(-1)).toHaveClass("break-words");
     await user.click(screen.getByRole("button", { name: "打开本地记忆目录" }));
     expect(await screen.findByText(error)).toHaveClass("min-w-0", "flex-1", "break-words");
   });
@@ -384,7 +468,7 @@ describe("MemorySettingsSection", () => {
   it("moves focus to a visibly focusable heading after deleting the only memory", async () => {
     const user = userEvent.setup();
     renderSection({ client: memoryClient([globalMemory]) });
-    await screen.findByText(globalMemory.statement);
+    await findMemoryStatement(globalMemory.statement);
 
     await user.click(screen.getByRole("button", { name: "删除记忆：用户喜欢先看结论" }));
     await user.click(screen.getByRole("button", { name: "确认删除这条记忆" }));
@@ -408,7 +492,7 @@ describe("MemorySettingsSection", () => {
       return fallback(channel, request);
     });
     renderSection({ client });
-    await screen.findByText("用户喜欢先看结论");
+    await findMemoryStatement("用户喜欢先看结论");
 
     await user.click(screen.getByRole("button", { name: "打开本地记忆目录" }));
     expect(await screen.findByRole("alert")).toHaveTextContent("系统打开目录失败");

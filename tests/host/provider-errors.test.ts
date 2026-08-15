@@ -12,7 +12,7 @@ import { classifyProviderError } from "../../src/host/provider-errors";
 // is used; classification never depends on that message text for those two
 // cases, only on `type`.
 
-const FAKE_KEY = "sk-test-SECRET-abc123XYZ";
+const FAKE_KEY = "test-key-SECRET-abc123XYZ";
 
 describe("classifyProviderError — auth (401, three body shapes)", () => {
   it("deepseek: {error:{type:'authentication_error',message}} -> auth", () => {

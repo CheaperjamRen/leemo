@@ -1,0 +1,70 @@
+{
+  "checkedAt": "2026-08-09T18:35:19.142Z",
+  "runId": "sm57hsr",
+  "packagedExecutable": "E:\\Leemo\\dist-package\\win-unpacked\\Leemo.exe",
+  "installer": "E:\\Leemo\\dist-package\\Leemo Setup 0.1.0.exe",
+  "installerBytes": 266136239,
+  "unpackedFiles": 268,
+  "unpackedBytes": 920684194,
+  "isolatedUserData": true,
+  "isolatedHome": true,
+  "appAndUtilityEnvironmentsAllowlisted": true,
+  "realWorkspaceEnumeratedByHarness": false,
+  "temporaryNotebook": "r9-continuity-sm57hsr",
+  "artifactRelativePath": "r9-continuity-sm57hsr/continuity-sm57hsr.md",
+  "evidence": [
+    "r9b-packaged-success-artifact.png",
+    "r9b-packaged-after-restart.png",
+    "r9b-packaged-failed-state.png",
+    "r9b-packaged-canceled-state.png",
+    "r9b-packaged-canceled-after-restart.png"
+  ],
+  "coldStartupMs": 7090,
+  "providerId": "deepseek",
+  "modelId": "deepseek-v4-flash",
+  "success": {
+    "conversationId": "c793d8e8-a2d6-4ab0-bed2-94336ca44262",
+    "title": "严格按顺序完成这个真实验收任务",
+    "approvalsHandled": 1,
+    "completedStatusVisible": true,
+    "bashVerified": true,
+    "conversationCwdVerified": true,
+    "writeVerified": true,
+    "noWorkspaceEscapeWarning": true,
+    "artifactCreated": true,
+    "artifactPreviewVisible": true,
+    "gfmTableRendered": true,
+    "sourceReturnVisible": true
+  },
+  "warmStartupMs": 2409,
+  "idleMemory": {
+    "processes": 5,
+    "workingSetBytes": 710074368
+  },
+  "restart": {
+    "completedStatusRestored": true,
+    "artifactRestored": true,
+    "previewReopenable": true,
+    "sourceReturnRestored": true
+  },
+  "failure": {
+    "conversationId": "4fb8cf4f-94f5-4d0e-b3d7-b4812f0e2663",
+    "title": "制造一次可恢复的失败 sm57hsr：只回复“不会成功”",
+    "failedStatusVisible": true,
+    "notCompletedOrRunning": true
+  },
+  "cancellation": {
+    "conversationId": "7059a834-2bf0-4576-8e9b-4f42143c7047",
+    "title": "这是中断验收 sm57hsr",
+    "approvalsHandled": 1,
+    "commandProcessObserved": true,
+    "commandProcessTerminated": true,
+    "canceledStatusVisible": true,
+    "notCompletedOrRunning": true,
+    "immediateRecoveryCompleted": true,
+    "interruptedAndRecoveryRestoredAfterRestart": true
+  },
+  "secretLeakDetected": false,
+  "realWorkspacePathDetectedInEvidence": false,
+  "temporaryIsolationRemoved": true
+}

@@ -249,24 +249,51 @@ describe("contract — local no-key provider + NewMax capability axes (07/21)", 
 
 describe("contract — reserved Phase-1 usage-summary types are usable now", () => {
   it("UsageSummaryQuery + UsageSummary construct (contract occupies the slot pre-impl)", () => {
-    const q: UsageSummaryQuery = { range: "last7d", providerId: "deepseek" };
+    const q: UsageSummaryQuery = { range: "last30d", providerId: "deepseek" };
     const s: UsageSummary = {
       totalCostUsd: "1.234560",
-      byProvider: [{ providerId: "deepseek", costUsd: "1.234560", inputTokens: 100, outputTokens: 50 }],
+      callCount: 2,
+      inputTokens: 100,
+      outputTokens: 50,
+      cacheReadTokens: 24,
+      cacheCreationTokens: 6,
+      byProvider: [{
+        providerId: "deepseek",
+        costUsd: "1.234560",
+        callCount: 2,
+        inputTokens: 100,
+        outputTokens: 50,
+        cacheReadTokens: 24,
+        cacheCreationTokens: 6,
+      }],
+      byModel: [{
+        providerId: "deepseek",
+        modelId: "deepseek-chat",
+        costUsd: "1.234560",
+        callCount: 2,
+        inputTokens: 100,
+        outputTokens: 50,
+        cacheReadTokens: 24,
+        cacheCreationTokens: 6,
+      }],
       byDay: [{ date: "2026-07-21", costUsd: "1.234560" }],
     };
-    expect(q.range).toBe("last7d");
+    expect(q.range).toBe("last30d");
     expect(s.byProvider[0].providerId).toBe("deepseek");
+    expect(s.byModel?.[0].modelId).toBe("deepseek-chat");
   });
 });
 
 describe("contract — channel table is frozen + payload types correspond 1:1", () => {
   it("BRIDGE_CHANNELS values are the bridge: namespaced strings", () => {
     expect(BRIDGE_CHANNELS.createConversation).toBe("bridge:createConversation");
+    expect(BRIDGE_CHANNELS.guide).toBe("bridge:guide");
     expect(BRIDGE_CHANNELS.event).toBe("bridge:event");
     expect(BRIDGE_CHANNELS.approvalRequest).toBe("bridge:approvalRequest");
+    expect(BRIDGE_CHANNELS.approvalExpired).toBe("bridge:approvalExpired");
     expect(BRIDGE_CHANNELS.askUser).toBe("bridge:askUser");
     expect(BRIDGE_CHANNELS.usageSummary).toBe("bridge:usageSummary");
+    expect(BRIDGE_CHANNELS.resolveTaskTimes).toBe("bridge:resolveTaskTimes");
     expect(BRIDGE_CHANNELS.listWhitelist).toBe("bridge:listWhitelist");
     expect(BRIDGE_CHANNELS.revokeWhitelist).toBe("bridge:revokeWhitelist");
     expect(BRIDGE_CHANNELS.listMemory).toBe("bridge:listMemory");
@@ -281,6 +308,7 @@ describe("contract — channel table is frozen + payload types correspond 1:1", 
     const invokeKeys = new Set<keyof BridgeInvokeMap>([
       "bridge:createConversation",
       "bridge:send",
+      "bridge:guide",
       "bridge:interrupt",
       "bridge:setModel",
       "bridge:updateContext",
@@ -300,6 +328,7 @@ describe("contract — channel table is frozen + payload types correspond 1:1", 
       "bridge:pickSkillSource",
       "bridge:installSkill",
       "bridge:listCommunitySkills",
+      "bridge:getCommunitySkillDetails",
       "bridge:installCommunitySkill",
       "bridge:scanInstalledSkill",
       "bridge:removeSkill",
@@ -325,12 +354,17 @@ describe("contract — channel table is frozen + payload types correspond 1:1", 
       "bridge:getProviderConfig",
       "bridge:saveProvider",
       "bridge:deleteProvider",
+      "bridge:getProviderLoginStatus",
+      "bridge:loginProvider",
+      "bridge:logoutProvider",
       "bridge:testConnection",
+      "bridge:resolveTaskTimes",
       "bridge:listRemoteModels",
     ]);
     const eventKeys = new Set<keyof BridgeEventMap>([
       "bridge:event",
       "bridge:approvalRequest",
+      "bridge:approvalExpired",
       "bridge:askUser",
     ]);
 

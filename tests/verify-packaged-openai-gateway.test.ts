@@ -32,8 +32,7 @@ function runHarness(env: NodeJS.ProcessEnv): Promise<{ code: number | null; elap
 describe.skipIf(process.platform !== "win32")("packaged OpenAI gateway acceptance harness", () => {
   it("invalidates stale facts and cleans owned state when the packaged process exits early", async () => {
     const auditTag = `openai-gateway-failure-${process.pid}-${Date.now()}`;
-    const auditOutputDir = fs.mkdtempSync(path.join(os.tmpdir(), "leemo-gateway-audit-test-"));
-    const factsPath = path.join(auditOutputDir, `${auditTag}-facts.json`);
+    const factsPath = path.join(repoRoot, "docs", "research", "audit-shots", `${auditTag}-facts.json`);
     const rootsBefore = ownedAuditRoots();
     fs.writeFileSync(factsPath, '{"packaged":true}\n');
 
@@ -41,7 +40,6 @@ describe.skipIf(process.platform !== "win32")("packaged OpenAI gateway acceptanc
       const result = await runHarness({
         ...process.env,
         LEEMO_AUDIT_TAG: auditTag,
-        LEEMO_VERIFY_OUTPUT_DIR: auditOutputDir,
         // Node exits immediately on the Electron-only command-line switches.
         LEEMO_PACKAGED_EXE: process.execPath,
         LEEMO_INSTALLER_EXE: process.execPath,
@@ -52,7 +50,7 @@ describe.skipIf(process.platform !== "win32")("packaged OpenAI gateway acceptanc
       expect(fs.existsSync(factsPath)).toBe(false);
       expect([...ownedAuditRoots()].filter((root) => !rootsBefore.has(root))).toEqual([]);
     } finally {
-      fs.rmSync(auditOutputDir, { recursive: true, force: true });
+      fs.rmSync(factsPath, { force: true });
       for (const root of ownedAuditRoots()) {
         if (!rootsBefore.has(root)) fs.rmSync(root, { recursive: true, force: true });
       }

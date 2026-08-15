@@ -3,8 +3,8 @@ import { buildCatalog, PRESET_PROVIDERS } from "../../src/host/provider-catalog"
 import { emptyConfig, upsertProvider, type ProviderConfigFile } from "../../src/host/provider-config";
 import type { ProviderDraft } from "../../src/bridge/contract";
 
-const KEY = "sk-test-secret-0001";
-const KEY2 = "sk-test-secret-0002";
+const KEY = "test-key-secret-0001";
+const KEY2 = "test-key-secret-0002";
 
 const byId = (entries: ReturnType<typeof buildCatalog>) =>
   Object.fromEntries(entries.map((e) => [e.provider.id, e]));
@@ -19,6 +19,9 @@ describe("PRESET_PROVIDERS — curated setup catalog", () => {
     expect(PRESET_PROVIDERS.map((p) => p.kind)).toEqual(expect.arrayContaining([
       "openai",
       "anthropic",
+      "claude-subscription",
+      "chatgpt-subscription",
+      "gemini-subscription",
       "tokenflux",
       "kimi-code",
       "glm-coding-plan",
@@ -43,6 +46,28 @@ describe("PRESET_PROVIDERS — curated setup catalog", () => {
     const m = Object.fromEntries(PRESET_PROVIDERS.map((p) => [p.kind, p]));
     expect(m.openai.apiFormat).toBe("openai-responses");
     expect(m.openai.productKind).toBe("metered-api");
+    expect(m["claude-subscription"]).toMatchObject({
+      name: "Claude 订阅",
+      apiFormat: "anthropic",
+      authMode: "oauth-subscription",
+      productKind: "consumer-subscription",
+      baseUrl: "",
+      capabilities: { subscriptionPlan: true },
+    });
+    expect(m["chatgpt-subscription"]).toMatchObject({
+      name: "ChatGPT 订阅",
+      authMode: "oauth-subscription",
+      productKind: "consumer-subscription",
+      executionEngine: "openai-app-server",
+      capabilities: { subscriptionPlan: true },
+    });
+    expect(m["gemini-subscription"]).toMatchObject({
+      name: "Gemini 订阅",
+      authMode: "oauth-subscription",
+      productKind: "consumer-subscription",
+      executionEngine: "gemini-acp",
+      capabilities: { subscriptionPlan: true },
+    });
     expect(m.tokenflux.apiFormat).toBe("openai-responses");
     expect(m.tokenflux.baseUrl).toBe("https://tokenflux.dev/v1");
     expect(m.tokenflux.searchAliases).toContain("词元流动");
@@ -185,6 +210,12 @@ describe("buildCatalog — curated presets are ALWAYS listed", () => {
     expect(JSON.stringify(entries.map((e) => e.spec))).not.toContain(KEY);
   });
 
+  it("keeps execution-engine routing process-in instead of exposing implementation names to users", () => {
+    const subscription = byId(buildCatalog({}))["chatgpt-subscription"];
+    expect(subscription.executionEngine).toBe("openai-app-server");
+    expect(JSON.stringify(subscription.spec)).not.toMatch(/codex|app-server|executionEngine/i);
+  });
+
   it("keeps deepseek's balanceBaseUrl and gives the others none", () => {
     const m = byId(buildCatalog({}));
     expect(m.deepseek.balanceBaseUrl).toBe("https://api.deepseek.com");
@@ -224,6 +255,24 @@ describe("buildCatalog — curated presets are ALWAYS listed", () => {
     expect(ollama.provider.apiKey).toBe("");
     expect(ollama.spec.configured).toBe(true);
     expect(ollama.spec.authMode).toBe("none");
+  });
+
+  it("marks a saved subscription ready without inventing an API key", () => {
+    const config = withProvider({
+      id: "claude-subscription",
+      kind: "claude-subscription",
+      name: "Claude 订阅",
+      baseUrl: "",
+      apiFormat: "anthropic",
+      authMode: "oauth-subscription",
+      productKind: "consumer-subscription",
+      models: ["claude-sonnet-4-6"],
+    });
+    const subscription = byId(buildCatalog({}, config))["claude-subscription"];
+
+    expect(subscription.provider.apiKey).toBe("");
+    expect(subscription.spec.configured).toBe(true);
+    expect(subscription.spec.authMode).toBe("oauth-subscription");
   });
 });
 

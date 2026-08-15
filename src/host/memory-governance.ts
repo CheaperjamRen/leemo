@@ -583,9 +583,17 @@ export function createMemoryGovernance(options: MemoryGovernanceOptions): Memory
     io.writeFile(paths.currentView, renderCurrentView(readState(scope).records, scope));
   };
 
-  const currentRecord = (scope: MemoryScope, id: string): MemoryRecord => {
+  const mutableRecord = (scope: MemoryScope, id: string): MemoryRecord => {
     const record = readState(scope).records.find((candidate) => candidate.id === id);
-    if (!record || record.status !== "current") throw new Error("找不到当前有效的记忆");
+    if (!record || (record.status !== "current" && record.status !== "uncertain")) {
+      throw new Error("找不到可修改的记忆");
+    }
+    return record;
+  };
+
+  const currentRecord = (scope: MemoryScope, id: string): MemoryRecord => {
+    const record = mutableRecord(scope, id);
+    if (record.status !== "current") throw new Error("这条理解还需要用户确认");
     return record;
   };
 
@@ -724,7 +732,10 @@ export function createMemoryGovernance(options: MemoryGovernanceOptions): Memory
     },
 
     update(input) {
-      const existing = currentRecord(input.scope, input.id);
+      // A settings edit is also the user's explicit confirmation path for a
+      // speculative native candidate. Until this succeeds the candidate stays
+      // out of MEMORY.md and therefore out of momo's prompt.
+      const existing = mutableRecord(input.scope, input.id);
       const topic = (input.topic ?? existing.topic).trim();
       const statement = (input.statement ?? existing.statement).trim();
       if (!topic || !statement) throw new Error("记忆主题和内容不能为空");
@@ -764,7 +775,10 @@ export function createMemoryGovernance(options: MemoryGovernanceOptions): Memory
     },
 
     remove(scope, id) {
-      const existing = currentRecord(scope, id);
+      // Rejecting an uncertain inference is not deleting a user fact. It still
+      // writes a ledger event for audit/undo, but never promotes the candidate
+      // into the current prompt first.
+      const existing = mutableRecord(scope, id);
       const timestamp = now();
       const record: MemoryRecord = {
         ...existing,

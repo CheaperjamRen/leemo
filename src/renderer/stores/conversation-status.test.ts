@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { PendingInteraction } from "./approvals";
 import type { TimelineItem } from "./message-model";
-import { deriveConversationStatus } from "./conversation-status";
+import { deriveConversationMarker, deriveConversationStatus } from "./conversation-status";
 
 const user = (runId = "run-1"): TimelineItem => ({
   kind: "text",
@@ -104,5 +104,29 @@ describe("deriveConversationStatus", () => {
       activeRunId: "run-2",
       pending: pending("approval"),
     })).toMatchObject({ kind: "running", runId: "run-2" });
+  });
+
+  it("collapses process state into one mutually exclusive attention marker", () => {
+    const base = { detail: "详情", runId: "run-1" } as const;
+    expect(deriveConversationMarker({
+      status: { ...base, kind: "running", label: "进行中" },
+      unread: true,
+    })).toBe("running");
+    expect(deriveConversationMarker({
+      status: { ...base, kind: "failed", label: "失败" },
+      unread: true,
+    })).toBe("error");
+    expect(deriveConversationMarker({
+      status: { ...base, kind: "blocked", label: "等你确认" },
+      unread: false,
+    })).toBe("unread");
+    expect(deriveConversationMarker({
+      status: { ...base, kind: "completed", label: "已完成" },
+      unread: true,
+    })).toBe("unread");
+    expect(deriveConversationMarker({
+      status: { ...base, kind: "completed", label: "已完成" },
+      unread: false,
+    })).toBeNull();
   });
 });

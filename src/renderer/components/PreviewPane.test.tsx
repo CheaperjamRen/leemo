@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { BridgeProvider } from "../bridge/context";
 import { useUi } from "../bridge/context";
@@ -29,10 +29,14 @@ function fakeWorkspace(over?: Partial<Record<string, PreviewPayload>>, fail?: st
     truncated: false,
     size: Buffer.byteLength(text),
   }));
+  const openFile = vi.fn(async () => {});
+  const reveal = vi.fn(async () => {});
   return {
-    client: { readPreview, writeMarkdownFile, reveal: vi.fn(async () => {}) } as unknown as WorkspaceClient,
+    client: { readPreview, writeMarkdownFile, openFile, reveal } as unknown as WorkspaceClient,
     readPreview,
     writeMarkdownFile,
+    openFile,
+    reveal,
   };
 }
 
@@ -75,8 +79,8 @@ describe("PreviewPane", () => {
     setup();
     await user.click(screen.getByText("open-a"));
     await user.click(screen.getByText("open-b"));
-    expect(screen.getByText("File A")).toBeInTheDocument();
-    expect(screen.getByText("File B")).toBeInTheDocument();
+    expect(screen.getAllByText("File A").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("File B").length).toBeGreaterThan(0);
     expect(screen.getByLabelText("关闭 File A")).toBeInTheDocument();
     expect(screen.getByLabelText("关闭 File B")).toBeInTheDocument();
   });
@@ -112,7 +116,7 @@ describe("PreviewPane", () => {
     await user.click(screen.getByText("open-b"));
     await user.click(screen.getByLabelText("关闭 File A"));
     expect(screen.queryByText("File A")).not.toBeInTheDocument();
-    expect(screen.getByText("File B")).toBeInTheDocument();
+    expect(screen.getAllByText("File B").length).toBeGreaterThan(0);
   });
 });
 
@@ -136,6 +140,53 @@ describe("PreviewPane — 真文件内容", () => {
     setup();
     await user.click(screen.getByText("open-a"));
     await waitFor(() => expect(screen.getByRole("heading", { name: "真标题" })).toBeInTheDocument());
+  });
+
+  it("opens a relative markdown folder link inside the workspace instead of localhost", async () => {
+    const user = userEvent.setup();
+    const { reveal } = setup({
+      "math/a.md": {
+        kind: "text",
+        text: "[面经题库](../面经/题库与参考答案/)",
+        truncated: false,
+        size: 48,
+      },
+    });
+    await user.click(screen.getByText("open-a"));
+    await user.click(await screen.findByRole("link", { name: "面经题库" }));
+
+    expect(reveal).toHaveBeenCalledWith("面经/题库与参考答案", "leemo-home");
+  });
+
+  it("opens a relative markdown file as another Leemo preview tab", async () => {
+    const user = userEvent.setup();
+    setup({
+      "math/a.md": {
+        kind: "text",
+        text: "[参考答案](../面经/参考答案.md)",
+        truncated: false,
+        size: 40,
+      },
+    });
+    await user.click(screen.getByText("open-a"));
+    await user.click(await screen.findByRole("link", { name: "参考答案" }));
+
+    expect(screen.getByLabelText("关闭 参考答案.md")).toBeInTheDocument();
+  });
+
+  it("keeps the real file path and system actions in one compact document header", async () => {
+    const user = userEvent.setup();
+    const { openFile, reveal } = setup();
+    await user.click(screen.getByText("open-a"));
+    await waitFor(() => expect(screen.getByTestId("preview-document-header")).toBeInTheDocument());
+
+    const header = screen.getByTestId("preview-document-header");
+    expect(header).toHaveTextContent("math");
+    expect(header).toHaveTextContent("File A");
+    await user.click(screen.getByRole("button", { name: "用默认应用打开 File A" }));
+    await user.click(screen.getByRole("button", { name: "在文件夹中显示 File A" }));
+    expect(openFile).toHaveBeenCalledWith("math/a.md", "leemo-home");
+    expect(reveal).toHaveBeenCalledWith("math/a.md", "leemo-home");
   });
 
   it("shows plain text verbatim rather than parsing it as markdown", async () => {
@@ -243,20 +294,20 @@ describe("PreviewPane — 真文件内容", () => {
 
     await user.click(screen.getByRole("button", { name: "编辑 File A" }));
     const editor = screen.getByRole("textbox", { name: "编辑 File A" });
-    await user.clear(editor);
-    await user.type(editor, "# 新标题");
+    selectEditorContents(editor);
+    await user.click(screen.getByRole("button", { name: "加粗" }));
     expect(screen.getByText("未保存")).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "保存" }));
     await waitFor(() => expect(writeMarkdownFile).toHaveBeenCalledWith(
       "math/a.md",
-      "# 新标题",
+      "# **真标题**\n\n**真正文**",
       "# 真标题\n\n真正文",
       "leemo-home",
     ));
-    expect(screen.getByText("已保存")).toBeInTheDocument();
+    expect(screen.getAllByText(/已自动保存/).length).toBeGreaterThan(0);
     await user.click(screen.getByRole("button", { name: "阅读 File A" }));
-    expect(screen.getByRole("heading", { name: "新标题" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "真标题" })).toBeInTheDocument();
   });
 
   it("guards a dirty tab and keeps the draft when saving fails", async () => {
@@ -274,16 +325,16 @@ describe("PreviewPane — 真文件内容", () => {
     await waitFor(() => expect(screen.getByRole("heading", { name: "真标题" })).toBeInTheDocument());
     await user.click(screen.getByRole("button", { name: "编辑 File A" }));
     const editor = screen.getByRole("textbox", { name: "编辑 File A" });
-    await user.clear(editor);
-    await user.type(editor, "我的草稿");
+    selectEditorContents(editor);
+    await user.click(screen.getByRole("button", { name: "加粗" }));
     await user.click(screen.getByLabelText("关闭 File A"));
 
     expect(screen.getByRole("dialog", { name: "保存这份修改？" })).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "保存并关闭" }));
     await waitFor(() => expect(screen.getByText(/草稿还在/)).toBeInTheDocument());
-    expect(screen.getByRole("textbox", { name: "编辑 File A" })).toHaveValue("我的草稿");
+    expect(screen.getByRole("textbox", { name: "编辑 File A" })).toHaveTextContent("真标题真正文");
     expect(screen.getByRole("button", { name: "复制草稿" })).toBeInTheDocument();
-    expect(screen.getByText("File A")).toBeInTheDocument();
+    expect(screen.getAllByText("File A").length).toBeGreaterThan(0);
   });
 
   it("does not offer editing for a truncated markdown preview", async () => {
@@ -309,3 +360,10 @@ describe("PreviewPane — 真文件内容", () => {
     );
   });
 });
+function selectEditorContents(editor: HTMLElement): void {
+  const range = document.createRange();
+  range.selectNodeContents(editor);
+  window.getSelection()?.removeAllRanges();
+  window.getSelection()?.addRange(range);
+  fireEvent(document, new Event("selectionchange"));
+}

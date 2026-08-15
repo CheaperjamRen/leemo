@@ -1,0 +1,34 @@
+{
+  "create": {
+    "notebookId": "诊断",
+    "archive": "诊断\\.leemo\\conversations\\MmE1NzNlZWEtNTM0ZS00NGQ2LTg5MDAtYmIwYzY2NDdlNzQx.json",
+    "conversationId": "2a573eea-534e-44d6-8900-bb0c6647e741",
+    "sessionPersisted": true,
+    "textMessages": [
+      {
+        "role": "user",
+        "text": "只回复：A2 归档验收通过"
+      },
+      {
+        "role": "momo",
+        "text": "A2 归档验收通过"
+      }
+    ],
+    "result": {
+      "interrupted": false,
+      "isError": false
+    },
+    "timelineItems": 5,
+    "at": "2026-07-29T07:25:25.128Z"
+  },
+  "verify": {
+    "notebookId": "诊断",
+    "conversationId": "2a573eea-534e-44d6-8900-bb0c6647e741",
+    "portableRecordPresent": true,
+    "visibleAfterRestart": {
+      "prompt": true,
+      "title": true
+    },
+    "at": "2026-07-29T07:26:15.808Z"
+  }
+}

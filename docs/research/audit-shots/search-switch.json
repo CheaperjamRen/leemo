@@ -1,0 +1,6 @@
+{
+ "before": "{\"foundRow\":false,\"checked\":null}",
+ "state": "[{\"label\":\"deepseek-v4-flash🧠\",\"checked\":true,\"disabled\":false},{\"label\":\"glm-5.2🧠👁\",\"checked\":true,\"disabled\":false},{\"label\":\"kimi-k2.5🧠👁\",\"checked\":true,\"disabled\":false},{\"label\":\"qwen3.7-flash🧠👁\",\"checked\":true,\"disabled\":false},{\"label\":\"允许危险命令缓存\",\"checked\":false,\"disabled\":false},{\"label\":\"联网功能总开关。关掉后下面两项一起失效，momo 完\",\"checked\":false,\"disabled\":false},{\"label\":\"联网搜索 WebSearch关闭后 momo 再也不\",\"checked\":false,\"disabled\":true},{\"label\":\"联网抓取 WebFetch关闭后 momo 再也访问\",\"checked\":false,\"disabled\":true},{\"label\":\"启用自动记忆\",\"checked\":true,\"disabled\":false}]",
+ "flipped": "now=true",
+ "after": "[{\"l\":\"deepseek-v4-flash🧠\",\"c\":true,\"d\":false},{\"l\":\"glm-5.2🧠👁\",\"c\":true,\"d\":false},{\"l\":\"kimi-k2.5🧠👁\",\"c\":true,\"d\":false},{\"l\":\"qwen3.7-flash🧠👁\",\"c\":true,\"d\":false},{\"l\":\"允许危险命令缓存\",\"c\":false,\"d\":false},{\"l\":\"联网功能总开关。关掉后下面两项一起失效，mo\",\"c\":true,\"d\":false},{\"l\":\"联网搜索 WebSearch关闭后 momo\",\"c\":true,\"d\":false},{\"l\":\"联网抓取 WebFetch关闭后 momo \",\"c\":true,\"d\":false},{\"l\":\"启用自动记忆\",\"c\":true,\"d\":false}]"
+}

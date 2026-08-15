@@ -1,26 +1,84 @@
-import { useState } from "react";
-import { ChevronDown, ChevronRight, Plus, Settings } from "lucide-react";
+import { useEffect, useState } from "react";
+import { ChevronDown, ChevronRight, Search, SquarePen, X } from "lucide-react";
+import type { ConversationMeta } from "../stores/conversations";
 import { useApprovals, useConversations, useNotebooks, useUi, useWorkspaces } from "../bridge/context";
 import { deriveConversationStatus } from "../stores/conversation-status";
 import { HOME_WORKSPACE_ID } from "../stores/workspaces";
 import ConversationListItem from "./ConversationListItem";
+import "./HistoryDrawer.css";
 
-/** The buddy-mode history drawer.
- *
- *  Reads the conversations store directly — the same `byId`/`order` the
- *  workbench sidebar renders — so the two shells can never disagree about what
- *  history exists. (This list used to be three hardcoded fixture strings, which
- *  meant buddy mode showed conversations that did not exist and could not open
- *  the ones that did.) */
+type HistoryGroupId = "pinned" | "today" | "recent" | "earlier";
+
+interface HistoryGroup {
+  id: HistoryGroupId;
+  label: string;
+  conversations: ConversationMeta[];
+}
+
+const DAY_MS = 24 * 60 * 60 * 1_000;
+
+function activityTime(conversation: ConversationMeta): number {
+  return conversation.lastActivityAt || conversation.lastOpenedAt || conversation.createdAt;
+}
+
+function startOfLocalDay(timestamp: number): number {
+  const date = new Date(timestamp);
+  date.setHours(0, 0, 0, 0);
+  return date.getTime();
+}
+
+function groupConversations(conversations: ConversationMeta[], now: number): HistoryGroup[] {
+  const today = startOfLocalDay(now);
+  const recentBoundary = today - (7 * DAY_MS);
+  const sorted = [...conversations].sort((left, right) => activityTime(right) - activityTime(left));
+  const groups: HistoryGroup[] = [
+    { id: "pinned", label: "置顶", conversations: [] },
+    { id: "today", label: "今天", conversations: [] },
+    { id: "recent", label: "最近 7 天", conversations: [] },
+    { id: "earlier", label: "更早", conversations: [] },
+  ];
+
+  for (const conversation of sorted) {
+    if (conversation.pinned) {
+      groups[0].conversations.push(conversation);
+      continue;
+    }
+    const timestamp = activityTime(conversation);
+    if (timestamp >= today) groups[1].conversations.push(conversation);
+    else if (timestamp >= recentBoundary) groups[2].conversations.push(conversation);
+    else groups[3].conversations.push(conversation);
+  }
+
+  return groups.filter((group) => group.conversations.length > 0);
+}
+
+function formatActivityTime(conversation: ConversationMeta, now: number): string {
+  const timestamp = activityTime(conversation);
+  const date = new Date(timestamp);
+  const today = startOfLocalDay(now);
+  const day = startOfLocalDay(timestamp);
+  if (day === today) {
+    return `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
+  }
+  if (day === today - DAY_MS) return "昨天";
+  if (date.getFullYear() === new Date(now).getFullYear()) return `${date.getMonth() + 1}/${date.getDate()}`;
+  return `${date.getFullYear()}/${date.getMonth() + 1}/${date.getDate()}`;
+}
+
+/** Buddy mode keeps global conversations here; notebook conversations remain
+ * inside their real workbench so the two surfaces never imply duplicate data. */
 export default function HistoryDrawer({ open, onClose }: { open: boolean; onClose: () => void }) {
   const [q, setQ] = useState("");
   const [showArchived, setShowArchived] = useState(false);
+  const [startError, setStartError] = useState<string | null>(null);
+  const [collapsedGroups, setCollapsedGroups] = useState<Partial<Record<HistoryGroupId, boolean>>>({});
   const byId = useConversations((s) => s.byId);
   const order = useConversations((s) => s.order);
   const activeId = useConversations((s) => s.activeId);
   const switchActive = useConversations((s) => s.switchActive);
   const createConversation = useConversations((s) => s.createConversation);
   const renameTitle = useConversations((s) => s.renameTitle);
+  const setConversationUnread = useConversations((s) => s.setConversationUnread);
   const pinConversation = useConversations((s) => s.pinConversation);
   const archiveConversation = useConversations((s) => s.archiveConversation);
   const moveConversation = useConversations((s) => s.moveConversation);
@@ -32,42 +90,49 @@ export default function HistoryDrawer({ open, onClose }: { open: boolean; onClos
   const pendingByConversation = useApprovals((s) => s.pendingByConversation);
   const openSettings = useUi((s) => s.openSettings);
 
+  useEffect(() => {
+    if (!open) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      setQ("");
+      setShowArchived(false);
+      setCollapsedGroups({});
+      onClose();
+    };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [onClose, open]);
+
   if (!open) return null;
 
-  // 搭子态 is momo's global view. Conversations that belong to a 本子 stay in
-  // that 本子's workbench; otherwise switching modes leaks unrelated context.
+  const now = Date.now();
   const conversations = order
     .flatMap((id) => byId[id] ?? [])
     .filter((conversation) =>
       (conversation.workspaceId ?? HOME_WORKSPACE_ID) === HOME_WORKSPACE_ID
         && conversation.bookId === null
     );
-  const pinnedFirst = (left: (typeof conversations)[number], right: (typeof conversations)[number]) =>
-    Number(right.pinned ?? false) - Number(left.pinned ?? false);
   const query = q.trim();
-  const matchesQuery = (title: string) => query === "" || title.includes(query);
-  const list = conversations.filter((c) => !c.archived && matchesQuery(c.title)).sort(pinnedFirst);
-  const archived = conversations.filter((c) => c.archived && matchesQuery(c.title)).sort(pinnedFirst);
-  const archivedCount = conversations.filter((c) => c.archived).length;
+  const matchesQuery = (title: string) => query === "" || title.toLocaleLowerCase().includes(query.toLocaleLowerCase());
+  const visible = conversations.filter((conversation) => !conversation.archived && matchesQuery(conversation.title));
+  const groups = groupConversations(visible, now);
+  const archived = conversations
+    .filter((conversation) => conversation.archived && matchesQuery(conversation.title))
+    .sort((left, right) => activityTime(right) - activityTime(left));
+  const archivedCount = conversations.filter((conversation) => conversation.archived).length;
   const archiveOpen = showArchived || query !== "";
   const moveTargets = [
-    ...notebookList.map((book) => ({
-      workspaceId: HOME_WORKSPACE_ID,
-      bookId: book.id,
-      label: book.title,
-    })),
+    ...notebookList.map((book) => ({ workspaceId: HOME_WORKSPACE_ID, bookId: book.id, label: book.title })),
     ...workspaceList
       .filter((workspace) => workspace.kind === "external" && workspace.available)
-      .map((workspace) => ({
-        workspaceId: workspace.id,
-        bookId: null,
-        label: workspace.name,
-      })),
+      .map((workspace) => ({ workspaceId: workspace.id, bookId: null, label: workspace.name })),
   ];
 
   const dismiss = () => {
-    setQ(""); // don't strand a stale filter on the next open
+    setQ("");
     setShowArchived(false);
+    setStartError(null);
+    setCollapsedGroups({});
     onClose();
   };
 
@@ -77,21 +142,31 @@ export default function HistoryDrawer({ open, onClose }: { open: boolean; onClos
   };
 
   const startNew = async () => {
-    // Mirrors the workbench's "new chat" button. Failure is non-fatal: the
-    // drawer just stays put rather than closing onto nothing.
-    const id = await createConversation({ source: "buddy", bookId: null });
-    switchActive(id);
-    dismiss();
+    setStartError(null);
+    try {
+      const id = await createConversation({ source: "buddy", bookId: null });
+      switchActive(id);
+      dismiss();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (/还没有(?:选择可用模型|完成登录与保存|配置 API Key)/u.test(message)) {
+        dismiss();
+        openSettings("models");
+        return;
+      }
+      setStartError(message);
+    }
   };
 
-  const row = (conversation: (typeof conversations)[number]) => (
-    <li key={conversation.id}>
+  const row = (conversation: ConversationMeta) => (
+    <li key={conversation.id} className="buddy-history-row">
       <ConversationListItem
         conversation={conversation}
         active={conversation.id === activeId}
         variant="buddy"
         onPick={() => pick(conversation.id)}
         onRename={(title) => renameTitle(conversation.id, title)}
+        onUnread={(unread) => setConversationUnread(conversation.id, unread)}
         onPin={(pinned) => pinConversation(conversation.id, pinned)}
         onArchive={(archivedValue) => archiveConversation(conversation.id, archivedValue)}
         onDelete={() => deleteConversation(conversation.id)}
@@ -103,58 +178,92 @@ export default function HistoryDrawer({ open, onClose }: { open: boolean; onClos
           pending: pendingByConversation[conversation.id] ?? null,
         })}
       />
+      <span className="buddy-history-row-time" aria-hidden>{formatActivityTime(conversation, now)}</span>
     </li>
   );
 
   return (
     <>
-      <div onClick={dismiss} className="fixed inset-0 z-30" style={{ background: "rgba(0,0,0,.2)" }} />
-      <aside className="leemo-card-shadow-hover fixed left-0 top-0 z-40 flex h-full w-[320px] flex-col border-r border-[var(--leemo-line)] bg-[var(--leemo-card)] p-4"
-        onKeyDown={(e) => { if (e.key === "Escape") dismiss(); }}>
-        <input role="search" aria-label="搜索对话" placeholder="搜索…" value={q}
-          onChange={(e) => setQ(e.target.value)}
-          className="mb-3 w-full shrink-0 rounded-lg border border-[var(--leemo-line)] bg-white px-3 py-2 text-sm text-[var(--leemo-ink)] outline-none transition placeholder:text-[var(--leemo-ink-3)] focus:border-[var(--leemo-amber)] focus:ring-2 focus:ring-[var(--leemo-amber-soft)]/60" />
+      <div
+        data-testid="buddy-history-scrim"
+        className="buddy-history-scrim"
+        onClick={dismiss}
+        aria-hidden="true"
+      />
+      <aside
+        role="dialog"
+        aria-modal="true"
+        aria-label="对话"
+        data-history-drawer="buddy"
+        className="buddy-history-drawer"
+        onKeyDown={(event) => { if (event.key === "Escape") dismiss(); }}
+      >
+        <header className="buddy-history-header">
+          <h2>对话</h2>
+          <button type="button" className="buddy-history-close" aria-label="关闭对话" onClick={dismiss}>
+            <X aria-hidden />
+          </button>
+        </header>
 
-        {/* The list scrolls on its own so a long history never pushes 设置 out
-            of the drawer. */}
-        <div className="min-h-0 flex-1 overflow-y-auto">
+        <div className="buddy-history-controls">
+          <button type="button" aria-label="开始新对话" className="buddy-history-new" onClick={() => void startNew()}>
+            <SquarePen aria-hidden />
+            <span>新对话</span>
+          </button>
+          <label className="buddy-history-search">
+            <Search aria-hidden />
+            <input
+              role="searchbox"
+              aria-label="搜索对话"
+              placeholder="搜索对话"
+              value={q}
+              onChange={(event) => setQ(event.target.value)}
+            />
+          </label>
+          {startError && <p className="buddy-history-error" role="alert">{startError}</p>}
+        </div>
+
+        <div className="buddy-history-list" data-testid="buddy-history-list">
           {conversations.length === 0 ? (
-            <p className="px-3 py-8 text-center text-xs text-[var(--leemo-ink-3)]">还没有对话</p>
-          ) : list.length === 0 && archived.length === 0 ? (
-            <p className="px-3 py-8 text-center text-xs text-[var(--leemo-ink-3)]">没有匹配的对话</p>
+            <p className="buddy-history-empty">还没有对话</p>
+          ) : groups.length === 0 && archived.length === 0 ? (
+            <p className="buddy-history-empty">没有匹配的对话</p>
           ) : (
-            <>
-              {list.length > 0 && <ul className="space-y-1">{list.map(row)}</ul>}
-              {archivedCount > 0 && (
-                <div className="mt-2 border-t border-[var(--leemo-line-soft)] pt-2">
+            groups.map((group) => {
+              const collapsed = collapsedGroups[group.id] === true;
+              return (
+                <section key={group.id} data-testid="buddy-history-group" data-group={group.id} className="buddy-history-group">
                   <button
                     type="button"
-                    aria-label={`已归档 ${archivedCount}`}
-                    aria-expanded={archiveOpen}
-                    onClick={() => setShowArchived((shown) => !shown)}
-                    className="flex w-full items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-left text-xs text-[var(--leemo-ink-3)] transition-colors hover:bg-[var(--leemo-line-soft)] hover:text-[var(--leemo-ink-2)]"
+                    className="buddy-history-group-heading"
+                    aria-label={`${collapsed ? "展开" : "折叠"}${group.label}`}
+                    aria-expanded={!collapsed}
+                    onClick={() => setCollapsedGroups((current) => ({ ...current, [group.id]: !collapsed }))}
                   >
-                    {archiveOpen ? <ChevronDown className="h-3.5 w-3.5" aria-hidden /> : <ChevronRight className="h-3.5 w-3.5" aria-hidden />}
-                    <span>已归档 {archivedCount}</span>
+                    <span>{group.label}</span>
+                    {collapsed ? <ChevronRight aria-hidden /> : <ChevronDown aria-hidden />}
                   </button>
-                  {archiveOpen && archived.length > 0 && <ul className="mt-1 space-y-1">{archived.map(row)}</ul>}
-                </div>
-              )}
-            </>
+                  {!collapsed && <ul>{group.conversations.map(row)}</ul>}
+                </section>
+              );
+            })
           )}
         </div>
 
-        <div className="mt-3 shrink-0 border-t border-[var(--leemo-line)] pt-3">
-          <button type="button" onClick={() => void startNew()}
-            className="mb-1 flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-[var(--leemo-ink-2)] transition-colors hover:bg-[var(--leemo-line-soft)] hover:text-[var(--leemo-ink)]">
-            <Plus className="h-4 w-4" aria-hidden />
-            开始新对话
-          </button>
-          <button type="button" onClick={() => { openSettings("general"); dismiss(); }} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-[var(--leemo-ink-2)] transition-colors hover:bg-[var(--leemo-line-soft)] hover:text-[var(--leemo-ink)]">
-            <Settings className="h-4 w-4" aria-hidden />
-            设置
-          </button>
-        </div>
+        {archivedCount > 0 && (
+          <div className="buddy-history-archive">
+            {archiveOpen && archived.length > 0 && <ul>{archived.map(row)}</ul>}
+            <button
+              type="button"
+              aria-label={`已归档 ${archivedCount}`}
+              aria-expanded={archiveOpen}
+              onClick={() => setShowArchived((shown) => !shown)}
+            >
+              <span>已归档</span>
+              {archiveOpen ? <ChevronDown aria-hidden /> : <ChevronRight aria-hidden />}
+            </button>
+          </div>
+        )}
       </aside>
     </>
   );

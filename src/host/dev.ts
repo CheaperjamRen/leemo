@@ -47,6 +47,7 @@ async function main(): Promise<void> {
   const { ensureSkillsPlugin, skillsRootFor } = await import("./skills");
   const { createSkillAdminService } = await import("./skill-admin-service");
   const { createOfficeSkillProvisioner } = await import("../main/office-skill-provisioner");
+  const { createSuperpowersSkillProvisioner } = await import("../main/superpowers-skill-provisioner");
   const { atomicReplaceTextFile } = await import("../main/atomic-text-file");
   const memoryDir = path.join(os.homedir(), "Leemo");
   const memoryIO = {
@@ -132,6 +133,15 @@ async function main(): Promise<void> {
       `[bridge:dev] Office skills: ${snapshot.status}${snapshot.status === "ready" ? ` (${snapshot.source ?? "local"})` : ""}`,
     );
   });
+  const superpowersSkills = createSuperpowersSkillProvisioner({
+    configDir: dataDir,
+    bundledRoot: path.join(ROOT, "bundled-skills", "superpowers", "release"),
+  });
+  void superpowersSkills.ensureReady().then((snapshot) => {
+    console.log(
+      `[bridge:dev] Superpowers skills: ${snapshot.status}${snapshot.status === "ready" ? ` (${snapshot.skills.length})` : ""}`,
+    );
+  });
 
   const { createBridgeHost } = await import("./bridge-host");
   const { startWsServer } = await import("./ws-server");
@@ -155,6 +165,7 @@ async function main(): Promise<void> {
     memoryDir,
     skillAdmin: createSkillAdminService({ memoryDir }),
     officeSkills,
+    superpowersSkills,
     memoryGovernance,
     skillsIO,
     resolveNotebook: (id) => {

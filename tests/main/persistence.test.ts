@@ -65,6 +65,18 @@ describe("persistence schema", () => {
     expect(snap.conversations[0].meta.title).toBe("updated");
   });
 
+  it("restores the active conversation goal after restart", () => {
+    const goal = {
+      text: "完成主界面视觉复现",
+      status: "active" as const,
+      createdAt: 1_000,
+      updatedAt: 2_000,
+    };
+    p.saveConversation({ ...meta, goal } as ConversationMeta, items);
+
+    expect(p.loadAll().conversations[0]?.meta).toMatchObject({ goal });
+  });
+
   it("rebuilds the disposable conversation, message, and usage index exactly", () => {
     const usage: TimelineItem[] = [
       ...items,
@@ -136,6 +148,59 @@ describe("persistence schema", () => {
     expect(row.cost_usd).toBe("0.001234");
     expect(row.cost_source).toBe("local-pricing");
     expect(row.tokens_estimated).toBe(1);
+  });
+
+  it("indexes modelUsage as one row per real model without duplicating the aggregate", () => {
+    const withBreakdown: TimelineItem[] = [{
+      kind: "usage",
+      id: "usage-models",
+      runId: "r1",
+      usage: {
+        providerId: "anthropic-subscription",
+        modelId: "selected-alias",
+        inputTokens: 150,
+        outputTokens: 30,
+        cacheReadTokens: 20,
+        cacheCreationTokens: 5,
+        durationMs: 2_500,
+        costUsd: "0.120000",
+        costSource: "sdk",
+        tokensEstimated: false,
+        modelBreakdown: [
+          {
+            providerId: "anthropic-subscription",
+            modelId: "claude-haiku-4-5",
+            servingProvider: "anthropic",
+            inputTokens: 50,
+            outputTokens: 10,
+            cacheReadTokens: 0,
+            cacheCreationTokens: 0,
+            costUsd: "0.020000",
+          },
+          {
+            providerId: "anthropic-subscription",
+            modelId: "claude-sonnet-4-6",
+            servingProvider: "anthropic",
+            inputTokens: 100,
+            outputTokens: 20,
+            cacheReadTokens: 20,
+            cacheCreationTokens: 5,
+            costUsd: "0.100000",
+          },
+        ],
+      },
+    }];
+
+    p.saveConversation(meta, withBreakdown);
+    const rows = db.prepare(
+      "SELECT model_id, input_tokens, output_tokens, cost_usd, duration_ms FROM usage WHERE conversation_id = ? ORDER BY model_id",
+    ).all(meta.id) as Array<Record<string, unknown>>;
+
+    expect(rows).toEqual([
+      expect.objectContaining({ model_id: "claude-haiku-4-5", input_tokens: 50, output_tokens: 10, cost_usd: "0.020000", duration_ms: 2_500 }),
+      expect.objectContaining({ model_id: "claude-sonnet-4-6", input_tokens: 100, output_tokens: 20, cost_usd: "0.100000", duration_ms: null }),
+    ]);
+    expect(rows.some((row) => row.model_id === "selected-alias")).toBe(false);
   });
 
   it("re-saving a conversation replaces (not duplicates) its usage rows", () => {
@@ -475,6 +540,19 @@ describe("scheduled task persistence", () => {
     expect(p.listScheduledTaskRuns(task.id)).toEqual([run]);
   });
 
+  it("restores selected-weekday recurrence after the persistence service restarts", () => {
+    const db = makeDb();
+    const first = createPersistence(db);
+    const recurring: ScheduledTask = {
+      ...task,
+      schedule: { kind: "weekly", weekdays: [1, 3, 5], hour: 8, minute: 30 },
+    };
+    first.saveScheduledTask(recurring);
+
+    const reopened = createPersistence(db);
+    expect(reopened.getScheduledTask(task.id)?.schedule).toEqual(recurring.schedule);
+  });
+
   it("queues one occurrence with its advanced task and claims it only once", () => {
     const p = createPersistence(makeDb());
     p.saveScheduledTask(task);
@@ -526,6 +604,8 @@ describe("usage summaries", () => {
     inputTokens: number,
     outputTokens: number,
     costUsd?: string,
+    cacheReadTokens = 0,
+    cacheCreationTokens = 0,
   ): TimelineItem {
     return {
       kind: "usage",
@@ -536,8 +616,8 @@ describe("usage summaries", () => {
         modelId,
         inputTokens,
         outputTokens,
-        cacheReadTokens: 0,
-        cacheCreationTokens: 0,
+        cacheReadTokens,
+        cacheCreationTokens,
         ...(costUsd === undefined ? {} : { costUsd }),
         costSource: costUsd === undefined ? "unpriced" : "local-pricing",
         tokensEstimated: false,
@@ -550,7 +630,7 @@ describe("usage summaries", () => {
     const now = new Date(2026, 6, 29, 15, 0, 0).getTime();
     p.saveConversation(
       { ...meta, id: "today-priced", lastActivityAt: new Date(2026, 6, 29, 9).getTime() },
-      [usage("alpha", "a1", 100, 20, "0.000001")],
+      [usage("alpha", "a1", 100, 20, "0.000001", 40, 5)],
     );
     p.saveConversation(
       { ...meta, id: "today-unpriced", lastActivityAt: new Date(2026, 6, 29, 11).getTime() },
@@ -567,14 +647,41 @@ describe("usage summaries", () => {
 
     expect(p.usageSummary({ range: "today" }, now)).toEqual({
       totalCostUsd: "0.000001",
-      byProvider: [{ providerId: "alpha", costUsd: "0.000001", inputTokens: 150, outputTokens: 30 }],
+      callCount: 2,
+      inputTokens: 150,
+      outputTokens: 30,
+      cacheReadTokens: 40,
+      cacheCreationTokens: 5,
+      byProvider: [{
+        providerId: "alpha",
+        costUsd: "0.000001",
+        callCount: 2,
+        inputTokens: 150,
+        outputTokens: 30,
+        cacheReadTokens: 40,
+        cacheCreationTokens: 5,
+      }],
+      byModel: [
+        { providerId: "alpha", modelId: "a1", costUsd: "0.000001", callCount: 1, inputTokens: 100, outputTokens: 20, cacheReadTokens: 40, cacheCreationTokens: 5 },
+        { providerId: "alpha", modelId: "a2", callCount: 1, inputTokens: 50, outputTokens: 10, cacheReadTokens: 0, cacheCreationTokens: 0 },
+      ],
       byDay: undefined,
     });
     expect(p.usageSummary({ range: "last7d" }, now)).toEqual({
       totalCostUsd: "0.100006",
+      callCount: 3,
+      inputTokens: 350,
+      outputTokens: 70,
+      cacheReadTokens: 40,
+      cacheCreationTokens: 5,
       byProvider: [
-        { providerId: "alpha", costUsd: "0.000001", inputTokens: 150, outputTokens: 30 },
-        { providerId: "beta", costUsd: "0.100005", inputTokens: 200, outputTokens: 40 },
+        { providerId: "alpha", costUsd: "0.000001", callCount: 2, inputTokens: 150, outputTokens: 30, cacheReadTokens: 40, cacheCreationTokens: 5 },
+        { providerId: "beta", costUsd: "0.100005", callCount: 1, inputTokens: 200, outputTokens: 40, cacheReadTokens: 0, cacheCreationTokens: 0 },
+      ],
+      byModel: [
+        { providerId: "alpha", modelId: "a1", costUsd: "0.000001", callCount: 1, inputTokens: 100, outputTokens: 20, cacheReadTokens: 40, cacheCreationTokens: 5 },
+        { providerId: "alpha", modelId: "a2", callCount: 1, inputTokens: 50, outputTokens: 10, cacheReadTokens: 0, cacheCreationTokens: 0 },
+        { providerId: "beta", modelId: "b1", costUsd: "0.100005", callCount: 1, inputTokens: 200, outputTokens: 40, cacheReadTokens: 0, cacheCreationTokens: 0 },
       ],
       byDay: [
         { date: "2026-07-28", costUsd: "0.100005" },
@@ -596,7 +703,13 @@ describe("usage summaries", () => {
     );
 
     expect(p.usageSummary({ range: "today", providerId: "alpha" }, now)).toEqual({
-      byProvider: [{ providerId: "alpha", inputTokens: 12, outputTokens: 3 }],
+      callCount: 1,
+      inputTokens: 12,
+      outputTokens: 3,
+      cacheReadTokens: 0,
+      cacheCreationTokens: 0,
+      byProvider: [{ providerId: "alpha", callCount: 1, inputTokens: 12, outputTokens: 3, cacheReadTokens: 0, cacheCreationTokens: 0 }],
+      byModel: [{ providerId: "alpha", modelId: "a1", callCount: 1, inputTokens: 12, outputTokens: 3, cacheReadTokens: 0, cacheCreationTokens: 0 }],
       byDay: undefined,
     });
   });

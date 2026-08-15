@@ -14,6 +14,8 @@ import {
 } from "lucide-react";
 import type { ConnectionTestResult, ProviderSpec } from "../../bridge/contract";
 import type { PresetOffer } from "./ProviderConfigForm";
+import { ProviderBrandIcon } from "./ProviderBrandIcon";
+import "./ProviderList.css";
 
 type TestState = ConnectionTestResult | { pending: true };
 
@@ -43,6 +45,8 @@ function statusFor(provider: ProviderSpec, test: TestState | undefined): {
   if (test?.ok === false) return { label: "需修复", tone: "error" };
   return provider.configured === true
     ? { label: "已配置", tone: "idle" }
+    : provider.authMode === "oauth-subscription"
+      ? { label: "待登录", tone: "error" }
     : provider.authMode === "none"
       ? { label: "待选模型", tone: "error" }
       : { label: "待补 Key", tone: "error" };
@@ -93,8 +97,8 @@ export function ProviderList({
   };
 
   return (
-    <div className="flex h-[142px] min-h-0 w-full shrink-0 flex-col border-b border-[var(--leemo-line)] bg-[var(--leemo-bg)] lg:h-full lg:w-[244px] lg:border-b-0 lg:border-r">
-      <div className="flex h-10 shrink-0 items-center justify-between border-b border-[var(--leemo-line)] px-3 lg:h-12">
+    <div className="provider-list flex h-[142px] min-h-0 w-full shrink-0 flex-col border-b border-[var(--leemo-line)] bg-[var(--leemo-bg)] lg:h-full lg:w-[244px] lg:border-b-0 lg:border-r">
+      <div className="provider-list-header flex h-10 shrink-0 items-center justify-between border-b border-[var(--leemo-line)] px-3 lg:h-12">
         <span className="text-xs font-medium text-[var(--leemo-ink-2)]">已接入</span>
         {addedProviders.length > 0 ? (
           <button
@@ -124,7 +128,7 @@ export function ProviderList({
               添加模型服务商
             </button>
           </div>
-        ) : addedProviders.map((provider, index) => {
+        ) : addedProviders.map((provider) => {
           const status = statusFor(provider, tests[provider.id]);
           const selected = provider.id === selectedId;
           const priorityIndex = ids.indexOf(provider.id);
@@ -167,13 +171,7 @@ export function ProviderList({
                 onClick={() => onSelect(provider.id)}
                 className="flex min-w-0 flex-1 items-center gap-2 py-2 pl-3 pr-1 text-left disabled:cursor-not-allowed disabled:opacity-55"
               >
-                <span className={`grid h-7 w-7 shrink-0 place-items-center rounded-md border text-[10px] font-semibold tabular-nums ${
-                  selected
-                    ? "border-[var(--leemo-amber-line)] bg-[var(--leemo-amber-bg)] text-[var(--leemo-amber-ink)]"
-                    : "border-[var(--leemo-line)] bg-white text-[var(--leemo-ink-2)]"
-                }`}>
-                  {String(index + 1).padStart(2, "0")}
-                </span>
+                <ProviderBrandIcon kind={provider.kind} name={provider.name} compact />
                 <span className="min-w-0 flex-1">
                   <span className="flex min-w-0 items-center gap-1.5">
                     <span className="min-w-0 truncate text-[12.5px] font-medium text-[var(--leemo-ink)]">{provider.name}</span>
@@ -257,6 +255,7 @@ function offerFromProvider(provider: ProviderSpec): PresetOffer {
 }
 
 function providerOfferSummary(provider: ProviderSpec): string {
+  if (provider.authMode === "oauth-subscription") return "订阅登录 · 无需 API Key";
   if (provider.authMode === "none") return "本机运行 · 无需 API Key";
   if (provider.productKind === "coding-plan") return "已有套餐 · 使用套餐 Key";
   if (provider.productKind === "aggregator") return "聚合服务 · API Key 接入";
@@ -282,6 +281,7 @@ export function ProviderOfferGrid({ providers, onChoose, disabled = false }: Pro
     ].join(" ").toLocaleLowerCase().includes(needle));
   }, [presets, query]);
   const groups = [
+    { title: "已有订阅", providers: filtered.filter((provider) => provider.productKind === "consumer-subscription") },
     { title: "套餐与 Coding Plan", providers: filtered.filter((provider) => provider.productKind === "coding-plan") },
     { title: "国内官方", providers: filtered.filter((provider) => provider.category === "cn_official" && !provider.capabilities.local && (provider.productKind ?? "metered-api") === "metered-api") },
     { title: "国际官方", providers: filtered.filter((provider) => provider.category === "official" && !provider.capabilities.local && (provider.productKind ?? "metered-api") === "metered-api") },
@@ -289,42 +289,43 @@ export function ProviderOfferGrid({ providers, onChoose, disabled = false }: Pro
     { title: "本地与自部署", providers: filtered.filter((provider) => provider.productKind === "local" || provider.productKind === "self-hosted" || provider.capabilities.local) },
   ].filter((group) => group.providers.length > 0);
   return (
-    <div className="h-full min-w-0 flex-1 overflow-y-auto bg-white p-5 sm:p-7" data-testid="provider-offer-grid">
+    <div className="leemo-provider-catalog h-full min-w-0 flex-1 overflow-y-auto p-5 sm:p-7" data-testid="provider-offer-grid">
       <div className="mx-auto max-w-5xl">
-        <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
+        <div className="leemo-provider-catalog__header mb-5 flex flex-wrap items-end justify-between gap-3">
           <div>
-            <p className="text-[11px] font-medium text-[var(--leemo-amber-ink)]">添加模型服务商</p>
-            <h3 className="mt-1 text-lg font-medium text-[var(--leemo-ink)]">选择接入方式</h3>
+            <p className="leemo-provider-catalog__eyebrow">添加模型服务商</p>
+            <h3 className="mt-1.5 text-xl font-semibold tracking-[-0.02em] text-[var(--leemo-ink)]">选择接入方式</h3>
           </div>
-          <label className="flex h-9 w-full max-w-xs items-center gap-2 rounded-md border border-[var(--leemo-line)] bg-white px-3 text-[var(--leemo-ink-3)] focus-within:border-[var(--leemo-amber)]">
+          <label className="leemo-provider-catalog__search">
             <Search className="h-3.5 w-3.5 shrink-0" aria-hidden />
             <input type="search" aria-label="搜索模型服务" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索服务商、套餐或模型" className="min-w-0 flex-1 bg-transparent text-[11.5px] text-[var(--leemo-ink)] outline-none" />
           </label>
         </div>
         <div className="space-y-6">
           {groups.map((group) => (
-            <section key={group.title} aria-labelledby={`provider-group-${group.title}`}>
-              <h4 id={`provider-group-${group.title}`} className="mb-2 text-[11px] font-medium text-[var(--leemo-ink-2)]">{group.title}</h4>
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            <section className="leemo-provider-group" key={group.title} aria-labelledby={`provider-group-${group.title}`}>
+              <h4 id={`provider-group-${group.title}`} className="leemo-provider-group__title">{group.title}</h4>
+              <div className="leemo-provider-offer-grid" data-layout="three-column">
                 {group.providers.map((provider) => (
                   <button
                     key={provider.kind}
                     type="button"
                     data-testid="provider-offer-card"
+                    data-density="compact"
                     aria-label={`配置 ${provider.name}`}
                     disabled={disabled}
                     onClick={() => onChoose(offerFromProvider(provider))}
-                    className="group flex h-[116px] min-w-0 flex-col justify-between rounded-md border border-[var(--leemo-line)] bg-white p-3.5 text-left transition-colors hover:border-[var(--leemo-ink-3)] hover:bg-[var(--leemo-bg)] disabled:cursor-not-allowed disabled:opacity-45"
+                    className="leemo-provider-offer-card group"
                   >
                     <span className="flex items-start justify-between gap-3">
-                      <span className="grid h-9 w-9 shrink-0 place-items-center rounded-md border border-[var(--leemo-line)] bg-[var(--leemo-bg)] text-sm font-semibold text-[var(--leemo-ink-2)]">
-                        {provider.name.trim().slice(0, 1).toLocaleUpperCase() || "M"}
+                      <ProviderBrandIcon kind={provider.kind} name={provider.name} />
+                      <span className="leemo-provider-offer-card__arrow">
+                        <ArrowRight className="h-3.5 w-3.5" aria-hidden />
                       </span>
-                      <ArrowRight className="h-4 w-4 text-[var(--leemo-ink-3)] transition-transform group-hover:translate-x-0.5" aria-hidden />
                     </span>
                     <span>
-                      <span className="block truncate text-[13px] font-medium text-[var(--leemo-ink)]">{provider.name}</span>
-                      <span className="mt-1 block text-[10.5px] leading-4 text-[var(--leemo-ink-3)]">
+                      <span className="block truncate text-[13.5px] font-semibold tracking-[-0.01em] text-[var(--leemo-ink)]">{provider.name}</span>
+                      <span className="mt-1 block text-[10.5px] leading-[1.55] text-[var(--leemo-ink-3)]">
                         {providerOfferSummary(provider)}{provider.configured ? " · 可添加另一账号" : ""}
                       </span>
                     </span>
@@ -334,18 +335,19 @@ export function ProviderOfferGrid({ providers, onChoose, disabled = false }: Pro
             </section>
           ))}
 
-          <section aria-labelledby="provider-group-custom">
-            <h4 id="provider-group-custom" className="mb-2 text-[11px] font-medium text-[var(--leemo-ink-2)]">自定义</h4>
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          <section className="leemo-provider-group" aria-labelledby="provider-group-custom">
+            <h4 id="provider-group-custom" className="leemo-provider-group__title">自定义</h4>
+            <div className="leemo-provider-offer-grid" data-layout="three-column">
               <button
                 type="button"
                 data-testid="provider-offer-card"
+                data-density="compact"
                 aria-label="配置 自定义服务"
                 disabled={disabled}
                 onClick={() => onChoose({ kind: "custom", name: "自定义服务", baseUrl: "", apiFormat: "anthropic", authMode: "api-key", productKind: "self-hosted" })}
-                className="group flex h-[116px] min-w-0 flex-col justify-between rounded-md border border-dashed border-[var(--leemo-line)] bg-white p-3.5 text-left transition-colors hover:border-[var(--leemo-ink-3)] hover:bg-[var(--leemo-bg)] disabled:cursor-not-allowed disabled:opacity-45"
+                className="leemo-provider-offer-card group border-dashed"
               >
-                <span className="grid h-9 w-9 place-items-center rounded-md border border-[var(--leemo-line)] bg-[var(--leemo-bg)] text-[var(--leemo-ink-2)]">
+                <span className="leemo-provider-brand">
                   <Plus className="h-4 w-4" aria-hidden />
                 </span>
                 <span>

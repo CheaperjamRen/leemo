@@ -31,6 +31,9 @@ export interface SkillsState {
   refresh(): Promise<void>;
   /** Flip one skill by stable id (bare name remains accepted for old callers). */
   toggle(idOrName: string): void;
+  /** Apply one explicit choice to a product collection in one state update and
+   * one host synchronization. Individual switches remain independent. */
+  setCollectionEnabled(collectionId: string, enabled: boolean): void;
   openDir(): Promise<void>;
   pickSource(kind: "archive" | "folder"): Promise<string | undefined>;
   inspectSource(source: string, securityScan?: boolean): Promise<SkillSourceInspectionView | undefined>;
@@ -73,7 +76,7 @@ export function createSkillsStore(
   client: BridgeClient,
   preferences?: SkillPreferenceAdapter,
 ): StoreApi<SkillsState> {
-  const toggleVersions = new Map<string, number>();
+  const mutationVersions = new Map<string, number>();
   let preparationPoll: ReturnType<typeof setTimeout> | undefined;
 
   return createStore<SkillsState>((set, get) => {
@@ -169,8 +172,8 @@ export function createSkillsStore(
         const previousOverride = preferences?.get(id);
         const currentlyDisabled = get().disabled.includes(id);
         const nextDisabled = !currentlyDisabled;
-        const version = (toggleVersions.get(id) ?? 0) + 1;
-        toggleVersions.set(id, version);
+        const version = (mutationVersions.get(id) ?? 0) + 1;
+        mutationVersions.set(id, version);
 
         set((state) => ({
           disabled: nextDisabled
@@ -185,7 +188,7 @@ export function createSkillsStore(
             await syncCurrentList();
           } catch (error: unknown) {
             // A stale failed request must not undo a newer click on the same row.
-            if (toggleVersions.get(id) !== version) return;
+            if (mutationVersions.get(id) !== version) return;
             set((state) => ({
               disabled: nextDisabled
                 ? state.disabled.filter((candidate) => candidate !== id)
@@ -193,6 +196,76 @@ export function createSkillsStore(
               error: messageOf(error, "技能开关没有生效。"),
             }));
             preferences?.restore(id, previousOverride);
+          }
+        })();
+      },
+
+      setCollectionEnabled: (collectionId, enabled) => {
+        const members = get().list.filter((skill) => (
+          skill.collectionId === collectionId && skill.available !== false
+        ));
+        if (members.length === 0) return;
+
+        const previousDisabled = new Set(get().disabled);
+        const changes = members.map((skill) => {
+          const id = skillKey(skill);
+          const version = (mutationVersions.get(id) ?? 0) + 1;
+          mutationVersions.set(id, version);
+          return {
+            id,
+            version,
+            wasDisabled: previousDisabled.has(id),
+            previousOverride: preferences?.get(id),
+          };
+        });
+        const memberIds = new Set(changes.map((change) => change.id));
+
+        set((state) => ({
+          disabled: enabled
+            ? state.disabled.filter((id) => !memberIds.has(id))
+            : [
+                ...state.disabled.filter((id) => !memberIds.has(id)),
+                ...changes.map((change) => change.id),
+              ],
+          error: undefined,
+        }));
+        for (const change of changes) preferences?.set(change.id, enabled);
+
+        void (async () => {
+          try {
+            await syncCurrentList();
+          } catch (error: unknown) {
+            const targetDisabled = !enabled;
+            const currentDisabled = new Set(get().disabled);
+            const rollback = changes.filter((change) => (
+              mutationVersions.get(change.id) === change.version
+              && currentDisabled.has(change.id) === targetDisabled
+            ));
+            if (rollback.length === 0) return;
+
+            const syncError = messageOf(error, "技能套件开关没有生效。");
+            const rollbackById = new Map(rollback.map((change) => [change.id, change.wasDisabled]));
+            set((state) => ({
+              disabled: [
+                ...state.disabled.filter((id) => !rollbackById.has(id)),
+                ...rollback.filter((change) => change.wasDisabled).map((change) => change.id),
+              ],
+              error: syncError,
+            }));
+            for (const change of rollback) {
+              preferences?.restore(change.id, change.previousOverride);
+            }
+            try {
+              // The host may already have accepted a newer individual toggle.
+              // Reconcile the actual rollback snapshot once so renderer and
+              // runtime do not stay split-brained; this is deliberately not a
+              // retry loop.
+              await syncCurrentList();
+            } catch (reconcileError: unknown) {
+              set({
+                error: `${syncError}；恢复后的技能状态仍未同步：${messageOf(reconcileError, "请再试一次。")}`,
+              });
+            }
           }
         })();
       },
@@ -334,6 +407,10 @@ export function createSkillsStore(
 
       removeSkill: async (id) => {
         const skill = findSkill(get().list, id);
+        const removedMembers = skill?.collectionId
+          ? get().list.filter((candidate) => candidate.collectionId === skill.collectionId)
+          : skill ? [skill] : [];
+        const receiptLabel = skill?.collectionLabel ?? skill?.name ?? "Skill";
         set({ adminStatus: "removing", adminError: undefined, receipt: undefined });
         try {
           await client.invoke("bridge:removeSkill", { id });
@@ -344,14 +421,19 @@ export function createSkillsStore(
           });
           return false;
         }
+        for (const member of removedMembers) {
+          const memberId = skillKey(member);
+          preferences?.restore(memberId, undefined);
+          mutationVersions.delete(memberId);
+        }
         try {
           await reloadAll();
           await syncCurrentList();
-          set({ adminStatus: "idle", receipt: `已卸载 ${skill?.name ?? "Skill"}` });
+          set({ adminStatus: "idle", receipt: `已卸载 ${receiptLabel}` });
         } catch (error: unknown) {
           set({
             adminStatus: "idle",
-            receipt: `已卸载 ${skill?.name ?? "Skill"}`,
+            receipt: `已卸载 ${receiptLabel}`,
             adminError: `Skill 已卸载，但页面刷新失败：${messageOf(error, "请重新打开技能页。")}`,
           });
         }

@@ -13,6 +13,17 @@ import { createAcademicSearchMcp } from "../bridge/academic-search-mcp";
 import { createDocumentMcp, LEEMO_DOCUMENT_TOOL_NAMES } from "../bridge/document-mcp";
 import { createVisualizationMcp } from "../bridge/visualization-mcp";
 import { createLearningMcp } from "../bridge/learning-mcp";
+import {
+  createScheduledTaskMcp,
+  type ScheduledTaskAdmin,
+} from "../bridge/scheduled-task-mcp";
+import {
+  createCaptureTaskMcp,
+  LEEMO_CAPTURE_TASK_TOOL_NAMES,
+} from "../bridge/capture-task-mcp";
+import { createWorkOverviewMcp } from "../bridge/work-overview-mcp";
+import type { CaptureAdminService } from "../main/capture-admin";
+import type { TaskAdminService } from "../main/task-admin";
 import type { LearningService } from "../learning";
 import { createMemoryMcp, type MemoryMcp } from "../bridge/memory-mcp";
 import {
@@ -24,7 +35,13 @@ import { startSearchShim, chooseSearchWiring, type SearchShimHandle, type Search
 import { buildSearchPlan } from "./search-plan";
 import { buildSourceChain, runSearchChain } from "./web-search";
 import { createArxivSearchClient } from "./arxiv-search";
-import { normalizeSdkStream, toUserFacingRunError, type LeemoEvent } from "../bridge/events";
+import {
+  createModelUsageCursor,
+  normalizeSdkStream,
+  toUserFacingRunError,
+  type LeemoEvent,
+  type ModelUsageCursor,
+} from "../bridge/events";
 import { resolvePricing } from "../bridge/pricing";
 import { fetchBalance } from "../bridge/balance";
 import { cloneModelCapabilityEvidenceMap } from "../bridge/model-capabilities";
@@ -49,6 +66,11 @@ import {
   officeSkillMetadata,
   type OfficeSkillRuntime,
 } from "./office-skills";
+import {
+  superpowersSkillMetadata,
+  type SuperpowersSkillDefinition,
+  type SuperpowersSkillRuntime,
+} from "./superpowers-skills";
 import type { ManagedSkillRecord, SkillAdminService } from "./skill-admin-service";
 import {
   mergeProviderHeaders,
@@ -56,8 +78,15 @@ import {
   removeProvider,
   type ProviderConfigFile,
 } from "./provider-config";
-import { testProviderConnection, type ProviderTestTarget } from "./provider-test";
+import { requestProviderText, testProviderConnection, type ProviderTestTarget } from "./provider-test";
 import { listProviderModels, type ProviderModelsTarget } from "./provider-models";
+import type { ProviderSubscriptionAuth } from "./provider-subscription-auth";
+import type {
+  CodexApprovalRequest,
+  CodexConversationHandle,
+  CodexExecutionRuntime,
+} from "./codex-conversation";
+import { createCodexDynamicToolRegistry } from "./codex-dynamic-tools";
 import {
   COMPUTER_MCP_ID,
   PLAYWRIGHT_MCP_ID,
@@ -73,7 +102,7 @@ import { ProviderRegistry } from "../gateway/registry";
 import { startGateway, type GatewayHandle } from "../gateway/server";
 import { formatPromptWithAttachments } from "./attachments";
 import { providerApiKeyHeaderForKind, type CatalogEntry } from "./provider-catalog";
-import type { Bridge, ConversationHandle } from "../bridge/pool";
+import type { Bridge, ConversationHandle, ConversationRoundOptions } from "../bridge/pool";
 import type {
   BridgeInvokeMap,
   BridgeEventMap,
@@ -84,6 +113,7 @@ import type {
   ProviderConfigView,
   ProviderDraft,
   ProviderError,
+  ResolvedTaskField,
   SearchSourceId,
   SearchSourceStatus,
   McpServerView,
@@ -95,6 +125,7 @@ import type {
 } from "../bridge/contract";
 import type {
   AskUserMcp,
+  AskUserInput,
   AskUserPayload,
   ApprovalRequest,
   ApprovalDecision,
@@ -144,6 +175,15 @@ export interface HostDeps {
   catalog: CatalogEntry[] | (() => CatalogEntry[]);
   /** Persisted provider config. Omit → the 5 config channels report "unavailable". */
   providerStore?: ProviderConfigStore;
+  /** Process-owned login service for subscription providers. Omit in tests/dev
+   *  hosts that do not ship the native login component. */
+  subscriptionAuth?: ProviderSubscriptionAuth;
+  /** Isolated native runtime for login-based OpenAI subscriptions. Internal
+   * engine naming stays host-only and never enters the renderer contract. */
+  codexRuntime?: CodexExecutionRuntime;
+  /** External Gemini subscription runtime. Like ChatGPT subscription, this is
+   * process-owned and absent when the user's local client is not installed. */
+  geminiRuntime?: CodexExecutionRuntime;
   /** HTTP seam for connection tests / model discovery. Omit → global fetch. */
   fetchFn?: typeof fetch;
   dataDir: string;
@@ -173,6 +213,9 @@ export interface HostDeps {
    * init does not count; once text/thinking/tool/result starts, long work is
    * unrestricted. Override only in tests. */
   firstProgressTimeoutMs?: number;
+  /** Maximum wait for a permission decision. Unanswered approvals fail closed;
+   * ordinary AskUser questions keep their independent interaction semantics. */
+  approvalTimeoutMs?: number;
   push: <K extends keyof BridgeEventMap>(channel: K, payload: BridgeEventMap[K]) => void;
   queryImpl?: typeof sdkQuery;
   /** Test/dev override for the native CLI's process-owned PreToolUse endpoint.
@@ -198,6 +241,10 @@ export interface HostDeps {
    * two build-time drop folders and copied to a real local plugin once per
    * content revision, so packaged users never need GitHub or a VPN. */
   bundledSkills?: BundledSkillRuntime;
+  /** Optional offline development workflow suite. Its cards are visible as a
+   * separate default-off collection; its plugin is routed only when at least
+   * one qualified Superpowers Skill is selected for the conversation. */
+  superpowersSkills?: SuperpowersSkillRuntime;
   /** Native file/folder picker. The renderer receives only a path the user
    * explicitly selected, and has no general filesystem browsing capability. */
   pickSkillSource?: (kind: "archive" | "folder") => Promise<string | undefined>;
@@ -234,6 +281,13 @@ export interface HostDeps {
   /** Global structured English-learning ledger. It stays outside memory prompt
    * injection and is exposed to momo only through bounded first-party tools. */
   learningService?: LearningService;
+  /** Main-process scheduler facade. When present, momo receives the same
+   * validated task service as the visible scheduling page. */
+  scheduledTasks?: ScheduledTaskAdmin;
+  /** The exact process-owned services used by the visible notes and tasks
+   * workboard. Both are required before momo receives the matching tools. */
+  captures?: CaptureAdminService;
+  tasks?: TaskAdminService;
 }
 
 export interface BridgeHost {
@@ -247,9 +301,10 @@ export interface BridgeHost {
 }
 
 interface ConvRecord {
+  engine: CatalogEntry["executionEngine"];
   purpose: "main" | "wiki";
-  handle: ConversationHandle;
-  bridge: Bridge;
+  handle: ConversationHandle | CodexConversationHandle;
+  bridge?: Bridge;
   broker: ApprovalBroker;
   askMcp: AskUserMcp;
   memoryMcp?: MemoryMcp;
@@ -297,6 +352,13 @@ interface ConvRecord {
    * not depend on a provider event to leave its running state. Object identity
    * also fences late events from an interrupted turn out of a newer turn. */
   nextRoundId: number;
+  /** SDK modelUsage is cumulative across turns. One host-owned cursor per
+   * conversation converts it to per-round deltas before it crosses IPC. */
+  modelUsageCursor: ModelUsageCursor;
+  /** An engine without in-flight steering accepted an additional instruction.
+   * The engine owns its exact prompt payload; the host only starts its next
+   * turn after the current one reaches a normal terminal state. */
+  queuedGuidanceFollowUp: boolean;
   activeRound?: {
     id: number;
     interrupted: Promise<void>;
@@ -310,6 +372,27 @@ interface ConvRecord {
 
 const PROCESS_STOP_UNCONFIRMED_MESSAGE =
   "未能确认后台命令已经停止。为避免继续写入，此对话已锁定；请关闭 Leemo 后检查任务管理器。";
+
+const SUPERPOWERS_BOOTSTRAP = [
+  "\n\n## 已启用的 Superpowers 开发流程",
+  "回复或执行前，先调用 Skill 工具读取 `superpowers:using-superpowers`。",
+  "由该技能判断本轮应使用哪些已启用的开发方法；不要调用未启用的技能。",
+  "如与用户当前要求冲突，以用户要求为准。",
+].join("\n");
+
+function withSuperpowersBootstrap(prompt: string, enabled: boolean): string;
+function withSuperpowersBootstrap(prompt: undefined, enabled: boolean): string | undefined;
+function withSuperpowersBootstrap(prompt: string | undefined, enabled: boolean): string | undefined;
+function withSuperpowersBootstrap(
+  prompt: string | undefined,
+  enabled: boolean,
+): string | undefined {
+  const base = prompt?.endsWith(SUPERPOWERS_BOOTSTRAP)
+    ? prompt.slice(0, -SUPERPOWERS_BOOTSTRAP.length)
+    : prompt;
+  if (!enabled) return base;
+  return `${base ?? ""}${SUPERPOWERS_BOOTSTRAP}`;
+}
 
 const NON_MUTATING_NATIVE_TOOLS = new Set([
   "Read",
@@ -329,6 +412,8 @@ const NON_MUTATING_NATIVE_TOOLS = new Set([
   "EnterPlanMode",
   "ExitPlanMode",
   "Skill",
+  LEEMO_CAPTURE_TASK_TOOL_NAMES.listNotes,
+  LEEMO_CAPTURE_TASK_TOOL_NAMES.listTasks,
 ]);
 
 const NON_MUTATING_MCP_PREFIXES = [
@@ -337,6 +422,7 @@ const NON_MUTATING_MCP_PREFIXES = [
   "mcp__leemo-learning__",
   "mcp__leemo-search__",
   "mcp__leemo-academic-search__",
+  "mcp__leemo-work-overview__",
 ];
 
 function toolMayChangeWorkspace(toolName: string): boolean {
@@ -410,7 +496,107 @@ export function loadSearchKeys(store?: ProviderConfigStore): SearchSourceKeys {
     bochaKey: pick(stored?.bocha, "BOCHA_API_KEY"),
     googleKey: pick(stored?.google, "GOOGLE_SEARCH_API_KEY"),
     googleCx: pick(stored?.googleCx, "GOOGLE_SEARCH_ENGINE_ID"),
+    exaKey: pick(stored?.exa, "EXA_API_KEY"),
+    braveKey: pick(stored?.brave, "BRAVE_SEARCH_API_KEY"),
+    serpapiKey: pick(stored?.serpapi, "SERPAPI_API_KEY"),
+    serperKey: pick(stored?.serper, "SERPER_API_KEY"),
+    firecrawlKey: pick(stored?.firecrawl, "FIRECRAWL_API_KEY"),
   };
+}
+
+function isExternalAgentRecord(rec: ConvRecord): rec is ConvRecord & {
+  engine: "openai-app-server" | "gemini-acp";
+  handle: CodexConversationHandle;
+} {
+  return rec.engine !== "claude-agent-sdk";
+}
+
+type UnknownRecord = Record<string, unknown>;
+
+function unknownRecord(value: unknown): UnknownRecord | undefined {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+    ? value as UnknownRecord
+    : undefined;
+}
+
+function unknownText(value: unknown): string | undefined {
+  return typeof value === "string" ? value : undefined;
+}
+
+function formatPromptWithNoteReferences(
+  prompt: string,
+  noteReferences: string[] | undefined,
+  captures: CaptureAdminService | undefined,
+): string {
+  if (!noteReferences?.length || !captures) return prompt;
+  const seen = new Set<string>();
+  const notes = noteReferences.flatMap((id) => {
+    if (typeof id !== "string" || seen.has(id)) return [];
+    seen.add(id);
+    const note = captures.getNote(id);
+    return note ? [note] : [];
+  });
+  if (notes.length === 0) return prompt;
+  return `${prompt}\n\n--- Leemo 便签引用（仅供本轮上下文）---\n${notes.map((note) =>
+    `[便签：${note.title.trim() || "未命名便签"}]\n${note.markdown}`,
+  ).join("\n\n")}\n--- 便签引用结束 ---`;
+}
+
+function formatPromptWithGoal(prompt: string, goalText: string | undefined): string {
+  const goal = goalText?.trim();
+  if (!goal) return prompt;
+  return `${prompt}\n\n[Leemo 当前目标]\n${goal}\n请让本轮工作与这个目标保持一致；不要虚构进度，也不要擅自把目标标记为完成。`;
+}
+
+/** Convert the native runtime's structured questions into Leemo's one card
+ * format, then restore its id-keyed response shape. Secret questions never
+ * cross IPC because credentials belong to process-owned settings flows. */
+async function answerCodexQuestionCard(
+  askMcp: AskUserMcp,
+  params: unknown,
+): Promise<{ answers: Record<string, { answers: string[] }> }> {
+  const body = unknownRecord(params);
+  const rawQuestions = Array.isArray(body?.questions) ? body.questions : [];
+  const visible: Array<{ id: string; question: AskUserInput["questions"][number] }> = [];
+  const answers: Record<string, { answers: string[] }> = {};
+  for (const candidate of rawQuestions) {
+    const question = unknownRecord(candidate);
+    const id = unknownText(question?.id);
+    const prompt = unknownText(question?.question);
+    if (!id || !prompt) continue;
+    if (question?.isSecret === true) {
+      answers[id] = { answers: [] };
+      continue;
+    }
+    const options = (Array.isArray(question?.options) ? question.options : [])
+      .map((option) => unknownRecord(option))
+      .map((option) => ({
+        label: unknownText(option?.label) ?? "",
+        description: unknownText(option?.description),
+      }))
+      .filter((option) => option.label.length > 0)
+      .map((option) => ({
+        label: option.label,
+        ...(option.description ? { description: option.description } : {}),
+      }));
+    visible.push({
+      id,
+      question: {
+        question: prompt,
+        ...(unknownText(question?.header) ? { header: unknownText(question?.header) } : {}),
+        options,
+      },
+    });
+  }
+  if (visible.length === 0) return { answers };
+  const response = await askMcp.requestAnswer({ questions: visible.map((item) => item.question) });
+  for (const [index, item] of visible.entries()) {
+    const selected = [...(response.items[index]?.selected ?? [])];
+    const other = response.items[index]?.other?.trim();
+    if (other) selected.push(other);
+    answers[item.id] = { answers: selected };
+  }
+  return { answers };
 }
 
 /** Anthropic-compatible routes need the transparent local shim whenever Leemo
@@ -420,15 +606,92 @@ export function providerNeedsAnthropicShim(
   entry: CatalogEntry,
   webSearchEnabled: boolean,
 ): boolean {
-  return entry.provider.apiFormat === "anthropic" && (
+  return entry.spec.authMode !== "oauth-subscription"
+    && entry.provider.apiFormat === "anthropic" && (
     webSearchEnabled
     || entry.apiKeyHeader === "x-api-key"
     || Object.keys(entry.headers ?? {}).length > 0
   );
 }
 
+const TASK_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+const TASK_TIME_RE = /^(?:[01]\d|2[0-3]):[0-5]\d$/;
+
+function validTaskDate(value: string): boolean {
+  if (!TASK_DATE_RE.test(value)) return false;
+  const [year, month, day] = value.split("-").map(Number);
+  const parsed = new Date(Date.UTC(year, month - 1, day));
+  return parsed.getUTCFullYear() === year
+    && parsed.getUTCMonth() === month - 1
+    && parsed.getUTCDate() === day;
+}
+
+function taskTimePrompt(texts: string[], localNow: string, timeZone?: string): string {
+  return [
+    "你只负责把待办原文里明确出现的时间信息整理成 JSON，不要改写或补猜。",
+    `当前本地时间：${localNow}${timeZone ? `（${timeZone}）` : ""}`,
+    "区分 planned（计划开始）、due（截止）、reminder（提醒）、reminderOffset（提前提醒）、recurrence（重复）。",
+    "source 必须逐字复制自对应原文；无法确定角色时不要输出该字段。",
+    "只返回 JSON：{\"items\":[{\"index\":0,\"fields\":[{\"kind\":\"planned\",\"date\":\"YYYY-MM-DD\",\"time\":\"HH:mm\",\"source\":\"原文\"}]}]}。",
+    "reminderOffset 使用 minutesBefore；recurrence 的 rule 只能是 daily、weekly、monthly、weekdays。",
+    ...texts.map((text, index) => `${index}. ${text}`),
+  ].join("\n");
+}
+
+function parseResolvedTaskFields(
+  rawText: string,
+  sourceTexts: string[],
+): Array<{ index: number; fields: ResolvedTaskField[] }> | undefined {
+  const jsonText = rawText.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
+  let value: unknown;
+  try {
+    value = JSON.parse(jsonText) as unknown;
+  } catch {
+    return undefined;
+  }
+  const root = unknownRecord(value);
+  if (!Array.isArray(root?.items)) return undefined;
+  const seen = new Set<number>();
+  const items: Array<{ index: number; fields: ResolvedTaskField[] }> = [];
+  for (const candidate of root.items) {
+    const item = unknownRecord(candidate);
+    const index = item?.index;
+    if (!Number.isInteger(index) || (index as number) < 0 || (index as number) >= sourceTexts.length || seen.has(index as number)) {
+      continue;
+    }
+    const sourceText = sourceTexts[index as number];
+    const fields: ResolvedTaskField[] = [];
+    for (const fieldCandidate of Array.isArray(item?.fields) ? item.fields : []) {
+      const field = unknownRecord(fieldCandidate);
+      const kind = unknownText(field?.kind);
+      const source = unknownText(field?.source)?.trim();
+      if (!source || !sourceText.includes(source)) continue;
+      if (kind === "planned" || kind === "due" || kind === "reminder") {
+        const date = unknownText(field?.date);
+        const time = unknownText(field?.time);
+        if (!date || !validTaskDate(date) || (time !== undefined && !TASK_TIME_RE.test(time))) continue;
+        fields.push({ kind, date, ...(time ? { time } : {}), source });
+      } else if (kind === "reminderOffset") {
+        const minutesBefore = field?.minutesBefore;
+        if (typeof minutesBefore !== "number" || !Number.isInteger(minutesBefore) || minutesBefore <= 0) continue;
+        fields.push({ kind, minutesBefore, source });
+      } else if (kind === "recurrence") {
+        const rule = field?.rule;
+        if (rule === "daily" || rule === "weekly" || rule === "monthly" || rule === "weekdays") {
+          fields.push({ kind, rule, source });
+        }
+      }
+    }
+    if (fields.length > 0) {
+      seen.add(index as number);
+      items.push({ index: index as number, fields });
+    }
+  }
+  return items.length > 0 ? items : undefined;
+}
+
 export function createBridgeHost(deps: HostDeps): BridgeHost {
-  const { catalog, providerStore, fetchFn, dataDir, workspaceRoot, routeRootArtifactPath, filesystemBoundary, firstProgressTimeoutMs, push, queryImpl, toolGovernanceHookUrl, readGlobalMemory, memoryDir, memoryGovernance, skillsIO, skillAdmin, officeSkills, bundledSkills, openPath, resolveNotebook, readNotebookMemory, cliExecutablePath, builtinMcpRuntime, readUsageSummary, learningService } = deps;
+  const { catalog, providerStore, subscriptionAuth, codexRuntime, geminiRuntime, fetchFn, dataDir, workspaceRoot, routeRootArtifactPath, filesystemBoundary, firstProgressTimeoutMs, approvalTimeoutMs, push, queryImpl, toolGovernanceHookUrl, readGlobalMemory, memoryDir, memoryGovernance, skillsIO, skillAdmin, officeSkills, bundledSkills, superpowersSkills, openPath, resolveNotebook, readNotebookMemory, cliExecutablePath, builtinMcpRuntime, readUsageSummary, learningService, scheduledTasks, captures, tasks } = deps;
   const toolGovernanceHookPath = `/__leemo/hooks/tool-governance-${randomUUID()}`;
 
   const homeWorkspace: ConversationWorkspace = {
@@ -563,9 +826,40 @@ export function createBridgeHost(deps: HostDeps): BridgeHost {
   /** Always read through this — a saved provider must be visible immediately,
    *  so nothing may capture the array once at construction. */
   const getCatalog = (): CatalogEntry[] => (typeof catalog === "function" ? catalog() : catalog);
-  const providerIsReady = (entry: CatalogEntry): boolean => entry.spec.authMode === "none"
+  const providerIsReady = (entry: CatalogEntry): boolean => (
+    entry.spec.authMode === "none" || entry.spec.authMode === "oauth-subscription"
+  )
     ? entry.spec.configured === true
     : entry.provider.apiKey.trim().length > 0;
+
+  function setupMessage(entry: CatalogEntry, suffix = ""): string {
+    if (entry.spec.authMode === "none") {
+      return `「${entry.spec.name}」还没有选择可用模型，先去设置页读取并选择一个模型${suffix}`;
+    }
+    if (entry.spec.authMode === "oauth-subscription") {
+      return `「${entry.spec.name}」还没有完成登录与保存，先去设置页连接订阅${suffix}`;
+    }
+    return `「${entry.spec.name}」还没有配置 API Key，先去设置页填一个${suffix}`;
+  }
+
+  async function requireLiveSubscription(entry: CatalogEntry): Promise<void> {
+    if (entry.spec.authMode !== "oauth-subscription") return;
+    const status = subscriptionAuth
+      ? await subscriptionAuth.getStatus(entry.provider.id)
+      : { state: "unavailable" as const };
+    if (status.state !== "connected") {
+      throw new Error(`「${entry.spec.name}」的订阅登录已失效，请到设置页重新登录。`);
+    }
+  }
+
+  function subscriptionEntry(providerId: string): CatalogEntry {
+    const entry = getCatalog().find((candidate) => candidate.provider.id === providerId);
+    if (!entry) throw new Error(`unknown provider: ${providerId}`);
+    if (entry.spec.authMode !== "oauth-subscription") {
+      throw new Error(`「${entry.spec.name}」不支持订阅登录。`);
+    }
+    return entry;
+  }
   const httpFetch = (): typeof fetch => fetchFn ?? fetch;
   const academicSearch = createArxivSearchClient({ fetchFn: httpFetch() });
 
@@ -605,14 +899,20 @@ export function createBridgeHost(deps: HostDeps): BridgeHost {
   }
 
   const conversations = new Map<string, ConvRecord>();
+  let latestSkillSyncRequestId = 0;
 
   function bundledSkillForQualifiedName(name: string): BundledSkillDefinition | undefined {
     return bundledSkills?.snapshot().skills.find((skill) => skill.qualifiedName === name);
   }
 
-  function managedSkillFields(record: ManagedSkillRecord): Pick<
+  function superpowersSkillForQualifiedName(name: string): SuperpowersSkillDefinition | undefined {
+    return superpowersSkills?.snapshot().skills.find((skill) => skill.qualifiedName === name);
+  }
+
+  function managedSkillFields(record: ManagedSkillRecord, collectionMemberCount?: number): Pick<
     SkillInfo,
     | "description"
+    | "displayName"
     | "category"
     | "categoryLabel"
     | "id"
@@ -625,11 +925,17 @@ export function createBridgeHost(deps: HostDeps): BridgeHost {
     | "license"
     | "scanStatus"
     | "securityFindings"
+    | "collectionId"
+    | "collectionLabel"
+    | "collectionMemberCount"
+    | "setupRequired"
+    | "setupMessage"
     | "canRemove"
     | "canUpdate"
   > {
     return {
       description: record.description,
+      ...(record.displayName ? { displayName: record.displayName } : {}),
       ...(record.category ? { category: record.category } : {}),
       ...(record.categoryLabel ? { categoryLabel: record.categoryLabel } : {}),
       id: record.id,
@@ -642,8 +948,15 @@ export function createBridgeHost(deps: HostDeps): BridgeHost {
       ...(record.license ? { license: record.license } : {}),
       scanStatus: record.scanStatus,
       securityFindings: record.findings.map((finding) => ({ ...finding })),
+      ...(record.familyCatalogId ? {
+        collectionId: `family:${record.familyCatalogId}`,
+        collectionLabel: record.familyLabel ?? "技能套装",
+        collectionMemberCount: collectionMemberCount ?? 1,
+      } : {}),
+      ...(record.setupRequired ? { setupRequired: true } : {}),
+      ...(record.setupMessage ? { setupMessage: record.setupMessage } : {}),
       canRemove: true,
-      canUpdate: record.sourceKind === "github" || record.sourceKind === "skillsh",
+      canUpdate: !record.packageId && (record.sourceKind === "github" || record.sourceKind === "skillsh"),
     };
   }
 
@@ -674,16 +987,48 @@ export function createBridgeHost(deps: HostDeps): BridgeHost {
     }
   }
 
+  function managedFamilySkills(): SkillInfo[] {
+    if (!skillAdmin) return [];
+    try {
+      const records = skillAdmin.listManaged();
+      const memberCounts = new Map<string, number>();
+      for (const record of records) {
+        if (record.packageId) memberCounts.set(record.packageId, (memberCounts.get(record.packageId) ?? 0) + 1);
+      }
+      return records.flatMap((record): SkillInfo[] => {
+        if (!record.packageId || !record.qualifiedName || !record.familyCatalogId) return [];
+        return [{
+          name: record.name,
+          commandName: record.candidate,
+          qualifiedName: record.qualifiedName,
+          source: "user",
+          ...managedSkillFields(record, memberCounts.get(record.packageId) ?? 1),
+          requirements: ["core"],
+          defaultEnabled: true,
+          available: record.available !== false,
+          ...(record.unavailableReason ? { unavailableReason: record.unavailableReason } : {}),
+        }];
+      });
+    } catch (error) {
+      console.error("[leemo:host] managed family scan failed, continuing without family Skills:", error);
+      return [];
+    }
+  }
+
   function listSkills(): SkillInfo[] {
     const office = officeSkills ? officeSkillMetadata(officeSkills.snapshot()) : [];
     const bundled = bundledSkills ? bundledSkillMetadata(bundledSkills.snapshot()) : [];
-    return [...bundled, ...office, ...scanUserSkills()];
+    const superpowers = superpowersSkills
+      ? superpowersSkillMetadata(superpowersSkills.snapshot())
+      : [];
+    return [...bundled, ...office, ...superpowers, ...scanUserSkills(), ...managedFamilySkills()];
   }
 
   interface SkillSelection {
     enabledQualifiedNames: string[];
     enabledBundledIds: string[];
     enabledOfficeIds: string[];
+    enabledSuperpowersIds: string[];
     enabledCustomQualifiedNames: string[];
     pluginPaths: string[];
   }
@@ -699,18 +1044,31 @@ export function createBridgeHost(deps: HostDeps): BridgeHost {
     const enabledQualifiedNames: string[] = [];
     const enabledBundledIds: string[] = [];
     const enabledOfficeIds: string[] = [];
+    const enabledSuperpowersIds: string[] = [];
     const enabledCustomQualifiedNames: string[] = [];
+    const managedFamilyPluginPaths = new Set<string>();
     for (const qualifiedName of requested) {
       if (enabledQualifiedNames.includes(qualifiedName)) continue;
       const skill = known.get(qualifiedName);
       if (!skill || skill.available === false) continue;
+      if (skill.collectionId?.startsWith("family:")) {
+        const pluginPath = skillAdmin?.pluginPathForQualifiedName(qualifiedName);
+        if (!pluginPath) continue;
+        managedFamilyPluginPaths.add(pluginPath);
+      }
       enabledQualifiedNames.push(qualifiedName);
       const bundled = bundledSkillForQualifiedName(qualifiedName);
       if (bundled) enabledBundledIds.push(bundled.id);
       else {
         const office = officeSkillForQualifiedName(qualifiedName);
         if (office) enabledOfficeIds.push(office.officeId);
-        else if (skill.source === "user") enabledCustomQualifiedNames.push(qualifiedName);
+        else {
+          const superpowers = superpowersSkillForQualifiedName(qualifiedName);
+          if (superpowers) enabledSuperpowersIds.push(superpowers.id);
+          else if (skill.source === "user" && !skill.collectionId?.startsWith("family:")) {
+            enabledCustomQualifiedNames.push(qualifiedName);
+          }
+        }
       }
     }
 
@@ -722,20 +1080,34 @@ export function createBridgeHost(deps: HostDeps): BridgeHost {
     if (enabledCustomQualifiedNames.length > 0 && memoryDir) {
       pluginPaths.push(pluginRootFor(memoryDir));
     }
+    pluginPaths.push(...managedFamilyPluginPaths);
     const officeSnapshot = officeSkills?.snapshot();
     if (enabledOfficeIds.length > 0 && officeSnapshot?.status === "ready") {
       pluginPaths.push(officeSnapshot.pluginPath);
+    }
+    const superpowersSnapshot = superpowersSkills?.snapshot();
+    if (enabledSuperpowersIds.length > 0 && superpowersSnapshot?.status === "ready") {
+      pluginPaths.push(superpowersSnapshot.pluginPath);
     }
     return {
       enabledQualifiedNames,
       enabledBundledIds,
       enabledOfficeIds,
+      enabledSuperpowersIds,
       enabledCustomQualifiedNames,
       pluginPaths,
     };
   }
 
+  function requestsSuperpowers(qualifiedNames: readonly string[] | undefined): boolean {
+    return qualifiedNames?.some((name) => superpowersSkillForQualifiedName(name) !== undefined) === true;
+  }
+
   function applySkillSelection(extras: ConversationExtras, selection: SkillSelection): void {
+    extras.systemPromptAppend = withSuperpowersBootstrap(
+      extras.systemPromptAppend,
+      selection.enabledQualifiedNames.includes("superpowers:using-superpowers"),
+    );
     if (selection.enabledQualifiedNames.length === 0) {
       extras.pluginPaths = [];
       // With no plugin there is nothing for the SDK allow-list to filter. Keep
@@ -764,6 +1136,55 @@ export function createBridgeHost(deps: HostDeps): BridgeHost {
   function requireSkillAdmin(): SkillAdminService {
     if (!skillAdmin) throw new Error("当前运行环境没有启用 Skill 安装服务。");
     return skillAdmin;
+  }
+
+  function installedSkillDirectory(idOrName: string): string | undefined {
+    const key = idOrName.trim().toLocaleLowerCase();
+    const matches = (skill: Pick<SkillInfo, "id" | "name" | "commandName" | "qualifiedName">): boolean => (
+      skill.id?.toLocaleLowerCase() === key
+      || skill.name.toLocaleLowerCase() === key
+      || skill.commandName?.toLocaleLowerCase() === key
+      || skill.qualifiedName.toLocaleLowerCase() === key
+    );
+
+    const bundled = bundledSkills?.snapshot().skills.find(matches);
+    if (bundled) return bundled.sourceDir;
+    const superpowers = superpowersSkills?.snapshot().skills.find(matches);
+    if (superpowers) return superpowers.sourceDir;
+
+    const installed = scanUserSkills().find(matches);
+    if (installed?.dir) return installed.dir;
+    const managed = skillAdmin?.listManaged().find((record) => (
+      record.id.toLocaleLowerCase() === key
+      || record.name.toLocaleLowerCase() === key
+      || record.candidate.toLocaleLowerCase() === key
+      || record.qualifiedName?.toLocaleLowerCase() === key
+    ));
+    if (managed) return managed.dir;
+
+    const office = listSkills().find((skill) => matches(skill) && skill.qualifiedName.startsWith("leemo-office:"));
+    const officeSnapshot = officeSkills?.snapshot();
+    if (office && officeSnapshot?.status === "ready") {
+      return path.join(officeSnapshot.pluginPath, "skills", office.commandName ?? office.name);
+    }
+    return undefined;
+  }
+
+  function readInstalledSkillMarkdown(directory: string): { markdown: string } {
+    const file = path.join(directory, "SKILL.md");
+    if (skillsIO?.exists(file)) return { markdown: skillsIO.readFile(file) };
+    const info = fs.lstatSync(file);
+    if (!info.isFile() || info.size > 2 * 1024 * 1024) {
+      throw new Error("这个 Skill 的说明文档无法读取。");
+    }
+    return { markdown: fs.readFileSync(file, "utf8") };
+  }
+
+  async function loadSkillDetails(idOrName: string): Promise<{ markdown: string }> {
+    const id = requiredSkillId(idOrName);
+    const directory = installedSkillDirectory(id);
+    if (directory) return readInstalledSkillMarkdown(directory);
+    return await requireSkillAdmin().loadCatalogDetails(id);
   }
 
   function requiredSkillSource(value: unknown): string {
@@ -801,7 +1222,7 @@ export function createBridgeHost(deps: HostDeps): BridgeHost {
       ...(record.license ? { license: record.license } : {}),
       ...(record.revision ? { revision: record.revision } : {}),
       ...(record.repository ? { repository: record.repository } : {}),
-      canUpdate: record.sourceKind === "github" || record.sourceKind === "skillsh",
+      canUpdate: !record.packageId && (record.sourceKind === "github" || record.sourceKind === "skillsh"),
     };
   }
 
@@ -859,6 +1280,12 @@ export function createBridgeHost(deps: HostDeps): BridgeHost {
   function skillInstallOutcome(records: readonly ManagedSkillRecord[], trusted = false): SkillInstallOutcome {
     const installed = records.map(safeMutationItem);
     const sourceLabel = installed[0]?.sourceLabel ?? "未知来源";
+    const firstPackageId = records[0]?.packageId;
+    const familyLabel = firstPackageId
+      && records.length > 0
+      && records.every((record) => record.packageId === firstPackageId && record.familyLabel === records[0]?.familyLabel)
+      ? records[0]?.familyLabel
+      : undefined;
     const scanLabel = trusted
       ? "已通过预审"
       : installed.some((skill) => skill.scanStatus === "unscanned")
@@ -868,7 +1295,9 @@ export function createBridgeHost(deps: HostDeps): BridgeHost {
           : "未发现明显风险";
     return {
       installed,
-      receipt: `已安装 ${installed.map((skill) => skill.name).join("、")} · 来源 ${sourceLabel} · ${scanLabel}`,
+      receipt: familyLabel
+        ? `已安装 ${familyLabel} · ${installed.length} 个技能 · 来源 ${sourceLabel} · ${scanLabel}`
+        : `已安装 ${installed.map((skill) => skill.name).join("、")} · 来源 ${sourceLabel} · ${scanLabel}`,
     };
   }
 
@@ -885,38 +1314,58 @@ export function createBridgeHost(deps: HostDeps): BridgeHost {
   async function removeSkill(idValue: unknown): Promise<{ name?: string }> {
     const id = requiredSkillId(idValue);
     const service = requireSkillAdmin();
-    const record = service.listManaged().find((candidate) => candidate.id === id || candidate.name === id);
+    const managed = service.listManaged();
+    const record = managed.find((candidate) => candidate.id === id || candidate.name === id);
+    const removed = record?.packageId
+      ? managed.filter((candidate) => candidate.packageId === record.packageId)
+      : record ? [record] : [];
     service.remove(id);
-    hotRemoveManagedSkill(record);
+    hotRemoveManagedSkills(removed);
     return record?.name ? { name: record.name } : {};
   }
 
   function hotAddManagedSkills(records: readonly ManagedSkillRecord[]): void {
     if (records.length === 0) return;
     for (const rec of conversations.values()) {
-      const current = rec.extras.enabledSkills ?? selectSkills().enabledQualifiedNames;
+      const current = rec.extras.enabledSkills ?? [];
       const next = [...current];
       for (const record of records) {
-        const qualifiedName = `${LEEMO_PLUGIN_NAME}:${record.name}`;
+        const qualifiedName = record.qualifiedName ?? `${LEEMO_PLUGIN_NAME}:${record.candidate}`;
         if (!next.includes(qualifiedName)) next.push(qualifiedName);
       }
       applySkillSelection(rec.extras, selectSkills(next));
     }
   }
 
-  function hotRemoveManagedSkill(record: ManagedSkillRecord | undefined): void {
-    if (!record) return;
-    const qualifiedName = `${LEEMO_PLUGIN_NAME}:${record.name}`;
+  function hotRemoveManagedSkills(records: readonly ManagedSkillRecord[]): void {
+    if (records.length === 0) return;
+    const qualifiedNames = new Set(records.map((record) => (
+      record.qualifiedName ?? `${LEEMO_PLUGIN_NAME}:${record.candidate}`
+    )));
     for (const rec of conversations.values()) {
-      const current = rec.extras.enabledSkills ?? selectSkills().enabledQualifiedNames;
-      applySkillSelection(rec.extras, selectSkills(current.filter((name) => name !== qualifiedName)));
+      const current = rec.extras.enabledSkills ?? [];
+      applySkillSelection(rec.extras, selectSkills(current.filter((name) => !qualifiedNames.has(name))));
     }
   }
 
   const approvalWaiters = new Map<
     string,
-    { resolve: (d: ApprovalDecision) => void; conversationId: string }
+    {
+      resolve: (d: ApprovalDecision) => void;
+      conversationId: string;
+      timeout: ReturnType<typeof setTimeout>;
+    }
   >();
+  const permissionDecisionTimeoutMs = Math.max(1, approvalTimeoutMs ?? 120_000);
+
+  function settleApproval(id: string, decision: ApprovalDecision): boolean {
+    const waiter = approvalWaiters.get(id);
+    if (!waiter) return false;
+    approvalWaiters.delete(id);
+    clearTimeout(waiter.timeout);
+    waiter.resolve(decision);
+    return true;
+  }
   const askOwner = new Map<string, string>(); // askPayload.id → conversationId
   const approvalPersistence: ApprovalPersistence = deps.approvalPersistence ?? {
     getWhitelist: (): WhitelistEntry[] => [],
@@ -1089,7 +1538,7 @@ export function createBridgeHost(deps: HostDeps): BridgeHost {
       rec.notebookId,
       rec.personaCtx.rememberMode && memoryGovernance === undefined,
     );
-    rec.extras.systemPromptAppend = buildMomoSystemPrompt({
+    rec.extras.systemPromptAppend = withSuperpowersBootstrap(buildMomoSystemPrompt({
       ...rec.personaCtx,
       workspaceRoot: rec.workspace.root,
       workspaceName: rec.workspace.name,
@@ -1114,7 +1563,10 @@ export function createBridgeHost(deps: HostDeps): BridgeHost {
               : {}),
           }
         : {}),
-    });
+    }), rec.extras.enabledSkills?.includes("superpowers:using-superpowers") === true);
+    if (isExternalAgentRecord(rec)) {
+      rec.handle.setDeveloperInstructions(rec.extras.systemPromptAppend);
+    }
   }
 
   function nativeMemoryDirectory(conversationId: string, roundId: number): string {
@@ -1286,6 +1738,7 @@ export function createBridgeHost(deps: HostDeps): BridgeHost {
     label: string;
     keyless: boolean;
     note: string;
+    blockedReason?: string;
   }[] = [
     {
       id: "anysearch",
@@ -1323,6 +1776,43 @@ export function createBridgeHost(deps: HostDeps): BridgeHost {
       keyless: false,
       note: "仅兼容已有 API Key 与搜索引擎 ID；服务已停止接受新用户，不作为默认来源。",
     },
+    {
+      id: "exa",
+      label: "Exa",
+      keyless: false,
+      note: "面向 AI 的语义搜索，配置后作为通用增强来源。",
+    },
+    {
+      id: "brave",
+      label: "Brave Search",
+      keyless: false,
+      note: "使用独立网页索引的通用来源，需要 API Key。",
+    },
+    {
+      id: "serpapi",
+      label: "SerpAPI",
+      keyless: false,
+      note: "兼容 Google 搜索结果的备用来源，需要 API Key。",
+    },
+    {
+      id: "serper",
+      label: "Serper",
+      keyless: false,
+      note: "轻量 Google 搜索 API，需要 API Key。",
+    },
+    {
+      id: "bing",
+      label: "Bing Search",
+      keyless: false,
+      note: "Bing Search API 已停止服务。",
+      blockedReason: "Bing Search API 已停止服务。",
+    },
+    {
+      id: "firecrawl",
+      label: "Firecrawl",
+      keyless: false,
+      note: "搜索网页并返回可引用摘要，需要 API Key。",
+    },
   ];
 
   function searchSourceStatuses(): SearchSourceStatus[] {
@@ -1334,6 +1824,12 @@ export function createBridgeHost(deps: HostDeps): BridgeHost {
       tavily: !!keys.tavilyKey,
       bocha: !!keys.bochaKey,
       google: !!keys.googleKey && !!keys.googleCx,
+      exa: !!keys.exaKey,
+      brave: !!keys.braveKey,
+      serpapi: !!keys.serpapiKey,
+      serper: !!keys.serperKey,
+      bing: false,
+      firecrawl: !!keys.firecrawlKey,
     };
     return SEARCH_SOURCE_META.map((m) => ({
       ...m,
@@ -1351,6 +1847,9 @@ export function createBridgeHost(deps: HostDeps): BridgeHost {
 
   /** 存搜索源凭据（空串 = 清除）。写进 provider 那同一份加密件。 */
   function saveSearchKey(draft: BridgeInvokeMap["bridge:saveSearchKey"]["request"]): SearchSourceStatus[] {
+    if (draft.source === "bing") {
+      throw new Error("Bing Search API 已停止服务，无法保存配置。");
+    }
     // 没有 store 就没有能加密落盘的地方。静默假装存好了是最坏的结果 —— 用户会
     // 以为配好了，然后搜索一直用不上那把 key。requireProviderStore 报的是同一
     // 句人话，跟 provider 那五条通道保持一致。
@@ -1385,15 +1884,25 @@ export function createBridgeHost(deps: HostDeps): BridgeHost {
   ): Promise<string> {
     const entry = getCatalog().find((e) => e.provider.id === r.providerId);
     if (!entry) throw new Error(`unknown provider: ${r.providerId}`);
+    const useExternalAgentRuntime = entry.executionEngine !== "claude-agent-sdk";
+    const externalRuntime = entry.executionEngine === "openai-app-server"
+      ? codexRuntime
+      : entry.executionEngine === "gemini-acp"
+        ? geminiRuntime
+        : undefined;
+    if (useExternalAgentRuntime && !externalRuntime) {
+      throw new Error(entry.executionEngine === "gemini-acp"
+        ? "使用 Gemini 订阅前，请先安装 Gemini 客户端并完成 Google 登录，然后重启 Leemo。"
+        : "使用 ChatGPT 订阅前，请先安装 Codex 并完成登录，然后重启 Leemo。");
+    }
     // 轮 3 卡 F: the catalog now lists UNCONFIGURED families as offers, whose
     // apiKey is deliberately "". Refuse here with something a person can act on
     // — letting a blank token through would surface as an opaque upstream 401
     // several layers away from the actual cause.
     if (!providerIsReady(entry)) {
-      throw new Error(entry.spec.authMode === "none"
-        ? `「${entry.spec.name}」还没有选择可用模型，先去设置页读取并选择一个模型。`
-        : `「${entry.spec.name}」还没有配置 API Key，先去设置页填一个再开始对话。`);
+      throw new Error(setupMessage(entry, "再开始对话。"));
     }
+    await requireLiveSubscription(entry);
 
     const isWiki = r.purpose === "wiki";
 
@@ -1406,6 +1915,7 @@ export function createBridgeHost(deps: HostDeps): BridgeHost {
       await Promise.all([
         officeSkills?.ensureReady(),
         bundledSkills?.ensureReady(),
+        ...(requestsSuperpowers(r.enabledSkills) ? [superpowersSkills?.ensureReady()] : []),
       ]);
     }
     const skillSelection = selectSkills(isWiki ? [] : r.enabledSkills);
@@ -1570,54 +2080,71 @@ export function createBridgeHost(deps: HostDeps): BridgeHost {
     // the normalized selection here also handles the explicit all-off case:
     // no plugin path remains, so slash-command expansion cannot bypass the UI.
     applySkillSelection(extras, skillSelection);
-    const queryFn = buildQueryFn(extras, queryImpl);
+    const queryFn = useExternalAgentRuntime ? undefined : buildQueryFn(extras, queryImpl);
 
     // Resolved BEFORE createConversation because the env wiring needs the port.
     // See the search block further down for the three-state rationale.
-    const governanceGateway = toolGovernanceHookUrl === undefined && queryImpl === undefined
+    const governanceGateway = !useExternalAgentRuntime && toolGovernanceHookUrl === undefined && queryImpl === undefined
       ? await ensureGateway()
       : undefined;
     const nativeToolGovernanceHookUrl = toolGovernanceHookUrl
       ?? (governanceGateway === undefined
         ? undefined
         : `http://127.0.0.1:${governanceGateway.port}${toolGovernanceHookPath}`);
-    if (queryImpl === undefined && nativeToolGovernanceHookUrl === undefined) {
+    if (!useExternalAgentRuntime && queryImpl === undefined && nativeToolGovernanceHookUrl === undefined) {
       throw new Error("本地工作区保护启动失败，请重试。");
     }
-    const shim = providerNeedsAnthropicShim(entry, searchEnabled)
+    const shim = !useExternalAgentRuntime && providerNeedsAnthropicShim(entry, searchEnabled)
       ? await ensureSearchShim()
       : undefined;
-    const gatewayPort = entry.provider.apiFormat !== "anthropic"
+    const gatewayPort = !useExternalAgentRuntime && entry.provider.apiFormat !== "anthropic"
       // Legacy/test callers may inject a port. The desktop renderer never does;
       // production always takes the host-owned gateway path.
       ? r.gatewayPort ?? governanceGateway?.port ?? (await ensureGateway())?.port
       : undefined;
-    if (entry.provider.apiFormat !== "anthropic" && gatewayPort === undefined) {
+    if (!useExternalAgentRuntime && entry.provider.apiFormat !== "anthropic" && gatewayPort === undefined) {
       throw new Error("OpenAI 兼容网关启动失败，请重试或切换 Anthropic 兼容服务商。");
     }
 
-    const bridge = createBridge({ queryFn, dataDir });
+    let bridge: Bridge | undefined;
+    let claudeHandle: ConversationHandle | undefined;
     // A re-claim (轮 2 卡 C) hands us the id the renderer already persisted, plus
     // the session to resume. Everything downstream — broker, askMcp, push
     // envelopes — is keyed off `cid`, so adopting the caller's id keeps the
     // renderer's timeline and its SQLite primary key untouched.
-    const handle = bridge.createConversation({
-      provider: entry.provider,
-      modelId: r.modelId,
-      ...(gatewayPort !== undefined ? { gatewayPort } : {}),
-      // Only anthropic providers get the shim; openai ones must go through the
-      // gateway for translation (buildConversationEnv enforces the precedence).
-      ...(shim ? { searchShimPort: shim.port } : {}),
-      ...(r.conversationId !== undefined ? { id: r.conversationId } : {}),
-      ...(r.resumeSessionId !== undefined ? { resume: r.resumeSessionId } : {}),
-    });
-    const cid = handle.id;
+    let cid = r.conversationId ?? randomUUID();
+    if (!useExternalAgentRuntime) {
+      bridge = createBridge({ queryFn: queryFn!, dataDir });
+      claudeHandle = bridge.createConversation({
+        provider: entry.provider,
+        modelId: r.modelId,
+        ...(gatewayPort !== undefined ? { gatewayPort } : {}),
+        // Only anthropic providers get the shim; openai ones must go through the
+        // gateway for translation (buildConversationEnv enforces the precedence).
+        ...(shim ? { searchShimPort: shim.port } : {}),
+        id: cid,
+        ...(r.resumeSessionId !== undefined ? { resume: r.resumeSessionId } : {}),
+      });
+      cid = claudeHandle.id;
+    }
 
     const approvalTransport = {
       request(req: ApprovalRequest): Promise<ApprovalDecision> {
         push("bridge:approvalRequest", req);
         return new Promise<ApprovalDecision>((resolve) => {
-          approvalWaiters.set(req.id, { resolve, conversationId: cid });
+          const conversationId = cid;
+          const timeout = setTimeout(() => {
+            const waiter = approvalWaiters.get(req.id);
+            if (!waiter) return;
+            const conversationId = waiter.conversationId;
+            if (!settleApproval(req.id, {
+              id: req.id,
+              decision: "deny",
+              message: "approval timed out",
+            })) return;
+            push("bridge:approvalExpired", { id: req.id, conversationId });
+          }, permissionDecisionTimeoutMs);
+          approvalWaiters.set(req.id, { resolve, conversationId, timeout });
         });
       },
     };
@@ -1655,6 +2182,7 @@ export function createBridgeHost(deps: HostDeps): BridgeHost {
       },
     };
     const askMcp = createAskUserMcp(cid, askTransport);
+    const workOverviewMcp = createWorkOverviewMcp();
     const memoryScope: MemoryScope = conversationWorkspace.kind === "external"
       ? { type: "workspace", workspaceId: conversationWorkspace.id }
       : notebook
@@ -1681,6 +2209,16 @@ export function createBridgeHost(deps: HostDeps): BridgeHost {
       : undefined;
     const learningMcp = learningService
       ? createLearningMcp({ service: learningService, conversationId: cid })
+      : undefined;
+    const scheduledTaskMcp = scheduledTasks
+      ? createScheduledTaskMcp({ service: scheduledTasks, workspaceId: conversationWorkspace.id })
+      : undefined;
+    const captureTaskMcp = captures && tasks
+      ? createCaptureTaskMcp({
+          captures,
+          tasks,
+          ...(r.notebookId ? { notebookId: r.notebookId } : {}),
+        })
       : undefined;
 
     // Back-fill the container now that cid-bound broker/askMcp exist.
@@ -1723,10 +2261,13 @@ export function createBridgeHost(deps: HostDeps): BridgeHost {
     if (!isWiki) {
       extras.mcpServers["leemo-documents"] = documentMcp.server;
       extras.mcpServers["leemo-visualization"] = visualizationMcp.server;
+      extras.mcpServers["leemo-work-overview"] = workOverviewMcp.server;
     }
     if (personaCtx.rememberMode && memoryMcp) extras.mcpServers["leemo-memory"] = memoryMcp.server;
     if (!isWiki && skillAdminMcp) extras.mcpServers["leemo-skill-admin"] = skillAdminMcp.server;
     if (!isWiki && learningMcp) extras.mcpServers["leemo-learning"] = learningMcp.server;
+    if (!isWiki && scheduledTaskMcp) extras.mcpServers["leemo-scheduler"] = scheduledTaskMcp.server;
+    if (!isWiki && captureTaskMcp) extras.mcpServers["leemo-workboard"] = captureTaskMcp.server;
 
     // 轮 4 卡 H: Leemo's own search MCP, registered only when the user has the
     // toggle on — prompt layer ⑦ already tells momo whether it can search, and
@@ -1821,9 +2362,9 @@ export function createBridgeHost(deps: HostDeps): BridgeHost {
           }),
     };
 
-    conversations.set(cid, {
+    const commonRecord = {
       purpose: isWiki ? "wiki" : "main",
-      handle, bridge, broker, askMcp, memoryMcp, skillAdminMcp, memoryScope, entry, modelId: r.modelId,
+      broker, askMcp, memoryMcp, skillAdminMcp, memoryScope, entry, modelId: r.modelId,
       workspace: conversationWorkspace,
       cwd: conversationCwd,
       // 轮 7 A3: keep the live containers so updateContext can rewrite them.
@@ -1833,14 +2374,119 @@ export function createBridgeHost(deps: HostDeps): BridgeHost {
       extras, policy, personaCtx, notebookId: r.notebookId ?? undefined,
       configuredMcpIds: new Set(Object.keys(initialConfiguredMcps)),
       nextRoundId: 0,
-    });
+      modelUsageCursor: createModelUsageCursor(),
+      queuedGuidanceFollowUp: false,
+    } satisfies Omit<ConvRecord, "engine" | "handle" | "bridge">;
+    if (useExternalAgentRuntime) {
+      const externalMcpServers = { ...extras.mcpServers };
+      if (!isWiki) {
+        externalMcpServers["leemo-web-search"] ??= createWebSearchMcp({
+          resolveKeys: () => loadSearchKeys(providerStore),
+        }).server;
+        externalMcpServers["leemo-academic-search"] ??= createAcademicSearchMcp({
+          search: (query) => academicSearch.search(query),
+        }).server;
+        if (memoryMcp) externalMcpServers["leemo-memory"] ??= memoryMcp.server;
+      }
+      const dynamicTools = await createCodexDynamicToolRegistry({
+        servers: externalMcpServers,
+        cwd: conversationCwd,
+        authorize: async (toolName, input, callId) => {
+          const decision = await extras.canUseTool(toolName, input, {
+            signal: new AbortController().signal,
+            toolUseID: callId,
+            requestId: callId,
+          });
+          if (decision === null || decision.behavior !== "allow") {
+            return {
+              allowed: false,
+              ...(decision?.message ? { message: decision.message } : {}),
+            };
+          }
+          return {
+            allowed: true,
+            input: decision.updatedInput ?? input,
+          };
+        },
+      });
+      const externalHandle = externalRuntime!.createConversation({
+        id: cid,
+        ...(r.resumeSessionId ? { resumeThreadId: r.resumeSessionId } : {}),
+        cwd: conversationCwd,
+        workspaceRoot: conversationWorkspace.root,
+        providerId: entry.provider.id,
+        modelId: r.modelId,
+        developerInstructions: extras.systemPromptAppend,
+        permissionMode: policy.mode,
+        webSearchEnabled: personaCtx.webSearchEnabled,
+        webFetchEnabled: personaCtx.webFetchEnabled,
+        dynamicTools,
+        approve: async (request: CodexApprovalRequest) => {
+          if (isWiki) return "decline";
+          const governed = governToolInput(
+            request.toolName,
+            request.input,
+            conversationCwd,
+            conversationWorkspace,
+          );
+          if (governed.denied !== undefined) return "decline";
+          const decision = await broker.canUseTool(
+            request.toolName,
+            governed.effectiveInput,
+            {
+              signal: new AbortController().signal,
+              toolUseID: request.toolUseId,
+              requestId: request.toolUseId,
+            },
+          );
+          return decision?.behavior === "allow" ? "accept" : "decline";
+        },
+        answerUserInput: (params) => answerCodexQuestionCard(askMcp, params),
+      });
+      conversations.set(cid, {
+        ...commonRecord,
+        engine: entry.executionEngine,
+        handle: externalHandle,
+      });
+    } else {
+      conversations.set(cid, {
+        ...commonRecord,
+        engine: "claude-agent-sdk",
+        handle: claudeHandle!,
+        bridge: bridge!,
+      });
+    }
     return cid;
   }
 
-  function drain(cid: string, rec: ConvRecord, prompt: string, sourceMessageId?: string): void {
+  function drain(
+    cid: string,
+    rec: ConvRecord,
+    prompt: string,
+    sourceMessageId?: string,
+    roundOptions?: ConversationRoundOptions,
+  ): void {
     const { handle, entry, modelId } = rec;
     const auditCwd = rec.cwd;
     const pricing = resolvePricing(entry.provider.id, modelId);
+
+    const startQueuedGuidanceFollowUp = (): void => {
+      if (!rec.queuedGuidanceFollowUp) return;
+      rec.queuedGuidanceFollowUp = false;
+      try {
+        rec.broker.beginTask();
+        drain(cid, rec, "请继续执行用户在上一轮追加的引导。");
+      } catch (error) {
+        // The engine kept the actual guidance. Preserve the host-side marker
+        // too, so a later normal send can still deliver it rather than losing
+        // the user's correction behind a failed automatic handoff.
+        rec.queuedGuidanceFollowUp = true;
+        push("bridge:event", {
+          conversationId: cid,
+          event: { type: "error", message: `追加引导已保留；${toUserFacingRunError(error)}` },
+        });
+      }
+    };
 
     const pushFailure = (error: unknown): void => {
       const message = toUserFacingRunError(error);
@@ -1869,7 +2515,9 @@ export function createBridgeHost(deps: HostDeps): BridgeHost {
     // back only the rejected optimistic turn and keep its draft. Emitting an
     // unscoped run.finished here would instead terminate whichever round is
     // currently active for this conversation.
-    const source = handle.send(prompt);
+    const source = isExternalAgentRecord(rec)
+      ? rec.handle.send(prompt)
+      : rec.handle.send(prompt, roundOptions);
 
     let fileTracker: WorkspaceChangeTracker | undefined;
     let finishFileChangesPromise: Promise<void> | undefined;
@@ -1977,18 +2625,21 @@ export function createBridgeHost(deps: HostDeps): BridgeHost {
     void (async () => {
       let iterator: AsyncIterator<LeemoEvent> | undefined;
       try {
-        const stream = normalizeSdkStream(source, {
-          providerId: entry.provider.id,
-          modelId,
-          cwd: auditCwd,
-          pricing,
-          browserOutputDir: path.join(dataDir, "mcp", "playwright", "browser-output"),
-        });
+        const stream: AsyncIterable<LeemoEvent> = isExternalAgentRecord(rec)
+          ? source as AsyncIterable<LeemoEvent>
+          : normalizeSdkStream(source, {
+              providerId: entry.provider.id,
+              modelId,
+              cwd: auditCwd,
+              pricing,
+              modelUsageCursor: rec.modelUsageCursor,
+              browserOutputDir: path.join(dataDir, "mcp", "playwright", "browser-output"),
+            });
         iterator = stream[Symbol.asyncIterator]();
         const timeoutMs = Math.max(1, firstProgressTimeoutMs ?? 45_000);
         const timeoutMessage = `服务商在 ${Math.ceil(timeoutMs / 1_000)} 秒内没有返回可显示的内容，请检查网络和模型配置后重试。`;
-        const interruptForTimeout = (): Error => {
-          const stopped = handle.interrupt();
+        const interruptForTimeout = async (): Promise<Error> => {
+          const stopped = await Promise.resolve(handle.interrupt());
           if (!stopped) round.nativeCleanupSafe = false;
           return new Error(stopped ? timeoutMessage : PROCESS_STOP_UNCONFIRMED_MESSAGE);
         };
@@ -2008,7 +2659,7 @@ export function createBridgeHost(deps: HostDeps): BridgeHost {
           } else {
             const remaining = deadline - Date.now();
             if (remaining <= 0) {
-              throw interruptForTimeout();
+              throw await interruptForTimeout();
             }
             let timer: ReturnType<typeof setTimeout> | undefined;
             let timedOut = false;
@@ -2018,7 +2669,7 @@ export function createBridgeHost(deps: HostDeps): BridgeHost {
                 new Promise<never>((_resolve, reject) => {
                   timer = setTimeout(() => {
                     timedOut = true;
-                    reject(interruptForTimeout());
+                    void interruptForTimeout().then(reject);
                   }, remaining);
                 }),
               ]);
@@ -2053,6 +2704,7 @@ export function createBridgeHost(deps: HostDeps): BridgeHost {
           if (ev.type === "run.finished") {
             const closing = iterator.return?.();
             if (closing) void closing.catch(() => {});
+            if (!ev.isError && ev.subtype === "completed") startQueuedGuidanceFollowUp();
             return;
           }
           providerProgress = providerProgress || ![
@@ -2089,8 +2741,7 @@ export function createBridgeHost(deps: HostDeps): BridgeHost {
     const rec = conversations.get(cid);
     for (const [id, w] of approvalWaiters) {
       if (w.conversationId === cid) {
-        w.resolve({ id, decision: "deny", message: reason });
-        approvalWaiters.delete(id);
+        settleApproval(id, { id, decision: "deny", message: reason });
       }
     }
     for (const [id, owner] of askOwner) {
@@ -2106,7 +2757,7 @@ export function createBridgeHost(deps: HostDeps): BridgeHost {
     if (!rec) return;
     void rec.activeRound?.finishFileChanges();
     rec.handle.dispose();
-    rec.bridge.dispose();
+    rec.bridge?.dispose();
     releasePending(cid, "conversation disposed");
     conversations.delete(cid);
   }
@@ -2308,6 +2959,13 @@ export function createBridgeHost(deps: HostDeps): BridgeHost {
       case "bridge:saveProvider": {
         const draft = req as BridgeInvokeMap["bridge:saveProvider"]["request"];
         const store = requireProviderStore();
+        const existing = draft.id
+          ? getCatalog().find((entry) => entry.provider.id === draft.id)
+          : undefined;
+        if ((draft.authMode ?? existing?.spec.authMode) === "oauth-subscription") {
+          const entry = subscriptionEntry(draft.id ?? draft.kind);
+          await requireLiveSubscription(entry);
+        }
         const { config, id } = upsertProvider(store.read(), draft, mintProviderId);
         // write() persists AND rebuilds, so the read below sees the new instance.
         store.write(config);
@@ -2326,6 +2984,30 @@ export function createBridgeHost(deps: HostDeps): BridgeHost {
         return undefined as R<"bridge:deleteProvider"> as R<K>;
       }
 
+      case "bridge:getProviderLoginStatus": {
+        const r = req as BridgeInvokeMap["bridge:getProviderLoginStatus"]["request"];
+        subscriptionEntry(r.providerId);
+        return (subscriptionAuth
+          ? await subscriptionAuth.getStatus(r.providerId)
+          : { state: "unavailable", message: "订阅登录组件暂不可用，请重启 Leemo 后再试。" }) as R<"bridge:getProviderLoginStatus"> as R<K>;
+      }
+
+      case "bridge:loginProvider": {
+        const r = req as BridgeInvokeMap["bridge:loginProvider"]["request"];
+        subscriptionEntry(r.providerId);
+        return (subscriptionAuth
+          ? await subscriptionAuth.login(r.providerId)
+          : { state: "unavailable", message: "订阅登录组件暂不可用，请重启 Leemo 后再试。" }) as R<"bridge:loginProvider"> as R<K>;
+      }
+
+      case "bridge:logoutProvider": {
+        const r = req as BridgeInvokeMap["bridge:logoutProvider"]["request"];
+        subscriptionEntry(r.providerId);
+        return (subscriptionAuth
+          ? await subscriptionAuth.logout(r.providerId)
+          : { state: "unavailable", message: "订阅登录组件暂不可用，请重启 Leemo 后再试。" }) as R<"bridge:logoutProvider"> as R<K>;
+      }
+
       case "bridge:testConnection": {
         const r = req as BridgeInvokeMap["bridge:testConnection"]["request"];
         const target = resolveProbeTarget(r.providerId, r.draft, r.modelId);
@@ -2337,6 +3019,36 @@ export function createBridgeHost(deps: HostDeps): BridgeHost {
           { fetchFn: httpFetch() },
         );
         return result as R<"bridge:testConnection"> as R<K>;
+      }
+
+      case "bridge:resolveTaskTimes": {
+        const r = req as BridgeInvokeMap["bridge:resolveTaskTimes"]["request"];
+        const manual = { ok: false as const, message: "这段时间关系还需要你手动确认。" };
+        const texts = Array.isArray(r.texts)
+          ? r.texts.map((text) => typeof text === "string" ? text.trim() : "")
+          : [];
+        if (
+          !r.providerId?.trim()
+          || !r.modelId?.trim()
+          || texts.length === 0
+          || texts.length > 20
+          || texts.some((text) => text.length === 0 || text.length > 1_000)
+          || Number.isNaN(Date.parse(r.localNow))
+        ) {
+          return manual as R<"bridge:resolveTaskTimes"> as R<K>;
+        }
+        const target = resolveProbeTarget(r.providerId, undefined, r.modelId);
+        if ("error" in target) {
+          return manual as R<"bridge:resolveTaskTimes"> as R<K>;
+        }
+        const reply = await requestProviderText(
+          target.target,
+          taskTimePrompt(texts, r.localNow, r.timeZone),
+          { fetchFn: httpFetch(), maxTokens: 768 },
+        );
+        if (!reply.ok) return manual as R<"bridge:resolveTaskTimes"> as R<K>;
+        const items = parseResolvedTaskFields(reply.text, texts);
+        return (items ? { ok: true as const, items } : manual) as R<"bridge:resolveTaskTimes"> as R<K>;
       }
 
       case "bridge:listRemoteModels": {
@@ -2475,9 +3187,30 @@ export function createBridgeHost(deps: HostDeps): BridgeHost {
           rec.workspace.root,
           rec.workspace.id,
         );
+        const promptWithNotes = formatPromptWithNoteReferences(prompt, r.noteReferences, captures);
+        const promptWithGoal = formatPromptWithGoal(promptWithNotes, r.goalText);
+        // A manual next message lets an engine consume its own queued guidance.
+        // Do not start a redundant automatic turn after this one completes.
+        rec.queuedGuidanceFollowUp = false;
         rec.broker.beginTask();
-        drain(r.conversationId, rec, prompt, r.sourceMessageId);
+        drain(
+          r.conversationId,
+          rec,
+          promptWithGoal,
+          r.sourceMessageId,
+          r.allowSubagents === false ? { disallowedTools: ["Agent", "Task"] } : undefined,
+        );
         return undefined as R<"bridge:send"> as R<K>;
+      }
+
+      case "bridge:guide": {
+        const r = req as BridgeInvokeMap["bridge:guide"]["request"];
+        const rec = conversations.get(r.conversationId);
+        if (!rec) throw new Error(`unknown conversation: ${r.conversationId}`);
+        if (!rec.activeRound) throw new Error("当前没有正在执行的任务。");
+        const delivery = await rec.handle.guide(r.prompt);
+        if (delivery === "queued") rec.queuedGuidanceFollowUp = true;
+        return { delivery } as R<"bridge:guide"> as R<K>;
       }
 
       case "bridge:interrupt": {
@@ -2496,7 +3229,9 @@ export function createBridgeHost(deps: HostDeps): BridgeHost {
         // promise is what actually lets the turn unwind; the abort then stops
         // whatever the SDK is still streaming.
         releasePending(r.conversationId, "interrupted by user");
-        const processTreeStopped = rec?.handle.interrupt() ?? true;
+        const processTreeStopped = rec
+          ? await Promise.resolve(rec.handle.interrupt())
+          : true;
         if (!processTreeStopped && round) round.nativeCleanupSafe = false;
         if (rec && round) {
           await round.finishFileChanges();
@@ -2536,12 +3271,20 @@ export function createBridgeHost(deps: HostDeps): BridgeHost {
         const entry = getCatalog().find((candidate) => candidate.provider.id === r.providerId);
         if (!entry) throw new Error(`unknown provider: ${r.providerId}`);
         if (!providerIsReady(entry)) {
-          throw new Error(entry.spec.authMode === "none"
-            ? `「${entry.spec.name}」还没有选择可用模型，先去设置页读取并选择一个模型。`
-            : `「${entry.spec.name}」还没有配置 API Key，先去设置页填一个。`);
+          throw new Error(setupMessage(entry, "。"));
         }
+        await requireLiveSubscription(entry);
         if (!entry.provider.models.includes(r.modelId)) {
           throw new Error(`model "${r.modelId}" is not configured for provider "${r.providerId}"`);
+        }
+        if (entry.executionEngine !== rec.engine) {
+          throw new Error("这两个模型使用不同的本地执行方式，不能在同一条对话里无痕切换；请新建对话后再选择。");
+        }
+        if (isExternalAgentRecord(rec)) {
+          rec.handle.setModel(r.modelId);
+          rec.entry = entry;
+          rec.modelId = r.modelId;
+          return undefined as R<"bridge:setModel"> as R<K>;
         }
 
         const gatewayPort = entry.provider.apiFormat !== "anthropic"
@@ -2551,7 +3294,8 @@ export function createBridgeHost(deps: HostDeps): BridgeHost {
           throw new Error("OpenAI 兼容网关启动失败，请重试或切换 Anthropic 兼容服务商。");
         }
 
-        rec.handle.setModel(entry.provider, r.modelId, gatewayPort);
+        const claudeHandle = rec.handle as ConversationHandle;
+        claudeHandle.setModel(entry.provider, r.modelId, gatewayPort);
         rec.entry = entry;
         rec.modelId = r.modelId;
 
@@ -2561,7 +3305,7 @@ export function createBridgeHost(deps: HostDeps): BridgeHost {
         const shimServes = rec.personaCtx.webSearchEnabled
           && liveShim !== undefined
           && entry.provider.apiFormat === "anthropic";
-        rec.handle.setSearchShimPort(liveShim?.port);
+        claudeHandle.setSearchShimPort(liveShim?.port);
         const wiring = chooseSearchWiring({
           enabled: rec.personaCtx.webSearchEnabled,
           shimServesThisConversation: shimServes,
@@ -2610,12 +3354,20 @@ export function createBridgeHost(deps: HostDeps): BridgeHost {
           if (r.permissionMode !== undefined) {
             rec.policy.mode = r.permissionMode;
             rec.extras.permissionMode = r.permissionMode;
+            if (isExternalAgentRecord(rec)) rec.handle.setPermissionMode(r.permissionMode);
           }
           if (r.dangerousCommandCaching !== undefined) {
             rec.policy.dangerousCommandCaching = r.dangerousCommandCaching;
           }
 
           refreshMomoPrompt(rec);
+          if (isExternalAgentRecord(rec)) {
+            rec.handle.setNetworkCapabilities({
+              webSearchEnabled: rec.personaCtx.webSearchEnabled,
+              webFetchEnabled: rec.personaCtx.webFetchEnabled,
+            });
+            return undefined as R<"bridge:updateContext"> as R<K>;
+          }
           // Search may be switched ON for a conversation created with it OFF, in
           // which case no shim was ever started. Start it now and re-point the
           // conversation's env at it (next round — the env is rebuilt per send).
@@ -2629,7 +3381,7 @@ export function createBridgeHost(deps: HostDeps): BridgeHost {
           const shimServes = rec.personaCtx.webSearchEnabled
             && liveShim !== undefined
             && rec.entry.provider.apiFormat === "anthropic";
-          rec.handle.setSearchShimPort(liveShim?.port);
+          (rec.handle as ConversationHandle).setSearchShimPort(liveShim?.port);
 
           // WebFetch must be structurally disallowed, not merely discouraged in
           // the prompt — a model holding a real tool will use it (轮 4 三层开关).
@@ -2654,11 +3406,7 @@ export function createBridgeHost(deps: HostDeps): BridgeHost {
 
       case "bridge:approvalDecision": {
         const r = req as BridgeInvokeMap["bridge:approvalDecision"]["request"];
-        const w = approvalWaiters.get(r.id);
-        if (w) {
-          w.resolve(r);
-          approvalWaiters.delete(r.id);
-        }
+        settleApproval(r.id, r);
         return undefined as R<"bridge:approvalDecision"> as R<K>;
       }
 
@@ -2702,6 +3450,11 @@ export function createBridgeHost(deps: HostDeps): BridgeHost {
       case "bridge:listCommunitySkills":
         return requireSkillAdmin().listCatalog() as R<"bridge:listCommunitySkills"> as R<K>;
 
+      case "bridge:getCommunitySkillDetails": {
+        const r = req as BridgeInvokeMap["bridge:getCommunitySkillDetails"]["request"];
+        return await loadSkillDetails(r.id) as R<"bridge:getCommunitySkillDetails"> as R<K>;
+      }
+
       case "bridge:installCommunitySkill": {
         const r = req as BridgeInvokeMap["bridge:installCommunitySkill"]["request"];
         return await installCommunitySkill(r.id) as R<"bridge:installCommunitySkill"> as R<K>;
@@ -2720,10 +3473,24 @@ export function createBridgeHost(deps: HostDeps): BridgeHost {
         const names = r.enabledQualifiedNames.filter(
           (name): name is string => typeof name === "string" && name.length > 0 && name.length <= 160,
         );
-        await Promise.all([
-          officeSkills?.ensureReady(),
-          bundledSkills?.ensureReady(),
-        ]);
+        const requestId = ++latestSkillSyncRequestId;
+        try {
+          await Promise.all([
+            officeSkills?.ensureReady(),
+            bundledSkills?.ensureReady(),
+            ...(requestsSuperpowers(names) ? [superpowersSkills?.ensureReady()] : []),
+          ]);
+        } catch (error: unknown) {
+          if (requestId !== latestSkillSyncRequestId) {
+            return { updatedConversations: 0 } as R<"bridge:syncEnabledSkills"> as R<K>;
+          }
+          throw error;
+        }
+        // Preparing a first-use local plugin can outlive a newer UI toggle.
+        // Only the latest global selection may mutate live conversations.
+        if (requestId !== latestSkillSyncRequestId) {
+          return { updatedConversations: 0 } as R<"bridge:syncEnabledSkills"> as R<K>;
+        }
         const updatedConversations = syncEnabledSkills(names);
         return { updatedConversations } as R<"bridge:syncEnabledSkills"> as R<K>;
       }
@@ -2885,7 +3652,7 @@ export function createBridgeHost(deps: HostDeps): BridgeHost {
         const r = req as BridgeInvokeMap["bridge:usageSummary"]["request"];
         return (readUsageSummary
           ? await readUsageSummary(r)
-          : { byProvider: [], ...(r.range === "last7d" ? { byDay: [] } : {}) }
+          : { byProvider: [], ...(r.range === "today" ? {} : { byDay: [] }) }
         ) as R<"bridge:usageSummary"> as R<K>;
       }
 

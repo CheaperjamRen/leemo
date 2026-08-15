@@ -3,6 +3,7 @@ import {
   buildGreeting,
   createSettingsStore,
   pickPersistedSettings,
+  resolveMomoPersonaText,
   webFetchActive,
   webSearchActive,
   PERSISTED_SETTING_KEYS,
@@ -30,6 +31,8 @@ describe("settings store", () => {
     expect(state.persona).toBe("momo");
     expect(state.personaCardId).toBe("momo");
     expect(state.personaCards).toContainEqual(defaultCard);
+    expect(state.personaCards).toContainEqual(expect.objectContaining({ id: "momo-entp", builtin: true }));
+    expect(state.relationshipStyle).toBe("companion");
     expect(state.talkStyle).toBe(3);
     expect(state.defaultProviderId).toBeNull();
     expect(state.defaultModelId).toBeNull();
@@ -44,8 +47,16 @@ describe("settings store", () => {
     expect(webFetchActive(state)).toBe(false);
     expect(state.searchKeySources).toEqual([]);
     expect(state.rememberMode).toBe(true);
+    expect(state.keepAwakeDuringTasks).toBe(true);
+    expect(state.desktopNotifications).toBe(true);
+    expect(state.taskModelParsingEnabled).toBe(true);
+    expect(state.launchAtLogin).toBe(false);
+    expect(state.continueInBackground).toBe(true);
+    expect(state.quickCaptureShortcut).toBe("Alt+N");
     expect(state.skillOverrides).toEqual({});
     expect(state.onboardingCompleted).toBe(false);
+    expect(state.relationshipInviteDismissed).toBe(false);
+    expect(state.relationshipConversationId).toBeNull();
     expect(typeof state.dataDir).toBe("string");
     expect(JSON.stringify(state)).not.toMatch(/apiKey|token|secret/i);
   });
@@ -55,6 +66,7 @@ describe("settings store", () => {
     const originalCards = store.getState().personaCards;
     store.getState().setMode("workbench");
     store.getState().setPersonaCard("work");
+    store.getState().setRelationshipStyle("mentor");
     store.getState().setTalkStyle(1);
     store.getState().setDefaultModel("alpha", "model-1");
     store.getState().setProviderOrder(["alpha", "beta"]);
@@ -64,17 +76,30 @@ describe("settings store", () => {
     store.getState().setWebSearchEnabled(true);
     store.getState().setWebFetchEnabled(true);
     store.getState().setRememberMode(false);
+    store.getState().setKeepAwakeDuringTasks(false);
+    store.getState().setDesktopNotifications(false);
+    store.getState().setTaskModelParsingEnabled(false);
+    store.getState().setLaunchAtLogin(true);
+    store.getState().setContinueInBackground(false);
+    store.getState().setQuickCaptureShortcut("Ctrl+Shift+N");
     store.getState().completeOnboarding();
+    store.getState().dismissRelationshipInvite();
+    store.getState().setRelationshipConversationId("relationship-conv");
 
     expect(store.getState()).toMatchObject({
       mode: "workbench", persona: "momo", personaCardId: "work", talkStyle: 1,
+      relationshipStyle: "mentor",
       defaultProviderId: "alpha", defaultModelId: "model-1", permissionMode: "plan",
       providerOrder: ["alpha", "beta"],
       dangerousCommandCaching: true, webEnabled: true, webSearchEnabled: true,
-      webFetchEnabled: true, rememberMode: false, onboardingCompleted: true,
+      webFetchEnabled: true, rememberMode: false, keepAwakeDuringTasks: false, desktopNotifications: false, launchAtLogin: true,
+      taskModelParsingEnabled: false,
+      continueInBackground: false, quickCaptureShortcut: "Ctrl+Shift+N", onboardingCompleted: true,
+      relationshipInviteDismissed: true, relationshipConversationId: "relationship-conv",
     });
     expect(pickPersistedSettings(store.getState()).onboardingCompleted).toBe(true);
     expect(store.getState().personaCards).toBe(originalCards);
+    expect(pickPersistedSettings(store.getState()).relationshipStyle).toBe("mentor");
   });
 
   it("rejects invalid runtime values without corrupting state", () => {
@@ -84,14 +109,103 @@ describe("settings store", () => {
     (before.setMode as unknown as (value: string) => void)("unsafe");
     (before.setPermissionMode as unknown as (value: string) => void)("admin");
     before.setPersonaCard("missing");
+    (before.setRelationshipStyle as unknown as (value: string) => void)("manager");
 
-    expect(store.getState()).toMatchObject({ mode: "buddy", talkStyle: 3, permissionMode: "acceptEdits", personaCardId: "momo" });
+    expect(store.getState()).toMatchObject({ mode: "buddy", talkStyle: 3, permissionMode: "acceptEdits", personaCardId: "momo", relationshipStyle: "companion" });
+  });
+
+  it("composes a selected flavor and relationship without exposing internal ids", () => {
+    const card = createSettingsStore().getState().personaCards.find((candidate) => candidate.id === "momo-entp");
+    const text = resolveMomoPersonaText(card?.promptText ?? "", "mentor");
+    expect(text).toContain("ENTP 风味");
+    expect(text).toContain("导师");
+    expect(text).not.toContain("relationshipStyle");
   });
 
   it("supports changing only the model while retaining provider", () => {
     const store = createSettingsStore({ defaultProviderId: "alpha", defaultModelId: "old" });
     store.getState().setDefaultModel("new");
     expect(store.getState()).toMatchObject({ defaultProviderId: "alpha", defaultModelId: "new" });
+  });
+
+  it("persists the lightweight relationship invitation and validates its conversation id", () => {
+    const store = createSettingsStore();
+    store.getState().dismissRelationshipInvite();
+    store.getState().setRelationshipConversationId("  conv-meet-momo  ");
+
+    expect(store.getState()).toMatchObject({
+      relationshipInviteDismissed: true,
+      relationshipConversationId: "conv-meet-momo",
+    });
+    expect(pickPersistedSettings(store.getState())).toMatchObject({
+      relationshipInviteDismissed: true,
+      relationshipConversationId: "conv-meet-momo",
+    });
+
+    store.getState().setRelationshipConversationId("bad\nvalue");
+    expect(store.getState().relationshipConversationId).toBe("conv-meet-momo");
+    store.getState().setRelationshipConversationId(null);
+    expect(store.getState().relationshipConversationId).toBeNull();
+  });
+
+  it("persists background mode and only accepts plausible global accelerators", () => {
+    const store = createSettingsStore();
+    store.getState().hydrate({ continueInBackground: false, quickCaptureShortcut: "  Ctrl+Alt+J  " });
+    expect(store.getState()).toMatchObject({
+      continueInBackground: false,
+      quickCaptureShortcut: "Ctrl+Alt+J",
+    });
+    expect(pickPersistedSettings(store.getState())).toMatchObject({
+      continueInBackground: false,
+      quickCaptureShortcut: "Ctrl+Alt+J",
+    });
+
+    store.getState().setQuickCaptureShortcut("N");
+    expect(store.getState().quickCaptureShortcut).toBe("Ctrl+Alt+J");
+    store.getState().hydrate({ quickCaptureShortcut: "not a shortcut" });
+    expect(store.getState().quickCaptureShortcut).toBe("Ctrl+Alt+J");
+  });
+
+  it("persists the opt-out for model-assisted task time parsing", () => {
+    const store = createSettingsStore();
+    store.getState().setTaskModelParsingEnabled(false);
+    expect(pickPersistedSettings(store.getState()).taskModelParsingEnabled).toBe(false);
+
+    const restored = createSettingsStore();
+    restored.getState().hydrate({ taskModelParsingEnabled: false });
+    expect(restored.getState().taskModelParsingEnabled).toBe(false);
+  });
+
+  it("keeps file storage unset until the user chooses it and persists the future file-drop preference", () => {
+    const store = createSettingsStore();
+    expect(store.getState()).toMatchObject({
+      captureStorageRoot: undefined,
+      captureFileDropMode: "reference",
+    });
+
+    store.getState().hydrate({
+      captureStorageRoot: "  E:/Leemo files  ",
+      captureFileDropMode: "copy",
+    });
+    expect(pickPersistedSettings(store.getState())).toMatchObject({
+      captureStorageRoot: "E:/Leemo files",
+      captureFileDropMode: "copy",
+    });
+  });
+
+  it("persists the user-selected default workspace without accepting arbitrary ids", () => {
+    const store = createSettingsStore();
+    expect(store.getState().defaultWorkspaceId).toBe("leemo-home");
+
+    store.getState().setDefaultWorkspaceId("workspace-0123456789abcdef0123");
+    expect(pickPersistedSettings(store.getState()).defaultWorkspaceId).toBe("workspace-0123456789abcdef0123");
+
+    store.getState().setDefaultWorkspaceId("C:/not-an-id");
+    expect(store.getState().defaultWorkspaceId).toBe("workspace-0123456789abcdef0123");
+
+    const restored = createSettingsStore();
+    restored.getState().hydrate({ defaultWorkspaceId: "workspace-fedcba9876543210abcd" });
+    expect(restored.getState().defaultWorkspaceId).toBe("workspace-fedcba9876543210abcd");
   });
 
   it("cleans provider priority by trimming, deduplicating, dropping non-strings, and capping at 100", () => {
@@ -207,10 +321,14 @@ describe("settings hydrate (轮 7 A3)", () => {
       webSearchEnabled: false,
       webFetchEnabled: true,
       rememberMode: false,
+      keepAwakeDuringTasks: false,
       defaultProviderId: "glm",
       defaultModelId: "glm-5.2",
       providerOrder: ["glm", "deepseek"],
       onboardingCompleted: true,
+      relationshipInviteDismissed: true,
+      relationshipConversationId: "conv-relationship",
+      relationshipStyle: "senior",
     });
     expect(store.getState()).toMatchObject({
       mode: "workbench",
@@ -221,10 +339,14 @@ describe("settings hydrate (轮 7 A3)", () => {
       webSearchEnabled: false,
       webFetchEnabled: true,
       rememberMode: false,
+      keepAwakeDuringTasks: false,
       defaultProviderId: "glm",
       defaultModelId: "glm-5.2",
       providerOrder: ["glm", "deepseek"],
       onboardingCompleted: true,
+      relationshipInviteDismissed: true,
+      relationshipConversationId: "conv-relationship",
+      relationshipStyle: "senior",
     });
   });
 
@@ -241,6 +363,21 @@ describe("settings hydrate (轮 7 A3)", () => {
     expect(s.talkStyle).toBe(3);                 // 保默认
     expect(s.permissionMode).toBe("acceptEdits");// 保默认
     expect(s.mode).toBe("workbench");            // 好字段仍生效
+  });
+
+  it("丢弃损坏的关系仪式状态，避免重启后指向不存在的控制字符 id", () => {
+    const store = createSettingsStore();
+    store.getState().hydrate({
+      relationshipInviteDismissed: "yes",
+      relationshipConversationId: "bad\nvalue",
+      mode: "workbench",
+    });
+
+    expect(store.getState()).toMatchObject({
+      relationshipInviteDismissed: false,
+      relationshipConversationId: null,
+      mode: "workbench",
+    });
   });
 
   it("拒绝本构建里不存在的人设卡 id（防悬空 id 导致空人格）", () => {

@@ -51,6 +51,21 @@ describe("App", () => {
     expect(screen.getByText(/今天想从哪儿开始/)).toBeInTheDocument();
   });
 
+  it("loads durable notes through the desktop capture bridge", async () => {
+    const invoke = vi.fn().mockResolvedValue({ ok: true, response: [] });
+    window.leemoCapture = {
+      invoke,
+      onChanged: vi.fn(() => () => {}),
+    };
+
+    try {
+      render(<App />);
+      await waitFor(() => expect(invoke).toHaveBeenCalledWith("listNotes", undefined));
+    } finally {
+      delete window.leemoCapture;
+    }
+  });
+
   it("keeps an unsent draft when switching between buddy and workbench", () => {
     render(<App />);
     fireEvent.change(screen.getByLabelText("输入消息"), {
@@ -80,13 +95,14 @@ describe("App", () => {
     expect(screen.getByText("英语复习材料.pdf")).toBeInTheDocument();
   });
 
-  it("opens settings from the default buddy shell and closes the shared overlay with Escape", () => {
+  it("opens the settings shell immediately while loading its content on demand", async () => {
     render(<App />);
 
     fireEvent.click(screen.getByRole("button", { name: "设置" }));
     expect(screen.getByTestId("settings-overlay")).toBeInTheDocument();
     expect(screen.getByTestId("settings-window")).toBeInTheDocument();
-    expect(screen.getByRole("tablist", { name: "设置分类" })).toBeInTheDocument();
+    expect(screen.getByRole("status", { name: "正在打开设置" })).toBeInTheDocument();
+    expect(await screen.findByRole("tablist", { name: "设置分类" })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: "通用" })).toHaveAttribute("aria-selected", "true");
 
     fireEvent.keyDown(window, { key: "Escape" });

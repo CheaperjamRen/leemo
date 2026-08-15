@@ -428,7 +428,7 @@ export async function configureLoopbackProvider(page, baseUrl) {
   const form = page.getByTestId("provider-config-form");
   await form.waitFor({ state: "visible" });
   await form.getByLabel("名称").fill(PROVIDER_NAME);
-  await form.getByRole("button", { name: "OpenAI 兼容", exact: true }).click();
+  await form.getByRole("button", { name: "OpenAI Chat", exact: true }).click();
   await form.getByLabel("Base URL").fill(baseUrl);
   await form.locator('input[aria-label="API Key"]').fill(TEST_KEY);
   const advanced = form.locator("summary", { hasText: "高级设置" });
@@ -442,7 +442,7 @@ export async function configureLoopbackProvider(page, baseUrl) {
 
 export async function ensureWorkbench(page) {
   if (await page.getByTestId("workbench-shell").isVisible().catch(() => false)) return;
-  await page.getByRole("button", { name: "工作台", exact: true }).click();
+  await page.getByRole("button", { name: "切换到工作台", exact: true }).click();
   await page.getByTestId("workbench-shell").waitFor({ state: "visible" });
 }
 
@@ -471,8 +471,13 @@ export async function selectNotebook(page, title) {
 }
 
 export async function newConversation(page) {
+  const rows = page.locator("[data-conversation-id]");
+  const previousCount = await rows.count();
   await page.getByRole("button", { name: "新建对话", exact: true }).click();
-  await page.getByTestId("current-conversation-status").filter({ hasText: "待开始" }).waitFor({ state: "visible" });
+  await rows.nth(previousCount).waitFor({ state: "attached" });
+  const composer = page.locator('textarea[aria-label="输入消息"]');
+  await composer.waitFor({ state: "visible" });
+  insist(await composer.inputValue() === "", "新对话没有提供空白输入框");
 }
 
 export async function runVisiblePrompt(page, prompt, finalMarker, timeoutMs = 90_000) {
@@ -487,7 +492,7 @@ export async function runVisiblePrompt(page, prompt, finalMarker, timeoutMs = 90
       if (await candidate.isVisible().catch(() => false)) await candidate.click();
     }
     if (await page.getByText(finalMarker, { exact: false }).last().isVisible().catch(() => false)) {
-      await page.getByTestId("current-conversation-status").filter({ hasText: "已完成" }).waitFor({ state: "visible" });
+      await page.getByRole("button", { name: "发送", exact: true }).waitFor({ state: "visible" });
       return;
     }
     if (await page.getByText("任务没有完成", { exact: true }).isVisible().catch(() => false)) {

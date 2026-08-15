@@ -1,0 +1,755 @@
+.settings-page {
+  --settings-sidebar-width: 240px;
+  --settings-content-pad-x: 32px;
+  color: var(--leemo-ink);
+  background: #fbfaf7;
+  font-size: 14px;
+}
+
+.settings-page .settings-header {
+  height: 56px;
+  padding-inline: 32px 64px;
+  border-bottom-color: transparent;
+  background: #fbfaf7;
+}
+
+.settings-page .settings-header h1 {
+  font-size: 20px;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+}
+
+.settings-page .settings-body {
+  background: #fbfaf7;
+}
+
+.settings-page .settings-sidebar {
+  width: var(--settings-sidebar-width);
+  padding: 16px 20px 24px 32px;
+  border-color: color-mix(in srgb, var(--leemo-line) 72%, transparent);
+  background: #fbfaf7;
+}
+
+.settings-page .settings-sidebar > input[type="search"] {
+  height: 38px;
+  margin-bottom: 14px;
+  border-radius: 9px;
+  padding-inline: 13px;
+  border-color: color-mix(in srgb, var(--leemo-line) 82%, transparent);
+  background: rgba(255, 255, 255, 0.86);
+  font-size: 13px;
+  box-shadow: 0 1px 2px rgba(24, 34, 47, 0.025);
+}
+
+.settings-page .settings-tabs {
+  gap: 3px;
+}
+
+.settings-page .settings-tab {
+  position: relative;
+  min-height: 44px;
+  gap: 13px;
+  border-left-width: 0;
+  border-radius: 9px;
+  padding: 0 14px;
+  font-size: 14px;
+  font-weight: 470;
+}
+
+.settings-page .settings-tab svg {
+  width: 18px;
+  height: 18px;
+  stroke-width: 1.8;
+}
+
+.settings-page .settings-tab[aria-selected="true"] {
+  background: #f0eeea;
+  color: var(--leemo-ink);
+  font-weight: 600;
+}
+
+.settings-page .settings-tab[aria-selected="true"]::before {
+  position: absolute;
+  left: 0;
+  top: 10px;
+  width: 3px;
+  height: 24px;
+  border-radius: 0 3px 3px 0;
+  background: var(--leemo-amber);
+  content: "";
+}
+
+.settings-page .settings-tab:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--leemo-amber) 24%, var(--leemo-line));
+}
+
+.settings-page .settings-content {
+  padding: 8px var(--settings-content-pad-x) 28px;
+  background: #fff;
+  scrollbar-gutter: stable;
+}
+
+.settings-page .settings-content > section,
+.settings-page .settings-content > div > section {
+  max-width: 760px;
+}
+
+.settings-page .settings-section {
+  margin-bottom: 24px;
+}
+
+.settings-page .settings-section > div:first-child {
+  margin-bottom: 16px;
+}
+
+.settings-page .settings-section h2,
+.settings-page .settings-content > h2 {
+  font-size: 22px;
+  line-height: 1.25;
+  font-weight: 650;
+  letter-spacing: -0.025em;
+}
+
+.settings-page .settings-section h2 + p,
+.settings-page .settings-content h2 + p {
+  margin-top: 5px;
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.settings-page .settings-group-title {
+  margin: 0 0 4px;
+  padding-top: 4px;
+  color: var(--leemo-ink);
+  font-size: 14px;
+  font-weight: 650;
+}
+
+.settings-page .settings-section-continuation {
+  margin-top: -26px;
+}
+
+.settings-page .settings-row {
+  min-height: 64px;
+  margin: 0;
+  padding: 11px 4px;
+  border-color: color-mix(in srgb, var(--leemo-line) 68%, transparent);
+}
+
+.settings-page .settings-row:hover {
+  background: color-mix(in srgb, var(--leemo-work-hover) 56%, transparent);
+}
+
+.settings-page .settings-row-select {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 28px;
+  border-bottom: 1px solid color-mix(in srgb, var(--leemo-line) 68%, transparent);
+}
+
+.settings-page .settings-row-title {
+  display: block;
+  color: var(--leemo-ink);
+  font-size: 14px;
+  line-height: 1.35;
+  font-weight: 590;
+}
+
+.settings-page .settings-row-description {
+  display: block;
+  margin-top: 3px;
+  color: var(--leemo-ink-3);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.settings-page .settings-row-select select,
+.settings-page select {
+  min-width: 190px;
+  height: 38px;
+  border: 1px solid var(--leemo-line);
+  border-radius: 8px;
+  padding: 0 34px 0 13px;
+  color: var(--leemo-ink);
+  background-color: #fff;
+  font-size: 13px;
+  outline: none;
+}
+
+.settings-page select:focus-visible,
+.settings-page input:focus-visible,
+.settings-page button:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--leemo-amber) 34%, transparent);
+  outline-offset: 2px;
+}
+
+.settings-page input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+  accent-color: var(--leemo-amber);
+}
+
+.settings-page input[type="checkbox"]:checked {
+  accent-color: var(--leemo-amber);
+}
+
+.settings-page input[type="checkbox"]:disabled {
+  cursor: default;
+  opacity: 0.52;
+}
+
+.settings-page button,
+.settings-page input,
+.settings-page select,
+.settings-page textarea {
+  font-family: inherit;
+}
+
+.settings-page button:not([role="tab"]):not([role="switch"]) {
+  border-radius: 8px;
+}
+
+.settings-page .settings-models-heading {
+  min-height: 38px;
+  margin-bottom: 12px;
+}
+
+.settings-page .settings-models-heading h2 {
+  font-size: 22px;
+  font-weight: 650;
+  letter-spacing: -0.025em;
+}
+
+.settings-page [data-testid="provider-workbench"] {
+  border-radius: 10px;
+  border-color: color-mix(in srgb, var(--leemo-line) 86%, transparent);
+  box-shadow: 0 1px 2px rgba(24, 34, 47, 0.025);
+}
+
+.settings-page .provider-list {
+  background: #faf9f6;
+}
+
+@media (min-width: 1024px) {
+  .settings-page .provider-list {
+    width: 220px !important;
+  }
+}
+
+.settings-page .provider-list-header {
+  height: 52px;
+  padding-inline: 14px;
+}
+
+.settings-page .provider-list-header > span {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.settings-page [data-testid="provider-list-row"] {
+  height: 72px;
+}
+
+.settings-page [data-testid="provider-list-row"] button[aria-label^="选择 "] {
+  gap: 10px;
+  padding-inline: 14px 4px;
+}
+
+.settings-page [data-testid="provider-list-row"] button[aria-label^="选择 "] > span:first-child {
+  width: 30px;
+  height: 30px;
+  font-size: 11px;
+}
+
+.settings-page [data-testid="provider-list-row"] button[aria-label^="选择 "] > span:last-child > span:first-child > span:first-child {
+  font-size: 13px;
+}
+
+.settings-page .provider-config-header {
+  min-height: 58px;
+  padding: 10px 20px;
+}
+
+.settings-page .provider-config-header h3 {
+  font-size: 15px;
+  font-weight: 650;
+}
+
+.settings-page .provider-config-header p {
+  margin-top: 2px;
+  font-size: 11.5px;
+}
+
+.settings-page .provider-config-tabs {
+  height: 44px;
+}
+
+.settings-page .provider-config-tabs button {
+  position: relative;
+  height: 44px;
+  padding: 0 2px;
+  color: var(--leemo-ink-3);
+  font-size: 13px;
+  font-weight: 550;
+}
+
+.settings-page .provider-config-tabs button[aria-selected="true"] {
+  color: var(--leemo-ink);
+}
+
+.settings-page .provider-config-tabs button[aria-selected="true"]::after {
+  position: absolute;
+  right: 0;
+  bottom: -1px;
+  left: 0;
+  height: 2px;
+  border-radius: 2px 2px 0 0;
+  background: var(--leemo-amber);
+  content: "";
+}
+
+.settings-page .provider-config-scroll {
+  padding: 18px 20px 20px;
+}
+
+.settings-page .provider-config-content {
+  max-width: none;
+}
+
+.settings-page .provider-config-content > section > h4,
+.settings-page .provider-config-advanced h5 {
+  font-size: 14px;
+  font-weight: 650;
+}
+
+.settings-page .provider-config-content label,
+.settings-page .provider-config-content input,
+.settings-page .provider-config-content select,
+.settings-page .provider-config-content button {
+  font-size: 12.5px;
+}
+
+.settings-page .provider-config-content input:not([type="checkbox"]),
+.settings-page .provider-config-content select {
+  min-height: 38px;
+}
+
+.settings-page .provider-config-content ul[aria-label="已启用模型列表"] > li {
+  min-height: 62px;
+  font-size: 12.5px;
+}
+
+.settings-page .provider-config-footer {
+  min-height: 58px;
+  padding: 10px 20px;
+}
+
+.settings-page .provider-config-footer button {
+  min-height: 34px;
+  font-size: 12.5px;
+}
+
+.settings-page .settings-permission-heading {
+  margin-bottom: 18px;
+}
+
+.settings-page .settings-permission-heading h2 {
+  margin: 0;
+  font-size: 22px;
+  line-height: 1.25;
+  font-weight: 650;
+  letter-spacing: -0.025em;
+}
+
+.settings-page .settings-permission-heading p {
+  margin-top: 5px;
+  color: var(--leemo-ink-3);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.settings-page .settings-permission-note {
+  display: flex;
+  min-height: 52px;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 20px;
+  padding: 11px 14px;
+  border: 1px solid color-mix(in srgb, var(--leemo-line) 82%, transparent);
+  border-radius: 10px;
+  color: var(--leemo-ink-2);
+  background: #fafaf8;
+  font-size: 12.5px;
+}
+
+.settings-page .settings-permission-note svg {
+  width: 17px;
+  height: 17px;
+  flex: none;
+  color: var(--leemo-ink-3);
+  stroke-width: 1.8;
+}
+
+.settings-page .settings-permission-group-title {
+  margin-bottom: 9px;
+  color: var(--leemo-ink);
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.settings-page .settings-permission-choices {
+  display: grid;
+  gap: 8px;
+}
+
+.settings-page .settings-permission-choice {
+  display: flex;
+  min-height: 68px;
+  cursor: pointer;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 13px 15px;
+  border: 1px solid color-mix(in srgb, var(--leemo-line) 86%, transparent);
+  border-radius: 10px;
+  background: #fff;
+  transition: border-color 140ms ease, background-color 140ms ease;
+}
+
+.settings-page .settings-permission-choice:hover {
+  border-color: color-mix(in srgb, var(--leemo-amber-line) 56%, var(--leemo-line));
+  background: #fffdf9;
+}
+
+.settings-page .settings-permission-choice[data-active="true"] {
+  border-color: color-mix(in srgb, var(--leemo-amber) 48%, var(--leemo-line));
+  background: color-mix(in srgb, var(--leemo-amber-bg) 52%, white);
+  box-shadow: inset 3px 0 0 color-mix(in srgb, var(--leemo-amber) 82%, transparent);
+}
+
+.settings-page .settings-permission-choice input[type="radio"] {
+  width: 16px;
+  height: 16px;
+  flex: none;
+  margin-top: 2px;
+}
+
+.settings-page .settings-storage__group-title,
+.settings-page .settings-usage__subheading h3 {
+  margin: 22px 0 9px;
+  color: var(--leemo-ink);
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.settings-page .settings-storage__locations {
+  display: grid;
+  gap: 10px;
+}
+
+.settings-page .settings-storage__location-card {
+  display: flex;
+  min-height: 112px;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 16px 18px;
+  border: 1px solid color-mix(in srgb, var(--leemo-line) 88%, transparent);
+  border-radius: 11px;
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(24, 34, 47, 0.025);
+}
+
+.settings-page .settings-storage__location-copy {
+  min-width: 0;
+}
+
+.settings-page .settings-storage__location-copy h4 {
+  font-size: 14px;
+  font-weight: 650;
+}
+
+.settings-page .settings-storage__location-copy p,
+.settings-page .settings-storage__location-copy small {
+  display: block;
+  margin-top: 3px;
+  color: var(--leemo-ink-3);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.settings-page .settings-storage__location-copy .settings-storage__path {
+  overflow: hidden;
+  color: var(--leemo-ink-2);
+  font-size: 13px;
+  font-weight: 560;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settings-page .settings-storage__location-actions {
+  display: flex;
+  flex: none;
+  gap: 8px;
+}
+
+.settings-page .settings-storage__location-actions button,
+.settings-page .settings-storage__toggle-row {
+  border: 1px solid color-mix(in srgb, var(--leemo-line) 88%, transparent);
+  background: #fff;
+}
+
+.settings-page .settings-storage__location-actions button {
+  min-height: 34px;
+  padding: 0 12px;
+  color: var(--leemo-ink-2);
+  font-size: 12.5px;
+}
+
+.settings-page .settings-storage__location-actions button:hover {
+  border-color: color-mix(in srgb, var(--leemo-amber) 50%, var(--leemo-line));
+  color: var(--leemo-ink);
+}
+
+.settings-page .settings-storage__toggle-row {
+  display: flex;
+  min-height: 66px;
+  cursor: pointer;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 12px 16px;
+  border-radius: 10px;
+}
+
+.settings-page .settings-storage__toggle-row strong,
+.settings-page .settings-storage__toggle-row small {
+  display: block;
+}
+
+.settings-page .settings-storage__toggle-row strong {
+  font-size: 13.5px;
+  font-weight: 620;
+}
+
+.settings-page .settings-storage__toggle-row small {
+  margin-top: 3px;
+  color: var(--leemo-ink-3);
+  font-size: 12px;
+}
+
+.settings-page .settings-storage__error {
+  margin-top: 10px;
+  color: var(--leemo-danger);
+  font-size: 12px;
+}
+
+.settings-page .settings-usage__range {
+  display: inline-flex;
+  flex: none;
+  overflow: hidden;
+  padding: 2px;
+  border: 1px solid var(--leemo-line);
+  border-radius: 9px;
+  background: #f5f4f1;
+}
+
+.settings-page .settings-usage__range button {
+  min-width: 62px;
+  height: 30px;
+  padding: 0 10px;
+  color: var(--leemo-ink-3);
+  background: transparent;
+  font-size: 12px;
+}
+
+.settings-page .settings-usage__range button[aria-pressed="true"] {
+  color: var(--leemo-ink);
+  background: #fff;
+  box-shadow: 0 1px 4px rgba(22, 31, 43, 0.09);
+  font-weight: 610;
+}
+
+.settings-page .settings-usage__metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 9px;
+  margin-top: 18px;
+}
+
+.settings-page .settings-usage__metrics article {
+  min-height: 100px;
+  padding: 14px;
+  border: 1px solid color-mix(in srgb, var(--leemo-line) 86%, transparent);
+  border-radius: 10px;
+  background: #fff;
+}
+
+.settings-page .settings-usage__metrics span,
+.settings-page .settings-usage__metrics small {
+  display: block;
+  color: var(--leemo-ink-3);
+  font-size: 11.5px;
+}
+
+.settings-page .settings-usage__metrics strong {
+  display: block;
+  overflow: hidden;
+  margin: 9px 0 5px;
+  color: var(--leemo-ink);
+  font-size: 19px;
+  line-height: 1.1;
+  font-weight: 650;
+  letter-spacing: -0.025em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settings-page .settings-usage__trend,
+.settings-page .settings-usage__table-wrap {
+  margin-top: 18px;
+  padding: 14px 16px;
+  border: 1px solid color-mix(in srgb, var(--leemo-line) 86%, transparent);
+  border-radius: 10px;
+  background: #fff;
+}
+
+.settings-page .settings-usage__subheading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 12px;
+}
+
+.settings-page .settings-usage__subheading h3 {
+  margin: 0;
+}
+
+.settings-page .settings-usage__subheading span {
+  color: var(--leemo-ink-3);
+  font-size: 11.5px;
+}
+
+.settings-page .settings-usage__bars {
+  display: flex;
+  min-height: 98px;
+  align-items: flex-end;
+  gap: 7px;
+}
+
+.settings-page .settings-usage__bars > span {
+  display: grid;
+  min-width: 12px;
+  flex: 1;
+  justify-items: center;
+  gap: 5px;
+}
+
+.settings-page .settings-usage__bars i {
+  width: min(100%, 22px);
+  border-radius: 4px 4px 2px 2px;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--leemo-amber) 78%, white), var(--leemo-amber));
+}
+
+.settings-page .settings-usage__bars small {
+  color: var(--leemo-ink-3);
+  font-size: 9px;
+}
+
+.settings-page .settings-usage__table-wrap {
+  overflow-x: auto;
+}
+
+.settings-page .settings-usage__table-wrap table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.settings-page .settings-usage__table-wrap th,
+.settings-page .settings-usage__table-wrap td {
+  height: 48px;
+  padding: 0 10px;
+  border-top: 1px solid color-mix(in srgb, var(--leemo-line) 68%, transparent);
+  text-align: right;
+}
+
+.settings-page .settings-usage__table-wrap th {
+  height: 34px;
+  color: var(--leemo-ink-3);
+  font-size: 11px;
+  font-weight: 560;
+}
+
+.settings-page .settings-usage__table-wrap th:first-child,
+.settings-page .settings-usage__table-wrap td:first-child {
+  padding-left: 0;
+  text-align: left;
+}
+
+.settings-page .settings-usage__table-wrap th:last-child,
+.settings-page .settings-usage__table-wrap td:last-child {
+  padding-right: 0;
+}
+
+.settings-page .settings-usage__table-wrap td strong,
+.settings-page .settings-usage__table-wrap td small {
+  display: block;
+}
+
+.settings-page .settings-usage__table-wrap td strong {
+  max-width: 180px;
+  overflow: hidden;
+  color: var(--leemo-ink);
+  font-weight: 620;
+  text-overflow: ellipsis;
+}
+
+.settings-page .settings-usage__table-wrap td small {
+  margin-top: 2px;
+  color: var(--leemo-ink-3);
+  font-size: 10.5px;
+}
+
+@media (max-width: 760px) {
+  .settings-page {
+    --settings-sidebar-width: 100%;
+    --settings-content-pad-x: 20px;
+  }
+
+  .settings-page .settings-header {
+    padding-inline: 20px 56px;
+  }
+
+  .settings-page .settings-sidebar {
+    width: 100%;
+    padding: 12px 20px;
+  }
+
+  .settings-page .settings-tab {
+    min-height: 38px;
+    padding-inline: 12px;
+  }
+
+  .settings-page .settings-row-select {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .settings-page .settings-row-select select {
+    width: 100%;
+  }
+
+  .settings-page .settings-storage__location-card {
+    flex-direction: column;
+  }
+
+  .settings-page .settings-usage__metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

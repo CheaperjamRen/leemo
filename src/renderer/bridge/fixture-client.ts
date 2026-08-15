@@ -83,6 +83,12 @@ function sameMemoryScope(left: MemoryScopeView, right: MemoryScopeView): boolean
     { id: "tavily", label: "Tavily", keyless: false, configured: false, configuredFields: [], note: "覆盖面稳定的通用备用来源，需要 API Key。" },
     { id: "bocha", label: "博查", keyless: false, configured: false, configuredFields: [], note: "国内通用备用来源，需要 API Key。" },
     { id: "google", label: "Google Custom Search", keyless: false, configured: false, configuredFields: [], note: "兼容已有 API Key 与搜索引擎 ID，不作为默认来源。" },
+    { id: "exa", label: "Exa", keyless: false, configured: false, configuredFields: [], note: "面向 AI 的语义搜索，配置后作为通用增强来源。" },
+    { id: "brave", label: "Brave Search", keyless: false, configured: false, configuredFields: [], note: "使用独立网页索引的通用来源，需要 API Key。" },
+    { id: "serpapi", label: "SerpAPI", keyless: false, configured: false, configuredFields: [], note: "兼容 Google 搜索结果的备用来源，需要 API Key。" },
+    { id: "serper", label: "Serper", keyless: false, configured: false, configuredFields: [], note: "轻量 Google 搜索 API，需要 API Key。" },
+    { id: "bing", label: "Bing Search", keyless: false, configured: false, configuredFields: [], note: "Bing Search API 已停止服务。", blockedReason: "Bing Search API 已停止服务。" },
+    { id: "firecrawl", label: "Firecrawl", keyless: false, configured: false, configuredFields: [], note: "搜索网页并返回可引用摘要，需要 API Key。" },
   ];
   private memories: MemoryView[] = [{
     id: "fixture-memory-1",
@@ -144,15 +150,52 @@ function sameMemoryScope(left: MemoryScopeView, right: MemoryScopeView): boolean
          });
          return { conversationId } as BridgeInvokeMap[K]["response"];
        }
-       case "bridge:listProviders":
-         return FIXTURE_PROVIDERS.map((provider) => ({
+      case "bridge:listProviders":
+        return FIXTURE_PROVIDERS.map((provider) => ({
            ...provider,
            models: [...provider.models],
            capabilities: { ...provider.capabilities },
            modelCapabilities: provider.modelCapabilities
              ? Object.fromEntries(Object.entries(provider.modelCapabilities).map(([modelId, capabilities]) => [modelId, { ...capabilities }]))
              : undefined,
-         })) as BridgeInvokeMap[K]["response"];
+          })) as BridgeInvokeMap[K]["response"];
+      case "bridge:resolveTaskTimes":
+        return {
+          ok: false,
+          message: "演示环境不会调用模型，请手动确认时间。",
+        } as BridgeInvokeMap[K]["response"];
+      case "bridge:getProviderConfig": {
+         const request = req as BridgeInvokeMap["bridge:getProviderConfig"]["request"];
+         const provider = FIXTURE_PROVIDERS.find((candidate) => candidate.id === request.providerId);
+         if (!provider) return null as BridgeInvokeMap[K]["response"];
+         const hasApiKey = provider.configured === true
+           && provider.authMode !== "none"
+           && provider.authMode !== "oauth-subscription";
+         return {
+           id: provider.id,
+           kind: provider.kind,
+           name: provider.name,
+           baseUrl: provider.baseUrl,
+           apiFormat: provider.apiFormat,
+           authMode: provider.authMode,
+           productKind: provider.productKind,
+           category: provider.category,
+           models: [...provider.models],
+           modelCapabilities: provider.modelCapabilities
+             ? Object.fromEntries(Object.entries(provider.modelCapabilities).map(([modelId, capabilities]) => [modelId, { ...capabilities }]))
+             : undefined,
+           capabilities: { ...provider.capabilities },
+           hasApiKey,
+           apiKeyMasked: hasApiKey ? "····demo" : undefined,
+           saved: provider.configured === true,
+         } as BridgeInvokeMap[K]["response"];
+       }
+       case "bridge:getProviderLoginStatus":
+         return { state: "disconnected" } as BridgeInvokeMap[K]["response"];
+       case "bridge:loginProvider":
+         return { state: "connected" } as BridgeInvokeMap[K]["response"];
+       case "bridge:logoutProvider":
+         return { state: "disconnected" } as BridgeInvokeMap[K]["response"];
        case "bridge:listMcpServers":
          return this.mcpServers.map((server) => ({
            ...server,
@@ -207,6 +250,12 @@ function sameMemoryScope(left: MemoryScopeView, right: MemoryScopeView): boolean
          if (state.running) throw runningConversation(request.conversationId);
          this.scriptReply(state);
          return undefined as BridgeInvokeMap[K]["response"];
+       }
+       case "bridge:guide": {
+         const request = req as BridgeInvokeMap["bridge:guide"]["request"];
+         const state = this.requireActive(request.conversationId);
+         if (!state.running) throw new Error("当前没有正在执行的任务。");
+         return { delivery: "applied" } as BridgeInvokeMap[K]["response"];
        }
        case "bridge:interrupt": {
          const request = req as BridgeInvokeMap["bridge:interrupt"]["request"];
@@ -269,6 +318,8 @@ function sameMemoryScope(left: MemoryScopeView, right: MemoryScopeView): boolean
          return [] as BridgeInvokeMap[K]["response"];
        case "bridge:listCommunitySkills":
          return [] as BridgeInvokeMap[K]["response"];
+       case "bridge:getCommunitySkillDetails":
+         throw new Error("技能完整说明只在桌面版中可用。");
        case "bridge:openSkillsDir":
          return undefined as BridgeInvokeMap[K]["response"];
        case "bridge:pickSkillSource":
@@ -539,7 +590,10 @@ function sameMemoryScope(left: MemoryScopeView, right: MemoryScopeView): boolean
        questions: [{
          header: "整理范围",
          question: "要把这份笔记放进哪个章节？",
-         options: [{ label: "遍历" }, { label: "平衡树" }],
+         options: [
+           { label: "遍历", description: "放进遍历章节，和图搜索、树遍历的笔记一起整理。" },
+           { label: "平衡树", description: "放进平衡树章节，后续继续补 AVL 与红黑树的对照。" },
+         ],
        }],
      };
      this.emit("bridge:askUser", payload);

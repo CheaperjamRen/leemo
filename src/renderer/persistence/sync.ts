@@ -3,6 +3,7 @@ import type { ConversationsState, ConversationMeta } from "../stores/conversatio
 import type { WikiState, WikiEntry } from "../stores/wiki-entries";
 import type { TimelineItem } from "../stores/message-model";
 import { pickPersistedSettings, type SettingsState } from "../stores/settings";
+import { pickPersistedWorkbenchUi, type UiState } from "../stores/ui";
 import { HOME_WORKSPACE_ID, type WorkspacesState } from "../stores/workspaces";
 import type { PersistenceClient } from "./client";
 
@@ -12,6 +13,8 @@ export interface PersistenceSyncStores {
   /** 轮 7 A3 —— optional so existing callers/tests keep compiling; the real
    *  bootstrap always passes it. */
   settings?: StoreApi<SettingsState>;
+  /** Shell layout preferences share the settings KV map under a namespaced key. */
+  ui?: StoreApi<UiState>;
   /** External books can be removed while a debounced conversation save is
    * pending. The registry is authoritative: once removed, do not write into
    * that folder again until the user opens it as a book another time. */
@@ -136,13 +139,19 @@ export function startPersistenceSync(
   // Not debounced: a settings change is one deliberate click, not a stream. The
   // user expects「我改了就存住了」, and coalescing would open a window where
   // closing the app right after a click loses it.
-  let seenSettings = stores.settings ? JSON.stringify(pickPersistedSettings(stores.settings.getState())) : "";
-  const unsubSettings = stores.settings?.subscribe((state) => {
-    const next = JSON.stringify(pickPersistedSettings(state));
+  const persistedPreferences = (): Record<string, unknown> => ({
+    ...(stores.settings ? pickPersistedSettings(stores.settings.getState()) : {}),
+    ...(stores.ui ? { workbenchUi: pickPersistedWorkbenchUi(stores.ui.getState()) } : {}),
+  });
+  let seenSettings = JSON.stringify(persistedPreferences());
+  const persistPreferences = (): void => {
+    const next = JSON.stringify(persistedPreferences());
     if (next === seenSettings) return;
     seenSettings = next;
     void client.saveSettings(JSON.parse(next) as Record<string, unknown>).catch(onError);
-  });
+  };
+  const unsubSettings = stores.settings?.subscribe(persistPreferences);
+  const unsubUi = stores.ui?.subscribe(persistPreferences);
 
   return () => {
     cancelPending?.();
@@ -152,5 +161,6 @@ export function startPersistenceSync(
     unsubConversations();
     unsubWiki();
     unsubSettings?.();
+    unsubUi?.();
   };
 }

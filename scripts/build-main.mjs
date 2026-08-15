@@ -13,10 +13,12 @@ const outdir = path.join(root, "dist-electron");
 const documentEngineSource = path.join(root, "src", "host", "document-engine.ts");
 const skillPackageSource = path.join(root, "src", "host", "skill-package.ts");
 const learningServiceSource = path.join(root, "src", "main", "learning-service.ts");
+const acpSdkSource = path.join(root, "node_modules", "@agentclientprotocol", "sdk", "dist", "acp.js");
 const prebundleDir = fs.mkdtempSync(path.join(os.tmpdir(), "leemo-host-prebundle-"));
 const documentEnginePrebundle = path.join(prebundleDir, "document-engine.mjs");
 const skillPackagePrebundle = path.join(prebundleDir, "skill-package.mjs");
 const learningServicePrebundle = path.join(prebundleDir, "learning-service.mjs");
+const acpSdkPrebundle = path.join(prebundleDir, "agent-client-protocol-sdk.mjs");
 
 const common = {
   bundle: true,
@@ -76,6 +78,17 @@ try {
       sourcemap: false,
       logLevel: "info",
     }),
+    build({
+      bundle: true,
+      platform: "node",
+      target: "node22",
+      format: "esm",
+      packages: "bundle",
+      entryPoints: [acpSdkSource],
+      outfile: acpSdkPrebundle,
+      sourcemap: false,
+      logLevel: "info",
+    }),
   ]);
 
   const bundleHostPrebundles = {
@@ -107,6 +120,9 @@ try {
         }
         return undefined;
       });
+      buildApi.onResolve({ filter: /^@agentclientprotocol\/sdk$/ }, () => ({
+        path: acpSdkPrebundle,
+      }));
     },
   };
 
@@ -125,14 +141,23 @@ try {
       outfile: path.join(outdir, "preload.cjs"),
       format: "cjs", // sandboxed preload must be CommonJS
     }),
+    build({
+      ...common,
+      entryPoints: [path.join(root, "src/main/quick-capture-preload.ts")],
+      outfile: path.join(outdir, "quick-capture-preload.cjs"),
+      format: "cjs",
+    }),
   ]);
 
   const mainBundle = fs.readFileSync(path.join(outdir, "main.mjs"), "utf8");
   if (/(?:from|import\()\s*["']@(?:vendor\/|\/)/.test(mainBundle)) {
     throw new Error("[build-main] unresolved local gateway alias remained in main.mjs");
   }
+  if (/(?:from|import\()\s*["']@agentclientprotocol\/sdk["']/.test(mainBundle)) {
+    throw new Error("[build-main] ACP SDK remained external in main.mjs");
+  }
 
-  console.log("[build-main] dist-electron/main.mjs + preload.cjs ready");
+  console.log("[build-main] main + main-window preload + quick-capture preload ready");
 } finally {
   fs.rmSync(prebundleDir, { recursive: true, force: true });
 }

@@ -19,17 +19,25 @@ import type {
   BundledSkillRuntime,
   BundledSkillRuntimeSnapshot,
 } from "../../src/host/bundled-skills";
+import {
+  SUPERPOWERS_COLLECTION_LABEL,
+  SUPERPOWERS_SKILL_NAMES,
+  type SuperpowersSkillDefinition,
+  type SuperpowersSkillRuntime,
+  type SuperpowersSkillRuntimeSnapshot,
+} from "../../src/host/superpowers-skills";
 
 function makeCatalog(): CatalogEntry[] {
   return [
     {
+      executionEngine: "claude-agent-sdk",
       provider: {
         id: "deepseek",
         name: "DeepSeek",
         category: "cn_official",
         apiFormat: "anthropic",
         baseUrl: "https://api.deepseek.com/anthropic",
-        apiKey: "sk-test-secret",
+        apiKey: "test-key-secret",
         models: ["deepseek-chat"],
         modelCapabilities: { "deepseek-chat": { thinking: false, vision: false } },
         envTemplate: {},
@@ -71,6 +79,116 @@ function makeDeps(
   };
   return { deps, pushed };
 }
+
+describe("bridge-host — per-turn subagent control", () => {
+  it("structurally removes Agent and Task for only the opted-out turn", async () => {
+    const seen: Record<string, unknown>[] = [];
+    const { deps, pushed } = makeDeps((params) => (async function* () {
+      seen.push((params.options ?? {}) as Record<string, unknown>);
+      yield { type: "result", subtype: "success", result: "", is_error: false };
+    })() as never);
+    const host = createBridgeHost(deps);
+    try {
+      const { conversationId } = await host.handleInvoke("bridge:createConversation", {
+        providerId: "deepseek",
+        modelId: "deepseek-chat",
+        webSearchEnabled: false,
+      });
+
+      await host.handleInvoke("bridge:send", {
+        conversationId,
+        prompt: "这轮不要召集助手",
+        allowSubagents: false,
+      });
+      await vi.waitFor(() => {
+        expect(pushed.filter((call) =>
+          call.channel === "bridge:event"
+          && (call.payload as { event?: { type?: string } }).event?.type === "run.finished"
+        )).toHaveLength(1);
+      });
+
+      await host.handleInvoke("bridge:send", { conversationId, prompt: "下一轮恢复自动" });
+      await vi.waitFor(() => expect(seen).toHaveLength(2));
+
+      expect(seen[0].disallowedTools).toEqual(expect.arrayContaining(["WebSearch", "Agent", "Task"]));
+      expect(seen[1].disallowedTools).toEqual(expect.arrayContaining(["WebSearch"]));
+      expect(seen[1].disallowedTools as string[]).not.toContain("Agent");
+      expect(seen[1].disallowedTools as string[]).not.toContain("Task");
+    } finally {
+      host.dispose();
+    }
+  });
+});
+
+describe("bridge-host — note references", () => {
+  it("loads the newest referenced note bodies for this turn only", async () => {
+    const prompts: string[] = [];
+    const { deps } = makeDeps((params) => (async function* () {
+      for await (const message of params.prompt as AsyncIterable<{ message: { content: string } }>) {
+        prompts.push(message.message.content);
+      }
+      yield { type: "result", subtype: "success", result: "", is_error: false };
+    })() as never);
+    deps.captures = {
+      getNote: vi.fn((id: string) => id === "note-current"
+        ? { id, title: "项目思路", markdown: "这是刚更新的正文", revision: 2, createdAt: 1, updatedAt: 2 }
+        : null),
+    } as unknown as HostDeps["captures"];
+    const host = createBridgeHost(deps);
+    try {
+      const { conversationId } = await host.handleInvoke("bridge:createConversation", {
+        providerId: "deepseek",
+        modelId: "deepseek-chat",
+        webSearchEnabled: false,
+      });
+      await host.handleInvoke("bridge:send", {
+        conversationId,
+        prompt: "请基于便签回答",
+        noteReferences: ["note-current", "note-missing"],
+      });
+
+      await vi.waitFor(() => expect(prompts).toHaveLength(1));
+      expect(prompts[0]).toContain("请基于便签回答");
+      expect(prompts[0]).toContain("项目思路");
+      expect(prompts[0]).toContain("这是刚更新的正文");
+      expect(prompts[0]).not.toContain("note-missing");
+    } finally {
+      host.dispose();
+    }
+  });
+});
+
+describe("bridge-host — persistent conversation goal", () => {
+  it("adds the active goal to the real turn prompt without replacing the user's message", async () => {
+    const prompts: string[] = [];
+    const { deps } = makeDeps((params) => (async function* () {
+      for await (const message of params.prompt as AsyncIterable<{ message: { content: string } }>) {
+        prompts.push(message.message.content);
+      }
+      yield { type: "result", subtype: "success", result: "", is_error: false };
+    })() as never);
+    const host = createBridgeHost(deps);
+    try {
+      const { conversationId } = await host.handleInvoke("bridge:createConversation", {
+        providerId: "deepseek",
+        modelId: "deepseek-chat",
+        webSearchEnabled: false,
+      });
+      await host.handleInvoke("bridge:send", {
+        conversationId,
+        prompt: "继续实现输入框",
+        goalText: "完成主界面视觉复现",
+      });
+
+      await vi.waitFor(() => expect(prompts).toHaveLength(1));
+      expect(prompts[0]).toContain("继续实现输入框");
+      expect(prompts[0]).toContain("当前目标");
+      expect(prompts[0]).toContain("完成主界面视觉复现");
+    } finally {
+      host.dispose();
+    }
+  });
+});
 
 describe("bridge-host — root artifact routing", () => {
   type CapturedCanUseTool = (
@@ -1989,6 +2107,7 @@ describe("bridge-host — skills (轮 2 卡 E)", () => {
   async function captureOptions(
     req: Parameters<ReturnType<typeof createBridgeHost>["handleInvoke"]>[1],
     extra: Partial<HostDeps> = {},
+    prompt = "hi",
   ): Promise<Record<string, unknown>> {
     const seen: Record<string, unknown>[] = [];
     const { deps } = makeDeps((params) =>
@@ -1999,7 +2118,7 @@ describe("bridge-host — skills (轮 2 卡 E)", () => {
     );
     const host = createBridgeHost({ ...deps, ...extra });
     const { conversationId } = await host.handleInvoke("bridge:createConversation", req as never);
-    await host.handleInvoke("bridge:send", { conversationId, prompt: "hi" });
+    await host.handleInvoke("bridge:send", { conversationId, prompt });
     await new Promise((r) => setTimeout(r, 20));
     return seen[0] ?? {};
   }
@@ -2029,6 +2148,70 @@ describe("bridge-host — skills (轮 2 卡 E)", () => {
         behavior: "deny",
         message: expect.stringContaining("选区问答只分析当前选中的内容"),
       });
+    }
+  });
+
+  it("does not attribute incidental disk changes to the read-only work overview tool", async () => {
+    const root = mkdtempSync(path.join(tmpdir(), "leemo-overview-receipt-"));
+    const incidentalPath = path.join(root, "unrelated.md");
+    try {
+      const { deps, pushed } = makeDeps(() => (async function* () {
+        yield { type: "system", subtype: "init", session_id: "session-overview-receipt" };
+        yield {
+          type: "assistant",
+          session_id: "session-overview-receipt",
+          parent_tool_use_id: null,
+          message: {
+            role: "assistant",
+            content: [{
+              type: "tool_use",
+              id: "overview-receipt",
+              name: "mcp__leemo-work-overview__set_work_overview",
+              input: { focus: "PDF 阅读" },
+            }],
+          },
+        };
+        writeFileSync(incidentalPath, "not created by the overview tool", "utf8");
+        yield {
+          type: "user",
+          session_id: "session-overview-receipt",
+          parent_tool_use_id: null,
+          message: {
+            role: "user",
+            content: [{ type: "tool_result", tool_use_id: "overview-receipt", content: "ok", is_error: false }],
+          },
+        };
+        yield {
+          type: "result",
+          subtype: "success",
+          session_id: "session-overview-receipt",
+          result: "概览已更新。",
+          is_error: false,
+        };
+      })() as never);
+      Object.assign(deps, { workspaceRoot: root });
+      const host = createBridgeHost(deps);
+      const created = await host.handleInvoke("bridge:createConversation", {
+        providerId: "deepseek",
+        modelId: "deepseek-chat",
+      });
+      await host.handleInvoke("bridge:send", {
+        conversationId: created.conversationId,
+        prompt: "把概览重点改为 PDF 阅读",
+      });
+      await vi.waitFor(() => {
+        expect(pushed.some((call) =>
+          call.channel === "bridge:event"
+          && (call.payload as { event?: { type?: string } }).event?.type === "run.finished")).toBe(true);
+      });
+
+      const eventTypes = pushed
+        .filter((call) => call.channel === "bridge:event")
+        .map((call) => (call.payload as { event: { type: string } }).event.type);
+      expect(eventTypes).not.toContain("file.changed");
+      host.dispose();
+    } finally {
+      rmSync(root, { recursive: true, force: true });
     }
   });
 
@@ -2079,6 +2262,282 @@ describe("bridge-host — skills (轮 2 卡 E)", () => {
       ensureReady,
     };
   }
+
+  function superpowersDefinition(name: (typeof SUPERPOWERS_SKILL_NAMES)[number]): SuperpowersSkillDefinition {
+    return {
+      id: `superpowers:${name}`,
+      directory: name,
+      sourceDir: `C:\\Leemo\\superpowers-bundle\\${name}`,
+      name: `产品文案 ${name}`,
+      commandName: name,
+      description: `${name} 的真实开发方法`,
+      qualifiedName: `superpowers:${name}`,
+      source: "builtin",
+      category: "developer",
+      categoryLabel: "开发",
+      defaultEnabled: false,
+      available: true,
+      trust: "community",
+      sourceKind: "leemo",
+      sourceLabel: "社区精选",
+      sourceUrl: `https://github.com/obra/superpowers/tree/revision/skills/${name}`,
+      repository: "obra/superpowers",
+      revision: "revision",
+      license: "MIT",
+      scanStatus: "scanned",
+      canRemove: false,
+      canUpdate: false,
+      collectionId: "superpowers",
+      collectionLabel: SUPERPOWERS_COLLECTION_LABEL,
+    };
+  }
+
+  function superpowersRuntime(
+    initial: SuperpowersSkillRuntimeSnapshot,
+  ): SuperpowersSkillRuntime & { ensureReady: ReturnType<typeof vi.fn> } {
+    const state = initial;
+    const ensureReady = vi.fn(async () => state);
+    return {
+      snapshot: () => ({ ...state, skills: [...state.skills] }),
+      ensureReady,
+    };
+  }
+
+  it("lists all 14 Superpowers cards as a separate default-off suite without exposing paths", async () => {
+    const skills = SUPERPOWERS_SKILL_NAMES.map(superpowersDefinition);
+    const superpowersSkills = superpowersRuntime({
+      status: "ready",
+      pluginPath: "C:\\Leemo\\runtime\\superpowers",
+      revision: "revision",
+      skills,
+    });
+    const { deps } = makeDeps();
+    const host = createBridgeHost({ ...deps, superpowersSkills });
+
+    const listed = (await host.handleInvoke("bridge:listSkills", undefined))
+      .filter((skill) => skill.collectionId === "superpowers");
+
+    expect(listed).toHaveLength(14);
+    expect(listed.every((skill) => skill.defaultEnabled === false && skill.available === true)).toBe(true);
+    expect(listed.map((skill) => skill.qualifiedName)).toContain("superpowers:brainstorming");
+    expect(listed.map((skill) => skill.qualifiedName)).toContain("superpowers:writing-plans");
+    expect(JSON.stringify(listed)).not.toContain("C:\\Leemo");
+  });
+
+  it("keeps an ordinary default conversation completely free of Superpowers", async () => {
+    const superpowersSkills = superpowersRuntime({
+      status: "ready",
+      pluginPath: "C:\\Leemo\\runtime\\superpowers",
+      revision: "revision",
+      skills: SUPERPOWERS_SKILL_NAMES.map(superpowersDefinition),
+    });
+    const bundledSkills = bundledRuntime({
+      status: "ready",
+      pluginPath: "C:\\Leemo\\runtime\\leemo-library",
+      revision: "bundled-revision",
+      skills: [bundledDefinition("frontend-design", true)],
+    });
+
+    const options = await captureOptions(baseReq, { bundledSkills, superpowersSkills });
+
+    expect(superpowersSkills.ensureReady).not.toHaveBeenCalled();
+    expect(options.plugins).toEqual([{ type: "local", path: "C:\\Leemo\\runtime\\leemo-library" }]);
+    expect(options.skills).toEqual(["leemo-library:frontend-design"]);
+    expect(JSON.stringify(options.systemPrompt ?? "")).not.toContain("superpowers:");
+  });
+
+  it("does not prepare or route an unknown Superpowers-looking name", async () => {
+    const superpowersSkills = superpowersRuntime({
+      status: "ready",
+      pluginPath: "C:\\Leemo\\runtime\\superpowers",
+      revision: "revision",
+      skills: SUPERPOWERS_SKILL_NAMES.map(superpowersDefinition),
+    });
+
+    const options = await captureOptions(
+      { ...baseReq, enabledSkills: ["superpowers:not-a-real-skill"] },
+      { superpowersSkills },
+    );
+
+    expect(superpowersSkills.ensureReady).not.toHaveBeenCalled();
+    expect("plugins" in options).toBe(false);
+    expect("skills" in options).toBe(false);
+    expect(JSON.stringify(options.systemPrompt ?? "")).not.toContain("superpowers:");
+  });
+
+  it("prepares once and routes the complete Superpowers suite through one plugin", async () => {
+    const skills = SUPERPOWERS_SKILL_NAMES.map(superpowersDefinition);
+    let state: SuperpowersSkillRuntimeSnapshot = { status: "preparing", skills };
+    const ensureReady = vi.fn(async () => {
+      state = {
+        status: "ready",
+        pluginPath: "C:\\Leemo\\runtime\\superpowers",
+        revision: "revision",
+        skills,
+      };
+      return state;
+    });
+    const superpowersSkills: SuperpowersSkillRuntime = {
+      snapshot: () => ({ ...state, skills: [...state.skills] }),
+      ensureReady,
+    };
+    const enabledSkills = SUPERPOWERS_SKILL_NAMES.map((name) => `superpowers:${name}`);
+
+    const options = await captureOptions(
+      { ...baseReq, enabledSkills },
+      { superpowersSkills },
+      "Let's make a react todo list",
+    );
+
+    expect(ensureReady).toHaveBeenCalledTimes(1);
+    expect(options.plugins).toEqual([{ type: "local", path: "C:\\Leemo\\runtime\\superpowers" }]);
+    expect(options.skills).toEqual(enabledSkills);
+    expect(options.skills).toContain("superpowers:brainstorming");
+    expect(options.skills).toContain("superpowers:writing-plans");
+    const append = (options.systemPrompt as { append: string }).append;
+    expect(append).toContain("superpowers:using-superpowers");
+    expect(append).toContain("回复或执行前");
+    expect(append).not.toContain("C:\\Leemo");
+  });
+
+  it("does not add the bootstrap when using-superpowers itself is disabled", async () => {
+    const superpowersSkills = superpowersRuntime({
+      status: "ready",
+      pluginPath: "C:\\Leemo\\runtime\\superpowers",
+      revision: "revision",
+      skills: SUPERPOWERS_SKILL_NAMES.map(superpowersDefinition),
+    });
+
+    const options = await captureOptions(
+      { ...baseReq, enabledSkills: ["superpowers:brainstorming"] },
+      { superpowersSkills },
+    );
+
+    expect(options.plugins).toEqual([{ type: "local", path: "C:\\Leemo\\runtime\\superpowers" }]);
+    expect(options.skills).toEqual(["superpowers:brainstorming"]);
+    expect(JSON.stringify(options.systemPrompt ?? "")).not.toContain("superpowers:using-superpowers");
+  });
+
+  it("keeps the fixed bootstrap within the exact enabled allow-list", async () => {
+    const superpowersSkills = superpowersRuntime({
+      status: "ready",
+      pluginPath: "C:\\Leemo\\runtime\\superpowers",
+      revision: "revision",
+      skills: SUPERPOWERS_SKILL_NAMES.map(superpowersDefinition),
+    });
+
+    const options = await captureOptions(
+      { ...baseReq, enabledSkills: ["superpowers:using-superpowers"] },
+      { superpowersSkills },
+    );
+
+    const append = (options.systemPrompt as { append: string }).append;
+    expect(append).toContain("superpowers:using-superpowers");
+    expect(append).not.toContain("superpowers:brainstorming");
+    expect(append).not.toContain("superpowers:writing-plans");
+  });
+
+  it("removes the Superpowers plugin, allow-list and bootstrap on the next round after disabling", async () => {
+    const seen: Record<string, unknown>[] = [];
+    const { deps } = makeDeps((params) => (async function* () {
+      seen.push((params.options ?? {}) as Record<string, unknown>);
+      yield { type: "result", subtype: "success", result: "ok", is_error: false };
+    })() as never);
+    const superpowersSkills = superpowersRuntime({
+      status: "ready",
+      pluginPath: "C:\\Leemo\\runtime\\superpowers",
+      revision: "revision",
+      skills: SUPERPOWERS_SKILL_NAMES.map(superpowersDefinition),
+    });
+    const host = createBridgeHost({ ...deps, superpowersSkills });
+    const { conversationId } = await host.handleInvoke("bridge:createConversation", {
+      ...baseReq,
+      enabledSkills: ["superpowers:using-superpowers"],
+    });
+
+    await host.handleInvoke("bridge:send", { conversationId, prompt: "first" });
+    await vi.waitFor(() => expect(seen).toHaveLength(1));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    await host.handleInvoke("bridge:syncEnabledSkills", { enabledQualifiedNames: [] });
+    await host.handleInvoke("bridge:send", { conversationId, prompt: "second" });
+    await vi.waitFor(() => expect(seen).toHaveLength(2));
+
+    expect(seen[0]?.plugins).toEqual([{ type: "local", path: "C:\\Leemo\\runtime\\superpowers" }]);
+    expect(JSON.stringify(seen[0]?.systemPrompt ?? "")).toContain("superpowers:using-superpowers");
+    expect("plugins" in seen[1]!).toBe(false);
+    expect("skills" in seen[1]!).toBe(false);
+    expect(JSON.stringify(seen[1]?.systemPrompt ?? "")).not.toContain("superpowers:");
+  });
+
+  it("keeps the newest sync selection when an earlier enable finishes preparing later", async () => {
+    const seen: Record<string, unknown>[] = [];
+    const { deps } = makeDeps((params) => (async function* () {
+      seen.push((params.options ?? {}) as Record<string, unknown>);
+      yield { type: "result", subtype: "success", result: "ok", is_error: false };
+    })() as never);
+    const skills = SUPERPOWERS_SKILL_NAMES.map(superpowersDefinition);
+    let state: SuperpowersSkillRuntimeSnapshot = { status: "preparing", skills };
+    let finishPreparation!: () => void;
+    const preparation = new Promise<SuperpowersSkillRuntimeSnapshot>((resolve) => {
+      finishPreparation = () => {
+        state = {
+          status: "ready",
+          pluginPath: "C:\\Leemo\\runtime\\superpowers",
+          revision: "revision",
+          skills,
+        };
+        resolve(state);
+      };
+    });
+    const ensureReady = vi.fn(() => preparation);
+    const superpowersSkills: SuperpowersSkillRuntime = {
+      snapshot: () => ({ ...state, skills: [...state.skills] }),
+      ensureReady,
+    };
+    const host = createBridgeHost({ ...deps, superpowersSkills });
+    const { conversationId } = await host.handleInvoke("bridge:createConversation", baseReq);
+
+    const staleEnable = host.handleInvoke("bridge:syncEnabledSkills", {
+      enabledQualifiedNames: ["superpowers:using-superpowers"],
+    });
+    await vi.waitFor(() => expect(ensureReady).toHaveBeenCalledTimes(1));
+    await host.handleInvoke("bridge:syncEnabledSkills", { enabledQualifiedNames: [] });
+    finishPreparation();
+    await staleEnable;
+
+    await host.handleInvoke("bridge:send", { conversationId, prompt: "after disable" });
+    await vi.waitFor(() => expect(seen).toHaveLength(1));
+
+    expect("plugins" in seen[0]!).toBe(false);
+    expect("skills" in seen[0]!).toBe(false);
+    expect(JSON.stringify(seen[0]?.systemPrompt ?? "")).not.toContain("superpowers:");
+  });
+
+  it("discards an obsolete preparation error after a newer sync has already won", async () => {
+    const { deps } = makeDeps();
+    const skills = SUPERPOWERS_SKILL_NAMES.map(superpowersDefinition);
+    let rejectPreparation!: (error: Error) => void;
+    const preparation = new Promise<SuperpowersSkillRuntimeSnapshot>((_resolve, reject) => {
+      rejectPreparation = reject;
+    });
+    const ensureReady = vi.fn(() => preparation);
+    const superpowersSkills: SuperpowersSkillRuntime = {
+      snapshot: () => ({ status: "preparing", skills }),
+      ensureReady,
+    };
+    const host = createBridgeHost({ ...deps, superpowersSkills });
+    const { conversationId } = await host.handleInvoke("bridge:createConversation", baseReq);
+
+    const staleEnable = host.handleInvoke("bridge:syncEnabledSkills", {
+      enabledQualifiedNames: ["superpowers:using-superpowers"],
+    });
+    await vi.waitFor(() => expect(ensureReady).toHaveBeenCalledTimes(1));
+    await host.handleInvoke("bridge:syncEnabledSkills", { enabledQualifiedNames: [] });
+    rejectPreparation(new Error("obsolete preparation failed"));
+
+    await expect(staleEnable).resolves.toEqual({ updatedConversations: 0 });
+    expect(conversationId).toEqual(expect.any(String));
+  });
 
   it("bridge:listSkills returns the scanned skills with bare + qualified names", async () => {
     const { deps } = makeDeps();
@@ -2352,14 +2811,14 @@ describe("bridge-host — skills (轮 2 卡 E)", () => {
     expect(env.ANTHROPIC_BASE_URL).toMatch(/^http:\/\/127\.0\.0\.1:\d+$/);
     expect(env.ANTHROPIC_AUTH_TOKEN).toBe("leemo-search:deepseek");
     // 顺带的安全升级：原先直连接线把真 key 放进子进程 env（子进程能跑 bash）。
-    expect(JSON.stringify(env)).not.toContain("sk-test-secret");
+    expect(JSON.stringify(env)).not.toContain("test-key-secret");
   });
 
   it("keeps the original DIRECT wiring when the toggle is off (no shim started, real key as before)", async () => {
     const opts = await captureOptions({ ...baseReq, webSearchEnabled: false });
     const env = opts.env as Record<string, string | undefined>;
     expect(env.ANTHROPIC_BASE_URL).toBe("https://api.deepseek.com/anthropic");
-    expect(env.ANTHROPIC_AUTH_TOKEN).toBe("sk-test-secret");
+    expect(env.ANTHROPIC_AUTH_TOKEN).toBe("test-key-secret");
   });
 
   // 轮 4 卡 H2: 内置 WebFetch 的域名预检要 GET api.anthropic.com，本机实测 403
@@ -2803,7 +3262,7 @@ describe("bridge-host", () => {
     const host = createBridgeHost(deps);
     const specs = await host.handleInvoke("bridge:listProviders", undefined);
     expect(specs).toHaveLength(1);
-    expect(JSON.stringify(specs)).not.toContain("sk-test-secret");
+    expect(JSON.stringify(specs)).not.toContain("test-key-secret");
   });
 
   it("createConversation returns a conversationId", async () => {
@@ -3021,6 +3480,115 @@ describe("bridge-host", () => {
     await host.handleInvoke("bridge:approvalDecision", { id: reqId, decision: "allow-once" });
     const result = await decisionPromise;
     expect((result as { behavior: string }).behavior).toBe("allow");
+  });
+
+  it("exposes the reserved work overview service to normal conversations but never wiki selection chats", async () => {
+    const captureMcpNames = async (purpose?: "wiki") => {
+      let names: string[] = [];
+      let canUseTool: ((name: string, input: Record<string, unknown>, options: Record<string, unknown>) => Promise<unknown>) | undefined;
+      const { deps, pushed } = makeDeps((params) => (async function* () {
+        const options = params.options as Record<string, unknown>;
+        names = Object.keys((options.mcpServers ?? {}) as object);
+        canUseTool = options.canUseTool as typeof canUseTool;
+        yield { type: "result", subtype: "success", result: "", is_error: false };
+      })() as never);
+      const host = createBridgeHost(deps);
+      const { conversationId } = await host.handleInvoke("bridge:createConversation", {
+        providerId: "deepseek",
+        modelId: "deepseek-chat",
+        ...(purpose ? { purpose } : {}),
+      });
+      await host.handleInvoke("bridge:send", { conversationId, prompt: "hi" });
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      const access = purpose ? undefined : await canUseTool!(
+        "mcp__leemo-work-overview__set_work_overview",
+        { focus: "PDF 阅读" },
+        { signal: new AbortController().signal, toolUseID: "overview-1", requestId: "overview-1" },
+      );
+      host.dispose();
+      return {
+        names,
+        access,
+        approvalCount: pushed.filter((call) => call.channel === "bridge:approvalRequest").length,
+      };
+    };
+    const normal = await captureMcpNames();
+    const wiki = await captureMcpNames("wiki");
+
+    expect(normal.names).toContain("leemo-work-overview");
+    expect(normal.access).toEqual({ behavior: "allow" });
+    expect(normal.approvalCount).toBe(0);
+    expect(wiki.names).not.toContain("leemo-work-overview");
+  });
+
+  it("auto-denies an unanswered approval once after the configured timeout", async () => {
+    let capturedCanUseTool: ((name: string, input: Record<string, unknown>, opts: { signal: AbortSignal; toolUseID: string; requestId: string }) => Promise<unknown>) | undefined;
+    const { deps, pushed } = makeDeps((params) =>
+      (async function* () {
+        capturedCanUseTool = (params.options as Record<string, unknown>)?.canUseTool as typeof capturedCanUseTool;
+        yield { type: "result", subtype: "success", result: "", is_error: false };
+      })() as never,
+    );
+    deps.approvalTimeoutMs = 20;
+    const host = createBridgeHost(deps);
+    const { conversationId } = await host.handleInvoke("bridge:createConversation", {
+      providerId: "deepseek",
+      modelId: "deepseek-chat",
+    });
+    await host.handleInvoke("bridge:send", { conversationId, prompt: "hi" });
+    await vi.waitFor(() => expect(capturedCanUseTool).toBeDefined());
+
+    const decisionPromise = capturedCanUseTool!("Bash", { command: "echo timeout" }, {
+      signal: new AbortController().signal,
+      toolUseID: "tu-timeout",
+      requestId: "rq-timeout",
+    });
+
+    const result = await decisionPromise as { behavior: string; message?: string };
+    expect(result.behavior).toBe("deny");
+    expect(result.message).toMatch(/timed out/i);
+    const expired = pushed.filter((entry) => entry.channel === "bridge:approvalExpired");
+    expect(expired).toEqual([{
+      channel: "bridge:approvalExpired",
+      payload: expect.objectContaining({ conversationId }),
+    }]);
+    const request = pushed.find((entry) => entry.channel === "bridge:approvalRequest")!.payload as { id: string };
+    await host.handleInvoke("bridge:approvalDecision", { id: request.id, decision: "allow-once" });
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    expect(pushed.filter((entry) => entry.channel === "bridge:approvalExpired")).toHaveLength(1);
+    host.dispose();
+  });
+
+  it("cancels the approval timeout after a manual decision", async () => {
+    let capturedCanUseTool: ((name: string, input: Record<string, unknown>, opts: { signal: AbortSignal; toolUseID: string; requestId: string }) => Promise<unknown>) | undefined;
+    const { deps, pushed } = makeDeps((params) =>
+      (async function* () {
+        capturedCanUseTool = (params.options as Record<string, unknown>)?.canUseTool as typeof capturedCanUseTool;
+        yield { type: "result", subtype: "success", result: "", is_error: false };
+      })() as never,
+    );
+    deps.approvalTimeoutMs = 100;
+    const host = createBridgeHost(deps);
+    const { conversationId } = await host.handleInvoke("bridge:createConversation", {
+      providerId: "deepseek",
+      modelId: "deepseek-chat",
+    });
+    await host.handleInvoke("bridge:send", { conversationId, prompt: "hi" });
+    await vi.waitFor(() => expect(capturedCanUseTool).toBeDefined());
+
+    const decisionPromise = capturedCanUseTool!("Bash", { command: "echo allow" }, {
+      signal: new AbortController().signal,
+      toolUseID: "tu-manual",
+      requestId: "rq-manual",
+    });
+    await vi.waitFor(() => expect(pushed.some((entry) => entry.channel === "bridge:approvalRequest")).toBe(true));
+    const request = pushed.find((entry) => entry.channel === "bridge:approvalRequest")!.payload as { id: string };
+    await host.handleInvoke("bridge:approvalDecision", { id: request.id, decision: "allow-once" });
+
+    await expect(decisionPromise).resolves.toMatchObject({ behavior: "allow" });
+    await new Promise((resolve) => setTimeout(resolve, 120));
+    expect(pushed.some((entry) => entry.channel === "bridge:approvalExpired")).toBe(false);
+    host.dispose();
   });
 
   it("ask-user round-trip: inspect → handle → askUser push → askUserAnswer → resolves", async () => {

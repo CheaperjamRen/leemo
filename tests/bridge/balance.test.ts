@@ -34,7 +34,7 @@ const deepseekProvider = {
   id: "deepseek",
   apiFormat: "anthropic" as const,
   baseUrl: "https://api.deepseek.com/anthropic",
-  apiKey: "sk-test-deepseek-DIRECTKEY-000000000000",
+  apiKey: "test-key-deepseek-DIRECTKEY-000000000000",
 };
 
 describe("fetchBalance — DeepSeek", () => {
@@ -100,7 +100,7 @@ describe("fetchBalance — unsupported providers", () => {
       id: "glm",
       apiFormat: "anthropic" as const,
       baseUrl: "https://open.bigmodel.cn/api/anthropic",
-      apiKey: "sk-test-glm-DIRECTKEY-222222222222",
+      apiKey: "test-key-glm-DIRECTKEY-222222222222",
     };
     const fetchFn = fakeFetchReturning({});
     const info = await fetchBalance(glmProvider, { fetchFn });
@@ -115,7 +115,7 @@ describe("fetchBalance — unsupported providers", () => {
     }) as unknown as typeof fetch;
 
     const info = await fetchBalance(
-      { id: "not-a-real-provider", apiFormat: "openai", baseUrl: "https://example.com", apiKey: "sk-test-x" },
+      { id: "not-a-real-provider", apiFormat: "openai", baseUrl: "https://example.com", apiKey: "test-key-x" },
       { fetchFn }
     );
     expect(info.supported).toBe(false);
@@ -129,7 +129,7 @@ describe("fetchBalance — unsupported providers", () => {
       return { ok: true, status: 200, json: async () => ({}) } as unknown as Response;
     }) as unknown as typeof fetch;
     const info = await fetchBalance(
-      { id: "qwen", kind: "qwen", apiFormat: "anthropic", baseUrl: "https://dashscope.aliyuncs.com/apps/anthropic", apiKey: "sk-test-qwen" },
+      { id: "qwen", kind: "qwen", apiFormat: "anthropic", baseUrl: "https://dashscope.aliyuncs.com/apps/anthropic", apiKey: "test-key-qwen" },
       { fetchFn }
     );
     expect(info.supported).toBe(false);
@@ -153,7 +153,7 @@ describe("fetchBalance — dispatch is per FAMILY, not per instance (轮 3 卡 F
         kind: "deepseek",
         apiFormat: "anthropic",
         baseUrl: "https://api.deepseek.com",
-        apiKey: "sk-test-deepseek-second-account",
+        apiKey: "test-key-deepseek-second-account",
       },
       { fetchFn }
     );
@@ -168,7 +168,7 @@ describe("fetchBalance — dispatch is per FAMILY, not per instance (轮 3 卡 F
       return { ok: true, status: 200, json: async () => ({}) } as unknown as Response;
     }) as unknown as typeof fetch;
     const info = await fetchBalance(
-      { id: "glm-personal", kind: "glm", apiFormat: "anthropic", baseUrl: "https://open.bigmodel.cn/api/anthropic", apiKey: "sk-test-glm-2" },
+      { id: "glm-personal", kind: "glm", apiFormat: "anthropic", baseUrl: "https://open.bigmodel.cn/api/anthropic", apiKey: "test-key-glm-2" },
       { fetchFn }
     );
     expect(info.supported).toBe(false);
@@ -183,7 +183,7 @@ describe("fetchBalance — dispatch is per FAMILY, not per instance (轮 3 卡 F
       ],
     });
     const info = await fetchBalance(
-      { id: "deepseek", apiFormat: "anthropic", baseUrl: "https://api.deepseek.com", apiKey: "sk-test-legacy" },
+      { id: "deepseek", apiFormat: "anthropic", baseUrl: "https://api.deepseek.com", apiKey: "test-key-legacy" },
       { fetchFn }
     );
     expect(info.supported).toBe(true);
@@ -196,7 +196,7 @@ describe("fetchBalance — Kimi", () => {
       id: "kimi",
       apiFormat: "anthropic" as const,
       baseUrl: "https://api.moonshot.cn/anthropic",
-      apiKey: "sk-test-kimi-DIRECTKEY-333333333333",
+      apiKey: "test-key-kimi-DIRECTKEY-333333333333",
     };
     const fetchFn = fakeFetchReturning({
       code: 0,

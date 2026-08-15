@@ -6,7 +6,7 @@
  * modules, the renderer had the UI — and nothing connected them, so every
  * "test connection" / "fetch models" / "save" was dead on a real machine.
  */
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import {
   createBridgeHost,
   providerNeedsAnthropicShim,
@@ -97,6 +97,102 @@ describe("bridge:createConversation — refuses an unconfigured provider", () =>
   });
 });
 
+describe("subscription login channels", () => {
+  it("delegates only the selected login-based provider and returns renderer-safe state", async () => {
+    const s = makeStore();
+    const subscriptionAuth = {
+      getStatus: vi.fn(async () => ({ state: "disconnected" as const })),
+      login: vi.fn(async () => ({ state: "connected" as const })),
+      logout: vi.fn(async () => ({ state: "disconnected" as const })),
+    };
+    const host = makeHost({
+      catalog: s.getCatalog,
+      providerStore: s.store,
+      subscriptionAuth,
+    });
+
+    await expect(host.handleInvoke("bridge:getProviderLoginStatus", { providerId: "claude-subscription" }))
+      .resolves.toEqual({ state: "disconnected" });
+    await expect(host.handleInvoke("bridge:loginProvider", { providerId: "claude-subscription" }))
+      .resolves.toEqual({ state: "connected" });
+    await expect(host.handleInvoke("bridge:logoutProvider", { providerId: "claude-subscription" }))
+      .resolves.toEqual({ state: "disconnected" });
+    expect(subscriptionAuth.getStatus).toHaveBeenCalledWith("claude-subscription");
+    expect(subscriptionAuth.login).toHaveBeenCalledWith("claude-subscription");
+    expect(subscriptionAuth.logout).toHaveBeenCalledWith("claude-subscription");
+  });
+
+  it("does not expose a login action on ordinary API providers", async () => {
+    const s = makeStore();
+    const host = makeHost({
+      catalog: s.getCatalog,
+      providerStore: s.store,
+      subscriptionAuth: {
+        getStatus: vi.fn(),
+        login: vi.fn(),
+        logout: vi.fn(),
+      },
+    });
+
+    await expect(host.handleInvoke("bridge:loginProvider", { providerId: "deepseek" }))
+      .rejects.toThrow(/不支持订阅登录/);
+  });
+
+  it("does not save a subscription as configured until its native login is live", async () => {
+    const s = makeStore();
+    const host = makeHost({
+      catalog: s.getCatalog,
+      providerStore: s.store,
+      subscriptionAuth: {
+        getStatus: vi.fn(async () => ({ state: "disconnected" as const })),
+        login: vi.fn(),
+        logout: vi.fn(),
+      },
+    });
+
+    await expect(host.handleInvoke("bridge:saveProvider", {
+      id: "claude-subscription",
+      kind: "claude-subscription",
+      name: "Claude 订阅",
+      baseUrl: "",
+      apiFormat: "anthropic",
+      authMode: "oauth-subscription",
+      models: ["claude-sonnet-4-6"],
+    })).rejects.toThrow(/重新登录/);
+    expect(s.writeCount()).toBe(0);
+  });
+
+  it("stops before a conversation starts when a previously saved subscription has expired", async () => {
+    const s = makeStore();
+    let connected = true;
+    const host = makeHost({
+      catalog: s.getCatalog,
+      providerStore: s.store,
+      subscriptionAuth: {
+        getStatus: vi.fn(async () => ({ state: connected ? "connected" as const : "disconnected" as const })),
+        login: vi.fn(),
+        logout: vi.fn(),
+      },
+    });
+
+    await host.handleInvoke("bridge:saveProvider", {
+      id: "claude-subscription",
+      kind: "claude-subscription",
+      name: "Claude 订阅",
+      baseUrl: "",
+      apiFormat: "anthropic",
+      authMode: "oauth-subscription",
+      models: ["claude-sonnet-4-6"],
+    });
+    connected = false;
+
+    await expect(host.handleInvoke("bridge:createConversation", {
+      providerId: "claude-subscription",
+      modelId: "claude-sonnet-4-6",
+    })).rejects.toThrow(/订阅登录已失效/);
+  });
+});
+
 describe("Anthropic provider runtime wiring", () => {
   it("uses the transparent shim only when search or provider-specific transport requires it", () => {
     const catalog = buildCatalog({}, emptyConfig());
@@ -111,6 +207,12 @@ describe("Anthropic provider runtime wiring", () => {
     expect(providerNeedsAnthropicShim(deepseek, true)).toBe(true);
     expect(providerNeedsAnthropicShim(minimaxPlan, false)).toBe(true);
     expect(providerNeedsAnthropicShim(withHeaders, false)).toBe(true);
+  });
+
+  it("never routes a native subscription through the API-key search shim", () => {
+    const subscription = buildCatalog({}, emptyConfig())
+      .find((entry) => entry.provider.id === "claude-subscription")!;
+    expect(providerNeedsAnthropicShim(subscription, true)).toBe(false);
   });
 });
 
@@ -486,6 +588,64 @@ describe("bridge:testConnection", () => {
     });
     expect(result.ok).toBe(false);
     expect(result.error?.message).toMatch(/模型/);
+  });
+});
+
+describe("bridge:resolveTaskTimes", () => {
+  it("uses the selected configured model and returns only validated task fields", async () => {
+    const s = makeStore({ DEEPSEEK_API_KEY: "sk-env-deepseek" });
+    const host = makeHost({
+      catalog: s.getCatalog,
+      providerStore: s.store,
+      fetchFn: okFetch({
+        content: [{
+          type: "text",
+          text: JSON.stringify({
+            items: [{
+              index: 0,
+              fields: [
+                { kind: "planned", date: "2026-08-14", time: "09:00", source: "周五" },
+                { kind: "due", date: "2026-08-16", source: "周日" },
+              ],
+            }],
+          }),
+        }],
+      }),
+    });
+
+    await expect(host.handleInvoke("bridge:resolveTaskTimes", {
+      providerId: "deepseek",
+      modelId: "deepseek-v4-flash",
+      texts: ["周五上午9点开始，周日前交材料"],
+      localNow: "2026-08-08T12:00:00+08:00",
+      timeZone: "Asia/Shanghai",
+    })).resolves.toEqual({
+      ok: true,
+      items: [{
+        index: 0,
+        fields: [
+          { kind: "planned", date: "2026-08-14", time: "09:00", source: "周五" },
+          { kind: "due", date: "2026-08-16", source: "周日" },
+        ],
+      }],
+    });
+  });
+
+  it("keeps the caller on manual confirmation when the model reply is unusable", async () => {
+    const s = makeStore({ DEEPSEEK_API_KEY: "sk-env-deepseek" });
+    const host = makeHost({
+      catalog: s.getCatalog,
+      providerStore: s.store,
+      fetchFn: okFetch({ content: [{ type: "text", text: "not json" }] }),
+    });
+
+    const result = await host.handleInvoke("bridge:resolveTaskTimes", {
+      providerId: "deepseek",
+      modelId: "deepseek-v4-flash",
+      texts: ["周五和周日看两家公司"],
+      localNow: "2026-08-08T12:00:00+08:00",
+    });
+    expect(result).toEqual({ ok: false, message: expect.stringContaining("手动") });
   });
 });
 

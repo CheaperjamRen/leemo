@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useRef, useState, type FormEvent } from "react";
 import {
   Archive,
   ArchiveRestore,
@@ -13,19 +13,14 @@ import {
   X,
 } from "lucide-react";
 import type { ConversationMeta } from "../stores/conversations";
-import type { ConversationStatus } from "../stores/conversation-status";
+import { deriveConversationMarker, type ConversationStatus } from "../stores/conversation-status";
+import ConversationStateMark from "./ConversationStateMark";
+import AnchoredLayer from "./AnchoredLayer";
 
 export interface ConversationMoveTarget {
   workspaceId: string;
   bookId: string | null;
   label: string;
-}
-
-function statusClass(kind: ConversationStatus["kind"]): string {
-  if (kind === "failed") return "text-[var(--leemo-danger)]";
-  if (kind === "completed") return "text-[var(--leemo-ok)]";
-  if (kind === "running" || kind === "blocked") return "text-[var(--leemo-amber)]";
-  return "text-[var(--leemo-ink-3)]";
 }
 
 function actionErrorMessage(error: unknown): string {
@@ -39,6 +34,7 @@ export default function ConversationListItem({
   variant,
   onPick,
   onRename,
+  onUnread,
   onPin,
   onArchive,
   onDelete,
@@ -51,6 +47,7 @@ export default function ConversationListItem({
   variant: "buddy" | "workbench";
   onPick: () => void;
   onRename: (title: string) => void;
+  onUnread?: (unread: boolean) => void | Promise<void>;
   onPin?: (pinned: boolean) => void | Promise<void>;
   onArchive?: (archived: boolean) => void | Promise<void>;
   onDelete?: () => void | Promise<void>;
@@ -65,23 +62,7 @@ export default function ConversationListItem({
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
-  const rootRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!menuOpen) return;
-    const closeOutside = (event: PointerEvent) => {
-      if (!rootRef.current?.contains(event.target as Node)) setMenuOpen(false);
-    };
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setMenuOpen(false);
-    };
-    document.addEventListener("pointerdown", closeOutside);
-    document.addEventListener("keydown", closeOnEscape);
-    return () => {
-      document.removeEventListener("pointerdown", closeOutside);
-      document.removeEventListener("keydown", closeOnEscape);
-    };
-  }, [menuOpen]);
+  const menuButtonRef = useRef<HTMLButtonElement>(null);
 
   const closeMenu = () => {
     setMenuOpen(false);
@@ -112,12 +93,16 @@ export default function ConversationListItem({
     }
   };
 
+  const marker = status
+    ? deriveConversationMarker({ status, unread: conversation.unread })
+    : conversation.unread ? "unread" : null;
+
   const selectedClass = variant === "buddy"
     ? active
       ? "bg-[var(--leemo-amber-bg)] text-[var(--leemo-ink)]"
       : "text-[var(--leemo-ink-2)] hover:bg-[var(--leemo-line-soft)] hover:text-[var(--leemo-ink)]"
     : active
-      ? "bg-[var(--leemo-card)] text-[var(--leemo-ink)] shadow-[0_1px_3px_rgba(24,31,38,0.08)] ring-1 ring-inset ring-[var(--leemo-line-soft)]"
+      ? "bg-[var(--leemo-workbench-active,#e9eef4)] text-[var(--leemo-ink)]"
       : "text-[var(--leemo-ink-2)] hover:bg-[var(--leemo-side-hover)]";
   const menuItemClass = "flex w-full items-center gap-2 rounded-[5px] px-2 py-1.5 text-left text-xs text-[var(--leemo-ink-2)] transition-colors hover:bg-[var(--leemo-side-hover)] hover:text-[var(--leemo-ink)] disabled:opacity-45";
 
@@ -149,39 +134,33 @@ export default function ConversationListItem({
   }
 
   return (
-    <div ref={rootRef} className="relative w-full" data-conversation-id={conversation.id}>
-      <div className={`group flex w-full items-center rounded-lg transition-colors ${selectedClass}`}>
+    <div
+      className="relative w-full"
+      data-conversation-id={conversation.id}
+      data-conversation-variant={variant}
+      data-active={active ? "true" : "false"}
+    >
+      <div className={`group flex w-full items-center rounded-lg transition-colors focus-within:ring-2 focus-within:ring-inset focus-within:ring-[var(--leemo-focus-ring)] ${selectedClass}`}>
         <button
+          ref={menuButtonRef}
           type="button"
           aria-label={conversation.title}
           title={conversation.title}
           onClick={onPick}
-          className="flex min-w-0 flex-1 items-center gap-2 py-2 pl-2.5 text-left text-sm"
+          className="flex h-9 min-w-0 flex-1 items-center gap-2 pl-2.5 text-left text-[13px] leading-5 focus-visible:outline-none"
         >
           {conversation.pinned && <Pin className="h-3 w-3 shrink-0 text-[var(--leemo-amber)]" aria-label="已置顶" />}
           <span className="min-w-0 flex-1 truncate">{conversation.title}</span>
-          {conversation.unread && !active && (
-            <span aria-label="未读" className="h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--leemo-amber)]" />
-          )}
+          <ConversationStateMark marker={marker} label={conversation.title} detail={status?.detail} />
         </button>
-        {status && (
-          <span
-            role="status"
-            aria-label={`${conversation.title}：${status.label}`}
-            title={status.detail}
-            className={`mr-1 flex shrink-0 items-center gap-1 text-[10.5px] ${statusClass(status.kind)}`}
-          >
-            <span className="h-1 w-1 rounded-full bg-current" aria-hidden />
-            <span>{status.label}</span>
-          </span>
-        )}
         <button
           type="button"
           aria-label={`更多操作：${conversation.title}`}
           title="更多操作"
           aria-expanded={menuOpen}
           onClick={() => {
-            setMenuOpen((open) => !open);
+            const nextOpen = !menuOpen;
+            setMenuOpen(nextOpen);
             setMoving(false);
             setConfirmingDelete(false);
             setActionError(null);
@@ -199,7 +178,22 @@ export default function ConversationListItem({
       )}
 
       {menuOpen && (
-        <div className="absolute right-1 top-8 z-30 w-[180px] rounded-md border border-[var(--leemo-line)] bg-white p-1 shadow-[0_10px_28px_rgba(32,32,31,0.14)]">
+        <AnchoredLayer
+          open
+          anchor={menuButtonRef}
+          preferred="bottom-end"
+          gap={4}
+          padding={8}
+          role="menu"
+          ariaLabel={`对话操作：${conversation.title}`}
+          onDismiss={closeMenu}
+          className={variant === "buddy" ? "w-[142px]" : "w-[180px]"}
+        >
+        <div
+          data-conversation-menu
+          data-menu-variant={variant}
+          className="w-full rounded-md border border-[var(--leemo-line)] bg-white p-1 shadow-[0_10px_28px_rgba(32,32,31,0.14)]"
+        >
           {moving ? (
             <>
               <button type="button" className={menuItemClass} onClick={() => setMoving(false)} disabled={busy}>
@@ -242,10 +236,24 @@ export default function ConversationListItem({
                   {conversation.pinned ? "取消置顶" : "置顶"}
                 </button>
               )}
+              {onUnread && (
+                <button type="button" className={menuItemClass} onClick={() => void runAction(() => onUnread(!conversation.unread))} disabled={busy}>
+                  <span className="inline-flex h-3.5 w-3.5 items-center justify-center" aria-hidden>
+                    <span className={`h-1.5 w-1.5 rounded-full ${conversation.unread ? "bg-[var(--leemo-ink-3)]" : "bg-[var(--leemo-amber)]"}`} />
+                  </span>
+                  {conversation.unread ? "标记已读" : "标记未读"}
+                </button>
+              )}
               {onMove && moveTargets.length > 0 && (
-                <button type="button" className={menuItemClass} onClick={() => setMoving(true)} disabled={busy}>
+                <button
+                  type="button"
+                  aria-label={variant === "buddy" ? "移动到其他本子" : undefined}
+                  className={menuItemClass}
+                  onClick={() => setMoving(true)}
+                  disabled={busy}
+                >
                   <FolderInput className="h-3.5 w-3.5" aria-hidden />
-                  移动到其他本子
+                  {variant === "buddy" ? "移动到本子" : "移动到其他本子"}
                 </button>
               )}
               {onArchive && (
@@ -257,15 +265,16 @@ export default function ConversationListItem({
               {onDelete && (
                 <>
                   <div className="my-1 h-px bg-[var(--leemo-line)]" />
-                  <button type="button" className={`${menuItemClass} text-[var(--leemo-danger)] hover:text-[var(--leemo-danger)]`} onClick={() => setConfirmingDelete(true)} disabled={busy}>
+                  <button type="button" aria-label="删除对话" className={`${menuItemClass} text-[var(--leemo-danger)] hover:text-[var(--leemo-danger)]`} onClick={() => setConfirmingDelete(true)} disabled={busy}>
                     <Trash2 className="h-3.5 w-3.5" aria-hidden />
-                    删除对话
+                    {variant === "buddy" ? "删除" : "删除对话"}
                   </button>
                 </>
               )}
             </>
           )}
         </div>
+        </AnchoredLayer>
       )}
     </div>
   );

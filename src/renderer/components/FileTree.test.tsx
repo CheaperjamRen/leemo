@@ -212,6 +212,18 @@ describe("FileTree", () => {
     expect(kindFromName("notes.txt")).toBe("other");
   });
 
+  it("keeps the currently open file visibly selected", () => {
+    render(
+      <TestProvider roots={SAMPLE_ROOTS}>
+        <FileTree />
+      </TestProvider>,
+    );
+    fireEvent.click(screen.getByText("A"));
+    const row = screen.getByTestId("file-row-A/note.md");
+    fireEvent.click(row);
+    expect(row).toHaveAttribute("aria-current", "page");
+  });
+
   it("shows context menu on right click", () => {
     render(
       <TestProvider roots={SAMPLE_ROOTS} notebooks={SAMPLE_NOTEBOOKS}>

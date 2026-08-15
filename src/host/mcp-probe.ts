@@ -26,7 +26,7 @@ function mergedHeaders(base: RequestInit["headers"] | undefined, extra: Record<s
   return headers;
 }
 
-function buildTransport(
+export function createMcpClientTransport(
   config: Exclude<McpServerConfig, { type: "sdk" }>,
   cwd: string,
 ): { transport: Transport; stderr?: { on(event: "data", listener: (chunk: Buffer | string) => void): unknown } } {
@@ -100,7 +100,7 @@ export async function probeMcpServer(
   options: McpProbeOptions = {},
 ): Promise<McpConnectionTestResult> {
   const client = new Client({ name: "leemo-mcp-check", version: "1.0.0" });
-  const { transport, stderr } = buildTransport(config, cwd);
+  const { transport, stderr } = createMcpClientTransport(config, cwd);
   let stderrText = "";
   stderr?.on("data", (chunk: Buffer | string) => {
     if (stderrText.length < 4_000) stderrText += String(chunk);

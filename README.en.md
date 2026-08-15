@@ -1,8 +1,8 @@
 <div align="center">
   <img src=".github/assets/leemo-icon.svg" width="88" alt="Leemo" />
   <h1>Leemo</h1>
-  <p><strong>A desktop AI companion that remembers you, understands you, and stays with the work until it is done.</strong></p>
-  <p>Think it through with momo, then keep moving through real files and tools.</p>
+  <p><strong>An AI companion that can actually get things done on your computer.</strong></p>
+  <p>Think things through together, then turn them into real work.</p>
   <p>
     <a href="https://github.com/CheaperjamRen/leemo/releases/latest"><strong>Download for Windows</strong></a> ·
     <a href="README.md">简体中文</a> ·
@@ -17,21 +17,9 @@
 
 ![Leemo companion mode](.github/assets/leemo-buddy.png)
 
-Most AI only knows the version of you inside the current chat box. When the answer ends, the relationship resets. Leemo is built around a different idea.
+Leemo brings `momo`, a companion that gets to know you, and a capable local AI agent into one desktop app.
 
-Inside Leemo lives **momo**, a companion that gradually learns what matters to you, what you are working through, how you make decisions, and which goals carry real weight. momo can think with you, then move into a real folder, read material, use tools, and turn the conversation into finished work.
-
-Bring momo a half-formed idea and work out the real question together. Or hand over coursework, a resume, a paper, or a messy project folder and let Leemo research, organize, and create useful output. Come back days later without repeating your introduction or reconstructing why the work mattered.
-
-When you are uncertain, momo should feel like a thoughtful friend with a real point of view. Once you decide to act, it becomes a reliable agent willing to carry the work through.
-
-## More than remembering a sentence
-
-momo separates what it learns into long-term preferences, changing circumstances, and context that belongs only to a particular notebook. It tries to understand not only what you said, but when it became true, why it matters, and whether it has changed.
-
-That understanding returns naturally in later conversations and tasks. momo can remember what you value when discussing a decision, your pace when learning, and where you actually want to go when reviewing career material. Moving into the workbench does not replace it with a cold, forgetful tool.
-
-momo can disagree and point out a problem, but it will not rewrite an ordinary request or take the steering wheel away from you. It distinguishes your words from its own inferences, avoids treating every passing remark as permanent memory, and keeps memory reviewable, editable, and deletable.
+Start with a half-formed idea, then let momo continue inside a real folder. Or hand over a document, a goal, or a task and let Leemo research, organize, create useful output, and pick up the context again when you return days later.
 
 ## One momo, two ways to work
 
@@ -64,21 +52,12 @@ Leemo currently supports Windows 10/11 x64.
 
 Leemo is still in preview and the installer does not yet carry a commercial code-signing certificate. If Windows SmartScreen displays a warning, make sure the installer came from this repository's Release page and compare its SHA-256 with the value published there.
 
-## Your first session: from setup to a real result
+## Your first session
 
-The current preview requires an API key from a supported model service, or a local model runtime already running on your computer.
-
-1. Launch Leemo and open **Settings → Models**.
-2. Choose the service you already use. Common settings are prefilled, so you normally only need to paste the API key. Enter a Base URL only when your provider explicitly supplies one.
-3. Select **Test connection**, save the setup, and choose that model back in companion mode.
-4. Tell momo about something you are currently facing or trying to finish. When files are involved, enter the workbench and open the relevant local folder as a notebook.
-5. Choose how much Leemo may do: ask before important actions, or execute directly after you grant full access.
-
-Try one of these as a first prompt:
-
-- "I am preparing for my next job. Get to know my experience and goals, then tell me what is most worth doing first."
-- "Help me truly understand this course material, then write a study plan I can finish today into the notebook."
-- "Review this resume folder against my target role. Find the issues most likely to hurt my chances and show me the edit plan first."
+1. Open **Settings → Models** and choose the model service you use.
+2. Enter the required credentials and model information, then select **Test connection**.
+3. Return to companion mode, or enter the workbench and create or open a notebook.
+4. Choose the permission level that fits the task. You can ask Leemo to confirm important actions or grant full access when you want the least friction.
 
 Leemo includes setup paths for popular choices such as DeepSeek, Kimi, Zhipu GLM, Qwen, OpenAI, Anthropic, Gemini, MiniMax, Doubao, MiMo, NVIDIA, SiliconFlow, OpenRouter, TokenFlux, Ollama, and LM Studio.
 

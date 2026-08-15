@@ -1,0 +1,87 @@
+{
+  "schema_version": "1.0",
+  "project": {
+    "title": "",
+    "research_question": "",
+    "mode": "auto",
+    "deliverable": "",
+    "domain": "",
+    "language": ""
+  },
+  "created_at": "",
+  "updated_at": "",
+  "current_stage": "intake",
+  "stages": {
+    "intake": {"status": "planned", "notes": ""},
+    "scope": {"status": "planned", "notes": ""},
+    "protocol": {"status": "planned", "notes": ""},
+    "collect": {"status": "planned", "notes": ""},
+    "extract": {"status": "planned", "notes": ""},
+    "synthesize": {"status": "planned", "notes": ""},
+    "produce": {"status": "planned", "notes": ""},
+    "review": {"status": "planned", "notes": ""},
+    "package": {"status": "planned", "notes": ""}
+  },
+  "capabilities": {
+    "discovered_at": "",
+    "available": [],
+    "unavailable": [],
+    "selected": [],
+    "fallbacks": []
+  },
+  "execution": {
+    "effort_tier": "",
+    "budget": "",
+    "stop_conditions": [],
+    "last_checkpoint": "",
+    "failed_routes": []
+  },
+  "source_policy": {
+    "profile": "balanced",
+    "discipline_profile": "",
+    "classification_basis_date": "",
+    "core_claim_levels": ["L1", "L2"],
+    "context_levels": ["L1", "L2", "L3"],
+    "blocked_levels": ["BLOCKED"]
+  },
+  "gates": {
+    "formal_proposal": {
+      "status": "NOT_ASSESSED",
+      "fields": {
+        "research_object": {"status": "UNKNOWN", "basis": ""},
+        "disciplinary_frame": {"status": "UNKNOWN", "basis": ""},
+        "claim_type": {"status": "UNKNOWN", "basis": ""},
+        "feasible_evidence_data": {"status": "UNKNOWN", "basis": ""},
+        "method_route": {"status": "UNKNOWN", "basis": ""}
+      }
+    },
+    "literature_synthesis": {
+      "status": "NOT_ASSESSED",
+      "output_state": "NONE",
+      "executed_search_log": "",
+      "verified_subset_count": 0,
+      "declared_coverage_complete": false
+    },
+    "isolated_statistic": {
+      "status": "NOT_APPLICABLE",
+      "original_analysis_artifact": ""
+    },
+    "execution_truth": {
+      "status": "NOT_ASSESSED",
+      "last_observed_artifact_or_log": ""
+    }
+  },
+  "decisions": [],
+  "artifacts": [],
+  "unresolved_risks": [],
+  "integrity": {
+    "fabricated_sources": false,
+    "fabricated_data": false,
+    "fabricated_execution": false,
+    "detector_evasion": false,
+    "unauthorized_access": false,
+    "external_upload_approved": false,
+    "human_subjects_review_status": "not_assessed",
+    "regulated_domain_review_status": "not_assessed"
+  }
+}

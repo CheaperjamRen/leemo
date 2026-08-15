@@ -83,6 +83,11 @@ export interface ProviderConfigFile {
     bocha?: string;
     google?: string;
     googleCx?: string;
+    exa?: string;
+    brave?: string;
+    serpapi?: string;
+    serper?: string;
+    firecrawl?: string;
   };
   /** User MCP configs may carry API tokens in env/headers, so they live in this
    * same safeStorage-encrypted document. */
@@ -533,6 +538,11 @@ export function migrateLegacyConfig(
         "bocha",
         "google",
         "googleCx",
+        "exa",
+        "brave",
+        "serpapi",
+        "serper",
+        "firecrawl",
       ] as const) {
         const value = raw.searchKeys[source];
         if (typeof value === "string" && value) searchKeys[source] = value;

@@ -1,0 +1,90 @@
+{
+  "checkedAt": "2026-07-30T18:37:40.804Z",
+  "sourceFacts": [
+    "docs\\research\\audit-shots\\model-onboarding-r9-runtime-facts.json",
+    "docs\\research\\audit-shots\\model-onboarding-r9-layout-facts.json"
+  ],
+  "package": {
+    "executableSha256": "559CE0B9868CBB6AD06DE2AD629047C2DF4F2F190AB1D717286E570A99C1DBD6",
+    "installerSha256": "B2D2CA94939BA498727907521A746F30723EF537A2F477A572FACDF321B61B8A",
+    "appAsarSha256": "54741202C6A1DF53C4DCBE0E05594F14F60C72D738D2597BEDEA172E982D4CDE",
+    "rendererPath": "\\dist\\assets\\index-DrduKhQv.js",
+    "rendererBytes": 649457
+  },
+  "residual": {
+    "nativeAttachmentPickerAutomated": false,
+    "note": "原生 Windows 文件选择框未自动化；打包 Bridge 附件路径与失败重试已实测。"
+  },
+  "results": [
+    {
+      "name": "隔离打包应用且零外网请求",
+      "pass": true,
+      "detail": "dist-package/win-unpacked/Leemo.exe; external=0"
+    },
+    {
+      "name": "服务商目录、远程发现与手动模型链路",
+      "pass": true,
+      "detail": "cards=5"
+    },
+    {
+      "name": "图片与深度思考自动探测为证据而非发送门禁",
+      "pass": true,
+      "detail": "图片失败仍可发，用户纠正跨重启保留"
+    },
+    {
+      "name": "打包 Agent 工具按设置执行真实子任务模型路由",
+      "pass": true,
+      "detail": "显式 mock-beta-retry -> mock-alpha-vision-disputed; 自动 mock-beta-retry -> mock-beta-retry"
+    },
+    {
+      "name": "真实失败后原文保留、切模型重试与错误人话化",
+      "pass": true,
+      "detail": "mock-beta-retry -> mock-alpha-vision-disputed"
+    },
+    {
+      "name": "附件失败与重发使用同一绝对路径元数据",
+      "pass": true,
+      "detail": "mock-beta-retry -> mock-alpha-vision-disputed"
+    },
+    {
+      "name": "凭据不进入 renderer 状态或主进程日志",
+      "pass": true,
+      "detail": "测试 key 未出现在 facts、renderer 或日志"
+    },
+    {
+      "name": "打包应用空闲进程树资源已实测",
+      "pass": true,
+      "detail": "4 进程 / 710.91 MiB"
+    },
+    {
+      "name": "1440x900 设置和输入区无裁切或横向溢出",
+      "pass": true,
+      "detail": "footer=56px; content=438px"
+    },
+    {
+      "name": "1280x720 设置和输入区无裁切或横向溢出",
+      "pass": true,
+      "detail": "footer=56px; content=428px"
+    },
+    {
+      "name": "1024x768 设置和输入区无裁切或横向溢出",
+      "pass": true,
+      "detail": "footer=56px; content=438px"
+    },
+    {
+      "name": "720x640 设置和输入区无裁切或横向溢出",
+      "pass": true,
+      "detail": "footer=56px; content=206px"
+    },
+    {
+      "name": "打包 renderer 不暴露底层模型角色或 Claude Code 心智",
+      "pass": true,
+      "detail": "\\dist\\assets\\index-DrduKhQv.js"
+    },
+    {
+      "name": "发布包凭据边界与哈希可复核",
+      "pass": true,
+      "detail": "exe=559CE0B9868C installer=B2D2CA94939B asar=54741202C6A1"
+    }
+  ]
+}

@@ -59,6 +59,9 @@ export interface NativeSearchSpec {
 export interface CatalogEntry {
   provider: Provider;
   spec: ProviderSpec;
+  /** Host-only execution backend. This never enters ProviderSpec/IPC, so
+   * product UI stays Leemo-native instead of exposing implementation brands. */
+  executionEngine: "claude-agent-sdk" | "openai-app-server" | "gemini-acp";
   balanceBaseUrl?: string;
   /** Vendor endpoint that lists models. NOT derivable from baseUrl — 卡 F
    *  Providers expose different URL and payload shapes, so this stays explicit. */
@@ -92,6 +95,7 @@ export interface PresetProvider {
   gatewayOpts?: Partial<ProviderOpts>;
   apiKeyHeader?: "authorization" | "x-api-key";
   category: "cn_official" | "official" | "custom";
+  executionEngine?: CatalogEntry["executionEngine"];
   /** Curated picks; `models[0]` is the family default. */
   models: readonly string[];
   modelCapabilities: Readonly<Record<string, ModelCapabilities>>;
@@ -280,6 +284,56 @@ export const PRESET_PROVIDERS: readonly PresetProvider[] = [
     keyEnv: "ANTHROPIC_API_KEY",
     modelEnv: "ANTHROPIC_MODEL",
     searchAliases: ["Claude", "Anthropic 官方 API"],
+  },
+  {
+    id: "claude-subscription",
+    kind: "claude-subscription",
+    name: "Claude 订阅",
+    // Native subscription traffic is selected by authMode and intentionally
+    // carries no endpoint override. The isolated account directory is the
+    // source of truth for both login and runtime.
+    baseUrl: "",
+    apiFormat: "anthropic",
+    authMode: "oauth-subscription",
+    productKind: "consumer-subscription",
+    category: "official",
+    models: ["claude-sonnet-4-6", "claude-opus-4-6", "claude-haiku-4-5"],
+    modelCapabilities: {},
+    capabilities: { balanceApi: false, modelDiscovery: false, subscriptionPlan: true, requiresProxy: true },
+    searchAliases: ["Claude Pro", "Claude Max", "Claude 订阅登录"],
+    summary: "使用已有 Claude 订阅登录，无需 API Key",
+  },
+  {
+    id: "chatgpt-subscription",
+    kind: "chatgpt-subscription",
+    name: "ChatGPT 订阅",
+    baseUrl: "",
+    apiFormat: "openai-responses",
+    authMode: "oauth-subscription",
+    productKind: "consumer-subscription",
+    category: "official",
+    executionEngine: "openai-app-server",
+    models: ["gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"],
+    modelCapabilities: {},
+    capabilities: { balanceApi: false, modelDiscovery: false, subscriptionPlan: true, requiresProxy: true },
+    searchAliases: ["ChatGPT Plus", "ChatGPT Pro", "OpenAI 订阅登录"],
+    summary: "使用已有 ChatGPT 订阅，无需 API Key",
+  },
+  {
+    id: "gemini-subscription",
+    kind: "gemini-subscription",
+    name: "Gemini 订阅",
+    baseUrl: "",
+    apiFormat: "openai",
+    authMode: "oauth-subscription",
+    productKind: "consumer-subscription",
+    category: "official",
+    executionEngine: "gemini-acp",
+    models: ["auto", "gemini-2.5-pro", "gemini-2.5-flash"],
+    modelCapabilities: {},
+    capabilities: { balanceApi: false, modelDiscovery: false, subscriptionPlan: true, requiresProxy: true },
+    searchAliases: ["Google AI Pro", "Google AI Ultra", "Gemini 登录"],
+    summary: "使用已有 Gemini 订阅，无需 API Key",
   },
   {
     id: "tokenflux",
@@ -759,6 +813,7 @@ interface Resolved {
   searchAliases?: string[];
   summary?: string;
   category: "cn_official" | "official" | "custom";
+  executionEngine: CatalogEntry["executionEngine"];
   apiKey: string;
   models: string[];
   modelCapabilities: Record<string, ModelCapabilities>;
@@ -788,6 +843,7 @@ function toEntry(r: Resolved): CatalogEntry {
     name: r.name,
     category: r.category,
     apiFormat: r.apiFormat,
+    authMode: r.authMode,
     baseUrl: r.baseUrl,
     apiKey: r.apiKey,
     models: r.models,
@@ -810,7 +866,11 @@ function toEntry(r: Resolved): CatalogEntry {
     capabilities: r.capabilities,
     // Local services deliberately have no key; they become usable after the
     // user saves at least one concrete model. Cloud/API instances need both.
-    configured: r.models.length > 0 && (r.authMode === "none" ? r.saved : r.apiKey.length > 0),
+    configured: r.models.length > 0 && (
+      r.authMode === "none" || r.authMode === "oauth-subscription"
+        ? r.saved
+        : r.apiKey.length > 0
+    ),
     saved: r.saved,
   };
   if (r.modelCapabilityEvidence) {
@@ -819,7 +879,7 @@ function toEntry(r: Resolved): CatalogEntry {
   if (r.apiKeyUrl) spec.apiKeyUrl = r.apiKeyUrl;
   if (r.modelsUrl) spec.modelsUrl = r.modelsUrl;
 
-  const entry: CatalogEntry = { provider, spec };
+  const entry: CatalogEntry = { provider, spec, executionEngine: r.executionEngine };
   if (r.balanceBaseUrl) entry.balanceBaseUrl = r.balanceBaseUrl;
   if (r.modelsUrl) entry.modelsUrl = r.modelsUrl;
   if (r.apiKeyHeader) entry.apiKeyHeader = r.apiKeyHeader;
@@ -872,6 +932,7 @@ function resolvePreset(
     searchAliases: preset.searchAliases ? [...preset.searchAliases] : undefined,
     summary: preset.summary,
     category: stored?.category ?? preset.category,
+    executionEngine: preset.executionEngine ?? "claude-agent-sdk",
     apiKey,
     models,
     modelCapabilities: { ...preset.modelCapabilities, ...(stored?.modelCapabilities ?? {}) },
@@ -918,6 +979,7 @@ function resolveCustom(id: string, stored: StoredProvider): Resolved {
     searchAliases: family?.searchAliases ? [...family.searchAliases] : undefined,
     summary: family?.summary,
     category: stored.category,
+    executionEngine: family?.executionEngine ?? "claude-agent-sdk",
     apiKey: stored.apiKey || "",
     models: stored.models ? [...stored.models] : family ? [...family.models] : [],
     modelCapabilities: { ...(family?.modelCapabilities ?? {}), ...(stored.modelCapabilities ?? {}) },

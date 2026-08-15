@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Check } from "lucide-react";
+import { Check, CircleHelp } from "lucide-react";
 import type { AskUserAnswerItem, AskUserQuestion } from "../../bridge/contract";
 import type { PendingInteraction, ResolvedInteraction } from "../stores/approvals";
 import { useApprovals } from "../bridge/context";
@@ -41,7 +41,12 @@ export default function AskUserCard({ interaction, density = "default" }: AskUse
     return <ResolvedQuestionCard interaction={interaction} density={density} />;
   }
   return (
-    <InteractiveQuestionCard id={interaction.id} questions={interaction.questions} onAnswer={answer} />
+    <InteractiveQuestionCard
+      id={interaction.id}
+      questions={interaction.questions}
+      density={density}
+      onAnswer={answer}
+    />
   );
 }
 
@@ -107,11 +112,12 @@ function ResolvedQuestionCard({
 interface InteractiveQuestionCardProps {
   id: string;
   questions: AskUserQuestion[];
+  density: "default" | "buddy";
   onAnswer: (id: string, items: AskUserAnswerItem[]) => Promise<void>;
 }
 
 /** pending — 可交互，琥珀描边强调（三态样式 spec §4）. */
-function InteractiveQuestionCard({ id, questions, onAnswer }: InteractiveQuestionCardProps) {
+function InteractiveQuestionCard({ id, questions, density, onAnswer }: InteractiveQuestionCardProps) {
   const [questionStates, setQuestionStates] = useState<QuestionState[]>(
     questions.map(() => ({ selectedOptions: [], otherText: "" }))
   );
@@ -162,15 +168,23 @@ function InteractiveQuestionCard({ id, questions, onAnswer }: InteractiveQuestio
   };
 
   return (
-    <div className="rounded-[10px] border border-[var(--leemo-amber-line)] bg-[var(--leemo-amber-bg)] px-4 py-3 shadow-[0_1px_2px_rgba(24,31,38,0.03)]">
+    <div
+      className={`w-full rounded-[13px] border border-[var(--leemo-amber-line)] bg-[var(--leemo-card)] px-4 py-3.5 shadow-[0_1px_2px_rgba(24,31,38,0.035),0_14px_30px_-26px_rgba(24,31,38,0.32)] ${density === "buddy" ? "mx-auto max-w-[520px]" : ""}`}
+    >
+      <div className="mb-2.5 flex items-center gap-2 text-[12px] font-medium text-[var(--leemo-ink-2)]">
+        <span className="grid h-5 w-5 place-items-center rounded-full bg-[var(--leemo-amber-soft)] text-[var(--leemo-amber-strong)]">
+          <CircleHelp className="h-3.5 w-3.5" aria-hidden />
+        </span>
+        {density === "buddy" ? "需要你选一下" : "需要你确认"}
+      </div>
       {questions.map((q, qi) => (
         <div key={qi} className="mb-3 last:mb-0">
           {q.header && (
-            <div className="mb-1 text-[10.5px] font-medium uppercase tracking-wide text-[var(--leemo-ink-3)]">
+            <div className="mb-1 text-[11.5px] font-medium tracking-wide text-[var(--leemo-ink-3)]">
               {q.header}
             </div>
           )}
-          <p className="mb-2 text-[13px] text-[var(--leemo-ink)]">{q.question}</p>
+          <p className="mb-2.5 text-[14.5px] font-medium leading-6 text-[var(--leemo-ink)]">{q.question}</p>
           <div className="mb-2 grid grid-cols-1 gap-2">
             {q.options.map((opt) => {
               const isSelected = questionStates[qi].selectedOptions.includes(opt.label);
@@ -181,21 +195,31 @@ function InteractiveQuestionCard({ id, questions, onAnswer }: InteractiveQuestio
                   aria-pressed={isSelected}
                   disabled={isSubmitting}
                   onClick={() => toggleOption(qi, opt.label, q.multiSelect === true)}
-                  className="grid min-h-[46px] w-full grid-cols-[minmax(0,1fr)_18px] items-center gap-3 rounded-[7px] border px-3 py-2 text-left text-[12px] transition-colors disabled:opacity-60"
+                  className="group grid min-h-[54px] w-full grid-cols-[18px_minmax(0,1fr)] items-start gap-3 rounded-[9px] border px-3 py-2.5 text-left text-[13px] transition-[border-color,background-color,box-shadow,transform] duration-150 hover:border-[var(--leemo-amber-line)] hover:bg-[var(--leemo-amber-bg)] focus-visible:border-[var(--leemo-amber)] focus-visible:bg-[var(--leemo-amber-bg)] focus-visible:outline-none active:translate-y-px disabled:opacity-60 disabled:active:translate-y-0"
                   style={{
                     borderColor: isSelected ? "var(--leemo-amber)" : "var(--leemo-line)",
-                    background: isSelected ? "var(--leemo-amber-soft)" : "var(--leemo-card)",
-                    color: isSelected ? "var(--leemo-amber-strong)" : "var(--leemo-ink-2)",
+                    background: isSelected ? "var(--leemo-amber-bg)" : "var(--leemo-card)",
+                    color: isSelected ? "var(--leemo-ink)" : "var(--leemo-ink-2)",
+                    outline: "none",
                   }}
                 >
+                  <span
+                    data-ask-option-marker
+                    aria-hidden
+                    className="mt-[1px] grid h-[18px] w-[18px] place-items-center rounded-full border transition-colors"
+                    style={{
+                      borderColor: isSelected ? "var(--leemo-amber)" : "var(--leemo-line)",
+                      background: isSelected ? "var(--leemo-amber)" : "transparent",
+                      color: isSelected ? "white" : "var(--leemo-ink-3)",
+                    }}
+                  >
+                    {isSelected ? <Check className="h-3 w-3" aria-hidden /> : null}
+                  </span>
                   <span className="min-w-0">
                     <span className="block font-medium leading-5">{opt.label}</span>
                     {opt.description && (
-                      <span className="mt-0.5 block leading-4" style={{ color: "var(--leemo-ink-3)" }}>{opt.description}</span>
+                      <span className="mt-0.5 block text-[12px] leading-5" style={{ color: "var(--leemo-ink-3)" }}>{opt.description}</span>
                     )}
-                  </span>
-                  <span className="grid h-[18px] w-[18px] place-items-center rounded-full border" style={{ borderColor: isSelected ? "var(--leemo-amber)" : "var(--leemo-line)" }}>
-                    {isSelected ? <Check className="h-3 w-3" aria-hidden /> : null}
                   </span>
                 </button>
               );
@@ -207,17 +231,7 @@ function InteractiveQuestionCard({ id, questions, onAnswer }: InteractiveQuestio
             value={questionStates[qi].otherText}
             disabled={isSubmitting}
             onChange={(e) => setOtherText(qi, e.target.value)}
-            className="w-full rounded-[7px] border px-2.5 py-1.5 text-[12px] outline-none transition-colors disabled:opacity-60"
-            style={{
-              borderColor: "var(--leemo-line)",
-              background: "white",
-            }}
-            onFocus={(e) => {
-              e.target.style.borderColor = "var(--leemo-amber)";
-            }}
-            onBlur={(e) => {
-              e.target.style.borderColor = "var(--leemo-line)";
-            }}
+            className="w-full rounded-[9px] border border-[var(--leemo-line)] bg-[var(--leemo-panel)] px-3 py-2.5 text-[13px] outline-none transition-[border-color,background-color,box-shadow] duration-150 placeholder:text-[var(--leemo-ink-4)] focus:border-[var(--leemo-amber)] focus:bg-[var(--leemo-card)] focus:shadow-[0_0_0_3px_var(--leemo-focus)] disabled:opacity-60"
           />
         </div>
       ))}
@@ -225,7 +239,7 @@ function InteractiveQuestionCard({ id, questions, onAnswer }: InteractiveQuestio
         type="button"
         disabled={!allAnswered || isSubmitting}
         onClick={() => void handleSubmit()}
-        className="ml-auto block rounded-[8px] px-4 py-[7px] text-[12.5px] font-medium text-white transition-opacity disabled:opacity-40"
+        className="ml-auto block min-h-9 rounded-[9px] px-4 text-[13px] font-medium text-white transition-[opacity,transform,box-shadow] hover:shadow-sm active:translate-y-px disabled:opacity-40 disabled:active:translate-y-0"
         style={{ background: "var(--leemo-ink)" }}
       >
         提交

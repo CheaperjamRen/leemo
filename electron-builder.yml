@@ -10,6 +10,9 @@ productName: Leemo
 # package.json 精确匹配的完整运行时。让 builder 直接复用它，避免每个 worktree
 # 打包时再去 GitHub 下载同一份 130MB+ 压缩包；缺依赖时应在 npm ci 阶段明确失败。
 electronDist: node_modules/electron/dist
+# Leemo MVP targets Simplified Chinese users. Keep English as Chromium's
+# fallback, but do not spend install size on the other 53 locale packs.
+electronLanguages: [zh-CN, en-US]
 directories:
   output: dist-package
 files:
@@ -22,13 +25,14 @@ files:
   - bundled-skills/optional/**/*
   - bundled-skills/catalog.json
   - bundled-skills/office/release/**/*
+  - bundled-skills/superpowers/release/**/*
   # node_modules 不在这里列：electron-builder 自己按 package.json 的
   # dependencies 算生产依赖树并复制，devDependencies 永不入包。而
   # scripts/build-main.mjs 是 `packages: "external"`（SDK 要 spawn 子进程，
   # 不能被 inline），所以运行时确实要从 node_modules 解析 —— 这两件事必须对得上。
 asar: true
-# One verified native file plus its manifest/license. Keeping it outside ASAR
-# is required for Windows process launch and adds only three loose files.
+# The native runtime must stay outside ASAR for Windows process launch. The
+# tiny tray image is also a real filesystem resource consumed by Electron.
 extraResources:
   - from: bundled-runtime/windows-mcp/release
     to: windows-mcp
@@ -36,6 +40,8 @@ extraResources:
       - Sbroenne.WindowsMcp.exe
       - manifest.json
       - LICENSE.txt
+  - from: build/tray-icon.png
+    to: tray-icon.png
 asarUnpack:
   # ① 原生 CLI：必须真落地，否则"能开窗、一发消息就 spawn 失败"。
   - "**/node_modules/@anthropic-ai/claude-agent-sdk-win32-x64/**"

@@ -1,23 +1,13 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import {
-  Archive,
-  Bell,
-  CalendarClock,
-  ChevronDown,
-  ChevronRight,
-  Folder,
-  LayoutGrid,
-  Languages,
-  PanelLeftClose,
-  PanelLeftOpen,
+  FileText,
+  ListChecks,
   Plus,
   Search,
-  Settings,
-  Wrench,
   X,
 } from "lucide-react";
-import { useApprovals, useComposerDrafts, useConversations, useSettings, useNotifications, useUi, useSkills, useProviders, useWorkspace, useWorkspaces, useNotebooks, useFileTree } from "../bridge/context";
-import { deriveConversationStatus } from "../stores/conversation-status";
+import { useApprovals, useCaptures, useComposerDrafts, useConversations, useSettings, useUi, useSkills, useProviders, useWorkspace, useWorkspaces, useNotebooks, useFileTree } from "../bridge/context";
+import { deriveConversationMarker, deriveConversationStatus } from "../stores/conversation-status";
 import {
   EMPTY_COMPOSER_DRAFT,
   resolveComposerScope,
@@ -26,21 +16,59 @@ import type { AttachmentRef, WorkspaceFileRef } from "../../bridge/contract";
 import Timeline from "./timeline/Timeline";
 import InputArea from "./InputArea";
 import MomoAvatar from "./momo/MomoAvatar";
-import SkillsPage from "../pages/SkillsPage";
-import { ArtifactsPage } from "../pages/ArtifactsPage";
-import ScheduledTasksPage from "../pages/ScheduledTasksPage";
-import EnglishLearningPage from "../pages/EnglishLearningPage";
 import PreviewPane from "./PreviewPane";
-import FileTree from "./FileTree";
 import DropClassifyBar from "./DropClassifyBar";
 import { isFileDataTransfer, useFileDrop } from "./useFileDrop";
-import ConversationListItem from "./ConversationListItem";
+import ConversationStateMark from "./ConversationStateMark";
 import { orderConfiguredProviders } from "./model-picker";
-import WorkspaceSwitcher from "./WorkspaceSwitcher";
-import ModeSwitcher from "./ModeSwitcher";
+import WorkbenchSidebar from "./WorkbenchSidebar";
+import WorkbenchActivityRail from "./WorkbenchActivityRail";
+import WorkbenchStage from "./WorkbenchStage";
+import TopBar from "./TopBar";
 import { HOME_WORKSPACE_ID } from "../stores/workspaces";
+import type { ConversationTurnOptions } from "../stores/conversations";
+import { resolveWorkbenchSidebarMode } from "../workbench-spatial";
+
+const SkillsPage = lazy(() => import("../pages/SkillsPage"));
+const ScheduledTasksPage = lazy(() => import("../pages/ScheduledTasksPage"));
+const EnglishLearningPage = lazy(() => import("../pages/EnglishLearningPage"));
+const OrganizerPage = lazy(() => import("../pages/OrganizerPage"));
+const ArtifactsPage = lazy(async () => {
+  const module = await import("../pages/ArtifactsPage");
+  return { default: module.ArtifactsPage };
+});
 
 const NARROW_PREVIEW_MEDIA = "(max-width: 1023.98px)";
+
+const WORKBENCH_STARTERS = [
+  {
+    label: "整理资料",
+    prompt: "帮我整理这些资料，提炼重点并形成清晰结构",
+    Icon: ListChecks,
+  },
+  {
+    label: "起草文档",
+    prompt: "帮我起草一份文档，先和我确认目标与受众",
+    Icon: FileText,
+  },
+  {
+    label: "搜索并汇总",
+    prompt: "搜索相关资料，核对来源后给我一份简明汇总",
+    Icon: Search,
+  },
+] as const;
+
+function WorkbenchPageLoading({ label }: { label: string }): React.JSX.Element {
+  return (
+    <div
+      className="grid min-h-0 flex-1 place-items-center text-sm text-[var(--leemo-ink-3)]"
+      role="status"
+      aria-label={`正在打开${label}`}
+    >
+      正在打开{label}…
+    </div>
+  );
+}
 
 function useNarrowPreviewLayout(): boolean {
   const [matches, setMatches] = useState(() => {
@@ -72,10 +100,10 @@ export default function WorkbenchShell() {
   const providerOrder = useSettings((s) => s.providerOrder);
   const defaultProviderId = useSettings((s) => s.defaultProviderId);
   const defaultModelId = useSettings((s) => s.defaultModelId);
+  const setDefaultModel = useSettings((s) => s.setDefaultModel);
   const globalActiveId = useConversations((s) => s.activeId);
   const openTabs = useConversations((s) => s.openTabs);
   const conversations = useConversations((s) => s.byId);
-  const order = useConversations((s) => s.order);
   const timelines = useConversations((s) => s.timelines);
   const runIds = useConversations((s) => s.runIds);
   const pendingSends = useConversations((s) => s.pendingSends);
@@ -84,16 +112,18 @@ export default function WorkbenchShell() {
   const activateScope = useConversations((s) => s.activateScope);
   const createConversation = useConversations((s) => s.createConversation);
   const closeTab = useConversations((s) => s.closeTab);
-  const renameTitle = useConversations((s) => s.renameTitle);
-  const pinConversation = useConversations((s) => s.pinConversation);
-  const archiveConversation = useConversations((s) => s.archiveConversation);
-  const moveConversation = useConversations((s) => s.moveConversation);
-  const deleteConversation = useConversations((s) => s.deleteConversation);
   const send = useConversations((s) => s.send);
+  const guide = useConversations((s) => s.guide);
+  const enqueueTurn = useConversations((s) => s.enqueueTurn);
+  const removeQueuedTurn = useConversations((s) => s.removeQueuedTurn);
+  const guideQueuedTurn = useConversations((s) => s.guideQueuedTurn);
   const retry = useConversations((s) => s.retry);
   const dismissRetry = useConversations((s) => s.dismissRetry);
   const interrupt = useConversations((s) => s.interrupt);
   const setModelForConversation = useConversations((s) => s.setModelForConversation);
+  const setGoal = useConversations((s) => s.setGoal);
+  const toggleGoalPaused = useConversations((s) => s.toggleGoalPaused);
+  const clearGoal = useConversations((s) => s.clearGoal);
   const rawProviderList = useProviders((s) => s.list);
   const providerList = useMemo(
     () => orderConfiguredProviders(rawProviderList, providerOrder, { providerId: defaultProviderId, modelId: defaultModelId }),
@@ -101,7 +131,6 @@ export default function WorkbenchShell() {
   );
   const workspace = useWorkspace();
   const workspaceFiles = useFileTree((state) => state.roots);
-  const unreadCount = useNotifications((s) => s.unreadCount);
   // Same source as the buddy shell: only enabled skills reach the `/` menu.
   const skillList = useSkills((s) => s.list);
   const skillsDisabled = useSkills((s) => s.disabled);
@@ -111,18 +140,31 @@ export default function WorkbenchShell() {
 
   const view = useUi((s) => s.view);
   const setView = useUi((s) => s.setView);
-  const sidebarCollapsed = useUi((s) => s.sidebarCollapsed);
-  const toggleSidebar = useUi((s) => s.toggleSidebar);
   const openSettings = useUi((s) => s.openSettings);
   const toggleSearch = useUi((s) => s.toggleSearch);
-  const toggleNotifPanel = useUi((s) => s.toggleNotifPanel);
+  const sidebarPreference = useUi((s) => s.workbenchSidebarPreference);
+  const setSidebarPreference = useUi((s) => s.setWorkbenchSidebarPreference);
   const previewOpen = useUi((s) => s.previewOpen);
-  const closePreview = useUi((s) => s.closePreview);
   const previewActivePath = useUi((s) => s.previewActivePath);
   const previewWidthPx = useUi((s) => s.previewWidthPx);
-  const filesOpen = useUi((s) => s.filesOpen);
-  const toggleFiles = useUi((s) => s.toggleFiles);
-  const narrowPreviewActive = useNarrowPreviewLayout() && previewOpen;
+  const setScopeSurface = useUi((s) => s.setScopeSurface);
+  const shellRef = useRef<HTMLDivElement>(null);
+  const [shellWidth, setShellWidth] = useState(() => typeof window === "undefined" ? 1280 : window.innerWidth);
+  const sidebarCollapsed = resolveWorkbenchSidebarMode(sidebarPreference, shellWidth) === "compact";
+  useEffect(() => {
+    const shell = shellRef.current;
+    if (!shell) return;
+    const update = () => setShellWidth(shell.getBoundingClientRect().width || window.innerWidth);
+    update();
+    if (typeof ResizeObserver === "undefined") {
+      window.addEventListener("resize", update);
+      return () => window.removeEventListener("resize", update);
+    }
+    const observer = new ResizeObserver(update);
+    observer.observe(shell);
+    return () => observer.disconnect();
+  }, []);
+  const narrowPreviewActive = useNarrowPreviewLayout() && previewOpen && view === "artifacts";
   const previewColumnRef = useRef<HTMLDivElement>(null);
   const previewReturnFocusRef = useRef<HTMLElement | null>(null);
   const narrowPreviewWasActiveRef = useRef(false);
@@ -160,7 +202,6 @@ export default function WorkbenchShell() {
   const workspaceList = useWorkspaces((state) => state.list);
   const activeWorkspaceId = useWorkspaces((state) => state.activeId);
   const activeWorkspaceKind = workspaceList.find((entry) => entry.id === activeWorkspaceId)?.kind ?? "home";
-  const notebookList = useNotebooks((state) => state.list);
   const activeNotebookId = useNotebooks((state) => state.activeId);
   const activeBookId = activeWorkspaceKind === "home" ? activeNotebookId : null;
   const activeId = globalActiveId
@@ -176,9 +217,11 @@ export default function WorkbenchShell() {
   const timeline = activeId ? timelines[activeId] : undefined;
   const activeRunId = activeId ? runIds[activeId] ?? null : null;
   const retryDraft = activeId ? pendingSends[activeId] : undefined;
+  const queuedTurns = useConversations((s) => activeId ? s.queuedTurns[activeId] : undefined);
   // Model picker (轮 3 卡 F): the shell owns the subscription, InputArea renders.
   const activeMeta = activeId ? conversations[activeId] : undefined;
   const composerDrafts = useComposerDrafts((state) => state.drafts);
+  const notes = useCaptures((state) => state.notes);
   const updateComposerDraft = useComposerDrafts((state) => state.updateDraft);
   const setComposerText = useComposerDrafts((state) => state.setText);
   const assignComposerConversation = useComposerDrafts((state) => state.assignConversation);
@@ -187,35 +230,6 @@ export default function WorkbenchShell() {
   draftScopeRef.current = draftScope;
   const composerDraft = composerDrafts[draftScope] ?? EMPTY_COMPOSER_DRAFT;
   const draft = composerDraft.text;
-  const scopedConversationIds = useMemo(() => order.filter((id) =>
-    (conversations[id]?.workspaceId ?? HOME_WORKSPACE_ID) === activeWorkspaceId
-      && conversations[id]?.bookId === activeBookId
-  ), [activeBookId, activeWorkspaceId, conversations, order]);
-  const orderPinnedFirst = (ids: string[]) => [...ids].sort((left, right) =>
-    Number(conversations[right]?.pinned ?? false) - Number(conversations[left]?.pinned ?? false)
-  );
-  const visibleConversationIds = useMemo(
-    () => orderPinnedFirst(scopedConversationIds.filter((id) => !conversations[id]?.archived)),
-    [conversations, scopedConversationIds],
-  );
-  const archivedConversationIds = useMemo(
-    () => orderPinnedFirst(scopedConversationIds.filter((id) => conversations[id]?.archived)),
-    [conversations, scopedConversationIds],
-  );
-  const moveTargets = useMemo(() => {
-    const managed = notebookList.map((book) => ({
-      workspaceId: HOME_WORKSPACE_ID,
-      bookId: book.id,
-      label: book.title,
-    }));
-    const external = workspaceList
-      .filter((entry) => entry.kind === "external" && entry.available)
-      .map((entry) => ({ workspaceId: entry.id, bookId: null, label: entry.name }));
-    return [...managed, ...external].filter((target) =>
-      target.workspaceId !== activeWorkspaceId || target.bookId !== activeBookId
-    );
-  }, [activeBookId, activeWorkspaceId, notebookList, workspaceList]);
-  const [showArchived, setShowArchived] = useState(false);
   const visibleOpenTabs = useMemo(() => openTabs.filter((id) =>
     (conversations[id]?.workspaceId ?? HOME_WORKSPACE_ID) === activeWorkspaceId
       && conversations[id]?.bookId === activeBookId
@@ -230,6 +244,7 @@ export default function WorkbenchShell() {
     text: string,
     attachments?: AttachmentRef[],
     referencedFiles?: WorkspaceFileRef[],
+    options?: ConversationTurnOptions,
   ) => {
     const sendingScope = draftScope;
     const sendingWorkspaceId = activeWorkspaceId;
@@ -242,11 +257,13 @@ export default function WorkbenchShell() {
         activate: false,
       });
       assignComposerConversation(sendingScope, conversationId);
+      if (!activeIdRef.current && draftScopeRef.current === sendingScope) {
+        switchActive(conversationId);
+      }
     }
-    await send(conversationId, text, attachments, referencedFiles);
-    // Creating a conversation is not the user's success boundary. Keep the
-    // unsent draft visible until the host accepts the first turn, then enter
-    // that conversation unless the user deliberately navigated elsewhere.
+    await send(conversationId, text, attachments, referencedFiles, options);
+    // A later navigation still wins; this fallback covers an existing draft
+    // that was assigned to a conversation before this send began.
     if (!activeIdRef.current && draftScopeRef.current === sendingScope) {
       switchActive(conversationId);
     }
@@ -259,15 +276,23 @@ export default function WorkbenchShell() {
       || (composerDraft.workspaceFiles?.length ?? 0) > 0
       || composerDraft.submitError !== null
     );
-    const id = await createConversation({
-      source: "workbench",
-      workspaceId: activeWorkspaceId,
-      bookId: activeBookId,
-      activate: false,
-    });
-    if (carryDraft) assignComposerConversation(draftScope, id);
-    switchActive(id);
-    setView("chat");
+    try {
+      const id = await createConversation({
+        source: "workbench",
+        workspaceId: activeWorkspaceId,
+        bookId: activeBookId,
+        activate: false,
+      });
+      if (carryDraft) assignComposerConversation(draftScope, id);
+      switchActive(id);
+      setView("chat");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      updateComposerDraft(draftScope, (current) => ({ ...current, submitError: message }));
+      if (/还没有(?:选择可用模型|完成登录与保存|配置 API Key)/u.test(message)) {
+        openSettings("models");
+      }
+    }
   };
 
   const handlePickConversation = (id: string) => {
@@ -283,6 +308,40 @@ export default function WorkbenchShell() {
       }
     }
     dismissRetry(activeId);
+  };
+
+  const handleQueue = (
+    text: string,
+    attachments?: AttachmentRef[],
+    referencedFiles?: WorkspaceFileRef[],
+    options?: ConversationTurnOptions,
+  ) => {
+    const conversationId = activeId ?? composerDraft.assignedConversationId;
+    if (!conversationId) throw new Error("请先选择对话。");
+    enqueueTurn(conversationId, text, attachments, referencedFiles, options);
+  };
+
+  const handleSaveGoal = async (text: string) => {
+    const goalScope = draftScope;
+    let conversationId = activeId ?? composerDraft.assignedConversationId;
+    if (!conversationId) {
+      conversationId = await createConversation({
+        source: "workbench",
+        workspaceId: activeWorkspaceId,
+        bookId: activeBookId,
+        activate: false,
+      });
+      assignComposerConversation(goalScope, conversationId);
+    }
+    await setGoal(conversationId, text);
+    if (!activeIdRef.current && draftScopeRef.current === goalScope) switchActive(conversationId);
+  };
+
+  const primeComposer = (prompt: string): void => {
+    setComposerText(draftScope, prompt);
+    requestAnimationFrame(() => {
+      document.querySelector<HTMLTextAreaElement>('textarea[aria-label="输入消息"]')?.focus();
+    });
   };
 
   const handleRewriteSelection = (source: {
@@ -323,7 +382,7 @@ export default function WorkbenchShell() {
       };
     });
     setView("chat");
-    if (narrowPreviewActive) closePreview();
+    setScopeSurface("conversation");
     requestAnimationFrame(() => {
       document.querySelector<HTMLTextAreaElement>('textarea[aria-label="输入消息"]')?.focus();
     });
@@ -339,8 +398,11 @@ export default function WorkbenchShell() {
         pending: pendingByConversation[activeId] ?? null,
       })
     : null;
+  const activeMarker = activeId && activeStatus && conversations[activeId]
+    ? deriveConversationMarker({ status: activeStatus, unread: conversations[activeId].unread })
+    : null;
 
-  const previewColumn = previewOpen ? (
+  const artifactPreviewColumn = previewOpen ? (
     <div
       ref={previewColumnRef}
       className="flex shrink-0 flex-col border-l border-[var(--leemo-line)] max-[1024px]:absolute max-[1024px]:inset-y-0 max-[1024px]:right-0 max-[1024px]:z-20 max-[1024px]:!w-full max-[1024px]:bg-[var(--leemo-bg)] max-[1024px]:shadow-[-12px_0_32px_rgba(32,32,31,0.08)]"
@@ -354,16 +416,41 @@ export default function WorkbenchShell() {
     </div>
   ) : null;
 
+  const chatFileSurface = previewOpen ? (
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col" data-testid="preview-pane-column">
+      <PreviewPane onRewriteSelection={handleRewriteSelection} />
+    </div>
+  ) : null;
+
   // 渲染内容区（根据 ui.view 路由）
   const content = (() => {
     if (view === "skills") {
-      return <SkillsPage />;
+      return (
+        <Suspense fallback={<WorkbenchPageLoading label="技能" />}>
+          <SkillsPage />
+        </Suspense>
+      );
     }
     if (view === "scheduled") {
-      return <ScheduledTasksPage />;
+      return (
+        <Suspense fallback={<WorkbenchPageLoading label="定时任务" />}>
+          <ScheduledTasksPage />
+        </Suspense>
+      );
     }
     if (view === "learning") {
-      return <EnglishLearningPage />;
+      return (
+        <Suspense fallback={<WorkbenchPageLoading label="英语学习" />}>
+          <EnglishLearningPage />
+        </Suspense>
+      );
+    }
+    if (view === "organizer") {
+      return (
+        <Suspense fallback={<WorkbenchPageLoading label="工作看板" />}>
+          <OrganizerPage />
+        </Suspense>
+      );
     }
     if (view === "artifacts") {
       return (
@@ -374,36 +461,49 @@ export default function WorkbenchShell() {
             inert={narrowPreviewActive || undefined}
             aria-hidden={narrowPreviewActive || undefined}
           >
-            <ArtifactsPage />
+            <Suspense fallback={<WorkbenchPageLoading label="成果" />}>
+              <ArtifactsPage />
+            </Suspense>
           </div>
-          {previewColumn}
+          {artifactPreviewColumn}
         </div>
       );
     }
 
     // chat 视图（默认）
-    return (
-      <div className="relative flex min-h-0 flex-1" data-testid="workbench-content-surface">
-        {/* 主内容列 */}
-        <div
-          className="flex min-w-0 flex-1 flex-col"
-          data-testid="conversation-column"
-          inert={narrowPreviewActive || undefined}
-          aria-hidden={narrowPreviewActive || undefined}
-        >
+    const conversationSurface = (
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col" data-testid="conversation-column">
           {messages.length > 0 ? (
             <Timeline />
           ) : (
-            <div className="flex flex-1 items-center justify-center px-6 pb-8">
-              <div className="text-center">
-                <div className="mx-auto mb-4 w-fit"><MomoAvatar size={52} /></div>
-                <p className="text-[15px] font-medium text-[var(--leemo-ink-2)]">今天想先处理什么？</p>
+            <div className="leemo-workbench-empty flex flex-1 items-center justify-center px-6 pb-8">
+              <div className="w-full max-w-[500px] text-center">
+                <div className="mx-auto mb-3 w-fit"><MomoAvatar size={34} /></div>
+                <p className="text-[14px] font-medium text-[var(--leemo-ink-2)]">今天想先处理什么？</p>
+                {draft.trim().length === 0 && (
+                  <div
+                    className="leemo-workbench-starters mt-4 flex flex-wrap justify-center gap-2"
+                    aria-label="开始一项工作"
+                  >
+                    {WORKBENCH_STARTERS.map(({ label, prompt, Icon }) => (
+                      <button
+                        key={label}
+                        type="button"
+                        className="flex h-9 items-center justify-center gap-1.5 rounded-full border border-[var(--leemo-line)] bg-[var(--leemo-card)] px-3.5 text-[12px] text-[var(--leemo-ink-2)] transition-[background-color,border-color,color] hover:border-[var(--leemo-amber-line)] hover:bg-[var(--leemo-amber-bg)] hover:text-[var(--leemo-ink)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--leemo-amber-line)]"
+                        onClick={() => primeComposer(prompt)}
+                      >
+                        <Icon className="h-4 w-4 shrink-0 text-[var(--leemo-ink-3)]" aria-hidden />
+                        <span>{label}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
           )}
           <div className="mt-auto shrink-0">
             <div
-              className="mx-auto w-full max-w-[880px]"
+              className="leemo-workbench-composer-column mx-auto w-full max-w-[880px]"
               data-testid="workbench-composer-column"
             >
               {drop.pending && (
@@ -412,10 +512,24 @@ export default function WorkbenchShell() {
                 </div>
               )}
               <InputArea
+                surface="workbench"
                 conversationId={activeId}
                 value={draft}
                 onChange={(next) => setComposerText(draftScope, next)}
                 onSend={handleSend}
+                onQueue={handleQueue}
+                notes={notes}
+                onGuide={(text) => activeId ? guide(activeId, text) : Promise.reject(new Error("请先选择对话。"))}
+                queuedTurns={queuedTurns}
+                onEditQueuedTurn={(queuedTurnId) => { if (activeId) removeQueuedTurn(activeId, queuedTurnId); }}
+                onDeleteQueuedTurn={(queuedTurnId) => { if (activeId) removeQueuedTurn(activeId, queuedTurnId); }}
+                onGuideQueuedTurn={(queuedTurnId) => activeId
+                  ? guideQueuedTurn(activeId, queuedTurnId)
+                  : Promise.reject(new Error("请先选择对话。"))}
+                goal={activeMeta?.goal}
+                onSaveGoal={handleSaveGoal}
+                onToggleGoalPaused={() => activeId ? toggleGoalPaused(activeId) : undefined}
+                onDeleteGoal={() => activeId ? clearGoal(activeId) : undefined}
                 draftScope={draftScope}
                 draftState={composerDraft}
                 onDraftStateChange={(update) => updateComposerDraft(draftScope, update)}
@@ -435,38 +549,48 @@ export default function WorkbenchShell() {
                 workspaceFiles={workspaceFiles}
                 workspaceId={activeWorkspaceId}
                 providers={providerList}
-                currentProviderId={activeMeta?.providerId ?? null}
-                currentModelId={activeMeta?.modelId ?? null}
+                  currentProviderId={activeMeta?.providerId ?? defaultProviderId}
+                  currentModelId={activeMeta?.modelId ?? defaultModelId}
                 permissionMode={permissionMode}
-                onOpenSettings={() => openSettings("models")}
-                onOpenPermissionSettings={() => openSettings("permissions")}
-                onDisableFullAccess={() => setPermissionMode("acceptEdits")}
-                onSelectModel={(providerId, modelId) => {
-                  if (activeId) void setModelForConversation(activeId, providerId, modelId);
-                }}
+                  onOpenSettings={() => openSettings("models")}
+                  onSelectPermissionMode={setPermissionMode}
+                  onSelectModel={(providerId, modelId) => {
+                    if (activeId) {
+                      void setModelForConversation(activeId, providerId, modelId);
+                      return;
+                    }
+                    setDefaultModel(providerId, modelId);
+                  }}
               />
             </div>
           </div>
-        </div>
-        {/* 预览列 */}
-        {previewColumn}
-        {/* 文件树列 */}
-        {filesOpen && (
-          <div
-            className="absolute inset-y-0 right-0 z-30 flex w-[280px] flex-col border-l border-[var(--leemo-line)] bg-[var(--leemo-side)] shadow-[-12px_0_32px_rgba(32,32,31,0.08)] max-[700px]:w-[min(82vw,280px)]"
-            data-testid="file-tree-column"
-            aria-label="全部文件"
-          >
-            <FileTree />
-          </div>
-        )}
+      </div>
+    );
+
+    return (
+      <div className="relative flex min-h-0 min-w-0 flex-1" data-testid="workbench-content-surface">
+        <WorkbenchStage
+          conversation={conversationSurface}
+          file={chatFileSurface}
+          hasFile={previewOpen}
+          fileKey={previewActivePath ? `${activeWorkspaceId}\u0000${previewActivePath}` : null}
+          conversationMarker={activeMarker && activeStatus ? (
+            <ConversationStateMark
+              marker={activeMarker}
+              label={contextTitle ?? "当前对话"}
+              detail={activeStatus.detail}
+              className="mr-0"
+            />
+          ) : null}
+        />
       </div>
     );
   })();
 
   return (
     <div
-      className="flex h-screen overflow-hidden bg-[var(--leemo-bg)]"
+      ref={shellRef}
+      className="leemo-workbench-shell relative flex h-screen flex-col overflow-hidden bg-[var(--leemo-bg)]"
       data-shell="workbench"
       data-testid="workbench-shell"
       onDragOver={(e) => {
@@ -479,314 +603,91 @@ export default function WorkbenchShell() {
         if (drop.handleDrop(e.dataTransfer.files)) e.preventDefault();
       }}
     >
-      {/* 侧栏 */}
-      <aside
-        className={`flex shrink-0 flex-col border-r border-[var(--leemo-line)] bg-[var(--leemo-side)] transition-[width] duration-200 ${
-          sidebarCollapsed ? "w-[48px]" : "w-[260px] max-[900px]:w-[180px]"
-        }`}
-        aria-label="工作台侧栏"
-      >
-        {sidebarCollapsed ? (
-          <div className="flex min-h-0 flex-1 flex-col items-center">
-            <div className="flex h-14 w-full shrink-0 items-center justify-center border-b border-[var(--leemo-line)]">
-              <button type="button" onClick={toggleSidebar} className="leemo-icon-btn" aria-label="展开侧栏" title="展开侧栏">
-                <PanelLeftOpen className="h-4 w-4" aria-hidden />
-              </button>
-            </div>
-            <div className="flex min-h-0 flex-1 flex-col items-center gap-1 py-2">
-              <button type="button" onClick={() => void handleNewConversation()} className="leemo-icon-btn" aria-label="新建对话" title="新对话">
-                <Plus className="h-4 w-4" aria-hidden />
-              </button>
-            </div>
-            <div className="flex w-full shrink-0 flex-col items-center gap-1 border-t border-[var(--leemo-line)] py-2">
-              {[
-                { id: "learning" as const, label: "英语学习", Icon: Languages },
-                { id: "skills" as const, label: "技能", Icon: Wrench },
-                { id: "scheduled" as const, label: "定时任务", Icon: CalendarClock },
-                { id: "artifacts" as const, label: "成果", Icon: LayoutGrid },
-              ].map(({ id, label, Icon }) => (
-                <button
-                  key={id}
-                  type="button"
-                  onClick={() => setView(id)}
-                  className={`leemo-icon-btn ${view === id ? "bg-[var(--leemo-card)] text-[var(--leemo-ink)] shadow-sm" : ""}`}
-                  aria-label={label}
-                  aria-current={view === id ? "page" : undefined}
-                  title={label}
-                >
-                  <Icon className="h-4 w-4" aria-hidden />
-                </button>
-              ))}
-              <button type="button" onClick={() => openSettings()} className="leemo-icon-btn" aria-label="设置" title="设置">
-                <Settings className="h-4 w-4" aria-hidden />
-              </button>
-            </div>
-          </div>
-        ) : (
-          <div className="flex min-h-0 flex-1 flex-col">
-            {/* 侧栏头部：logo + 新建按钮 */}
-            <div className="flex h-14 shrink-0 items-center justify-between border-b border-[var(--leemo-line)] px-3">
-              <div className="flex min-w-0 flex-1 items-center gap-1.5">
-                <MomoAvatar size={24} />
-                <WorkspaceSwitcher />
-              </div>
-              <button
-                onClick={() => void handleNewConversation()}
-                className="leemo-icon-btn"
-                title="新对话"
-                aria-label="新建对话"
-              >
-                <Plus className="h-4 w-4" aria-hidden />
-              </button>
-            </div>
+      <TopBar
+        navigationControl={sidebarCollapsed ? "sidebar-collapsed" : "sidebar-expanded"}
+        onOpenHistory={() => setSidebarPreference(sidebarCollapsed ? "pinned" : "compact")}
+      />
 
-            {/* 对话列表 */}
-            <div className="min-h-0 flex-1 overflow-y-auto px-2 py-2">
-              {visibleConversationIds.length === 0 ? (
-                <div className="px-2 py-8 text-center text-xs text-[var(--leemo-ink-3)]">
-                  还没有对话
-                </div>
-              ) : (
-                <div className="space-y-0.5">
-                  {visibleConversationIds.map((id) => {
-                    const conv = conversations[id];
-                    if (!conv) return null;
-                    const isActive = id === activeId;
-                    return (
-                      <ConversationListItem
-                        key={id}
-                        conversation={conv}
-                        active={isActive}
-                        variant="workbench"
-                        onPick={() => handlePickConversation(id)}
-                        onRename={(title) => renameTitle(id, title)}
-                        onPin={(pinned) => pinConversation(id, pinned)}
-                        onArchive={(archived) => archiveConversation(id, archived)}
-                        onDelete={() => deleteConversation(id)}
-                        moveTargets={moveTargets}
-                        onMove={(target) => moveConversation(id, target)}
-                        status={deriveConversationStatus({
-                          timeline: timelines[id] ?? [],
-                          activeRunId: runIds[id] ?? null,
-                          pending: pendingByConversation[id] ?? null,
-                        })}
-                      />
-                    );
-                  })}
-                </div>
-              )}
+      <div className="flex min-h-0 flex-1 pt-14">
+        <WorkbenchSidebar onNewConversation={handleNewConversation} shellWidth={shellWidth} />
 
-              {archivedConversationIds.length > 0 && (
-                <div className="mt-3 border-t border-[var(--leemo-line)] pt-2">
-                  <button
-                    type="button"
-                    onClick={() => setShowArchived((open) => !open)}
-                    aria-expanded={showArchived}
-                    className="flex w-full items-center gap-1.5 rounded-[5px] px-2 py-1.5 text-left text-[11px] text-[var(--leemo-ink-3)] transition-colors hover:bg-[var(--leemo-side-hover)] hover:text-[var(--leemo-ink-2)]"
-                  >
-                    {showArchived
-                      ? <ChevronDown className="h-3.5 w-3.5" aria-hidden />
-                      : <ChevronRight className="h-3.5 w-3.5" aria-hidden />}
-                    <Archive className="h-3.5 w-3.5" aria-hidden />
-                    <span>已归档 {archivedConversationIds.length}</span>
-                  </button>
-                  {showArchived && (
-                    <div className="mt-1 space-y-0.5 opacity-80">
-                      {archivedConversationIds.map((id) => {
-                        const conv = conversations[id];
-                        if (!conv) return null;
-                        return (
-                          <ConversationListItem
-                            key={id}
-                            conversation={conv}
-                            active={false}
-                            variant="workbench"
-                            onPick={() => handlePickConversation(id)}
-                            onRename={(title) => renameTitle(id, title)}
-                            onPin={(pinned) => pinConversation(id, pinned)}
-                            onArchive={(archived) => archiveConversation(id, archived)}
-                            onDelete={() => deleteConversation(id)}
-                            moveTargets={moveTargets}
-                            onMove={(target) => moveConversation(id, target)}
-                          />
-                        );
-                      })}
+        {/* 主区域 */}
+        <main className="leemo-workbench-main flex min-h-0 min-w-0 flex-1 flex-col bg-[var(--leemo-bg)]">
+        {/* 对话标签栏只属于聊天 / 文件工作区；独立页面直接使用完整内容高度。 */}
+        {view === "chat" && (
+        <header
+          className="leemo-workbench-topbar flex h-[50px] shrink-0 items-center justify-between border-b border-[var(--leemo-line)] bg-[var(--leemo-card)]/92 pl-4 pr-3 backdrop-blur-md"
+          data-testid="workbench-conversation-bar"
+        >
+          <div className="leemo-workbench-tabs flex h-full min-w-0 flex-1 items-end gap-1 pr-4 text-sm">
+            {visibleOpenTabs.length > 1 ? (
+              <>
+                {visibleOpenTabs.map((id) => {
+                  const conv = conversations[id];
+                  if (!conv) return null;
+                  const isActive = id === activeId;
+                  return (
+                    <div
+                      key={id}
+                      className={`group flex h-[38px] max-w-[220px] items-center gap-2 rounded-t-[7px] border-x border-t px-3 text-xs transition-colors ${
+                        isActive
+                          ? "border-[var(--leemo-line)] bg-[var(--leemo-bg)] font-medium text-[var(--leemo-ink)]"
+                          : "border-transparent text-[var(--leemo-ink-3)] hover:bg-[var(--leemo-side-hover)]"
+                      }`}
+                    >
+                      <button onClick={() => handlePickConversation(id)} className="min-w-0 flex-1 truncate">
+                        {conv.title}
+                      </button>
+                      <button
+                        onClick={(event) => { event.stopPropagation(); closeTab(id); }}
+                        className="shrink-0 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
+                        aria-label="关闭标签"
+                      >
+                        <X className="h-3 w-3" aria-hidden />
+                      </button>
                     </div>
-                  )}
-                </div>
-              )}
-            </div>
-
-            {/* 侧栏底部：设置入口 */}
-            <div className="shrink-0 border-t border-[var(--leemo-line)] p-2">
-              <button
-                className={`flex w-full items-center gap-2 rounded-lg px-2.5 py-2 transition-colors ${
-                  view === "learning"
-                    ? "bg-[var(--leemo-card)] font-medium text-[var(--leemo-ink)] shadow-sm ring-1 ring-inset ring-[var(--leemo-line-soft)]"
-                    : "text-[var(--leemo-ink-2)] hover:bg-[var(--leemo-side-hover)]"
-                }`}
-                title="英语学习"
-                aria-current={view === "learning" ? "page" : undefined}
-                onClick={() => setView("learning")}
-              >
-                <Languages className="h-4 w-4" aria-hidden />
-                <span className="text-xs">英语学习</span>
-              </button>
-              <button
-                className={`flex w-full items-center gap-2 rounded-lg px-2.5 py-2 transition-colors ${
-                  view === "skills"
-                    ? "bg-[var(--leemo-card)] font-medium text-[var(--leemo-ink)] shadow-sm ring-1 ring-inset ring-[var(--leemo-line-soft)]"
-                    : "text-[var(--leemo-ink-2)] hover:bg-[var(--leemo-side-hover)]"
-                }`}
-                title="技能"
-                aria-current={view === "skills" ? "page" : undefined}
-                onClick={() => setView("skills")}
-              >
-                <Wrench className="h-4 w-4" aria-hidden />
-                <span className="text-xs">技能</span>
-              </button>
-              <button
-                className={`flex w-full items-center gap-2 rounded-lg px-2.5 py-2 transition-colors ${
-                  view === "scheduled"
-                    ? "bg-[var(--leemo-card)] font-medium text-[var(--leemo-ink)] shadow-sm ring-1 ring-inset ring-[var(--leemo-line-soft)]"
-                    : "text-[var(--leemo-ink-2)] hover:bg-[var(--leemo-side-hover)]"
-                }`}
-                title="定时任务"
-                aria-current={view === "scheduled" ? "page" : undefined}
-                onClick={() => setView("scheduled")}
-              >
-                <CalendarClock className="h-4 w-4" aria-hidden />
-                <span className="text-xs">定时任务</span>
-              </button>
-              <button
-                onClick={() => setView("artifacts")}
-                className={`flex w-full items-center gap-2 rounded-lg px-2.5 py-2 transition-colors ${
-                  view === "artifacts"
-                    ? "bg-[var(--leemo-card)] font-medium text-[var(--leemo-ink)] shadow-sm ring-1 ring-inset ring-[var(--leemo-line-soft)]"
-                    : "text-[var(--leemo-ink-2)] hover:bg-[var(--leemo-side-hover)]"
-                }`}
-                title="成果"
-                aria-current={view === "artifacts" ? "page" : undefined}
-              >
-                <LayoutGrid className="h-4 w-4" aria-hidden />
-                <span className="text-xs">成果</span>
-              </button>
-              <button
-                onClick={() => openSettings()}
-                className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-[var(--leemo-ink-2)] transition-colors hover:bg-[var(--leemo-side-hover)]"
-                title="设置"
-              >
-                <Settings className="h-4 w-4" aria-hidden />
-                <span className="text-xs text-[var(--leemo-ink-2)]">设置</span>
-              </button>
-            </div>
-          </div>
-        )}
-      </aside>
-
-      {/* 主区域 */}
-      <main className="flex min-h-0 min-w-0 flex-1 flex-col bg-[var(--leemo-bg)]">
-        {/* 顶栏 */}
-        <header className="flex h-[52px] shrink-0 items-center justify-between border-b border-[var(--leemo-line)] bg-[var(--leemo-card)]/80 px-5 backdrop-blur-md">
-          <div className="flex min-w-0 flex-1 items-center gap-2 pr-4 text-sm">
-            {!sidebarCollapsed && (
-              <button type="button" onClick={toggleSidebar} className="leemo-icon-btn -ml-1" aria-label="收起侧栏" title="收起侧栏">
-                <PanelLeftClose className="h-4 w-4" aria-hidden />
-              </button>
-            )}
-            {contextTitle && (
-              <span
+                  );
+                })}
+                <button onClick={() => void handleNewConversation()} className="leemo-icon-btn mb-1 h-7 w-7" title="新标签" aria-label="新建标签">
+                  <Plus className="h-3.5 w-3.5" aria-hidden />
+                </button>
+              </>
+            ) : view === "chat" && (
+              <div
                 data-testid="workbench-context-title"
-                title={contextTitle}
-                className="min-w-0 truncate text-[var(--leemo-ink-2)]"
+                data-tab-state="active"
+                title={contextTitle ?? "新对话"}
+                className="flex h-full min-w-0 max-w-[280px] items-center truncate px-2 text-[13px] font-medium text-[var(--leemo-ink)]"
               >
-                {contextTitle}
-              </span>
+                {contextTitle ?? "新对话"}
+              </div>
             )}
-            {view === "chat" && activeStatus && (
-              <span
-                data-testid="current-conversation-status"
-                title={activeStatus.detail}
-                className={`shrink-0 text-[11px] ${
-                  activeStatus.kind === "failed"
-                    ? "text-[var(--leemo-danger)]"
-                    : activeStatus.kind === "completed"
-                      ? "text-[var(--leemo-ok)]"
-                      : activeStatus.kind === "running" || activeStatus.kind === "blocked"
-                        ? "text-[var(--leemo-amber)]"
-                        : "text-[var(--leemo-ink-3)]"
-                }`}
-              >
-                {activeStatus.label}
+            {view === "chat" && activeStatus && activeMarker && (
+              <span data-testid="current-conversation-status">
+                <ConversationStateMark
+                  marker={activeMarker}
+                  label={contextTitle ?? "当前对话"}
+                  detail={activeStatus.detail}
+                  className="mr-0"
+                />
               </span>
             )}
           </div>
 
-          <div className="flex shrink-0 items-center gap-3">
-            <button onClick={toggleFiles} className="leemo-icon-btn" title="文件树" aria-label="文件树">
-              <Folder className="h-[17px] w-[17px]" aria-hidden />
-            </button>
+          <div className="flex shrink-0 items-center gap-1.5">
             <button onClick={toggleSearch} className="leemo-icon-btn" title="搜索" aria-label="搜索">
               <Search className="h-[17px] w-[17px]" aria-hidden />
             </button>
-
-            <button onClick={toggleNotifPanel} className="leemo-icon-btn relative" title="通知" aria-label="通知">
-              <Bell className="h-[17px] w-[17px]" aria-hidden />
-              {unreadCount > 0 && (
-                <span
-                  data-testid="notif-badge"
-                  className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-[var(--leemo-amber)] px-1 text-[10px] font-medium text-white"
-                >
-                  {unreadCount > 99 ? "99+" : unreadCount}
-                </span>
-              )}
-            </button>
-
-            <div className="h-5 w-px bg-[var(--leemo-line)]" />
-
-            <ModeSwitcher />
-
           </div>
         </header>
-
-        {/* 标签条（超过1个标签时显示） */}
-        {visibleOpenTabs.length > 1 && (
-          <div className="flex h-9 shrink-0 items-center gap-1 border-b border-[var(--leemo-line)] bg-[var(--leemo-side)] px-3">
-            {visibleOpenTabs.map((id) => {
-              const conv = conversations[id];
-              if (!conv) return null;
-              const isActive = id === activeId;
-              return (
-                <div
-                  key={id}
-                  className={`group flex h-full items-center gap-2 rounded-t-lg px-3 text-xs transition-colors ${
-                    isActive
-                      ? "border-b-2 border-[var(--leemo-amber)] bg-[var(--leemo-bg)] font-medium text-[var(--leemo-ink)]"
-                      : "text-[var(--leemo-ink-3)] hover:bg-[var(--leemo-side-hover)]"
-                  }`}
-                >
-                  <button onClick={() => handlePickConversation(id)} className="min-w-0 flex-1 truncate">
-                    {conv.title}
-                  </button>
-                  <button
-                    onClick={(e) => { e.stopPropagation(); closeTab(id); }}
-                    className="opacity-0 transition-opacity group-hover:opacity-100"
-                    aria-label="关闭标签"
-                  >
-                    <X className="h-3 w-3" aria-hidden />
-                  </button>
-                </div>
-              );
-            })}
-            <button onClick={() => void handleNewConversation()} className="leemo-icon-btn h-7 w-7" title="新标签">
-              <Plus className="h-3.5 w-3.5" aria-hidden />
-            </button>
-          </div>
         )}
 
         {/* 内容区 */}
         {content}
-      </main>
+        </main>
+
+        <WorkbenchActivityRail shellWidth={shellWidth} />
+      </div>
 
     </div>
   );

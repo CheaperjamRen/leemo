@@ -435,4 +435,18 @@ describe("FixtureBridgeClient", () => {
     await expect((client.invoke as unknown as (channel: string, request: unknown) => Promise<unknown>)("bridge:not-a-real-channel", undefined))
       .rejects.toThrow(/unsupported bridge channel/i);
   });
+
+  it("projects configured providers into the browser settings editor", async () => {
+    const client = new FixtureBridgeClient();
+
+    await expect(client.invoke("bridge:getProviderConfig", { providerId: "deepseek" })).resolves.toMatchObject({
+      id: "deepseek",
+      name: "DeepSeek",
+      authMode: "api-key",
+      models: ["deepseek-chat"],
+      hasApiKey: true,
+      saved: true,
+    });
+    await expect(client.invoke("bridge:getProviderConfig", { providerId: "missing" })).resolves.toBeNull();
+  });
 });

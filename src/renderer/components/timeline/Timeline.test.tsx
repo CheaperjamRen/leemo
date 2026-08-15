@@ -30,6 +30,23 @@ function Seeder({ client, askPayload }: { client: FixtureBridgeClient; askPayloa
   return <Timeline />;
 }
 
+function DeferredAskSeeder({ client }: { client: FixtureBridgeClient }) {
+  const createConversation = useConversations((s) => s.createConversation);
+  const send = useConversations((s) => s.send);
+  useEffect(() => {
+    void (async () => {
+      await createConversation({ source: "buddy" });
+      await send("conv-1", "hi");
+    })();
+  }, [client, createConversation, send]);
+  return (
+    <>
+      <button type="button" onClick={() => client.emitAskUser(ASK_PAYLOAD)}>emit pending question</button>
+      <Timeline />
+    </>
+  );
+}
+
 const ASK_PAYLOAD: AskUserPayload = {
   id: "q1",
   conversationId: "conv-1",
@@ -45,6 +62,7 @@ describe("Timeline — scroll-out-of-view hint (卡 D §6): pill and BackToBotto
       </BridgeProvider>
     );
     await screen.findByText("hi");
+    expect(screen.getByTestId("timeline-content")).toHaveClass("space-y-4", "max-w-[820px]", "xl:max-w-[900px]");
     mockScrolledUp(container);
 
     expect(await screen.findByLabelText("回到底部")).toBeInTheDocument();
@@ -78,5 +96,74 @@ describe("Timeline — scroll-out-of-view hint (卡 D §6): pill and BackToBotto
     // atBottom stays true, so neither affordance should render.
     expect(screen.queryByLabelText("回到底部")).not.toBeInTheDocument();
     expect(screen.queryByText(/有个问题等你回答/)).not.toBeInTheDocument();
+  });
+
+  it("keeps a newly pending question in view while following the bottom", async () => {
+    const client = new FixtureBridgeClient({ chunkDelayMs: 100_000 });
+    const { container } = render(
+      <BridgeProvider client={client}>
+        <DeferredAskSeeder client={client} />
+      </BridgeProvider>
+    );
+    await screen.findByText("hi");
+
+    const scrollEl = container.querySelector(".overflow-y-auto") as HTMLElement;
+    let scrollHeight = 2_000;
+    Object.defineProperty(scrollEl, "scrollHeight", { get: () => scrollHeight, configurable: true });
+    Object.defineProperty(scrollEl, "clientHeight", { value: 500, configurable: true });
+    Object.defineProperty(scrollEl, "scrollTop", { value: 1_500, configurable: true, writable: true });
+    fireEvent.scroll(scrollEl);
+
+    scrollHeight = 2_200;
+    fireEvent.click(screen.getByRole("button", { name: "emit pending question" }));
+    await screen.findByText("选择环境？");
+
+    expect(scrollEl.scrollTop).toBe(2_200);
+  });
+
+  it("keeps the visible edge pinned when the timeline layout resizes", async () => {
+    const originalResizeObserver = globalThis.ResizeObserver;
+    let notifyResize: (() => void) | undefined;
+    class TestResizeObserver {
+      constructor(callback: ResizeObserverCallback) {
+        notifyResize = () => callback([], this as unknown as ResizeObserver);
+      }
+      observe(): void {}
+      unobserve(): void {}
+      disconnect(): void {}
+    }
+    Object.defineProperty(globalThis, "ResizeObserver", {
+      value: TestResizeObserver,
+      configurable: true,
+      writable: true,
+    });
+
+    try {
+      const client = new FixtureBridgeClient({ chunkDelayMs: 100_000 });
+      const { container } = render(
+        <BridgeProvider client={client}>
+          <DeferredAskSeeder client={client} />
+        </BridgeProvider>
+      );
+      await screen.findByText("hi");
+
+      const scrollEl = container.querySelector(".overflow-y-auto") as HTMLElement;
+      let scrollHeight = 2_000;
+      Object.defineProperty(scrollEl, "scrollHeight", { get: () => scrollHeight, configurable: true });
+      Object.defineProperty(scrollEl, "clientHeight", { value: 500, configurable: true });
+      Object.defineProperty(scrollEl, "scrollTop", { value: 1_500, configurable: true, writable: true });
+      fireEvent.scroll(scrollEl);
+
+      scrollHeight = 2_200;
+      notifyResize?.();
+
+      expect(scrollEl.scrollTop).toBe(2_200);
+    } finally {
+      Object.defineProperty(globalThis, "ResizeObserver", {
+        value: originalResizeObserver,
+        configurable: true,
+        writable: true,
+      });
+    }
   });
 });

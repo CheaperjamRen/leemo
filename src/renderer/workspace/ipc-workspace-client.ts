@@ -45,6 +45,10 @@ export class IpcWorkspaceClient implements WorkspaceClient {
     return this.call("touchWorkspace", { id });
   }
 
+  updateWorkspace(id: string, input: { name?: string; archived?: boolean }): Promise<WorkspaceRootInfo> {
+    return this.call("updateWorkspace", { id, ...input });
+  }
+
   forgetWorkspace(id: string): Promise<boolean> {
     return this.call("forgetWorkspace", { id });
   }
@@ -55,6 +59,10 @@ export class IpcWorkspaceClient implements WorkspaceClient {
 
   createNotebook(title: string): Promise<WorkspaceNotebook> {
     return this.call("createNotebook", { title });
+  }
+
+  updateNotebook(id: string, input: { title?: string; archived?: boolean }): Promise<WorkspaceNotebook> {
+    return this.call("updateNotebook", { id, ...input });
   }
 
   ensureStarterNotebook(): Promise<WorkspaceNotebook> {
@@ -119,6 +127,13 @@ export class IpcWorkspaceClient implements WorkspaceClient {
   async reveal(path?: string, workspaceId?: string): Promise<void> {
     await this.call("reveal", {
       path: path ?? "",
+      ...(workspaceId === undefined ? {} : { workspaceId }),
+    });
+  }
+
+  async openFile(path: string, workspaceId?: string): Promise<void> {
+    await this.call("openFile", {
+      path,
       ...(workspaceId === undefined ? {} : { workspaceId }),
     });
   }

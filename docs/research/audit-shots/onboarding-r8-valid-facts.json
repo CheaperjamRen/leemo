@@ -1,0 +1,21 @@
+{
+  "checkedAt": "2026-07-29T12:08:38.956Z",
+  "executable": "E:\\Leemo\\dist-package-r8-6\\win-unpacked\\Leemo.exe",
+  "isolatedUserData": true,
+  "configuredProvidersAtStart": 0,
+  "provider": "deepseek",
+  "billableModelCalls": 2,
+  "keyRecordedInEvidence": false,
+  "connectionVerified": true,
+  "starterNotebookReady": true,
+  "composerFocused": true,
+  "firstReplyNonEmpty": true,
+  "firstReplyPreview": "连接成功",
+  "encryptedProviderRestoredAfterRestart": true,
+  "onboardingStayedClosedAfterRestart": true,
+  "evidence": [
+    "onboarding-r8-valid-connected.png",
+    "onboarding-r8-valid-first-reply.png",
+    "onboarding-r8-valid-reopened.png"
+  ]
+}

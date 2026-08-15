@@ -29,6 +29,13 @@ function fakeWorkspace(initial: WorkspaceNotebook[] = []): WorkspaceClient & { c
       books = [...books, book];
       return book;
     },
+    updateNotebook: async (id, input) => {
+      const current = books.find((book) => book.id === id);
+      if (!current) throw new Error("没有这个本子");
+      const updated = { ...current, ...input };
+      books = books.map((book) => book.id === id ? updated : book);
+      return updated;
+    },
     ensureStarterNotebook: async () => nb("例：高等数学", { hasMemory: true }),
     readTree: async () => [],
     dropFiles: async () => [],
@@ -88,6 +95,19 @@ describe("notebooks store — 本子 = 目录 (轮 3 卡 G)", () => {
     const store = createNotebooksStore(fakeWorkspace());
     await store.getState().createNotebook("新本子");
     expect(store.getState().activeId).toBe("新本子");
+  });
+
+  it("persists display rename and archive, then leaves an archived active notebook", async () => {
+    const store = createNotebooksStore(fakeWorkspace([nb("科研项目")]));
+    await store.getState().refresh();
+    store.getState().setActive("科研项目");
+
+    await store.getState().renameNotebook("科研项目", "毕业论文");
+    expect(store.getState().list[0]).toMatchObject({ id: "科研项目", title: "毕业论文" });
+
+    await store.getState().setNotebookArchived("科研项目", true);
+    expect(store.getState().list[0]).toMatchObject({ archived: true });
+    expect(store.getState().activeId).toBeNull();
   });
 
   it("tracks the active notebook (drives 拖入归类 + prompt layer ⑨)", async () => {

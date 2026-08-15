@@ -208,7 +208,7 @@ async function main() {
       category: "custom",
       apiFormat: "openai",
       baseUrl: "http://unused-for-gateway.invalid",
-      apiKey: "sk-NEVER-USED-placeholder-source", // gateway 模式下 buildConversationEnv 绝不发它
+      apiKey: "test-key-NEVER-USED-placeholder-source", // gateway 模式下 buildConversationEnv 绝不发它
       models: [relayRealModel],
       modelCapabilities: {},
       envTemplate: {},

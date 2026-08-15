@@ -1,0 +1,2058 @@
+[
+  {
+    "competitor": "colaos",
+    "externalId": "gws-calendar",
+    "name": "gws-calendar",
+    "advertisedSource": "googleworkspace/cli",
+    "resolution": "included",
+    "catalogId": "gws-calendar",
+    "reason": "公开上游可固定；Apache-2.0；按真实子 Skill 收录。",
+    "inventorySource": "ColaOS 1.2.9 historical candidate snapshot audit (2026-08-07)",
+    "observedScope": "historical-candidate-snapshot"
+  },
+  {
+    "competitor": "colaos",
+    "externalId": "gws-calendar-agenda",
+    "name": "gws-calendar-agenda",
+    "advertisedSource": "googleworkspace/cli",
+    "resolution": "included",
+    "catalogId": "gws-calendar-agenda",
+    "reason": "公开上游可固定；Apache-2.0；按真实子 Skill 收录。",
+    "inventorySource": "ColaOS 1.2.9 historical candidate snapshot audit (2026-08-07)",
+    "observedScope": "historical-candidate-snapshot"
+  },
+  {
+    "competitor": "colaos",
+    "externalId": "gws-calendar-insert",
+    "name": "gws-calendar-insert",
+    "advertisedSource": "googleworkspace/cli",
+    "resolution": "included",
+    "catalogId": "gws-calendar-insert",
+    "reason": "公开上游可固定；Apache-2.0；按真实子 Skill 收录。",
+    "inventorySource": "ColaOS 1.2.9 historical candidate snapshot audit (2026-08-07)",
+    "observedScope": "historical-candidate-snapshot"
+  },
+  {
+    "competitor": "colaos",
+    "externalId": "gws-docs",
+    "name": "gws-docs",
+    "advertisedSource": "googleworkspace/cli",
+    "resolution": "included",
+    "catalogId": "gws-docs",
+    "reason": "公开上游可固定；Apache-2.0；按真实子 Skill 收录。",
+    "inventorySource": "ColaOS 1.2.9 historical candidate snapshot audit (2026-08-07)",
+    "observedScope": "historical-candidate-snapshot"
+  },
+  {
+    "competitor": "colaos",
+    "externalId": "gws-docs-write",
+    "name": "gws-docs-write",
+    "advertisedSource": "googleworkspace/cli",
+    "resolution": "included",
+    "catalogId": "gws-docs-write",
+    "reason": "公开上游可固定；Apache-2.0；按真实子 Skill 收录。",
+    "inventorySource": "ColaOS 1.2.9 historical candidate snapshot audit (2026-08-07)",
+    "observedScope": "historical-candidate-snapshot"
+  },
+  {
+    "competitor": "colaos",
+    "externalId": "gws-drive",
+    "name": "gws-drive",
+    "advertisedSource": "googleworkspace/cli",
+    "resolution": "included",
+    "catalogId": "gws-drive",
+    "reason": "公开上游可固定；Apache-2.0；按真实子 Skill 收录。",
+    "inventorySource": "ColaOS 1.2.9 historical candidate snapshot audit (2026-08-07)",
+    "observedScope": "historical-candidate-snapshot"
+  },
+  {
+    "competitor": "colaos",
+    "externalId": "gws-drive-upload",
+    "name": "gws-drive-upload",
+    "advertisedSource": "googleworkspace/cli",
+    "resolution": "included",
+    "catalogId": "gws-drive-upload",
+    "reason": "公开上游可固定；Apache-2.0；按真实子 Skill 收录。",
+    "inventorySource": "ColaOS 1.2.9 historical candidate snapshot audit (2026-08-07)",
+    "observedScope": "historical-candidate-snapshot"
+  },
+  {
+    "competitor": "colaos",
+    "externalId": "gws-events",
+    "name": "gws-events",
+    "advertisedSource": "googleworkspace/cli",
+    "resolution": "included",
+    "catalogId": "gws-events",
+    "reason": "公开上游可固定；Apache-2.0；按真实子 Skill 收录。",
+    "inventorySource": "ColaOS 1.2.9 historical candidate snapshot audit (2026-08-07)",
+    "observedScope": "historical-candidate-snapshot"
+  },
+  {
+    "competitor": "colaos",
+    "externalId": "gws-events-renew",
+    "name": "gws-events-renew",
+    "advertisedSource": "googleworkspace/cli",
+    "resolution": "included",
+    "catalogId": "gws-events-renew",
+    "reason": "公开上游可固定；Apache-2.0；按真实子 Skill 收录。",
+    "inventorySource": "ColaOS 1.2.9 historical candidate snapshot audit (2026-08-07)",
+    "observedScope": "historical-candidate-snapshot"
+  },
+  {
+    "competitor": "colaos",
+    "externalId": "gws-events-subscribe",
+    "name": "gws-events-subscribe",
+    "advertisedSource": "googleworkspace/cli",
+    "resolution": "included",
+    "catalogId": "gws-events-subscribe",
+    "reason": "公开上游可固定；Apache-2.0；按真实子 Skill 收录。",
+    "inventorySource": "ColaOS 1.2.9 historical candidate snapshot audit (2026-08-07)",
+    "observedScope": "historical-candidate-snapshot"
+  },
+  {
+    "competitor": "colaos",
+    "externalId": "gws-gmail",
+    "name": "gws-gmail",
+    "advertisedSource": "googleworkspace/cli",
+    "resolution": "included",
+    "catalogId": "gws-gmail",
+    "reason": "公开上游可固定；Apache-2.0；按真实子 Skill 收录。",
+    "inventorySource": "ColaOS 1.2.9 historical candidate snapshot audit (2026-08-07)",
+    "observedScope": "historical-candidate-snapshot"
+  },
+  {
+    "competitor": "colaos",
+    "externalId": "gws-gmail-forward",
+    "name": "gws-gmail-forward",
+    "advertisedSource": "googleworkspace/cli",
+    "resolution": "included",
+    "catalogId": "gws-gmail-forward",
+    "reason": "公开上游可固定；Apache-2.0；按真实子 Skill 收录。",
+    "inventorySource": "ColaOS 1.2.9 historical candidate snapshot audit (2026-08-07)",
+    "observedScope": "historical-candidate-snapshot"
+  },
+  {
+    "competitor": "colaos",
+    "externalId": "gws-gmail-reply",
+    "name": "gws-gmail-reply",
+    "advertisedSource": "googleworkspace/cli",
+    "resolution": "included",
+    "catalogId": "gws-gmail-reply",
+    "reason": "公开上游可固定；Apache-2.0；按真实子 Skill 收录。",
+    "inventorySource": "ColaOS 1.2.9 historical candidate snapshot audit (2026-08-07)",
+    "observedScope": "historical-candidate-snapshot"
+  },
+  {
+    "competitor": "colaos",
+    "externalId": "gws-gmail-reply-all",
+    "name": "gws-gmail-reply-all",
+    "advertisedSource": "googleworkspace/cli",
+    "resolution": "included",
+    "catalogId": "gws-gmail-reply-all",
+    "reason": "公开上游可固定；Apache-2.0；按真实子 Skill 收录。",
+    "inventorySource": "ColaOS 1.2.9 historical candidate snapshot audit (2026-08-07)",
+    "observedScope": "historical-candidate-snapshot"
+  },
+  {
+    "competitor": "colaos",
+    "externalId": "gws-gmail-send",
+    "name": "gws-gmail-send",
+    "advertisedSource": "googleworkspace/cli",
+    "resolution": "included",
+    "catalogId": "gws-gmail-send",
+    "reason": "公开上游可固定；Apache-2.0；按真实子 Skill 收录。",
+    "inventorySource": "ColaOS 1.2.9 historical candidate snapshot audit (2026-08-07)",
+    "observedScope": "historical-candidate-snapshot"
+  },
+  {
+    "competitor": "colaos",
+    "externalId": "gws-gmail-triage",
+    "name": "gws-gmail-triage",
+    "advertisedSource": "googleworkspace/cli",
+    "resolution": "included",
+    "catalogId": "gws-gmail-triage",
+    "reason": "公开上游可固定；Apache-2.0；按真实子 Skill 收录。",
+    "inventorySource": "ColaOS 1.2.9 historical candidate snapshot audit (2026-08-07)",
+    "observedScope": "historical-candidate-snapshot"
+  },
+  {
+    "competitor": "colaos",
+    "externalId": "gws-gmail-watch",
+    "name": "gws-gmail-watch",
+    "advertisedSource": "googleworkspace/cli",
+    "resolution": "included",
+    "catalogId": "gws-gmail-watch",
+    "reason": "公开上游可固定；Apache-2.0；按真实子 Skill 收录。",
+    "inventorySource": "ColaOS 1.2.9 historical candidate snapshot audit (2026-08-07)",
+    "observedScope": "historical-candidate-snapshot"
+  },
+  {
+    "competitor": "colaos",
+    "externalId": "gws-shared",
+    "name": "gws-shared",
+    "advertisedSource": "googleworkspace/cli",
+    "resolution": "included",
+    "catalogId": "gws-shared",
+    "reason": "公开上游可固定；Apache-2.0；按真实子 Skill 收录。",
+    "inventorySource": "ColaOS 1.2.9 historical candidate snapshot audit (2026-08-07)",
+    "observedScope": "historical-candidate-snapshot"
+  },
+  {
+    "competitor": "colaos",
+    "externalId": "gws-sheets",
+    "name": "gws-sheets",
+    "advertisedSource": "googleworkspace/cli",
+    "resolution": "included",
+    "catalogId": "gws-sheets",
+    "reason": "公开上游可固定；Apache-2.0；按真实子 Skill 收录。",
+    "inventorySource": "ColaOS 1.2.9 historical candidate snapshot audit (2026-08-07)",
+    "observedScope": "historical-candidate-snapshot"
+  },
+  {
+    "competitor": "colaos",
+    "externalId": "gws-sheets-append",
+    "name": "gws-sheets-append",
+    "advertisedSource": "googleworkspace/cli",
+    "resolution": "included",
+    "catalogId": "gws-sheets-append",
+    "reason": "公开上游可固定；Apache-2.0；按真实子 Skill 收录。",
+    "inventorySource": "ColaOS 1.2.9 historical candidate snapshot audit (2026-08-07)",
+    "observedScope": "historical-candidate-snapshot"
+  },
+  {
+    "competitor": "colaos",
+    "externalId": "gws-sheets-read",
+    "name": "gws-sheets-read",
+    "advertisedSource": "googleworkspace/cli",
+    "resolution": "included",
+    "catalogId": "gws-sheets-read",
+    "reason": "公开上游可固定；Apache-2.0；按真实子 Skill 收录。",
+    "inventorySource": "ColaOS 1.2.9 historical candidate snapshot audit (2026-08-07)",
+    "observedScope": "historical-candidate-snapshot"
+  },
+  {
+    "competitor": "colaos",
+    "externalId": "docx",
+    "name": "docx",
+    "advertisedSource": "anthropics/skills",
+    "resolution": "license-unknown",
+    "reason": "可追溯至 anthropics/skills 同名子路径，但当前未见可识别上游许可证。",
+    "inventorySource": "ColaOS 1.2.9 historical candidate snapshot audit (2026-08-07)",
+    "observedScope": "historical-candidate-snapshot"
+  },
+  {
+    "competitor": "colaos",
+    "externalId": "pdf",
+    "name": "pdf",
+    "advertisedSource": "anthropics/skills",
+    "resolution": "license-unknown",
+    "reason": "可追溯至 anthropics/skills 同名子路径，但当前未见可识别上游许可证。",
+    "inventorySource": "ColaOS 1.2.9 historical candidate snapshot audit (2026-08-07)",
+    "observedScope": "historical-candidate-snapshot"
+  },
+  {
+    "competitor": "colaos",
+    "externalId": "pptx",
+    "name": "pptx",
+    "advertisedSource": "anthropics/skills",
+    "resolution": "license-unknown",
+    "reason": "可追溯至 anthropics/skills 同名子路径，但当前未见可识别上游许可证。",
+    "inventorySource": "ColaOS 1.2.9 historical candidate snapshot audit (2026-08-07)",
+    "observedScope": "historical-candidate-snapshot"
+  },
+  {
+    "competitor": "colaos",
+    "externalId": "xlsx",
+    "name": "xlsx",
+    "advertisedSource": "anthropics/skills",
+    "resolution": "license-unknown",
+    "reason": "可追溯至 anthropics/skills 同名子路径，但当前未见可识别上游许可证。",
+    "inventorySource": "ColaOS 1.2.9 historical candidate snapshot audit (2026-08-07)",
+    "observedScope": "historical-candidate-snapshot"
+  },
+  {
+    "competitor": "colaos",
+    "externalId": "apple-notes",
+    "name": "apple-notes",
+    "advertisedSource": "openclaw/openclaw",
+    "resolution": "license-unknown",
+    "reason": "可追溯至 openclaw/openclaw 同名子路径，但当前未见可识别上游许可证。",
+    "inventorySource": "ColaOS 1.2.9 historical candidate snapshot audit (2026-08-07)",
+    "observedScope": "historical-candidate-snapshot"
+  },
+  {
+    "competitor": "colaos",
+    "externalId": "apple-reminders",
+    "name": "apple-reminders",
+    "advertisedSource": "openclaw/openclaw",
+    "resolution": "license-unknown",
+    "reason": "可追溯至 openclaw/openclaw 同名子路径，但当前未见可识别上游许可证。",
+    "inventorySource": "ColaOS 1.2.9 historical candidate snapshot audit (2026-08-07)",
+    "observedScope": "historical-candidate-snapshot"
+  },
+  {
+    "competitor": "colaos",
+    "externalId": "notion",
+    "name": "notion",
+    "advertisedSource": "openclaw/openclaw",
+    "resolution": "license-unknown",
+    "reason": "可追溯至 openclaw/openclaw 同名子路径，但当前未见可识别上游许可证。",
+    "inventorySource": "ColaOS 1.2.9 historical candidate snapshot audit (2026-08-07)",
+    "observedScope": "historical-candidate-snapshot"
+  },
+  {
+    "competitor": "colaos",
+    "externalId": "obsidian",
+    "name": "obsidian",
+    "advertisedSource": "openclaw/openclaw",
+    "resolution": "license-unknown",
+    "reason": "可追溯至 openclaw/openclaw 同名子路径，但当前未见可识别上游许可证。",
+    "inventorySource": "ColaOS 1.2.9 historical candidate snapshot audit (2026-08-07)",
+    "observedScope": "historical-candidate-snapshot"
+  },
+  {
+    "competitor": "colaos",
+    "externalId": "spotify-player",
+    "name": "spotify-player",
+    "advertisedSource": "openclaw/openclaw",
+    "resolution": "license-unknown",
+    "reason": "可追溯至 openclaw/openclaw 同名子路径，但当前未见可识别上游许可证。",
+    "inventorySource": "ColaOS 1.2.9 historical candidate snapshot audit (2026-08-07)",
+    "observedScope": "historical-candidate-snapshot"
+  },
+  {
+    "competitor": "colaos",
+    "externalId": "cola-product-info",
+    "name": "cola-product-info",
+    "resolution": "private",
+    "reason": "ColaOS 产品/插件/记忆能力，依赖产品私有实现，不作为社区市场来源。",
+    "inventorySource": "ColaOS 1.2.9 historical candidate snapshot audit (2026-08-07)",
+    "observedScope": "historical-candidate-snapshot"
+  },
+  {
+    "competitor": "colaos",
+    "externalId": "channel-plugins",
+    "name": "channel-plugins",
+    "resolution": "private",
+    "reason": "ColaOS 产品/插件/记忆能力，依赖产品私有实现，不作为社区市场来源。",
+    "inventorySource": "ColaOS 1.2.9 historical candidate snapshot audit (2026-08-07)",
+    "observedScope": "historical-candidate-snapshot"
+  },
+  {
+    "competitor": "colaos",
+    "externalId": "cola-skill-creator",
+    "name": "cola-skill-creator",
+    "resolution": "private",
+    "reason": "ColaOS 产品/插件/记忆能力，依赖产品私有实现，不作为社区市场来源。",
+    "inventorySource": "ColaOS 1.2.9 historical candidate snapshot audit (2026-08-07)",
+    "observedScope": "historical-candidate-snapshot"
+  },
+  {
+    "competitor": "colaos",
+    "externalId": "create-cola-plugin",
+    "name": "create-cola-plugin",
+    "resolution": "private",
+    "reason": "ColaOS 产品/插件/记忆能力，依赖产品私有实现，不作为社区市场来源。",
+    "inventorySource": "ColaOS 1.2.9 historical candidate snapshot audit (2026-08-07)",
+    "observedScope": "historical-candidate-snapshot"
+  },
+  {
+    "competitor": "colaos",
+    "externalId": "memory-transfer",
+    "name": "memory-transfer",
+    "resolution": "private",
+    "reason": "ColaOS 产品/插件/记忆能力，依赖产品私有实现，不作为社区市场来源。",
+    "inventorySource": "ColaOS 1.2.9 historical candidate snapshot audit (2026-08-07)",
+    "observedScope": "historical-candidate-snapshot"
+  },
+  {
+    "competitor": "colaos",
+    "externalId": "skill-cleanup",
+    "name": "skill-cleanup",
+    "resolution": "private",
+    "reason": "ColaOS 产品/插件/记忆能力，依赖产品私有实现，不作为社区市场来源。",
+    "inventorySource": "ColaOS 1.2.9 historical candidate snapshot audit (2026-08-07)",
+    "observedScope": "historical-candidate-snapshot"
+  },
+  {
+    "competitor": "colaos",
+    "externalId": "apple-calendar",
+    "name": "apple-calendar",
+    "resolution": "origin-unresolved",
+    "reason": "未定位到可固定的同内容公开 SKILL.md canonical 来源。",
+    "inventorySource": "ColaOS 1.2.9 historical candidate snapshot audit (2026-08-07)",
+    "observedScope": "historical-candidate-snapshot"
+  },
+  {
+    "competitor": "colaos",
+    "externalId": "coli",
+    "name": "coli",
+    "resolution": "origin-unresolved",
+    "reason": "未定位到可固定的同内容公开 SKILL.md canonical 来源。",
+    "inventorySource": "ColaOS 1.2.9 historical candidate snapshot audit (2026-08-07)",
+    "observedScope": "historical-candidate-snapshot"
+  },
+  {
+    "competitor": "colaos",
+    "externalId": "deploy",
+    "name": "deploy",
+    "resolution": "origin-unresolved",
+    "reason": "未定位到可固定的同内容公开 SKILL.md canonical 来源。",
+    "inventorySource": "ColaOS 1.2.9 historical candidate snapshot audit (2026-08-07)",
+    "observedScope": "historical-candidate-snapshot"
+  },
+  {
+    "competitor": "colaos",
+    "externalId": "gh-cli",
+    "name": "gh-cli",
+    "resolution": "origin-unresolved",
+    "reason": "未定位到可固定的同内容公开 SKILL.md canonical 来源。",
+    "inventorySource": "ColaOS 1.2.9 historical candidate snapshot audit (2026-08-07)",
+    "observedScope": "historical-candidate-snapshot"
+  },
+  {
+    "competitor": "colaos",
+    "externalId": "guizang-ppt-skill",
+    "name": "guizang-ppt-skill",
+    "advertisedSource": "op7418/guizang-ppt-skill",
+    "resolution": "private",
+    "reason": "上游为 AGPL-3.0；在市场 copyleft 分发策略明确前按法律暂缓处理。",
+    "inventorySource": "ColaOS 1.2.9 historical candidate snapshot audit (2026-08-07)",
+    "observedScope": "historical-candidate-snapshot"
+  },
+  {
+    "competitor": "colaos",
+    "externalId": "self-improving-agent",
+    "name": "self-improving-agent",
+    "advertisedSource": "pskoett/pskoett-ai-skills",
+    "resolution": "license-unknown",
+    "reason": "可追溯至 skills/self-improvement，但上游当前无可识别许可证。",
+    "inventorySource": "ColaOS 1.2.9 historical candidate snapshot audit (2026-08-07)",
+    "observedScope": "historical-candidate-snapshot"
+  },
+  {
+    "competitor": "newmax",
+    "externalId": "algorithmic-art",
+    "name": "algorithmic-art",
+    "advertisedSource": "anthropics/skills",
+    "resolution": "license-unknown",
+    "reason": "可追溯至 anthropics/skills 同名子路径，但当前未见可识别上游许可证。",
+    "inventorySource": "NewMax installed Skill inventory audit (2026-08-07)",
+    "observedScope": "current-installed-skill-2026-08-07"
+  },
+  {
+    "competitor": "newmax",
+    "externalId": "brand-guidelines",
+    "name": "brand-guidelines",
+    "advertisedSource": "anthropics/skills",
+    "resolution": "license-unknown",
+    "reason": "可追溯至 anthropics/skills 同名子路径，但当前未见可识别上游许可证。",
+    "inventorySource": "NewMax installed Skill inventory audit (2026-08-07)",
+    "observedScope": "current-installed-skill-2026-08-07"
+  },
+  {
+    "competitor": "newmax",
+    "externalId": "canvas-design",
+    "name": "canvas-design",
+    "advertisedSource": "anthropics/skills",
+    "resolution": "license-unknown",
+    "reason": "可追溯至 anthropics/skills 同名子路径，但当前未见可识别上游许可证。",
+    "inventorySource": "NewMax installed Skill inventory audit (2026-08-07)",
+    "observedScope": "current-installed-skill-2026-08-07"
+  },
+  {
+    "competitor": "newmax",
+    "externalId": "doc-coauthoring",
+    "name": "doc-coauthoring",
+    "advertisedSource": "anthropics/skills",
+    "resolution": "license-unknown",
+    "reason": "可追溯至 anthropics/skills 同名子路径，但当前未见可识别上游许可证。",
+    "inventorySource": "NewMax installed Skill inventory audit (2026-08-07)",
+    "observedScope": "current-installed-skill-2026-08-07"
+  },
+  {
+    "competitor": "newmax",
+    "externalId": "docx",
+    "name": "docx",
+    "advertisedSource": "anthropics/skills",
+    "resolution": "duplicate",
+    "reason": "与 ColaOS docx 指向同一 anthropics/skills:skills/docx；首次记录已保留 license-unknown 结论。",
+    "inventorySource": "NewMax installed Skill inventory audit (2026-08-07)",
+    "observedScope": "current-installed-skill-2026-08-07"
+  },
+  {
+    "competitor": "newmax",
+    "externalId": "frontend-design",
+    "name": "frontend-design",
+    "advertisedSource": "anthropics/skills",
+    "resolution": "license-unknown",
+    "reason": "可追溯至 anthropics/skills 同名子路径，但当前未见可识别上游许可证。",
+    "inventorySource": "NewMax installed Skill inventory audit (2026-08-07)",
+    "observedScope": "current-installed-skill-2026-08-07"
+  },
+  {
+    "competitor": "newmax",
+    "externalId": "internal-comms",
+    "name": "internal-comms",
+    "advertisedSource": "anthropics/skills",
+    "resolution": "license-unknown",
+    "reason": "可追溯至 anthropics/skills 同名子路径，但当前未见可识别上游许可证。",
+    "inventorySource": "NewMax installed Skill inventory audit (2026-08-07)",
+    "observedScope": "current-installed-skill-2026-08-07"
+  },
+  {
+    "competitor": "newmax",
+    "externalId": "mcp-builder",
+    "name": "mcp-builder",
+    "advertisedSource": "anthropics/skills",
+    "resolution": "license-unknown",
+    "reason": "可追溯至 anthropics/skills 同名子路径，但当前未见可识别上游许可证。",
+    "inventorySource": "NewMax installed Skill inventory audit (2026-08-07)",
+    "observedScope": "current-installed-skill-2026-08-07"
+  },
+  {
+    "competitor": "newmax",
+    "externalId": "pdf",
+    "name": "pdf",
+    "advertisedSource": "anthropics/skills",
+    "resolution": "duplicate",
+    "reason": "与 ColaOS pdf 指向同一 anthropics/skills:skills/pdf；首次记录已保留 license-unknown 结论。",
+    "inventorySource": "NewMax installed Skill inventory audit (2026-08-07)",
+    "observedScope": "current-installed-skill-2026-08-07"
+  },
+  {
+    "competitor": "newmax",
+    "externalId": "pptx",
+    "name": "pptx",
+    "advertisedSource": "anthropics/skills",
+    "resolution": "duplicate",
+    "reason": "与 ColaOS pptx 指向同一 anthropics/skills:skills/pptx；首次记录已保留 license-unknown 结论。",
+    "inventorySource": "NewMax installed Skill inventory audit (2026-08-07)",
+    "observedScope": "current-installed-skill-2026-08-07"
+  },
+  {
+    "competitor": "newmax",
+    "externalId": "skill-creator",
+    "name": "skill-creator",
+    "advertisedSource": "anthropics/skills",
+    "resolution": "license-unknown",
+    "reason": "可追溯至 anthropics/skills 同名子路径，但当前未见可识别上游许可证。",
+    "inventorySource": "NewMax installed Skill inventory audit (2026-08-07)",
+    "observedScope": "current-installed-skill-2026-08-07"
+  },
+  {
+    "competitor": "newmax",
+    "externalId": "slack-gif-creator",
+    "name": "slack-gif-creator",
+    "advertisedSource": "anthropics/skills",
+    "resolution": "license-unknown",
+    "reason": "可追溯至 anthropics/skills 同名子路径，但当前未见可识别上游许可证。",
+    "inventorySource": "NewMax installed Skill inventory audit (2026-08-07)",
+    "observedScope": "current-installed-skill-2026-08-07"
+  },
+  {
+    "competitor": "newmax",
+    "externalId": "theme-factory",
+    "name": "theme-factory",
+    "advertisedSource": "anthropics/skills",
+    "resolution": "license-unknown",
+    "reason": "可追溯至 anthropics/skills 同名子路径，但当前未见可识别上游许可证。",
+    "inventorySource": "NewMax installed Skill inventory audit (2026-08-07)",
+    "observedScope": "current-installed-skill-2026-08-07"
+  },
+  {
+    "competitor": "newmax",
+    "externalId": "web-artifacts-builder",
+    "name": "web-artifacts-builder",
+    "advertisedSource": "anthropics/skills",
+    "resolution": "license-unknown",
+    "reason": "可追溯至 anthropics/skills 同名子路径，但当前未见可识别上游许可证。",
+    "inventorySource": "NewMax installed Skill inventory audit (2026-08-07)",
+    "observedScope": "current-installed-skill-2026-08-07"
+  },
+  {
+    "competitor": "newmax",
+    "externalId": "webapp-testing",
+    "name": "webapp-testing",
+    "advertisedSource": "anthropics/skills",
+    "resolution": "license-unknown",
+    "reason": "可追溯至 anthropics/skills 同名子路径，但当前未见可识别上游许可证。",
+    "inventorySource": "NewMax installed Skill inventory audit (2026-08-07)",
+    "observedScope": "current-installed-skill-2026-08-07"
+  },
+  {
+    "competitor": "newmax",
+    "externalId": "xlsx",
+    "name": "xlsx",
+    "advertisedSource": "anthropics/skills",
+    "resolution": "duplicate",
+    "reason": "与 ColaOS xlsx 指向同一 anthropics/skills:skills/xlsx；首次记录已保留 license-unknown 结论。",
+    "inventorySource": "NewMax installed Skill inventory audit (2026-08-07)",
+    "observedScope": "current-installed-skill-2026-08-07"
+  },
+  {
+    "competitor": "newmax",
+    "externalId": "baoyu-article-illustrator",
+    "name": "baoyu-article-illustrator",
+    "advertisedSource": "JimLiu/baoyu-skills",
+    "resolution": "included",
+    "catalogId": "baoyu-article-illustrator",
+    "reason": "公开上游可固定；MIT；按真实子 Skill 收录。",
+    "inventorySource": "NewMax installed Skill inventory audit (2026-08-07)",
+    "observedScope": "current-installed-skill-2026-08-07"
+  },
+  {
+    "competitor": "newmax",
+    "externalId": "baoyu-comic",
+    "name": "baoyu-comic",
+    "advertisedSource": "JimLiu/baoyu-skills",
+    "resolution": "included",
+    "catalogId": "baoyu-comic",
+    "reason": "公开上游可固定；MIT；按真实子 Skill 收录。",
+    "inventorySource": "NewMax installed Skill inventory audit (2026-08-07)",
+    "observedScope": "current-installed-skill-2026-08-07"
+  },
+  {
+    "competitor": "newmax",
+    "externalId": "baoyu-compress-image",
+    "name": "baoyu-compress-image",
+    "advertisedSource": "JimLiu/baoyu-skills",
+    "resolution": "included",
+    "catalogId": "baoyu-compress-image",
+    "reason": "公开上游可固定；MIT；按真实子 Skill 收录。",
+    "inventorySource": "NewMax installed Skill inventory audit (2026-08-07)",
+    "observedScope": "current-installed-skill-2026-08-07"
+  },
+  {
+    "competitor": "newmax",
+    "externalId": "baoyu-cover-image",
+    "name": "baoyu-cover-image",
+    "advertisedSource": "JimLiu/baoyu-skills",
+    "resolution": "included",
+    "catalogId": "baoyu-cover-image",
+    "reason": "公开上游可固定；MIT；按真实子 Skill 收录。",
+    "inventorySource": "NewMax installed Skill inventory audit (2026-08-07)",
+    "observedScope": "current-installed-skill-2026-08-07"
+  },
+  {
+    "competitor": "newmax",
+    "externalId": "baoyu-format-markdown",
+    "name": "baoyu-format-markdown",
+    "advertisedSource": "JimLiu/baoyu-skills",
+    "resolution": "included",
+    "catalogId": "baoyu-format-markdown",
+    "reason": "公开上游可固定；MIT；按真实子 Skill 收录。",
+    "inventorySource": "NewMax installed Skill inventory audit (2026-08-07)",
+    "observedScope": "current-installed-skill-2026-08-07"
+  },
+  {
+    "competitor": "newmax",
+    "externalId": "baoyu-image-gen",
+    "name": "baoyu-image-gen",
+    "advertisedSource": "JimLiu/baoyu-skills",
+    "resolution": "included",
+    "catalogId": "baoyu-image-gen",
+    "reason": "公开上游可固定；MIT；按真实子 Skill 收录。",
+    "inventorySource": "NewMax installed Skill inventory audit (2026-08-07)",
+    "observedScope": "current-installed-skill-2026-08-07"
+  },
+  {
+    "competitor": "newmax",
+    "externalId": "baoyu-infographic",
+    "name": "baoyu-infographic",
+    "advertisedSource": "JimLiu/baoyu-skills",
+    "resolution": "included",
+    "catalogId": "baoyu-infographic",
+    "reason": "公开上游可固定；MIT；按真实子 Skill 收录。",
+    "inventorySource": "NewMax installed Skill inventory audit (2026-08-07)",
+    "observedScope": "current-installed-skill-2026-08-07"
+  },
+  {
+    "competitor": "newmax",
+    "externalId": "baoyu-markdown-to-html",
+    "name": "baoyu-markdown-to-html",
+    "advertisedSource": "JimLiu/baoyu-skills",
+    "resolution": "included",
+    "catalogId": "baoyu-markdown-to-html",
+    "reason": "公开上游可固定；MIT；按真实子 Skill 收录。",
+    "inventorySource": "NewMax installed Skill inventory audit (2026-08-07)",
+    "observedScope": "current-installed-skill-2026-08-07"
+  },
+  {
+    "competitor": "newmax",
+    "externalId": "baoyu-post-to-wechat",
+    "name": "baoyu-post-to-wechat",
+    "advertisedSource": "JimLiu/baoyu-skills",
+    "resolution": "included",
+    "catalogId": "baoyu-post-to-wechat",
+    "reason": "公开上游可固定；MIT；按真实子 Skill 收录。",
+    "inventorySource": "NewMax installed Skill inventory audit (2026-08-07)",
+    "observedScope": "current-installed-skill-2026-08-07"
+  },
+  {
+    "competitor": "newmax",
+    "externalId": "baoyu-post-to-x",
+    "name": "baoyu-post-to-x",
+    "advertisedSource": "JimLiu/baoyu-skills",
+    "resolution": "included",
+    "catalogId": "baoyu-post-to-x",
+    "reason": "公开上游可固定；MIT；按真实子 Skill 收录。",
+    "inventorySource": "NewMax installed Skill inventory audit (2026-08-07)",
+    "observedScope": "current-installed-skill-2026-08-07"
+  },
+  {
+    "competitor": "newmax",
+    "externalId": "baoyu-slide-deck",
+    "name": "baoyu-slide-deck",
+    "advertisedSource": "JimLiu/baoyu-skills",
+    "resolution": "included",
+    "catalogId": "baoyu-slide-deck",
+    "reason": "公开上游可固定；MIT；按真实子 Skill 收录。",
+    "inventorySource": "NewMax installed Skill inventory audit (2026-08-07)",
+    "observedScope": "current-installed-skill-2026-08-07"
+  },
+  {
+    "competitor": "newmax",
+    "externalId": "baoyu-url-to-markdown",
+    "name": "baoyu-url-to-markdown",
+    "advertisedSource": "JimLiu/baoyu-skills",
+    "resolution": "included",
+    "catalogId": "baoyu-url-to-markdown",
+    "reason": "公开上游可固定；MIT；按真实子 Skill 收录。",
+    "inventorySource": "NewMax installed Skill inventory audit (2026-08-07)",
+    "observedScope": "current-installed-skill-2026-08-07"
+  },
+  {
+    "competitor": "newmax",
+    "externalId": "baoyu-xhs-images",
+    "name": "baoyu-xhs-images",
+    "advertisedSource": "JimLiu/baoyu-skills",
+    "resolution": "included",
+    "catalogId": "baoyu-xhs-images",
+    "reason": "公开上游可固定；MIT；按真实子 Skill 收录。",
+    "inventorySource": "NewMax installed Skill inventory audit (2026-08-07)",
+    "observedScope": "current-installed-skill-2026-08-07"
+  },
+  {
+    "competitor": "newmax",
+    "externalId": "baoyu-danger-gemini-web",
+    "name": "baoyu-danger-gemini-web",
+    "advertisedSource": "JimLiu/baoyu-skills",
+    "resolution": "private",
+    "reason": "来源和 MIT 已核实，但能力依赖逆向 Web API/受限站点；安全与合规评审前不在市场分发。",
+    "inventorySource": "NewMax installed Skill inventory audit (2026-08-07)",
+    "observedScope": "current-installed-skill-2026-08-07"
+  },
+  {
+    "competitor": "newmax",
+    "externalId": "baoyu-danger-x-to-markdown",
+    "name": "baoyu-danger-x-to-markdown",
+    "advertisedSource": "JimLiu/baoyu-skills",
+    "resolution": "private",
+    "reason": "来源和 MIT 已核实，但能力依赖逆向 Web API/受限站点；安全与合规评审前不在市场分发。",
+    "inventorySource": "NewMax installed Skill inventory audit (2026-08-07)",
+    "observedScope": "current-installed-skill-2026-08-07"
+  },
+  {
+    "competitor": "newmax",
+    "externalId": "claude-skills-zh-cn",
+    "name": "claude-skills-zh-cn",
+    "advertisedSource": "anthropics/skills",
+    "resolution": "origin-unresolved",
+    "reason": "翻译/聚合目录未能对应到一个单一 canonical 上游 SKILL.md 路径。",
+    "inventorySource": "NewMax installed Skill inventory audit (2026-08-07)",
+    "observedScope": "current-installed-skill-2026-08-07"
+  },
+  {
+    "competitor": "newmax",
+    "externalId": "newmax-help",
+    "name": "newmax-help",
+    "resolution": "private",
+    "reason": "NewMax 产品、聊天历史或内部工作流耦合能力，不作为社区市场来源。",
+    "inventorySource": "NewMax installed Skill inventory audit (2026-08-07)",
+    "observedScope": "current-installed-skill-2026-08-07"
+  },
+  {
+    "competitor": "newmax",
+    "externalId": "daily-review",
+    "name": "daily-review",
+    "resolution": "private",
+    "reason": "NewMax 产品、聊天历史或内部工作流耦合能力，不作为社区市场来源。",
+    "inventorySource": "NewMax installed Skill inventory audit (2026-08-07)",
+    "observedScope": "current-installed-skill-2026-08-07"
+  },
+  {
+    "competitor": "newmax",
+    "externalId": "deep-review",
+    "name": "deep-review",
+    "resolution": "private",
+    "reason": "NewMax 产品、聊天历史或内部工作流耦合能力，不作为社区市场来源。",
+    "inventorySource": "NewMax installed Skill inventory audit (2026-08-07)",
+    "observedScope": "current-installed-skill-2026-08-07"
+  },
+  {
+    "competitor": "newmax",
+    "externalId": "long-term-plan",
+    "name": "long-term-plan",
+    "resolution": "private",
+    "reason": "NewMax 产品、聊天历史或内部工作流耦合能力，不作为社区市场来源。",
+    "inventorySource": "NewMax installed Skill inventory audit (2026-08-07)",
+    "observedScope": "current-installed-skill-2026-08-07"
+  },
+  {
+    "competitor": "newmax",
+    "externalId": "project-init",
+    "name": "project-init",
+    "resolution": "private",
+    "reason": "NewMax 产品、聊天历史或内部工作流耦合能力，不作为社区市场来源。",
+    "inventorySource": "NewMax installed Skill inventory audit (2026-08-07)",
+    "observedScope": "current-installed-skill-2026-08-07"
+  },
+  {
+    "competitor": "newmax",
+    "externalId": "workflow-automator",
+    "name": "workflow-automator",
+    "resolution": "private",
+    "reason": "NewMax 产品、聊天历史或内部工作流耦合能力，不作为社区市场来源。",
+    "inventorySource": "NewMax installed Skill inventory audit (2026-08-07)",
+    "observedScope": "current-installed-skill-2026-08-07"
+  },
+  {
+    "competitor": "newmax",
+    "externalId": "data-analysis",
+    "name": "data-analysis",
+    "resolution": "private",
+    "reason": "NewMax 产品、聊天历史或内部工作流耦合能力，不作为社区市场来源。",
+    "inventorySource": "NewMax installed Skill inventory audit (2026-08-07)",
+    "observedScope": "current-installed-skill-2026-08-07"
+  },
+  {
+    "competitor": "newmax",
+    "externalId": "blog-post-writer",
+    "name": "blog-post-writer",
+    "resolution": "private",
+    "reason": "NewMax 产品、聊天历史或内部工作流耦合能力，不作为社区市场来源。",
+    "inventorySource": "NewMax installed Skill inventory audit (2026-08-07)",
+    "observedScope": "current-installed-skill-2026-08-07"
+  },
+  {
+    "competitor": "newmax",
+    "externalId": "video-creator",
+    "name": "video-creator",
+    "resolution": "origin-unresolved",
+    "reason": "历史候选快照中存在该名称，但当前安装态与本地账本均无对应文件；同名公开项目不能证明 canonical 来源。",
+    "inventorySource": "NewMax historical candidate snapshot audit (2026-08-07)",
+    "observedScope": "historical-candidate-snapshot"
+  },
+  {
+    "competitor": "newmax",
+    "externalId": "email-sequence",
+    "name": "email-sequence",
+    "resolution": "origin-unresolved",
+    "reason": "历史候选快照中存在该名称，但当前安装态与本地账本均无对应文件；同名公开项目不能证明 canonical 来源。",
+    "inventorySource": "NewMax historical candidate snapshot audit (2026-08-07)",
+    "observedScope": "historical-candidate-snapshot"
+  },
+  {
+    "competitor": "newmax",
+    "externalId": "email-systems",
+    "name": "email-systems",
+    "resolution": "origin-unresolved",
+    "reason": "历史候选快照中存在该名称，但当前安装态与本地账本均无对应文件；同名公开项目不能证明 canonical 来源。",
+    "inventorySource": "NewMax historical candidate snapshot audit (2026-08-07)",
+    "observedScope": "historical-candidate-snapshot"
+  },
+  {
+    "competitor": "newmax",
+    "externalId": "deepl",
+    "name": "deepl",
+    "resolution": "origin-unresolved",
+    "reason": "仅凭技术名无法证明同内容公开 SKILL.md 的版权与 canonical 来源。",
+    "inventorySource": "NewMax installed Skill inventory audit (2026-08-07)",
+    "observedScope": "current-installed-skill-2026-08-07"
+  },
+  {
+    "competitor": "newmax",
+    "externalId": "feishu-api-docs",
+    "name": "feishu-api-docs",
+    "resolution": "origin-unresolved",
+    "reason": "历史候选快照中存在该名称，但当前安装态与本地账本均无对应文件；同名公开项目不能证明 canonical 来源。",
+    "inventorySource": "NewMax historical candidate snapshot audit (2026-08-07)",
+    "observedScope": "historical-candidate-snapshot"
+  },
+  {
+    "competitor": "newmax",
+    "externalId": "feishu-attendance",
+    "name": "feishu-attendance",
+    "resolution": "origin-unresolved",
+    "reason": "历史候选快照中存在该名称，但当前安装态与本地账本均无对应文件；同名公开项目不能证明 canonical 来源。",
+    "inventorySource": "NewMax historical candidate snapshot audit (2026-08-07)",
+    "observedScope": "historical-candidate-snapshot"
+  },
+  {
+    "competitor": "newmax",
+    "externalId": "feishu-bridge",
+    "name": "feishu-bridge",
+    "resolution": "origin-unresolved",
+    "reason": "历史候选快照中存在该名称，但当前安装态与本地账本均无对应文件；同名公开项目不能证明 canonical 来源。",
+    "inventorySource": "NewMax historical candidate snapshot audit (2026-08-07)",
+    "observedScope": "historical-candidate-snapshot"
+  },
+  {
+    "competitor": "newmax",
+    "externalId": "feishu-doc-reader",
+    "name": "feishu-doc-reader",
+    "resolution": "origin-unresolved",
+    "reason": "仅凭技术名无法证明同内容公开 SKILL.md 的版权与 canonical 来源。",
+    "inventorySource": "NewMax installed Skill inventory audit (2026-08-07)",
+    "observedScope": "current-installed-skill-2026-08-07"
+  },
+  {
+    "competitor": "newmax",
+    "externalId": "feishu-leave-request",
+    "name": "feishu-leave-request",
+    "resolution": "origin-unresolved",
+    "reason": "历史候选快照中存在该名称，但当前安装态与本地账本均无对应文件；同名公开项目不能证明 canonical 来源。",
+    "inventorySource": "NewMax historical candidate snapshot audit (2026-08-07)",
+    "observedScope": "historical-candidate-snapshot"
+  },
+  {
+    "competitor": "newmax",
+    "externalId": "feishu-post",
+    "name": "feishu-post",
+    "resolution": "origin-unresolved",
+    "reason": "历史候选快照中存在该名称，但当前安装态与本地账本均无对应文件；同名公开项目不能证明 canonical 来源。",
+    "inventorySource": "NewMax historical candidate snapshot audit (2026-08-07)",
+    "observedScope": "historical-candidate-snapshot"
+  },
+  {
+    "competitor": "newmax",
+    "externalId": "ffmpeg",
+    "name": "ffmpeg",
+    "resolution": "origin-unresolved",
+    "reason": "历史候选快照中存在该名称，但当前安装态与本地账本均无对应文件；同名公开项目不能证明 canonical 来源。",
+    "inventorySource": "NewMax historical candidate snapshot audit (2026-08-07)",
+    "observedScope": "historical-candidate-snapshot"
+  },
+  {
+    "competitor": "newmax",
+    "externalId": "ffmpeg-usage",
+    "name": "ffmpeg-usage",
+    "resolution": "origin-unresolved",
+    "reason": "仅凭技术名无法证明同内容公开 SKILL.md 的版权与 canonical 来源。",
+    "inventorySource": "NewMax installed Skill inventory audit (2026-08-07)",
+    "observedScope": "current-installed-skill-2026-08-07"
+  },
+  {
+    "competitor": "newmax",
+    "externalId": "gemini-image",
+    "name": "gemini-image",
+    "resolution": "origin-unresolved",
+    "reason": "仅凭技术名无法证明同内容公开 SKILL.md 的版权与 canonical 来源。",
+    "inventorySource": "NewMax installed Skill inventory audit (2026-08-07)",
+    "observedScope": "current-installed-skill-2026-08-07"
+  },
+  {
+    "competitor": "newmax",
+    "externalId": "imagemagick-conversion",
+    "name": "imagemagick-conversion",
+    "resolution": "origin-unresolved",
+    "reason": "仅凭技术名无法证明同内容公开 SKILL.md 的版权与 canonical 来源。",
+    "inventorySource": "NewMax installed Skill inventory audit (2026-08-07)",
+    "observedScope": "current-installed-skill-2026-08-07"
+  },
+  {
+    "competitor": "newmax",
+    "externalId": "ppocrv5",
+    "name": "ppocrv5",
+    "resolution": "origin-unresolved",
+    "reason": "仅凭技术名无法证明同内容公开 SKILL.md 的版权与 canonical 来源。",
+    "inventorySource": "NewMax installed Skill inventory audit (2026-08-07)",
+    "observedScope": "current-installed-skill-2026-08-07"
+  },
+  {
+    "competitor": "newmax",
+    "externalId": "remotion-video",
+    "name": "remotion-video",
+    "resolution": "origin-unresolved",
+    "reason": "仅凭技术名无法证明同内容公开 SKILL.md 的版权与 canonical 来源。",
+    "inventorySource": "NewMax installed Skill inventory audit (2026-08-07)",
+    "observedScope": "current-installed-skill-2026-08-07"
+  },
+  {
+    "competitor": "newmax",
+    "externalId": "security-review",
+    "name": "security-review",
+    "resolution": "origin-unresolved",
+    "reason": "历史候选快照中存在该名称，但当前安装态与本地账本均无对应文件；同名公开项目不能证明 canonical 来源。",
+    "inventorySource": "NewMax historical candidate snapshot audit (2026-08-07)",
+    "observedScope": "historical-candidate-snapshot"
+  },
+  {
+    "competitor": "newmax",
+    "externalId": "tdd-workflow",
+    "name": "tdd-workflow",
+    "resolution": "origin-unresolved",
+    "reason": "历史候选快照中存在该名称，但当前安装态与本地账本均无对应文件；同名公开项目不能证明 canonical 来源。",
+    "inventorySource": "NewMax historical candidate snapshot audit (2026-08-07)",
+    "observedScope": "historical-candidate-snapshot"
+  },
+  {
+    "competitor": "newmax",
+    "externalId": "ima-skill",
+    "name": "ima-skill",
+    "resolution": "license-unknown",
+    "reason": "官方供应商下载包可识别，但没有可固定的公开 GitHub canonical 仓库或可核验再分发许可证。",
+    "inventorySource": "NewMax installed Skill gap audit (2026-08-07)",
+    "observedScope": "current-installed-skill-2026-08-07"
+  },
+  {
+    "competitor": "newmax",
+    "externalId": "knowledge-base",
+    "name": "ima-skill/knowledge-base",
+    "resolution": "license-unknown",
+    "reason": "ima-skill 内部模块缺少独立 frontmatter，且共享父包的公开来源与再分发许可证缺口。",
+    "inventorySource": "NewMax installed Skill gap audit (2026-08-07)",
+    "observedScope": "current-installed-skill-2026-08-07"
+  },
+  {
+    "competitor": "newmax",
+    "externalId": "notes",
+    "name": "ima-skill/notes",
+    "resolution": "license-unknown",
+    "reason": "ima-skill 内部模块缺少独立 frontmatter，且共享父包的公开来源与再分发许可证缺口。",
+    "inventorySource": "NewMax installed Skill gap audit (2026-08-07)",
+    "observedScope": "current-installed-skill-2026-08-07"
+  },
+  {
+    "competitor": "newmax",
+    "externalId": "roblox-site-architect",
+    "name": "roblox-site-architect",
+    "resolution": "origin-unresolved",
+    "reason": "当前安装态是完整 Skill 形状，但无可证明的 canonical 公开仓库、固定 revision 或许可证。",
+    "inventorySource": "NewMax installed Skill gap audit (2026-08-07)",
+    "observedScope": "current-installed-skill-2026-08-07"
+  },
+  {
+    "competitor": "newmax",
+    "externalId": "schedule-memory",
+    "name": "schedule-memory",
+    "resolution": "origin-unresolved",
+    "reason": "当前安装态带产品适配痕迹，且无可证明的 canonical 公开仓库、固定 revision 或许可证。",
+    "inventorySource": "NewMax installed Skill gap audit (2026-08-07)",
+    "observedScope": "current-installed-skill-2026-08-07"
+  },
+  {
+    "competitor": "newmax",
+    "externalId": "storage-analyzer",
+    "name": "storage-analyzer",
+    "advertisedSource": "KKKKhazix/khazix-skills",
+    "resolution": "included",
+    "catalogId": "storage-analyzer",
+    "reason": "MIT；固定 revision 与公开上游子树已核验，入口文件仅换行差异。",
+    "inventorySource": "NewMax installed Skill gap audit (2026-08-07)",
+    "observedScope": "current-installed-skill-2026-08-07"
+  },
+  {
+    "competitor": "newmax",
+    "externalId": "xiaohongshu-skills",
+    "name": "xiaohongshu-skills",
+    "advertisedSource": "autoclaw-cc/xiaohongshu-skills",
+    "resolution": "not-a-skill",
+    "reason": "仓库根是共享 Python/Chrome 运行时与路由集合，不是可作为第六张卡安装的独立 Skill。",
+    "inventorySource": "NewMax installed Skill gap audit (2026-08-07)",
+    "observedScope": "current-installed-skill-2026-08-07"
+  },
+  {
+    "competitor": "newmax",
+    "externalId": "xhs-auth",
+    "name": "xhs-auth",
+    "advertisedSource": "autoclaw-cc/xiaohongshu-skills",
+    "resolution": "included",
+    "catalogId": "xiaohongshu-skills",
+    "reason": "作为“小红书工具组”成员随共享运行时完整收录，不单独生成重复卡片。",
+    "inventorySource": "NewMax installed Skill gap audit (2026-08-07)",
+    "observedScope": "current-installed-skill-2026-08-07"
+  },
+  {
+    "competitor": "newmax",
+    "externalId": "xhs-content-ops",
+    "name": "xhs-content-ops",
+    "advertisedSource": "autoclaw-cc/xiaohongshu-skills",
+    "resolution": "included",
+    "catalogId": "xiaohongshu-skills",
+    "reason": "作为“小红书工具组”成员随共享运行时完整收录，不单独生成重复卡片。",
+    "inventorySource": "NewMax installed Skill gap audit (2026-08-07)",
+    "observedScope": "current-installed-skill-2026-08-07"
+  },
+  {
+    "competitor": "newmax",
+    "externalId": "xhs-explore",
+    "name": "xhs-explore",
+    "advertisedSource": "autoclaw-cc/xiaohongshu-skills",
+    "resolution": "included",
+    "catalogId": "xiaohongshu-skills",
+    "reason": "作为“小红书工具组”成员随共享运行时完整收录，不单独生成重复卡片。",
+    "inventorySource": "NewMax installed Skill gap audit (2026-08-07)",
+    "observedScope": "current-installed-skill-2026-08-07"
+  },
+  {
+    "competitor": "newmax",
+    "externalId": "xhs-interact",
+    "name": "xhs-interact",
+    "advertisedSource": "autoclaw-cc/xiaohongshu-skills",
+    "resolution": "included",
+    "catalogId": "xiaohongshu-skills",
+    "reason": "作为“小红书工具组”成员随共享运行时完整收录，不单独生成重复卡片。",
+    "inventorySource": "NewMax installed Skill gap audit (2026-08-07)",
+    "observedScope": "current-installed-skill-2026-08-07"
+  },
+  {
+    "competitor": "newmax",
+    "externalId": "xhs-publish",
+    "name": "xhs-publish",
+    "advertisedSource": "autoclaw-cc/xiaohongshu-skills",
+    "resolution": "included",
+    "catalogId": "xiaohongshu-skills",
+    "reason": "作为“小红书工具组”成员随共享运行时完整收录，不单独生成重复卡片。",
+    "inventorySource": "NewMax installed Skill gap audit (2026-08-07)",
+    "observedScope": "current-installed-skill-2026-08-07"
+  },
+  {
+    "competitor": "workbuddy",
+    "externalId": "77ircloud",
+    "name": "77ircloud",
+    "resolution": "not-a-skill",
+    "reason": "当前静态索引中的 connector；依赖 connector/MCP/专有授权，索引公开 GitHub 仓库为 0，不是可独立镜像的社区 Skill。",
+    "inventorySource": "WorkBuddy connectors static index audit (2026-08-07)",
+    "observedScope": "current-connector-index-2026-08-07"
+  },
+  {
+    "competitor": "workbuddy",
+    "externalId": "agentkey",
+    "name": "agentkey",
+    "resolution": "not-a-skill",
+    "reason": "当前静态索引中的 connector；依赖 connector/MCP/专有授权，索引公开 GitHub 仓库为 0，不是可独立镜像的社区 Skill。",
+    "inventorySource": "WorkBuddy connectors static index audit (2026-08-07)",
+    "observedScope": "current-connector-index-2026-08-07"
+  },
+  {
+    "competitor": "workbuddy",
+    "externalId": "ai-hive",
+    "name": "ai-hive",
+    "resolution": "not-a-skill",
+    "reason": "当前静态索引中的 connector；依赖 connector/MCP/专有授权，索引公开 GitHub 仓库为 0，不是可独立镜像的社区 Skill。",
+    "inventorySource": "WorkBuddy connectors static index audit (2026-08-07)",
+    "observedScope": "current-connector-index-2026-08-07"
+  },
+  {
+    "competitor": "workbuddy",
+    "externalId": "archive-hospital-mcp",
+    "name": "archive-hospital-mcp",
+    "resolution": "not-a-skill",
+    "reason": "当前静态索引中的 connector；依赖 connector/MCP/专有授权，索引公开 GitHub 仓库为 0，不是可独立镜像的社区 Skill。",
+    "inventorySource": "WorkBuddy connectors static index audit (2026-08-07)",
+    "observedScope": "current-connector-index-2026-08-07"
+  },
+  {
+    "competitor": "workbuddy",
+    "externalId": "awesun",
+    "name": "awesun",
+    "resolution": "not-a-skill",
+    "reason": "当前静态索引中的 connector；依赖 connector/MCP/专有授权，索引公开 GitHub 仓库为 0，不是可独立镜像的社区 Skill。",
+    "inventorySource": "WorkBuddy connectors static index audit (2026-08-07)",
+    "observedScope": "current-connector-index-2026-08-07"
+  },
+  {
+    "competitor": "workbuddy",
+    "externalId": "baidu-netdisk",
+    "name": "baidu-netdisk",
+    "resolution": "not-a-skill",
+    "reason": "当前静态索引中的 connector；依赖 connector/MCP/专有授权，索引公开 GitHub 仓库为 0，不是可独立镜像的社区 Skill。",
+    "inventorySource": "WorkBuddy connectors static index audit (2026-08-07)",
+    "observedScope": "current-connector-index-2026-08-07"
+  },
+  {
+    "competitor": "workbuddy",
+    "externalId": "bugly-token",
+    "name": "bugly-token",
+    "resolution": "not-a-skill",
+    "reason": "当前静态索引中的 connector；依赖 connector/MCP/专有授权，索引公开 GitHub 仓库为 0，不是可独立镜像的社区 Skill。",
+    "inventorySource": "WorkBuddy connectors static index audit (2026-08-07)",
+    "observedScope": "current-connector-index-2026-08-07"
+  },
+  {
+    "competitor": "workbuddy",
+    "externalId": "canva",
+    "name": "canva",
+    "resolution": "not-a-skill",
+    "reason": "当前静态索引中的 connector；依赖 connector/MCP/专有授权，索引公开 GitHub 仓库为 0，不是可独立镜像的社区 Skill。",
+    "inventorySource": "WorkBuddy connectors static index audit (2026-08-07)",
+    "observedScope": "current-connector-index-2026-08-07"
+  },
+  {
+    "competitor": "workbuddy",
+    "externalId": "chuhaijiang",
+    "name": "chuhaijiang",
+    "resolution": "not-a-skill",
+    "reason": "当前静态索引中的 connector；依赖 connector/MCP/专有授权，索引公开 GitHub 仓库为 0，不是可独立镜像的社区 Skill。",
+    "inventorySource": "WorkBuddy connectors static index audit (2026-08-07)",
+    "observedScope": "current-connector-index-2026-08-07"
+  },
+  {
+    "competitor": "workbuddy",
+    "externalId": "cisp-mcp",
+    "name": "cisp-mcp",
+    "resolution": "not-a-skill",
+    "reason": "当前静态索引中的 connector；依赖 connector/MCP/专有授权，索引公开 GitHub 仓库为 0，不是可独立镜像的社区 Skill。",
+    "inventorySource": "WorkBuddy connectors static index audit (2026-08-07)",
+    "observedScope": "current-connector-index-2026-08-07"
+  },
+  {
+    "competitor": "workbuddy",
+    "externalId": "cloudbase",
+    "name": "cloudbase",
+    "resolution": "not-a-skill",
+    "reason": "当前静态索引中的 connector；依赖 connector/MCP/专有授权，索引公开 GitHub 仓库为 0，不是可独立镜像的社区 Skill。",
+    "inventorySource": "WorkBuddy connectors static index audit (2026-08-07)",
+    "observedScope": "current-connector-index-2026-08-07"
+  },
+  {
+    "competitor": "workbuddy",
+    "externalId": "cnb-api",
+    "name": "cnb-api",
+    "resolution": "not-a-skill",
+    "reason": "当前静态索引中的 connector；依赖 connector/MCP/专有授权，索引公开 GitHub 仓库为 0，不是可独立镜像的社区 Skill。",
+    "inventorySource": "WorkBuddy connectors static index audit (2026-08-07)",
+    "observedScope": "current-connector-index-2026-08-07"
+  },
+  {
+    "competitor": "workbuddy",
+    "externalId": "ctrip-wendao",
+    "name": "ctrip-wendao",
+    "resolution": "not-a-skill",
+    "reason": "当前静态索引中的 connector；依赖 connector/MCP/专有授权，索引公开 GitHub 仓库为 0，不是可独立镜像的社区 Skill。",
+    "inventorySource": "WorkBuddy connectors static index audit (2026-08-07)",
+    "observedScope": "current-connector-index-2026-08-07"
+  },
+  {
+    "competitor": "workbuddy",
+    "externalId": "dingtalk",
+    "name": "dingtalk",
+    "resolution": "not-a-skill",
+    "reason": "当前静态索引中的 connector；依赖 connector/MCP/专有授权，索引公开 GitHub 仓库为 0，不是可独立镜像的社区 Skill。",
+    "inventorySource": "WorkBuddy connectors static index audit (2026-08-07)",
+    "observedScope": "current-connector-index-2026-08-07"
+  },
+  {
+    "competitor": "workbuddy",
+    "externalId": "edgeone-pages",
+    "name": "edgeone-pages",
+    "resolution": "not-a-skill",
+    "reason": "当前静态索引中的 connector；依赖 connector/MCP/专有授权，索引公开 GitHub 仓库为 0，不是可独立镜像的社区 Skill。",
+    "inventorySource": "WorkBuddy connectors static index audit (2026-08-07)",
+    "observedScope": "current-connector-index-2026-08-07"
+  },
+  {
+    "competitor": "workbuddy",
+    "externalId": "emr-query",
+    "name": "emr-query",
+    "resolution": "not-a-skill",
+    "reason": "当前静态索引中的 connector；依赖 connector/MCP/专有授权，索引公开 GitHub 仓库为 0，不是可独立镜像的社区 Skill。",
+    "inventorySource": "WorkBuddy connectors static index audit (2026-08-07)",
+    "observedScope": "current-connector-index-2026-08-07"
+  },
+  {
+    "competitor": "workbuddy",
+    "externalId": "fbs-connector",
+    "name": "fbs-connector",
+    "resolution": "not-a-skill",
+    "reason": "当前静态索引中的 connector；依赖 connector/MCP/专有授权，索引公开 GitHub 仓库为 0，不是可独立镜像的社区 Skill。",
+    "inventorySource": "WorkBuddy connectors static index audit (2026-08-07)",
+    "observedScope": "current-connector-index-2026-08-07"
+  },
+  {
+    "competitor": "workbuddy",
+    "externalId": "feishu",
+    "name": "feishu",
+    "resolution": "not-a-skill",
+    "reason": "当前静态索引中的 connector；依赖 connector/MCP/专有授权，索引公开 GitHub 仓库为 0，不是可独立镜像的社区 Skill。",
+    "inventorySource": "WorkBuddy connectors static index audit (2026-08-07)",
+    "observedScope": "current-connector-index-2026-08-07"
+  },
+  {
+    "competitor": "workbuddy",
+    "externalId": "finenter",
+    "name": "finenter",
+    "resolution": "not-a-skill",
+    "reason": "当前静态索引中的 connector；依赖 connector/MCP/专有授权，索引公开 GitHub 仓库为 0，不是可独立镜像的社区 Skill。",
+    "inventorySource": "WorkBuddy connectors static index audit (2026-08-07)",
+    "observedScope": "current-connector-index-2026-08-07"
+  },
+  {
+    "competitor": "workbuddy",
+    "externalId": "fyopen-lawsearch",
+    "name": "fyopen-lawsearch",
+    "resolution": "not-a-skill",
+    "reason": "当前静态索引中的 connector；依赖 connector/MCP/专有授权，索引公开 GitHub 仓库为 0，不是可独立镜像的社区 Skill。",
+    "inventorySource": "WorkBuddy connectors static index audit (2026-08-07)",
+    "observedScope": "current-connector-index-2026-08-07"
+  },
+  {
+    "competitor": "workbuddy",
+    "externalId": "gildata",
+    "name": "gildata",
+    "resolution": "not-a-skill",
+    "reason": "当前静态索引中的 connector；依赖 connector/MCP/专有授权，索引公开 GitHub 仓库为 0，不是可独立镜像的社区 Skill。",
+    "inventorySource": "WorkBuddy connectors static index audit (2026-08-07)",
+    "observedScope": "current-connector-index-2026-08-07"
+  },
+  {
+    "competitor": "workbuddy",
+    "externalId": "github",
+    "name": "github",
+    "resolution": "not-a-skill",
+    "reason": "当前静态索引中的 connector；依赖 connector/MCP/专有授权，索引公开 GitHub 仓库为 0，不是可独立镜像的社区 Skill。",
+    "inventorySource": "WorkBuddy connectors static index audit (2026-08-07)",
+    "observedScope": "current-connector-index-2026-08-07"
+  },
+  {
+    "competitor": "workbuddy",
+    "externalId": "ima-mcp",
+    "name": "ima-mcp",
+    "resolution": "not-a-skill",
+    "reason": "当前静态索引中的 connector；依赖 connector/MCP/专有授权，索引公开 GitHub 仓库为 0，不是可独立镜像的社区 Skill。",
+    "inventorySource": "WorkBuddy connectors static index audit (2026-08-07)",
+    "observedScope": "current-connector-index-2026-08-07"
+  },
+  {
+    "competitor": "workbuddy",
+    "externalId": "infimind-ecommerce-image",
+    "name": "infimind-ecommerce-image",
+    "resolution": "not-a-skill",
+    "reason": "当前静态索引中的 connector；依赖 connector/MCP/专有授权，索引公开 GitHub 仓库为 0，不是可独立镜像的社区 Skill。",
+    "inventorySource": "WorkBuddy connectors static index audit (2026-08-07)",
+    "observedScope": "current-connector-index-2026-08-07"
+  },
+  {
+    "competitor": "workbuddy",
+    "externalId": "infimind-video",
+    "name": "infimind-video",
+    "resolution": "not-a-skill",
+    "reason": "当前静态索引中的 connector；依赖 connector/MCP/专有授权，索引公开 GitHub 仓库为 0，不是可独立镜像的社区 Skill。",
+    "inventorySource": "WorkBuddy connectors static index audit (2026-08-07)",
+    "observedScope": "current-connector-index-2026-08-07"
+  },
+  {
+    "competitor": "workbuddy",
+    "externalId": "jinshuju",
+    "name": "jinshuju",
+    "resolution": "not-a-skill",
+    "reason": "当前静态索引中的 connector；依赖 connector/MCP/专有授权，索引公开 GitHub 仓库为 0，不是可独立镜像的社区 Skill。",
+    "inventorySource": "WorkBuddy connectors static index audit (2026-08-07)",
+    "observedScope": "current-connector-index-2026-08-07"
+  },
+  {
+    "competitor": "workbuddy",
+    "externalId": "kdocs",
+    "name": "kdocs",
+    "resolution": "not-a-skill",
+    "reason": "当前静态索引中的 connector；依赖 connector/MCP/专有授权，索引公开 GitHub 仓库为 0，不是可独立镜像的社区 Skill。",
+    "inventorySource": "WorkBuddy connectors static index audit (2026-08-07)",
+    "observedScope": "current-connector-index-2026-08-07"
+  },
+  {
+    "competitor": "workbuddy",
+    "externalId": "kuaicha-search",
+    "name": "kuaicha-search",
+    "resolution": "not-a-skill",
+    "reason": "当前静态索引中的 connector；依赖 connector/MCP/专有授权，索引公开 GitHub 仓库为 0，不是可独立镜像的社区 Skill。",
+    "inventorySource": "WorkBuddy connectors static index audit (2026-08-07)",
+    "observedScope": "current-connector-index-2026-08-07"
+  },
+  {
+    "competitor": "workbuddy",
+    "externalId": "lemonclaw",
+    "name": "lemonclaw",
+    "resolution": "not-a-skill",
+    "reason": "当前静态索引中的 connector；依赖 connector/MCP/专有授权，索引公开 GitHub 仓库为 0，不是可独立镜像的社区 Skill。",
+    "inventorySource": "WorkBuddy connectors static index audit (2026-08-07)",
+    "observedScope": "current-connector-index-2026-08-07"
+  },
+  {
+    "competitor": "workbuddy",
+    "externalId": "lexiang",
+    "name": "lexiang",
+    "resolution": "not-a-skill",
+    "reason": "当前静态索引中的 connector；依赖 connector/MCP/专有授权，索引公开 GitHub 仓库为 0，不是可独立镜像的社区 Skill。",
+    "inventorySource": "WorkBuddy connectors static index audit (2026-08-07)",
+    "observedScope": "current-connector-index-2026-08-07"
+  },
+  {
+    "competitor": "workbuddy",
+    "externalId": "linkfox-product-selection",
+    "name": "linkfox-product-selection",
+    "resolution": "not-a-skill",
+    "reason": "当前静态索引中的 connector；依赖 connector/MCP/专有授权，索引公开 GitHub 仓库为 0，不是可独立镜像的社区 Skill。",
+    "inventorySource": "WorkBuddy connectors static index audit (2026-08-07)",
+    "observedScope": "current-connector-index-2026-08-07"
+  },
+  {
+    "competitor": "workbuddy",
+    "externalId": "lovrabet-cli",
+    "name": "lovrabet-cli",
+    "resolution": "not-a-skill",
+    "reason": "当前静态索引中的 connector；依赖 connector/MCP/专有授权，索引公开 GitHub 仓库为 0，不是可独立镜像的社区 Skill。",
+    "inventorySource": "WorkBuddy connectors static index audit (2026-08-07)",
+    "observedScope": "current-connector-index-2026-08-07"
+  },
+  {
+    "competitor": "workbuddy",
+    "externalId": "mastergo-vibe-mcp",
+    "name": "mastergo-vibe-mcp",
+    "resolution": "not-a-skill",
+    "reason": "当前静态索引中的 connector；依赖 connector/MCP/专有授权，索引公开 GitHub 仓库为 0，不是可独立镜像的社区 Skill。",
+    "inventorySource": "WorkBuddy connectors static index audit (2026-08-07)",
+    "observedScope": "current-connector-index-2026-08-07"
+  },
+  {
+    "competitor": "workbuddy",
+    "externalId": "moka",
+    "name": "moka",
+    "resolution": "not-a-skill",
+    "reason": "当前静态索引中的 connector；依赖 connector/MCP/专有授权，索引公开 GitHub 仓库为 0，不是可独立镜像的社区 Skill。",
+    "inventorySource": "WorkBuddy connectors static index audit (2026-08-07)",
+    "observedScope": "current-connector-index-2026-08-07"
+  },
+  {
+    "competitor": "workbuddy",
+    "externalId": "mx-ds-mcp",
+    "name": "mx-ds-mcp",
+    "resolution": "not-a-skill",
+    "reason": "当前静态索引中的 connector；依赖 connector/MCP/专有授权，索引公开 GitHub 仓库为 0，不是可独立镜像的社区 Skill。",
+    "inventorySource": "WorkBuddy connectors static index audit (2026-08-07)",
+    "observedScope": "current-connector-index-2026-08-07"
+  },
+  {
+    "competitor": "workbuddy",
+    "externalId": "mzl-trademark",
+    "name": "mzl-trademark",
+    "resolution": "not-a-skill",
+    "reason": "当前静态索引中的 connector；依赖 connector/MCP/专有授权，索引公开 GitHub 仓库为 0，不是可独立镜像的社区 Skill。",
+    "inventorySource": "WorkBuddy connectors static index audit (2026-08-07)",
+    "observedScope": "current-connector-index-2026-08-07"
+  },
+  {
+    "competitor": "workbuddy",
+    "externalId": "neo-crm",
+    "name": "neo-crm",
+    "resolution": "not-a-skill",
+    "reason": "当前静态索引中的 connector；依赖 connector/MCP/专有授权，索引公开 GitHub 仓库为 0，不是可独立镜像的社区 Skill。",
+    "inventorySource": "WorkBuddy connectors static index audit (2026-08-07)",
+    "observedScope": "current-connector-index-2026-08-07"
+  },
+  {
+    "competitor": "workbuddy",
+    "externalId": "netease-mail",
+    "name": "netease-mail",
+    "resolution": "not-a-skill",
+    "reason": "当前静态索引中的 connector；依赖 connector/MCP/专有授权，索引公开 GitHub 仓库为 0，不是可独立镜像的社区 Skill。",
+    "inventorySource": "WorkBuddy connectors static index audit (2026-08-07)",
+    "observedScope": "current-connector-index-2026-08-07"
+  },
+  {
+    "competitor": "workbuddy",
+    "externalId": "notion",
+    "name": "notion",
+    "resolution": "not-a-skill",
+    "reason": "当前静态索引中的 connector；依赖 connector/MCP/专有授权，索引公开 GitHub 仓库为 0，不是可独立镜像的社区 Skill。",
+    "inventorySource": "WorkBuddy connectors static index audit (2026-08-07)",
+    "observedScope": "current-connector-index-2026-08-07"
+  },
+  {
+    "competitor": "workbuddy",
+    "externalId": "patsnap-search",
+    "name": "patsnap-search",
+    "resolution": "not-a-skill",
+    "reason": "当前静态索引中的 connector；依赖 connector/MCP/专有授权，索引公开 GitHub 仓库为 0，不是可独立镜像的社区 Skill。",
+    "inventorySource": "WorkBuddy connectors static index audit (2026-08-07)",
+    "observedScope": "current-connector-index-2026-08-07"
+  },
+  {
+    "competitor": "workbuddy",
+    "externalId": "picset-commerce-images",
+    "name": "picset-commerce-images",
+    "resolution": "not-a-skill",
+    "reason": "当前静态索引中的 connector；依赖 connector/MCP/专有授权，索引公开 GitHub 仓库为 0，不是可独立镜像的社区 Skill。",
+    "inventorySource": "WorkBuddy connectors static index audit (2026-08-07)",
+    "observedScope": "current-connector-index-2026-08-07"
+  },
+  {
+    "competitor": "workbuddy",
+    "externalId": "picset-video-generation",
+    "name": "picset-video-generation",
+    "resolution": "not-a-skill",
+    "reason": "当前静态索引中的 connector；依赖 connector/MCP/专有授权，索引公开 GitHub 仓库为 0，不是可独立镜像的社区 Skill。",
+    "inventorySource": "WorkBuddy connectors static index audit (2026-08-07)",
+    "observedScope": "current-connector-index-2026-08-07"
+  },
+  {
+    "competitor": "workbuddy",
+    "externalId": "pkulaw",
+    "name": "pkulaw",
+    "resolution": "not-a-skill",
+    "reason": "当前静态索引中的 connector；依赖 connector/MCP/专有授权，索引公开 GitHub 仓库为 0，不是可独立镜像的社区 Skill。",
+    "inventorySource": "WorkBuddy connectors static index audit (2026-08-07)",
+    "observedScope": "current-connector-index-2026-08-07"
+  },
+  {
+    "competitor": "workbuddy",
+    "externalId": "qcc-company",
+    "name": "qcc-company",
+    "resolution": "not-a-skill",
+    "reason": "当前静态索引中的 connector；依赖 connector/MCP/专有授权，索引公开 GitHub 仓库为 0，不是可独立镜像的社区 Skill。",
+    "inventorySource": "WorkBuddy connectors static index audit (2026-08-07)",
+    "observedScope": "current-connector-index-2026-08-07"
+  },
+  {
+    "competitor": "workbuddy",
+    "externalId": "qcc-legal",
+    "name": "qcc-legal",
+    "resolution": "not-a-skill",
+    "reason": "当前静态索引中的 connector；依赖 connector/MCP/专有授权，索引公开 GitHub 仓库为 0，不是可独立镜像的社区 Skill。",
+    "inventorySource": "WorkBuddy connectors static index audit (2026-08-07)",
+    "observedScope": "current-connector-index-2026-08-07"
+  },
+  {
+    "competitor": "workbuddy",
+    "externalId": "qingflow",
+    "name": "qingflow",
+    "resolution": "not-a-skill",
+    "reason": "当前静态索引中的 connector；依赖 connector/MCP/专有授权，索引公开 GitHub 仓库为 0，不是可独立镜像的社区 Skill。",
+    "inventorySource": "WorkBuddy connectors static index audit (2026-08-07)",
+    "observedScope": "current-connector-index-2026-08-07"
+  },
+  {
+    "competitor": "workbuddy",
+    "externalId": "qixinhuiyan-mcp",
+    "name": "qixinhuiyan-mcp",
+    "resolution": "not-a-skill",
+    "reason": "当前静态索引中的 connector；依赖 connector/MCP/专有授权，索引公开 GitHub 仓库为 0，不是可独立镜像的社区 Skill。",
+    "inventorySource": "WorkBuddy connectors static index audit (2026-08-07)",
+    "observedScope": "current-connector-index-2026-08-07"
+  },
+  {
+    "competitor": "workbuddy",
+    "externalId": "qq-mail",
+    "name": "qq-mail",
+    "resolution": "not-a-skill",
+    "reason": "当前静态索引中的 connector；依赖 connector/MCP/专有授权，索引公开 GitHub 仓库为 0，不是可独立镜像的社区 Skill。",
+    "inventorySource": "WorkBuddy connectors static index audit (2026-08-07)",
+    "observedScope": "current-connector-index-2026-08-07"
+  },
+  {
+    "competitor": "workbuddy",
+    "externalId": "region-insight",
+    "name": "region-insight",
+    "resolution": "not-a-skill",
+    "reason": "当前静态索引中的 connector；依赖 connector/MCP/专有授权，索引公开 GitHub 仓库为 0，不是可独立镜像的社区 Skill。",
+    "inventorySource": "WorkBuddy connectors static index audit (2026-08-07)",
+    "observedScope": "current-connector-index-2026-08-07"
+  },
+  {
+    "competitor": "workbuddy",
+    "externalId": "salesnail-instructor",
+    "name": "salesnail-instructor",
+    "resolution": "not-a-skill",
+    "reason": "当前静态索引中的 connector；依赖 connector/MCP/专有授权，索引公开 GitHub 仓库为 0，不是可独立镜像的社区 Skill。",
+    "inventorySource": "WorkBuddy connectors static index audit (2026-08-07)",
+    "observedScope": "current-connector-index-2026-08-07"
+  },
+  {
+    "competitor": "workbuddy",
+    "externalId": "shanglv-mcp-gateway",
+    "name": "shanglv-mcp-gateway",
+    "resolution": "not-a-skill",
+    "reason": "当前静态索引中的 connector；依赖 connector/MCP/专有授权，索引公开 GitHub 仓库为 0，不是可独立镜像的社区 Skill。",
+    "inventorySource": "WorkBuddy connectors static index audit (2026-08-07)",
+    "observedScope": "current-connector-index-2026-08-07"
+  },
+  {
+    "competitor": "workbuddy",
+    "externalId": "tapd",
+    "name": "tapd",
+    "resolution": "not-a-skill",
+    "reason": "当前静态索引中的 connector；依赖 connector/MCP/专有授权，索引公开 GitHub 仓库为 0，不是可独立镜像的社区 Skill。",
+    "inventorySource": "WorkBuddy connectors static index audit (2026-08-07)",
+    "observedScope": "current-connector-index-2026-08-07"
+  },
+  {
+    "competitor": "workbuddy",
+    "externalId": "tc-chengxin",
+    "name": "tc-chengxin",
+    "resolution": "not-a-skill",
+    "reason": "当前静态索引中的 connector；依赖 connector/MCP/专有授权，索引公开 GitHub 仓库为 0，不是可独立镜像的社区 Skill。",
+    "inventorySource": "WorkBuddy connectors static index audit (2026-08-07)",
+    "observedScope": "current-connector-index-2026-08-07"
+  },
+  {
+    "competitor": "workbuddy",
+    "externalId": "tdx-connector",
+    "name": "tdx-connector",
+    "resolution": "not-a-skill",
+    "reason": "当前静态索引中的 connector；依赖 connector/MCP/专有授权，索引公开 GitHub 仓库为 0，不是可独立镜像的社区 Skill。",
+    "inventorySource": "WorkBuddy connectors static index audit (2026-08-07)",
+    "observedScope": "current-connector-index-2026-08-07"
+  },
+  {
+    "competitor": "workbuddy",
+    "externalId": "tec-do",
+    "name": "tec-do",
+    "resolution": "not-a-skill",
+    "reason": "当前静态索引中的 connector；依赖 connector/MCP/专有授权，索引公开 GitHub 仓库为 0，不是可独立镜像的社区 Skill。",
+    "inventorySource": "WorkBuddy connectors static index audit (2026-08-07)",
+    "observedScope": "current-connector-index-2026-08-07"
+  },
+  {
+    "competitor": "workbuddy",
+    "externalId": "tencent-docs",
+    "name": "tencent-docs",
+    "resolution": "not-a-skill",
+    "reason": "当前静态索引中的 connector；依赖 connector/MCP/专有授权，索引公开 GitHub 仓库为 0，不是可独立镜像的社区 Skill。",
+    "inventorySource": "WorkBuddy connectors static index audit (2026-08-07)",
+    "observedScope": "current-connector-index-2026-08-07"
+  },
+  {
+    "competitor": "workbuddy",
+    "externalId": "tencent-docs-oa",
+    "name": "tencent-docs-oa",
+    "resolution": "not-a-skill",
+    "reason": "当前静态索引中的 connector；依赖 connector/MCP/专有授权，索引公开 GitHub 仓库为 0，不是可独立镜像的社区 Skill。",
+    "inventorySource": "WorkBuddy connectors static index audit (2026-08-07)",
+    "observedScope": "current-connector-index-2026-08-07"
+  },
+  {
+    "competitor": "workbuddy",
+    "externalId": "tencent-health-nges",
+    "name": "tencent-health-nges",
+    "resolution": "not-a-skill",
+    "reason": "当前静态索引中的 connector；依赖 connector/MCP/专有授权，索引公开 GitHub 仓库为 0，不是可独立镜像的社区 Skill。",
+    "inventorySource": "WorkBuddy connectors static index audit (2026-08-07)",
+    "observedScope": "current-connector-index-2026-08-07"
+  },
+  {
+    "competitor": "workbuddy",
+    "externalId": "tencent-map",
+    "name": "tencent-map",
+    "resolution": "not-a-skill",
+    "reason": "当前静态索引中的 connector；依赖 connector/MCP/专有授权，索引公开 GitHub 仓库为 0，不是可独立镜像的社区 Skill。",
+    "inventorySource": "WorkBuddy connectors static index audit (2026-08-07)",
+    "observedScope": "current-connector-index-2026-08-07"
+  },
+  {
+    "competitor": "workbuddy",
+    "externalId": "tencent-qidian-cs",
+    "name": "tencent-qidian-cs",
+    "resolution": "not-a-skill",
+    "reason": "当前静态索引中的 connector；依赖 connector/MCP/专有授权，索引公开 GitHub 仓库为 0，不是可独立镜像的社区 Skill。",
+    "inventorySource": "WorkBuddy connectors static index audit (2026-08-07)",
+    "observedScope": "current-connector-index-2026-08-07"
+  },
+  {
+    "competitor": "workbuddy",
+    "externalId": "tencent-survey",
+    "name": "tencent-survey",
+    "resolution": "not-a-skill",
+    "reason": "当前静态索引中的 connector；依赖 connector/MCP/专有授权，索引公开 GitHub 仓库为 0，不是可独立镜像的社区 Skill。",
+    "inventorySource": "WorkBuddy connectors static index audit (2026-08-07)",
+    "observedScope": "current-connector-index-2026-08-07"
+  },
+  {
+    "competitor": "workbuddy",
+    "externalId": "tencent-weiyun",
+    "name": "tencent-weiyun",
+    "resolution": "not-a-skill",
+    "reason": "当前静态索引中的 connector；依赖 connector/MCP/专有授权，索引公开 GitHub 仓库为 0，不是可独立镜像的社区 Skill。",
+    "inventorySource": "WorkBuddy connectors static index audit (2026-08-07)",
+    "observedScope": "current-connector-index-2026-08-07"
+  },
+  {
+    "competitor": "workbuddy",
+    "externalId": "tencentads",
+    "name": "tencentads",
+    "resolution": "not-a-skill",
+    "reason": "当前静态索引中的 connector；依赖 connector/MCP/专有授权，索引公开 GitHub 仓库为 0，不是可独立镜像的社区 Skill。",
+    "inventorySource": "WorkBuddy connectors static index audit (2026-08-07)",
+    "observedScope": "current-connector-index-2026-08-07"
+  },
+  {
+    "competitor": "workbuddy",
+    "externalId": "textin-xparse",
+    "name": "textin-xparse",
+    "resolution": "not-a-skill",
+    "reason": "当前静态索引中的 connector；依赖 connector/MCP/专有授权，索引公开 GitHub 仓库为 0，不是可独立镜像的社区 Skill。",
+    "inventorySource": "WorkBuddy connectors static index audit (2026-08-07)",
+    "observedScope": "current-connector-index-2026-08-07"
+  },
+  {
+    "competitor": "workbuddy",
+    "externalId": "tmeet",
+    "name": "tmeet",
+    "resolution": "not-a-skill",
+    "reason": "当前静态索引中的 connector；依赖 connector/MCP/专有授权，索引公开 GitHub 仓库为 0，不是可独立镜像的社区 Skill。",
+    "inventorySource": "WorkBuddy connectors static index audit (2026-08-07)",
+    "observedScope": "current-connector-index-2026-08-07"
+  },
+  {
+    "competitor": "workbuddy",
+    "externalId": "tongzhou-fin-research",
+    "name": "tongzhou-fin-research",
+    "resolution": "not-a-skill",
+    "reason": "当前静态索引中的 connector；依赖 connector/MCP/专有授权，索引公开 GitHub 仓库为 0，不是可独立镜像的社区 Skill。",
+    "inventorySource": "WorkBuddy connectors static index audit (2026-08-07)",
+    "observedScope": "current-connector-index-2026-08-07"
+  },
+  {
+    "competitor": "workbuddy",
+    "externalId": "tyc-mcp",
+    "name": "tyc-mcp",
+    "resolution": "not-a-skill",
+    "reason": "当前静态索引中的 connector；依赖 connector/MCP/专有授权，索引公开 GitHub 仓库为 0，不是可独立镜像的社区 Skill。",
+    "inventorySource": "WorkBuddy connectors static index audit (2026-08-07)",
+    "observedScope": "current-connector-index-2026-08-07"
+  },
+  {
+    "competitor": "workbuddy",
+    "externalId": "wecom",
+    "name": "wecom",
+    "resolution": "not-a-skill",
+    "reason": "当前静态索引中的 connector；依赖 connector/MCP/专有授权，索引公开 GitHub 仓库为 0，不是可独立镜像的社区 Skill。",
+    "inventorySource": "WorkBuddy connectors static index audit (2026-08-07)",
+    "observedScope": "current-connector-index-2026-08-07"
+  },
+  {
+    "competitor": "workbuddy",
+    "externalId": "weisheng-scrm",
+    "name": "weisheng-scrm",
+    "resolution": "not-a-skill",
+    "reason": "当前静态索引中的 connector；依赖 connector/MCP/专有授权，索引公开 GitHub 仓库为 0，不是可独立镜像的社区 Skill。",
+    "inventorySource": "WorkBuddy connectors static index audit (2026-08-07)",
+    "observedScope": "current-connector-index-2026-08-07"
+  },
+  {
+    "competitor": "workbuddy",
+    "externalId": "westock-mcp",
+    "name": "westock-mcp",
+    "resolution": "not-a-skill",
+    "reason": "当前静态索引中的 connector；依赖 connector/MCP/专有授权，索引公开 GitHub 仓库为 0，不是可独立镜像的社区 Skill。",
+    "inventorySource": "WorkBuddy connectors static index audit (2026-08-07)",
+    "observedScope": "current-connector-index-2026-08-07"
+  },
+  {
+    "competitor": "workbuddy",
+    "externalId": "wind-finance",
+    "name": "wind-finance",
+    "resolution": "not-a-skill",
+    "reason": "当前静态索引中的 connector；依赖 connector/MCP/专有授权，索引公开 GitHub 仓库为 0，不是可独立镜像的社区 Skill。",
+    "inventorySource": "WorkBuddy connectors static index audit (2026-08-07)",
+    "observedScope": "current-connector-index-2026-08-07"
+  },
+  {
+    "competitor": "workbuddy",
+    "externalId": "wk-workbuddy",
+    "name": "wk-workbuddy",
+    "resolution": "not-a-skill",
+    "reason": "当前静态索引中的 connector；依赖 connector/MCP/专有授权，索引公开 GitHub 仓库为 0，不是可独立镜像的社区 Skill。",
+    "inventorySource": "WorkBuddy connectors static index audit (2026-08-07)",
+    "observedScope": "current-connector-index-2026-08-07"
+  },
+  {
+    "competitor": "workbuddy",
+    "externalId": "wps-knowledgebase",
+    "name": "wps-knowledgebase",
+    "resolution": "not-a-skill",
+    "reason": "当前静态索引中的 connector；依赖 connector/MCP/专有授权，索引公开 GitHub 仓库为 0，不是可独立镜像的社区 Skill。",
+    "inventorySource": "WorkBuddy connectors static index audit (2026-08-07)",
+    "observedScope": "current-connector-index-2026-08-07"
+  },
+  {
+    "competitor": "workbuddy",
+    "externalId": "xiaoe-cloud-cli",
+    "name": "xiaoe-cloud-cli",
+    "resolution": "not-a-skill",
+    "reason": "当前静态索引中的 connector；依赖 connector/MCP/专有授权，索引公开 GitHub 仓库为 0，不是可独立镜像的社区 Skill。",
+    "inventorySource": "WorkBuddy connectors static index audit (2026-08-07)",
+    "observedScope": "current-connector-index-2026-08-07"
+  },
+  {
+    "competitor": "workbuddy",
+    "externalId": "xingtu-claw-risk",
+    "name": "xingtu-claw-risk",
+    "resolution": "not-a-skill",
+    "reason": "当前静态索引中的 connector；依赖 connector/MCP/专有授权，索引公开 GitHub 仓库为 0，不是可独立镜像的社区 Skill。",
+    "inventorySource": "WorkBuddy connectors static index audit (2026-08-07)",
+    "observedScope": "current-connector-index-2026-08-07"
+  },
+  {
+    "competitor": "workbuddy",
+    "externalId": "yingmi-mcp",
+    "name": "yingmi-mcp",
+    "resolution": "not-a-skill",
+    "reason": "当前静态索引中的 connector；依赖 connector/MCP/专有授权，索引公开 GitHub 仓库为 0，不是可独立镜像的社区 Skill。",
+    "inventorySource": "WorkBuddy connectors static index audit (2026-08-07)",
+    "observedScope": "current-connector-index-2026-08-07"
+  },
+  {
+    "competitor": "workbuddy",
+    "externalId": "youshu-bd-mate",
+    "name": "youshu-bd-mate",
+    "resolution": "not-a-skill",
+    "reason": "当前静态索引中的 connector；依赖 connector/MCP/专有授权，索引公开 GitHub 仓库为 0，不是可独立镜像的社区 Skill。",
+    "inventorySource": "WorkBuddy connectors static index audit (2026-08-07)",
+    "observedScope": "current-connector-index-2026-08-07"
+  },
+  {
+    "competitor": "workbuddy",
+    "externalId": "yuandian-mcp",
+    "name": "yuandian-mcp",
+    "resolution": "not-a-skill",
+    "reason": "当前静态索引中的 connector；依赖 connector/MCP/专有授权，索引公开 GitHub 仓库为 0，不是可独立镜像的社区 Skill。",
+    "inventorySource": "WorkBuddy connectors static index audit (2026-08-07)",
+    "observedScope": "current-connector-index-2026-08-07"
+  },
+  {
+    "competitor": "workbuddy",
+    "externalId": "yzf-invoice-mcp-server",
+    "name": "yzf-invoice-mcp-server",
+    "resolution": "not-a-skill",
+    "reason": "当前静态索引中的 connector；依赖 connector/MCP/专有授权，索引公开 GitHub 仓库为 0，不是可独立镜像的社区 Skill。",
+    "inventorySource": "WorkBuddy connectors static index audit (2026-08-07)",
+    "observedScope": "current-connector-index-2026-08-07"
+  },
+  {
+    "competitor": "workbuddy",
+    "externalId": "zfs-fssc-ai",
+    "name": "zfs-fssc-ai",
+    "resolution": "not-a-skill",
+    "reason": "当前静态索引中的 connector；依赖 connector/MCP/专有授权，索引公开 GitHub 仓库为 0，不是可独立镜像的社区 Skill。",
+    "inventorySource": "WorkBuddy connectors static index audit (2026-08-07)",
+    "observedScope": "current-connector-index-2026-08-07"
+  },
+  {
+    "competitor": "workbuddy",
+    "externalId": "zsxq",
+    "name": "zsxq",
+    "resolution": "not-a-skill",
+    "reason": "当前静态索引中的 connector；依赖 connector/MCP/专有授权，索引公开 GitHub 仓库为 0，不是可独立镜像的社区 Skill。",
+    "inventorySource": "WorkBuddy connectors static index audit (2026-08-07)",
+    "observedScope": "current-connector-index-2026-08-07"
+  },
+  {
+    "competitor": "workbuddy",
+    "externalId": "skill-creator",
+    "name": "skill-creator",
+    "advertisedSource": "anthropics/skills",
+    "resolution": "duplicate",
+    "reason": "与 NewMax skill-creator 指向同一 anthropics/skills:skills/skill-creator；首次记录已保留 license-unknown 结论。",
+    "inventorySource": "WorkBuddy historical built-in/plugin snapshot audit (2026-08-07)",
+    "observedScope": "historical-built-in-snapshot"
+  },
+  {
+    "competitor": "workbuddy",
+    "externalId": "ardot-design-core",
+    "name": "ardot-design-core",
+    "resolution": "private",
+    "reason": "WorkBuddy/Tencent 内置服务、插件或受控 API 能力，不能独立作为社区 Skill 分发。",
+    "inventorySource": "WorkBuddy historical built-in/plugin snapshot audit (2026-08-07)",
+    "observedScope": "historical-built-in-snapshot"
+  },
+  {
+    "competitor": "workbuddy",
+    "externalId": "ardot-design-router",
+    "name": "ardot-design-router",
+    "resolution": "private",
+    "reason": "WorkBuddy/Tencent 内置服务、插件或受控 API 能力，不能独立作为社区 Skill 分发。",
+    "inventorySource": "WorkBuddy historical built-in/plugin snapshot audit (2026-08-07)",
+    "observedScope": "historical-built-in-snapshot"
+  },
+  {
+    "competitor": "workbuddy",
+    "externalId": "ardot-design-to-code",
+    "name": "ardot-design-to-code",
+    "resolution": "private",
+    "reason": "WorkBuddy/Tencent 内置服务、插件或受控 API 能力，不能独立作为社区 Skill 分发。",
+    "inventorySource": "WorkBuddy historical built-in/plugin snapshot audit (2026-08-07)",
+    "observedScope": "historical-built-in-snapshot"
+  },
+  {
+    "competitor": "workbuddy",
+    "externalId": "ardot-poster",
+    "name": "ardot-poster",
+    "resolution": "private",
+    "reason": "WorkBuddy/Tencent 内置服务、插件或受控 API 能力，不能独立作为社区 Skill 分发。",
+    "inventorySource": "WorkBuddy historical built-in/plugin snapshot audit (2026-08-07)",
+    "observedScope": "historical-built-in-snapshot"
+  },
+  {
+    "competitor": "workbuddy",
+    "externalId": "ardot-slides",
+    "name": "ardot-slides",
+    "resolution": "private",
+    "reason": "WorkBuddy/Tencent 内置服务、插件或受控 API 能力，不能独立作为社区 Skill 分发。",
+    "inventorySource": "WorkBuddy historical built-in/plugin snapshot audit (2026-08-07)",
+    "observedScope": "historical-built-in-snapshot"
+  },
+  {
+    "competitor": "workbuddy",
+    "externalId": "ardot-ui-design",
+    "name": "ardot-ui-design",
+    "resolution": "private",
+    "reason": "WorkBuddy/Tencent 内置服务、插件或受控 API 能力，不能独立作为社区 Skill 分发。",
+    "inventorySource": "WorkBuddy historical built-in/plugin snapshot audit (2026-08-07)",
+    "observedScope": "historical-built-in-snapshot"
+  },
+  {
+    "competitor": "workbuddy",
+    "externalId": "buddy-multimodal-generation",
+    "name": "buddy-multimodal-generation",
+    "resolution": "private",
+    "reason": "WorkBuddy/Tencent 内置服务、插件或受控 API 能力，不能独立作为社区 Skill 分发。",
+    "inventorySource": "WorkBuddy historical built-in/plugin snapshot audit (2026-08-07)",
+    "observedScope": "historical-built-in-snapshot"
+  },
+  {
+    "competitor": "workbuddy",
+    "externalId": "cloudstudio-deploy",
+    "name": "cloudstudio-deploy",
+    "resolution": "private",
+    "reason": "WorkBuddy/Tencent 内置服务、插件或受控 API 能力，不能独立作为社区 Skill 分发。",
+    "inventorySource": "WorkBuddy historical built-in/plugin snapshot audit (2026-08-07)",
+    "observedScope": "historical-built-in-snapshot"
+  },
+  {
+    "competitor": "workbuddy",
+    "externalId": "expert-manager",
+    "name": "expert-manager",
+    "resolution": "private",
+    "reason": "WorkBuddy/Tencent 内置服务、插件或受控 API 能力，不能独立作为社区 Skill 分发。",
+    "inventorySource": "WorkBuddy historical built-in/plugin snapshot audit (2026-08-07)",
+    "observedScope": "historical-built-in-snapshot"
+  },
+  {
+    "competitor": "workbuddy",
+    "externalId": "geo-map-compliance-guard",
+    "name": "geo-map-compliance-guard",
+    "resolution": "private",
+    "reason": "WorkBuddy/Tencent 内置服务、插件或受控 API 能力，不能独立作为社区 Skill 分发。",
+    "inventorySource": "WorkBuddy historical built-in/plugin snapshot audit (2026-08-07)",
+    "observedScope": "historical-built-in-snapshot"
+  },
+  {
+    "competitor": "workbuddy",
+    "externalId": "marketplace-skill-installer",
+    "name": "marketplace-skill-installer",
+    "resolution": "private",
+    "reason": "WorkBuddy/Tencent 内置服务、插件或受控 API 能力，不能独立作为社区 Skill 分发。",
+    "inventorySource": "WorkBuddy historical built-in/plugin snapshot audit (2026-08-07)",
+    "observedScope": "historical-built-in-snapshot"
+  },
+  {
+    "competitor": "workbuddy",
+    "externalId": "neodata-financial-search",
+    "name": "neodata-financial-search",
+    "resolution": "private",
+    "reason": "WorkBuddy/Tencent 内置服务、插件或受控 API 能力，不能独立作为社区 Skill 分发。",
+    "inventorySource": "WorkBuddy historical built-in/plugin snapshot audit (2026-08-07)",
+    "observedScope": "historical-built-in-snapshot"
+  },
+  {
+    "competitor": "workbuddy",
+    "externalId": "tencent-docs-routing",
+    "name": "tencent-docs-routing",
+    "resolution": "private",
+    "reason": "WorkBuddy/Tencent 内置服务、插件或受控 API 能力，不能独立作为社区 Skill 分发。",
+    "inventorySource": "WorkBuddy historical built-in/plugin snapshot audit (2026-08-07)",
+    "observedScope": "historical-built-in-snapshot"
+  },
+  {
+    "competitor": "workbuddy",
+    "externalId": "tencent-local-office-edit",
+    "name": "tencent-local-office-edit",
+    "resolution": "private",
+    "reason": "WorkBuddy/Tencent 内置服务、插件或受控 API 能力，不能独立作为社区 Skill 分发。",
+    "inventorySource": "WorkBuddy historical built-in/plugin snapshot audit (2026-08-07)",
+    "observedScope": "historical-built-in-snapshot"
+  },
+  {
+    "competitor": "workbuddy",
+    "externalId": "wb-finance-skill",
+    "name": "wb-finance-skill",
+    "resolution": "private",
+    "reason": "WorkBuddy/Tencent 内置服务、插件或受控 API 能力，不能独立作为社区 Skill 分发。",
+    "inventorySource": "WorkBuddy historical built-in/plugin snapshot audit (2026-08-07)",
+    "observedScope": "historical-built-in-snapshot"
+  },
+  {
+    "competitor": "workbuddy",
+    "externalId": "westock-data",
+    "name": "westock-data",
+    "resolution": "private",
+    "reason": "WorkBuddy/Tencent 内置服务、插件或受控 API 能力，不能独立作为社区 Skill 分发。",
+    "inventorySource": "WorkBuddy historical built-in/plugin snapshot audit (2026-08-07)",
+    "observedScope": "historical-built-in-snapshot"
+  },
+  {
+    "competitor": "workbuddy",
+    "externalId": "westock-tool",
+    "name": "westock-tool",
+    "resolution": "private",
+    "reason": "WorkBuddy/Tencent 内置服务、插件或受控 API 能力，不能独立作为社区 Skill 分发。",
+    "inventorySource": "WorkBuddy historical built-in/plugin snapshot audit (2026-08-07)",
+    "observedScope": "historical-built-in-snapshot"
+  },
+  {
+    "competitor": "workbuddy",
+    "externalId": "tencent-saas-docs",
+    "name": "tencent-saas-docs",
+    "resolution": "private",
+    "reason": "WorkBuddy/Tencent 内置服务、插件或受控 API 能力，不能独立作为社区 Skill 分发。",
+    "inventorySource": "WorkBuddy historical built-in/plugin snapshot audit (2026-08-07)",
+    "observedScope": "historical-built-in-snapshot"
+  },
+  {
+    "competitor": "workbuddy",
+    "externalId": "tencent-pptx",
+    "name": "tencent-pptx",
+    "resolution": "private",
+    "reason": "WorkBuddy/Tencent 内置服务、插件或受控 API 能力，不能独立作为社区 Skill 分发。",
+    "inventorySource": "WorkBuddy historical built-in/plugin snapshot audit (2026-08-07)",
+    "observedScope": "historical-built-in-snapshot"
+  },
+  {
+    "competitor": "workbuddy",
+    "externalId": "weixinpay-feedback",
+    "name": "weixinpay-feedback",
+    "resolution": "private",
+    "reason": "WorkBuddy/Tencent 内置服务、插件或受控 API 能力，不能独立作为社区 Skill 分发。",
+    "inventorySource": "WorkBuddy historical built-in/plugin snapshot audit (2026-08-07)",
+    "observedScope": "historical-built-in-snapshot"
+  },
+  {
+    "competitor": "workbuddy",
+    "externalId": "weixinpay-pay",
+    "name": "weixinpay-pay",
+    "resolution": "private",
+    "reason": "WorkBuddy/Tencent 内置服务、插件或受控 API 能力，不能独立作为社区 Skill 分发。",
+    "inventorySource": "WorkBuddy historical built-in/plugin snapshot audit (2026-08-07)",
+    "observedScope": "historical-built-in-snapshot"
+  },
+  {
+    "competitor": "workbuddy",
+    "externalId": "weixinpay-register",
+    "name": "weixinpay-register",
+    "resolution": "private",
+    "reason": "WorkBuddy/Tencent 内置服务、插件或受控 API 能力，不能独立作为社区 Skill 分发。",
+    "inventorySource": "WorkBuddy historical built-in/plugin snapshot audit (2026-08-07)",
+    "observedScope": "historical-built-in-snapshot"
+  }
+]

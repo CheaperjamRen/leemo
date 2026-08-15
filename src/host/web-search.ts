@@ -31,6 +31,11 @@ export interface SearchSourceKeys {
   bochaKey?: string;
   googleKey?: string;
   googleCx?: string;
+  exaKey?: string;
+  braveKey?: string;
+  serpapiKey?: string;
+  serperKey?: string;
+  firecrawlKey?: string;
 }
 
 /** 单源一次尝试的结果，用于诊断"为什么走到了兜底"。 */
@@ -258,6 +263,17 @@ function requireSearchKey(source: string, value: string): string {
   return key;
 }
 
+function firstText(...values: unknown[]): string {
+  for (const value of values) {
+    if (typeof value === "string" && value.trim()) return value.trim();
+    if (Array.isArray(value)) {
+      const first = value.find((item) => typeof item === "string" && item.trim());
+      if (typeof first === "string") return first.trim();
+    }
+  }
+  return "";
+}
+
 /** 火山引擎豆包搜索 Custom 版。只保留 WebResults 的引用字段。 */
 export async function searchDoubao(
   query: string,
@@ -347,24 +363,153 @@ export async function searchGoogle(
   })).slice(0, MAX_HITS);
 }
 
+/** Exa Search API. highlights 是面向模型裁过的摘录，不请求整页正文。 */
+export async function searchExa(
+  query: string,
+  opts: SourceOptions & { apiKey: string },
+): Promise<SearchHit[]> {
+  const source = "Exa";
+  const key = requireSearchKey(source, opts.apiKey);
+  const json = await fetchSearchJson(
+    source,
+    "https://api.exa.ai/search",
+    {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-api-key": key },
+      body: JSON.stringify({
+        query,
+        type: "fast",
+        numResults: MAX_HITS,
+        contents: { highlights: true },
+      }),
+    },
+    opts,
+  );
+  const results = Array.isArray(json.results) ? json.results : [];
+  return toHits(results.map((item) => {
+    const row = (item ?? {}) as Record<string, unknown>;
+    return {
+      title: row.title,
+      url: row.url,
+      snippet: firstText(row.highlights, row.summary, row.text),
+    };
+  })).slice(0, MAX_HITS);
+}
+
+/** Brave 独立网页索引。 */
+export async function searchBrave(
+  query: string,
+  opts: SourceOptions & { apiKey: string },
+): Promise<SearchHit[]> {
+  const source = "Brave Search";
+  const key = requireSearchKey(source, opts.apiKey);
+  const url = new URL("https://api.search.brave.com/res/v1/web/search");
+  url.searchParams.set("q", query);
+  url.searchParams.set("count", String(MAX_HITS));
+  const json = await fetchSearchJson(
+    source,
+    url.toString(),
+    {
+      method: "GET",
+      headers: { accept: "application/json", "X-Subscription-Token": key },
+    },
+    opts,
+  );
+  const web = json.web as Record<string, unknown> | undefined;
+  const results = Array.isArray(web?.results) ? web.results : [];
+  return toHits(results.map((item) => {
+    const row = (item ?? {}) as Record<string, unknown>;
+    return { title: row.title, url: row.url, snippet: row.description };
+  })).slice(0, MAX_HITS);
+}
+
+/** SerpAPI 的 Google 引擎兼容端点。API Key 按官方要求放 query 参数。 */
+export async function searchSerpApi(
+  query: string,
+  opts: SourceOptions & { apiKey: string },
+): Promise<SearchHit[]> {
+  const source = "SerpAPI";
+  const key = requireSearchKey(source, opts.apiKey);
+  const url = new URL("https://serpapi.com/search.json");
+  url.searchParams.set("engine", "google");
+  url.searchParams.set("q", query);
+  url.searchParams.set("num", String(MAX_HITS));
+  url.searchParams.set("api_key", key);
+  const json = await fetchSearchJson(source, url.toString(), { method: "GET" }, opts);
+  if (json.error) throw new Error(`${source}：服务返回业务错误`);
+  const results = Array.isArray(json.organic_results) ? json.organic_results : [];
+  return toHits(results.map((item) => {
+    const row = (item ?? {}) as Record<string, unknown>;
+    return { title: row.title, url: row.link, snippet: row.snippet };
+  })).slice(0, MAX_HITS);
+}
+
+/** Serper 的轻量 Google Search API。 */
+export async function searchSerper(
+  query: string,
+  opts: SourceOptions & { apiKey: string },
+): Promise<SearchHit[]> {
+  const source = "Serper";
+  const key = requireSearchKey(source, opts.apiKey);
+  const json = await fetchSearchJson(
+    source,
+    "https://google.serper.dev/search",
+    {
+      method: "POST",
+      headers: { "content-type": "application/json", "X-API-KEY": key },
+      body: JSON.stringify({ q: query, num: MAX_HITS }),
+    },
+    opts,
+  );
+  const results = Array.isArray(json.organic) ? json.organic : [];
+  return toHits(results.map((item) => {
+    const row = (item ?? {}) as Record<string, unknown>;
+    return { title: row.title, url: row.link, snippet: row.snippet };
+  })).slice(0, MAX_HITS);
+}
+
+/** Firecrawl v2 Search。普通搜索只取元数据，不追加抓取正文的付费步骤。 */
+export async function searchFirecrawl(
+  query: string,
+  opts: SourceOptions & { apiKey: string },
+): Promise<SearchHit[]> {
+  const source = "Firecrawl";
+  const key = requireSearchKey(source, opts.apiKey);
+  const json = await fetchSearchJson(
+    source,
+    "https://api.firecrawl.dev/v2/search",
+    {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: `Bearer ${key}` },
+      body: JSON.stringify({ query, limit: MAX_HITS, sources: ["web"] }),
+    },
+    opts,
+  );
+  if (json.success !== true) throw new Error(`${source}：服务返回业务错误`);
+  const data = json.data as Record<string, unknown> | undefined;
+  const results = Array.isArray(data?.web) ? data.web : [];
+  return toHits(results.map((item) => {
+    const row = (item ?? {}) as Record<string, unknown>;
+    return { title: row.title, url: row.url, snippet: row.description };
+  })).slice(0, MAX_HITS);
+}
+
 export async function searchTavily(
   query: string,
   opts: SourceOptions & { apiKey: string }
 ): Promise<SearchHit[]> {
-  const key = opts.apiKey.trim();
-  if (!key) throw new Error("tavily: no api key");
-  const res = await fetchWithTimeout(
-    opts.fetchFn ?? globalFetch,
+  const source = "Tavily";
+  const key = requireSearchKey(source, opts.apiKey);
+  const json = await fetchSearchJson(
+    source,
     "https://api.tavily.com/search",
     {
       method: "POST",
       headers: { "content-type": "application/json", authorization: `Bearer ${key}` },
       body: JSON.stringify({ query, max_results: MAX_HITS }),
     },
-    opts.timeoutMs ?? TIMEOUT_MS
+    opts,
   );
-  if (!res.ok) throw new Error(`tavily HTTP ${res.status}`);
-  const json = JSON.parse(res.text) as { results?: unknown };
   // Tavily 用 content 装摘要，映射成我们的 snippet（并顺手丢掉全文字段）。
   const mapped = Array.isArray(json.results)
     ? json.results.map((r) => {
@@ -379,24 +524,22 @@ export async function searchBocha(
   query: string,
   opts: SourceOptions & { apiKey: string }
 ): Promise<SearchHit[]> {
-  const key = opts.apiKey.trim();
-  if (!key) throw new Error("bocha: no api key");
-  const res = await fetchWithTimeout(
-    opts.fetchFn ?? globalFetch,
+  const source = "博查";
+  const key = requireSearchKey(source, opts.apiKey);
+  const json = await fetchSearchJson(
+    source,
     "https://api.bochaai.com/v1/web-search",
     {
       method: "POST",
       headers: { "content-type": "application/json", authorization: `Bearer ${key}` },
       body: JSON.stringify({ query, count: MAX_HITS }),
     },
-    opts.timeoutMs ?? TIMEOUT_MS
+    opts,
   );
-  if (!res.ok) throw new Error(`bocha HTTP ${res.status}`);
-  const json = JSON.parse(res.text) as {
-    data?: { webPages?: { value?: unknown } };
-  };
-  const mapped = Array.isArray(json.data?.webPages?.value)
-    ? (json.data!.webPages!.value as unknown[]).map((r) => {
+  const data = json.data as Record<string, unknown> | undefined;
+  const webPages = data?.webPages as Record<string, unknown> | undefined;
+  const mapped = Array.isArray(webPages?.value)
+    ? (webPages.value as unknown[]).map((r) => {
         const o = (r ?? {}) as Record<string, unknown>;
         return { title: o.name, url: o.url, snippet: o.snippet };
       })
@@ -418,9 +561,8 @@ export async function searchBocha(
  *    CONNECT_TIMEOUT（DNS 正常，连接层不通，同一类封锁）。留着它就是一个
  *    永远不会触发的"兜底"——比没有兜底更骗人：我测的时候绿、用户真需要时黑。
  *    `searchDdgLite`/`parseDdgLite` 仍然导出且有测试，网络条件变了可以接回来。
- *    同批实测被否的还有 Bing：技术词好用（SQLite 10/10），但中文数学题
- *    **确定性**翻车（「高等数学 泰勒展开 例题」3/3 全废，拿"高等"够到"高等
- *    教育"），而作业辅导正是主场景 —— 喂给模型"长得像结果的垃圾"比搜不到更坏。
+ *    Bing Search API 已于 2025-08-11 完全退役，设置页保留来源说明，但不能
+ *    假装仍有可调用端点，因此不会进入这条运行链。
  */
 export function buildSourceChain(keys: SearchSourceKeys, opts: SourceOptions = {}): SearchSource[] {
   const chain: SearchSource[] = [
@@ -441,6 +583,20 @@ export function buildSourceChain(keys: SearchSourceKeys, opts: SourceOptions = {
       name: "google",
       search: (q) => searchGoogle(q, { ...opts, apiKey: google, engineId: googleCx }),
     });
+  }
+  const exa = keys.exaKey?.trim();
+  if (exa) chain.push({ name: "exa", search: (q) => searchExa(q, { ...opts, apiKey: exa }) });
+  const brave = keys.braveKey?.trim();
+  if (brave) chain.push({ name: "brave", search: (q) => searchBrave(q, { ...opts, apiKey: brave }) });
+  const serpapi = keys.serpapiKey?.trim();
+  if (serpapi) {
+    chain.push({ name: "serpapi", search: (q) => searchSerpApi(q, { ...opts, apiKey: serpapi }) });
+  }
+  const serper = keys.serperKey?.trim();
+  if (serper) chain.push({ name: "serper", search: (q) => searchSerper(q, { ...opts, apiKey: serper }) });
+  const firecrawl = keys.firecrawlKey?.trim();
+  if (firecrawl) {
+    chain.push({ name: "firecrawl", search: (q) => searchFirecrawl(q, { ...opts, apiKey: firecrawl }) });
   }
   return chain;
 }

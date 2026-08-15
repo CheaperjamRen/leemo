@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   deriveScheduledTaskName,
+  isScheduledTaskSchedule,
   nextRunAtForSchedule,
   normalizeScheduledTaskDraft,
 } from "../../src/scheduled-tasks";
@@ -26,6 +27,22 @@ describe("scheduled task calendar", () => {
       .toBe(new Date(2026, 7, 3, 8, 15).getTime());
     expect(nextRunAtForSchedule({ kind: "weekly", weekday: 5, hour: 8, minute: 0 }, friday.getTime()))
       .toBe(new Date(2026, 7, 7, 8, 0).getTime());
+  });
+
+  it("finds the next selected weekday, month day, workday, and weekend", () => {
+    const friday = new Date(2026, 6, 31, 9, 0).getTime();
+
+    expect(nextRunAtForSchedule({ kind: "weekly", weekdays: [1, 3], hour: 8, minute: 15 }, friday))
+      .toBe(new Date(2026, 7, 3, 8, 15).getTime());
+    expect(nextRunAtForSchedule({ kind: "monthly", day: 31, hour: 8, minute: 0 }, friday))
+      .toBe(new Date(2026, 7, 31, 8, 0).getTime());
+    expect(nextRunAtForSchedule({ kind: "weekdays", hour: 8, minute: 0 }, friday))
+      .toBe(new Date(2026, 7, 3, 8, 0).getTime());
+    expect(nextRunAtForSchedule({ kind: "weekends", hour: 8, minute: 0 }, friday))
+      .toBe(new Date(2026, 7, 1, 8, 0).getTime());
+
+    expect(isScheduledTaskSchedule({ kind: "weekly", weekdays: [], hour: 8, minute: 0 })).toBe(false);
+    expect(isScheduledTaskSchedule({ kind: "weekly", weekdays: [1, 3], hour: 8, minute: 0 })).toBe(true);
   });
 
   it("derives a quiet name and validates the three user inputs", () => {
@@ -54,5 +71,10 @@ describe("scheduled task calendar", () => {
       workspaceId: "leemo-home",
       schedule: { kind: "once", runAt: 999 },
     }, 1_000, "UTC")).toThrow("这个时间已经过去");
+    expect(() => normalizeScheduledTaskDraft({
+      prompt: "整理学习记录",
+      workspaceId: " ",
+      schedule: { kind: "daily", hour: 8, minute: 0 },
+    }, 1_000, "UTC")).toThrow("请选择结果要放到哪个本子");
   });
 });
