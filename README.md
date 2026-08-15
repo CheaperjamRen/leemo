@@ -1,5 +1,5 @@
 <div align="center">
-  <img src=".github/assets/leemo-icon.svg" width="88" alt="Leemo" />
+  <img src="build/icon.svg" width="88" alt="Leemo" />
   <h1>Leemo</h1>
   <p><strong>一个会记得你，也会在电脑里把事情做完的桌面 AI Agent。</strong></p>
   <p>从随手记下一个念头，到本地文件里留下结果。</p>
