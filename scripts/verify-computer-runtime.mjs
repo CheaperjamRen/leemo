@@ -30,8 +30,12 @@ for (const patch of manifest.patches) {
   if (!fs.existsSync(patchPath)) {
     throw new Error(`Windows computer runtime patch source is missing: ${patch.source}`);
   }
+  const patchBytes = fs.readFileSync(patchPath);
+  const canonicalPatchBytes = path.extname(patchPath).toLowerCase() === ".manifest"
+    ? Buffer.from(patchBytes.toString("utf8").replace(/\r\n?/g, "\n"), "utf8")
+    : patchBytes;
   const patchHash = createHash("sha256")
-    .update(fs.readFileSync(patchPath))
+    .update(canonicalPatchBytes)
     .digest("hex")
     .toUpperCase();
   if (patchHash !== patch.sha256) {

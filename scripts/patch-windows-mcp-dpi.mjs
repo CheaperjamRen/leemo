@@ -12,7 +12,10 @@ const dpiManifestPath = path.join(runtimeDir, "dpi-awareness.manifest");
 const releaseManifest = JSON.parse(fs.readFileSync(releaseManifestPath, "utf8"));
 const executablePath = path.join(releaseDir, releaseManifest.executable.name);
 const executableBytes = fs.readFileSync(executablePath);
-const dpiManifestBytes = fs.readFileSync(dpiManifestPath);
+const dpiManifestBytes = Buffer.from(
+  fs.readFileSync(dpiManifestPath, "utf8").replace(/\r\n?/g, "\n"),
+  "utf8",
+);
 
 const executable = NtExecutable.from(executableBytes);
 const resources = NtExecutableResource.from(executable);
