@@ -11,6 +11,7 @@ import { deriveConversationMarker, deriveConversationStatus } from "../stores/co
 import {
   EMPTY_COMPOSER_DRAFT,
   resolveComposerScope,
+  workspaceComposerScope,
 } from "../stores/composer-drafts";
 import type { AttachmentRef, WorkspaceFileRef } from "../../bridge/contract";
 import Timeline from "./timeline/Timeline";
@@ -21,7 +22,7 @@ import DropClassifyBar from "./DropClassifyBar";
 import { isFileDataTransfer, useFileDrop } from "./useFileDrop";
 import ConversationStateMark from "./ConversationStateMark";
 import { orderConfiguredProviders } from "./model-picker";
-import WorkbenchSidebar from "./WorkbenchSidebar";
+import WorkbenchSidebar, { type WorkbenchConversationScope } from "./WorkbenchSidebar";
 import WorkbenchActivityRail from "./WorkbenchActivityRail";
 import WorkbenchStage from "./WorkbenchStage";
 import TopBar from "./TopBar";
@@ -269,26 +270,33 @@ export default function WorkbenchShell() {
     }
   };
 
-  const handleNewConversation = async () => {
-    const carryDraft = !activeId && (
-      composerDraft.text.length > 0
-      || composerDraft.attachments.length > 0
-      || (composerDraft.workspaceFiles?.length ?? 0) > 0
-      || composerDraft.submitError !== null
+  const handleNewConversation = async (requestedScope?: WorkbenchConversationScope) => {
+    const targetWorkspaceId = requestedScope?.workspaceId ?? activeWorkspaceId;
+    const targetBookId = requestedScope ? requestedScope.bookId : activeBookId;
+    const targetDraftScope = requestedScope
+      ? workspaceComposerScope(targetWorkspaceId, targetBookId)
+      : draftScope;
+    const targetDraft = composerDrafts[targetDraftScope] ?? EMPTY_COMPOSER_DRAFT;
+    const isCurrentScope = targetWorkspaceId === activeWorkspaceId && targetBookId === activeBookId;
+    const carryDraft = isCurrentScope && !activeId && (
+      targetDraft.text.length > 0
+      || targetDraft.attachments.length > 0
+      || (targetDraft.workspaceFiles?.length ?? 0) > 0
+      || targetDraft.submitError !== null
     );
     try {
       const id = await createConversation({
         source: "workbench",
-        workspaceId: activeWorkspaceId,
-        bookId: activeBookId,
+        workspaceId: targetWorkspaceId,
+        bookId: targetBookId,
         activate: false,
       });
-      if (carryDraft) assignComposerConversation(draftScope, id);
+      if (carryDraft) assignComposerConversation(targetDraftScope, id);
       switchActive(id);
       setView("chat");
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      updateComposerDraft(draftScope, (current) => ({ ...current, submitError: message }));
+      updateComposerDraft(targetDraftScope, (current) => ({ ...current, submitError: message }));
       if (/还没有(?:选择可用模型|完成登录与保存|配置 API Key)/u.test(message)) {
         openSettings("models");
       }

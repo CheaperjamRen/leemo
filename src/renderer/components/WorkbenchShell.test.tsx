@@ -8,6 +8,7 @@ import WorkbenchShell from "./WorkbenchShell";
 import { useUi } from "../bridge/context";
 import { FixtureBridgeClient } from "../bridge/fixture-client";
 import type { AskUserPayload } from "../../bridge/contract";
+import { HOME_WORKSPACE_ID } from "../stores/workspaces";
 
 describe("WorkbenchShell", () => {
   it("renders complete layout (topbar + sidebar + main)", () => {
@@ -1244,6 +1245,72 @@ describe("WorkbenchShell — workspace conversation scope", () => {
     expect(screen.queryByText("产品经理简历")).not.toBeInTheDocument();
     expect(within(screen.getByTestId("workbench-global-map")).getByText("全局聊天")).toBeInTheDocument();
     expect(within(screen.getByTestId("workbench-notebook-map")).queryByText("全局聊天")).not.toBeInTheDocument();
+  });
+
+  it("can leave a notebook through global momo history and create globally afterward", async () => {
+    const client = new FixtureBridgeClient();
+    const invoke = vi.spyOn(client, "invoke");
+    let stores!: BridgeStores;
+    function SeedScopedConversations() {
+      stores = useContext(BridgeContext) as BridgeStores;
+      if (!stores.conversations.getState().byId["book-chat"]) {
+        stores.conversations.setState({
+          byId: {
+            "book-chat": {
+              id: "book-chat", title: "本子里的对话", titleManuallyUpdated: true, bookId: "高等数学",
+              workspaceId: HOME_WORKSPACE_ID, source: "workbench", providerId: "deepseek", modelId: "deepseek-chat",
+              createdAt: 1, lastActivityAt: 2, unread: false,
+            },
+            "global-chat": {
+              id: "global-chat", title: "全局 momo 对话", titleManuallyUpdated: true, bookId: null,
+              workspaceId: HOME_WORKSPACE_ID, source: "buddy", providerId: "deepseek", modelId: "deepseek-chat",
+              createdAt: 1, lastActivityAt: 1, unread: false,
+            },
+          },
+          order: ["book-chat", "global-chat"],
+          activeId: "book-chat",
+          timelines: { "book-chat": [], "global-chat": [] },
+          runIds: { "book-chat": null, "global-chat": null },
+        });
+        stores.notebooks.setState({
+          list: [{
+            id: "高等数学",
+            title: "高等数学",
+            dir: "C:/Users/me/Leemo/高等数学",
+            color: "blue",
+            hasMemory: false,
+          }],
+          activeId: "高等数学",
+        });
+      }
+      return <WorkbenchShell />;
+    }
+
+    render(
+      <BridgeProvider client={client}>
+        <SeedScopedConversations />
+      </BridgeProvider>,
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: "全局 momo 对话" }));
+    await waitFor(() => {
+      expect(stores.notebooks.getState().activeId).toBeNull();
+      expect(stores.conversations.getState().activeId).toBe("global-chat");
+      expect(screen.getByTestId("workbench-context-title")).toHaveTextContent("全局 momo 对话");
+    });
+
+    await userEvent.click(screen.getByRole("button", { name: "打开本子 高等数学" }));
+    await waitFor(() => expect(stores.notebooks.getState().activeId).toBe("高等数学"));
+    invoke.mockClear();
+    await userEvent.click(screen.getByRole("button", { name: "新建全局对话" }));
+
+    await waitFor(() => {
+      const createCall = invoke.mock.calls.find(([channel]) => channel === "bridge:createConversation");
+      expect(createCall).toBeDefined();
+      expect(createCall?.[1]).toEqual(expect.objectContaining({ workspaceId: HOME_WORKSPACE_ID }));
+      expect(createCall?.[1]).not.toHaveProperty("notebookId");
+      expect(stores.notebooks.getState().activeId).toBeNull();
+    });
   });
 
   it("creates a new execution conversation inside the active managed book", async () => {

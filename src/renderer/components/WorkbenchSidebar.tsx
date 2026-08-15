@@ -55,10 +55,16 @@ interface PendingScopeChange {
   target: ScopeTarget;
   sourceWorkspaceId: string;
   dirtyCount: number;
+  afterChange?: () => void | Promise<void>;
+}
+
+export interface WorkbenchConversationScope {
+  workspaceId: string;
+  bookId: string | null;
 }
 
 export interface WorkbenchSidebarProps {
-  onNewConversation: () => void | Promise<void>;
+  onNewConversation: (scope?: WorkbenchConversationScope) => void | Promise<void>;
   shellWidth?: number;
 }
 
@@ -217,7 +223,11 @@ export default function WorkbenchSidebar({ onNewConversation, shellWidth }: Work
     await refreshTree();
   };
 
-  const executeScopeChange = async (target: ScopeTarget, sourceWorkspaceId: string): Promise<void> => {
+  const executeScopeChange = async (
+    target: ScopeTarget,
+    sourceWorkspaceId: string,
+    afterChange?: () => void | Promise<void>,
+  ): Promise<void> => {
     if (!target.available || transitioning) return;
     setTransitioning(true);
     try {
@@ -234,19 +244,32 @@ export default function WorkbenchSidebar({ onNewConversation, shellWidth }: Work
       activateWorkbenchScope(scopeKeyForSelection({ workspaceId: target.workspaceId, notebookId: target.bookId }));
       await refreshScopeFiles();
       discardWorkspaceDrafts(sourceWorkspaceId);
+      await afterChange?.();
     } finally {
       setTransitioning(false);
     }
   };
 
-  const requestScopeChange = (target: ScopeTarget): void => {
-    if (!target.available || transitioning || isSameScope(target, currentTarget)) return;
-    if (dirtyDraftPaths.length > 0) {
-      setDecisionError(null);
-      setPendingDecision({ target, sourceWorkspaceId: activeWorkspaceId, dirtyCount: dirtyDraftPaths.length });
+  const requestScopeChange = (
+    target: ScopeTarget,
+    afterChange?: () => void | Promise<void>,
+  ): void => {
+    if (!target.available || transitioning) return;
+    if (isSameScope(target, currentTarget)) {
+      void afterChange?.();
       return;
     }
-    void executeScopeChange(target, activeWorkspaceId);
+    if (dirtyDraftPaths.length > 0) {
+      setDecisionError(null);
+      setPendingDecision({
+        target,
+        sourceWorkspaceId: activeWorkspaceId,
+        dirtyCount: dirtyDraftPaths.length,
+        ...(afterChange ? { afterChange } : {}),
+      });
+      return;
+    }
+    void executeScopeChange(target, activeWorkspaceId, afterChange);
   };
 
   const resolveDirtyScopeChange = async (resolution: "save" | "discard"): Promise<void> => {
@@ -264,15 +287,17 @@ export default function WorkbenchSidebar({ onNewConversation, shellWidth }: Work
         }
       }
       setPendingDecision(null);
-      await executeScopeChange(decision.target, decision.sourceWorkspaceId);
+      await executeScopeChange(decision.target, decision.sourceWorkspaceId, decision.afterChange);
     } finally {
       setTransitioning(false);
     }
   };
 
-  const pickConversation = (id: string): void => {
-    switchActive(id);
-    setView("chat");
+  const pickConversation = (id: string, target: ScopeTarget): void => {
+    requestScopeChange(target, () => {
+      switchActive(id);
+      setView("chat");
+    });
   };
 
   const closeScopeMenu = (): void => {
@@ -367,7 +392,7 @@ export default function WorkbenchSidebar({ onNewConversation, shellWidth }: Work
     setScopeActionBusy(false);
   };
 
-  const renderConversation = (id: string) => {
+  const renderConversation = (id: string, target: ScopeTarget) => {
     const conversation = conversations[id];
     if (!conversation) return null;
     return (
@@ -376,7 +401,7 @@ export default function WorkbenchSidebar({ onNewConversation, shellWidth }: Work
         conversation={conversation}
         active={id === activeConversationId}
         variant="workbench"
-        onPick={() => pickConversation(id)}
+        onPick={() => pickConversation(id, target)}
         onRename={(title) => renameTitle(id, title)}
         onUnread={(unread) => setConversationUnread(id, unread)}
         onPin={(pinned) => pinConversation(id, pinned)}
@@ -502,7 +527,7 @@ export default function WorkbenchSidebar({ onNewConversation, shellWidth }: Work
             {ids.length === 0 ? (
               <p className="px-2.5 py-2 text-[11px] text-[var(--leemo-ink-3)]">还没有对话</p>
             ) : (
-              <div className="space-y-0.5">{ids.map(renderConversation)}</div>
+              <div className="space-y-0.5">{ids.map((id) => renderConversation(id, target))}</div>
             )}
             {archived.length > 0 && (
               <div className="mt-1">
@@ -516,7 +541,7 @@ export default function WorkbenchSidebar({ onNewConversation, shellWidth }: Work
                   <Archive className="h-3 w-3" aria-hidden />
                   已归档 {archived.length}
                 </button>
-                {archivedOpen && <div className="space-y-0.5 opacity-80">{archived.map(renderConversation)}</div>}
+                {archivedOpen && <div className="space-y-0.5 opacity-80">{archived.map((id) => renderConversation(id, target))}</div>}
               </div>
             )}
           </div>
@@ -625,7 +650,16 @@ export default function WorkbenchSidebar({ onNewConversation, shellWidth }: Work
           <section className="leemo-workbench-sidebar__global flex min-h-[164px] flex-1 flex-col overflow-visible border-t border-[var(--leemo-line)] px-2 py-2" data-testid="workbench-global-map" aria-label="与 momo 的对话">
             <div className="flex shrink-0 items-center justify-between px-2 pb-1 text-[12px] font-medium text-[var(--leemo-ink-2)]">
               <span>与 momo 的对话</span>
-              <button type="button" onClick={() => void onNewConversation()} className="grid h-5 w-5 place-items-center rounded text-[var(--leemo-ink-3)] hover:bg-[var(--leemo-side-hover)] hover:text-[var(--leemo-ink)]" aria-label="新建全局对话" title="新建对话">
+              <button
+                type="button"
+                onClick={() => requestScopeChange(globalTarget, () => onNewConversation({
+                  workspaceId: globalTarget.workspaceId,
+                  bookId: globalTarget.bookId,
+                }))}
+                className="grid h-5 w-5 place-items-center rounded text-[var(--leemo-ink-3)] hover:bg-[var(--leemo-side-hover)] hover:text-[var(--leemo-ink)]"
+                aria-label="新建全局对话"
+                title="新建对话"
+              >
                 <Plus className="h-3.5 w-3.5" aria-hidden />
               </button>
             </div>
@@ -641,7 +675,7 @@ export default function WorkbenchSidebar({ onNewConversation, shellWidth }: Work
                   </span>
                 </div>
               ) : (
-                <div className="space-y-0.5">{conversationsFor(globalTarget).map(renderConversation)}</div>
+                <div className="space-y-0.5">{conversationsFor(globalTarget).map((id) => renderConversation(id, globalTarget))}</div>
               )}
               {archivedFor(globalTarget).length > 0 && (
                 <div className="mt-2 border-t border-[var(--leemo-line-soft)] pt-1">
@@ -650,7 +684,7 @@ export default function WorkbenchSidebar({ onNewConversation, shellWidth }: Work
                     <ArchiveRestore className="h-3 w-3" aria-hidden />
                     已归档 {archivedFor(globalTarget).length}
                   </button>
-                  {showArchived.global && <div className="space-y-0.5 opacity-80">{archivedFor(globalTarget).map(renderConversation)}</div>}
+                  {showArchived.global && <div className="space-y-0.5 opacity-80">{archivedFor(globalTarget).map((id) => renderConversation(id, globalTarget))}</div>}
                 </div>
               )}
             </div>

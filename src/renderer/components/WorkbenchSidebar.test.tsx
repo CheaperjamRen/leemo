@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { useContext } from "react";
@@ -269,6 +269,48 @@ describe("WorkbenchSidebar", () => {
     expect(stores.notebooks.getState().activeId).toBe("career");
     expect(stores.conversations.getState().activeId).toBe("career-chat");
     expect(stores.ui.getState().activeScopeKey).toBe("notebook:career");
+  });
+
+  it("leaves the active notebook before opening a global momo conversation", async () => {
+    const user = userEvent.setup();
+    let stores!: BridgeStores;
+    render(
+      <BridgeProvider>
+        <Seed onReady={(value) => { stores = value; }} />
+        <WorkbenchSidebar onNewConversation={() => {}} />
+      </BridgeProvider>,
+    );
+
+    await user.click(screen.getByRole("button", { name: "和 momo 讨论方向" }));
+
+    await waitFor(() => {
+      expect(stores.notebooks.getState().activeId).toBeNull();
+      expect(stores.conversations.getState().activeId).toBe("global-chat");
+      expect(stores.ui.getState().activeScopeKey).toBe("global");
+    });
+  });
+
+  it("creates from the global momo section outside the active notebook", async () => {
+    const user = userEvent.setup();
+    const onNewConversation = vi.fn().mockResolvedValue(undefined);
+    let stores!: BridgeStores;
+    render(
+      <BridgeProvider>
+        <Seed onReady={(value) => { stores = value; }} />
+        <WorkbenchSidebar onNewConversation={onNewConversation} />
+      </BridgeProvider>,
+    );
+
+    await user.click(screen.getByRole("button", { name: "新建全局对话" }));
+
+    await waitFor(() => {
+      expect(stores.notebooks.getState().activeId).toBeNull();
+      expect(stores.ui.getState().activeScopeKey).toBe("global");
+      expect(onNewConversation).toHaveBeenCalledWith({
+        workspaceId: HOME_WORKSPACE_ID,
+        bookId: null,
+      });
+    });
   });
 
   it("does not switch scopes while a Markdown draft is unresolved", async () => {
