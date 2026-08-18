@@ -10,6 +10,9 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const MAIN = path.join(ROOT, "dist-electron", "main.mjs");
 const require = createRequire(import.meta.url);
 const electronExecutable = path.join(path.dirname(require.resolve("electron/package.json")), "dist", "electron.exe");
+const packagedExecutable = process.env.LEEMO_PACKAGED_EXE
+  ? path.resolve(process.env.LEEMO_PACKAGED_EXE)
+  : null;
 const port = Number(process.env.LEEMO_START_CDP_PORT ?? 9362);
 const tempParent = fs.realpathSync(os.tmpdir());
 const auditRoot = fs.mkdtempSync(path.join(tempParent, "leemo-e2e-start-workspace-"));
@@ -49,12 +52,14 @@ async function waitForCdp(timeoutMs = 20_000) {
 
 function launch() {
   const { ELECTRON_RUN_AS_NODE: _electronRunAsNode, LEEMO_RENDERER_URL: _rendererUrl, ...cleanEnv } = process.env;
-  return spawn(electronExecutable, [
+  const executable = packagedExecutable ?? electronExecutable;
+  const applicationArgs = packagedExecutable ? [] : [MAIN];
+  return spawn(executable, [
     `--remote-debugging-port=${port}`,
     "--disable-gpu",
     "--disable-features=CalculateNativeWinOcclusion",
     "--disable-backgrounding-occluded-windows",
-    MAIN,
+    ...applicationArgs,
     `--leemo-e2e-root=${auditRoot}`,
   ], {
     cwd: ROOT,
@@ -355,7 +360,9 @@ let restarted;
 let connected;
 const rendererErrors = [];
 try {
-  insist(fs.existsSync(MAIN), "缺少 dist-electron/main.mjs，请先运行 npm run build:main");
+  insist(packagedExecutable ? fs.existsSync(packagedExecutable) : fs.existsSync(MAIN), packagedExecutable
+    ? `缺少打包版可执行文件：${packagedExecutable}`
+    : "缺少 dist-electron/main.mjs，请先运行 npm run build:main");
   fs.mkdirSync(outputDir, { recursive: true });
   child = launch();
   connected = await connect();
@@ -378,6 +385,7 @@ try {
   const facts = {
     pass: true,
     checkedAt: new Date().toISOString(),
+    runtime: packagedExecutable ? "packaged" : "development-build",
     isolatedRoot: auditRoot,
     screenshots: [
       path.relative(ROOT, screenshot1440).replaceAll(path.sep, "/"),

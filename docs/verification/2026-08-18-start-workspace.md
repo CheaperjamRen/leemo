@@ -83,4 +83,15 @@ Kimi K3 Max 使用覆盖后的同路径截图复评为 **91/100、无 P1、READY
 - 公式与 Mermaid 已可渲染并通过源码编辑，后续可增加富文本内联源码编辑器。
 - 表格已可编辑内容、增删行列和改变整体对齐，后续可让操作精确作用于当前单元格 / 行 / 列，并支持末格 Tab 新增行。
 
-这两项不阻断当前本地云文档主链路，也不在发布前临时引入新的复杂编辑框架。打包产物将在发布收口后补记。
+这两项不阻断当前本地云文档主链路，也不在发布前临时引入新的复杂编辑框架。
+
+## 最终打包
+
+- 命令：`npm run electron:pack:with-office`。
+- 产物：`dist-package/Leemo Setup 0.1.2.exe`。
+- 大小：273,397,666 bytes。
+- SHA-256：`7FBCC345AEF35C9C2D940733E7B543F39C6E909E8B7A70C9B505ADDB55FF02BC`。
+- 安装包版本：0.1.2；unpacked `Leemo.exe` product version 0.1.2.0。
+- builder 明确复用 `node_modules/electron/dist`，未重新下载 Electron。
+- Office bundle：docx / pdf / pptx / xlsx，186 files；已在最终 `app.asar` 中逐项确认 `SKILL.md` 存在。
+- 最终 production packaged runtime 再次执行完整 Start 旅程：`runtime: packaged`、`pass: true`、零模型调用、重启 / 树 / 附件 / Todo / 富文本对象 / 源码模式均恢复，renderer console error 为 0。
