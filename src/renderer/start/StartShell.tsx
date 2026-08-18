@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useStore } from "zustand";
 import TopBar from "../components/TopBar";
 import {
@@ -18,6 +18,7 @@ import StartSidebar from "./StartSidebar";
 import StartHome from "./StartHome";
 import StartTasksView from "./StartTasksView";
 import StartNotesView from "./StartNotesView";
+import StartDocumentsView from "./StartDocumentsView";
 import GlobalPendingOverviewPage from "./GlobalPendingOverviewPage";
 import { openOverviewSource, overviewTargetFromSourceId, type OverviewOpenTarget } from "./open-overview-source";
 import type { StartDestination } from "./start-navigation";
@@ -43,6 +44,10 @@ export default function StartShell() {
       && window.matchMedia("(max-width: 1023px)").matches
   ));
   const [sourceError, setSourceError] = useState<string | null>(null);
+  const documentNavigationState = useRef<{ active: boolean; previousCollapsed: boolean }>({
+    active: false,
+    previousCollapsed: false,
+  });
   const setSurface = useSettings((state) => state.setSurface);
   const conversations = useConversations((state) => state.byId);
   const timelines = useConversations((state) => state.timelines);
@@ -78,6 +83,20 @@ export default function StartShell() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [mobileSidebarOpen]);
+
+  useEffect(() => {
+    if (narrow) return;
+    if (destination === "documents" && !documentNavigationState.current.active) {
+      documentNavigationState.current = { active: true, previousCollapsed: sidebarCollapsed };
+      setSidebarCollapsed(true);
+      return;
+    }
+    if (destination !== "documents" && documentNavigationState.current.active) {
+      const previousCollapsed = documentNavigationState.current.previousCollapsed;
+      documentNavigationState.current = { active: false, previousCollapsed: false };
+      setSidebarCollapsed(previousCollapsed);
+    }
+  }, [destination, narrow, sidebarCollapsed]);
 
   const facts = useMemo(() => buildGlobalOverviewFactPack({
     tasks,
@@ -178,7 +197,8 @@ export default function StartShell() {
             />
           )}
           {destination === "tasks" && <StartTasksView selectedTaskId={selectedTaskId} />}
-          {destination !== "home" && destination !== "overview" && destination !== "tasks" && (
+          {destination === "documents" && <StartDocumentsView selectedNoteId={selectedNoteId} />}
+          {destination !== "home" && destination !== "overview" && destination !== "tasks" && destination !== "documents" && (
             <StartNotesView destination={destination} selectedNoteId={selectedNoteId} />
           )}
         </main>

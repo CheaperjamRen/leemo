@@ -1,4 +1,5 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import mermaid from "mermaid";
 import MarkdownContent from "./MarkdownContent";
@@ -33,6 +34,21 @@ const COMPLETE_MARKDOWN = [
 ].join("\n");
 
 describe("MarkdownContent", () => {
+  it("routes leemo-note links to the document library instead of browser navigation", async () => {
+    const onOpenNoteReference = vi.fn();
+    const onOpenLocalLink = vi.fn();
+    render(
+      <MarkdownContent
+        text="[产品故事](leemo-note://note-story)"
+        onOpenNoteReference={onOpenNoteReference}
+        onOpenLocalLink={onOpenLocalLink}
+      />,
+    );
+
+    await userEvent.click(screen.getByRole("link", { name: /产品故事/ }));
+    expect(onOpenNoteReference).toHaveBeenCalledWith("note-story");
+    expect(onOpenLocalLink).not.toHaveBeenCalled();
+  });
   it("renders the shared GFM surface instead of exposing markdown syntax", () => {
     const { container } = render(<MarkdownContent text={COMPLETE_MARKDOWN} variant="answer" />);
 

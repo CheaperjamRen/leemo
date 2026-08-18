@@ -29,6 +29,7 @@ import { TabIndentationPlugin } from "@lexical/react/LexicalTabIndentationPlugin
 import { AutoFocusPlugin } from "@lexical/react/LexicalAutoFocusPlugin";
 import {
   Bold,
+  AtSign,
   List as ListIcon,
   ListChecks,
   ListOrdered,
@@ -36,6 +37,7 @@ import {
   Redo2,
   Undo2,
 } from "lucide-react";
+import { NOTE_DRAG_MIME, noteIdFromDragPayload } from "../notes/note-references";
 import "./CaptureEditor.css";
 
 const CAPTURE_TRANSFORMERS: Transformer[] = [
@@ -72,11 +74,19 @@ export interface CaptureEditorProps {
   onSave(): void;
   onPasteImage?(file: File): void;
   onDropFiles?(files: File[]): void;
+  onOpenNoteReferenceMenu?(): void;
+  onDropNoteReference?(noteId: string): void;
   autoFocus?: boolean;
   disabled?: boolean;
 }
 
-function CaptureToolbar({ disabled }: { disabled: boolean }) {
+function CaptureToolbar({
+  disabled,
+  onOpenNoteReferenceMenu,
+}: {
+  disabled: boolean;
+  onOpenNoteReferenceMenu?: () => void;
+}) {
   const [editor] = useLexicalComposerContext();
   const keepSelection = (action: () => void) => editor.focus(action);
 
@@ -144,6 +154,19 @@ function CaptureToolbar({ disabled }: { disabled: boolean }) {
       >
         <Quote size={15} strokeWidth={1.8} aria-hidden />
       </button>
+      {onOpenNoteReferenceMenu ? (
+        <button
+          type="button"
+          className="capture-editor__tool-button"
+          aria-label="引用便签"
+          title="引用便签 (@)"
+          disabled={disabled}
+          onMouseDown={(event) => event.preventDefault()}
+          onClick={onOpenNoteReferenceMenu}
+        >
+          <AtSign size={15} strokeWidth={1.8} aria-hidden />
+        </button>
+      ) : null}
       <span className="capture-editor__toolbar-divider" aria-hidden />
       <button
         type="button"
@@ -183,6 +206,8 @@ export default function CaptureEditor({
   onSave,
   onPasteImage,
   onDropFiles,
+  onOpenNoteReferenceMenu,
+  onDropNoteReference,
   autoFocus = false,
   disabled = false,
 }: CaptureEditorProps) {
@@ -200,7 +225,7 @@ export default function CaptureEditor({
   return (
     <div className="capture-editor" data-testid="capture-editor">
       <LexicalComposer initialConfig={initialConfig}>
-        <CaptureToolbar disabled={disabled} />
+        <CaptureToolbar disabled={disabled} onOpenNoteReferenceMenu={onOpenNoteReferenceMenu} />
         <div className="capture-editor__canvas">
           <RichTextPlugin
             contentEditable={
@@ -209,6 +234,9 @@ export default function CaptureEditor({
                 aria-label="便签正文"
                 spellCheck
                 onKeyDown={(event) => {
+                  if (event.key === "@" && !event.ctrlKey && !event.metaKey && !event.altKey) {
+                    onOpenNoteReferenceMenu?.();
+                  }
                   if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s") {
                     event.preventDefault();
                     onSave();
@@ -222,9 +250,18 @@ export default function CaptureEditor({
                   onPasteImage?.(image);
                 }}
                 onDragOver={(event) => {
-                  if (event.dataTransfer.files.length > 0) event.preventDefault();
+                  if (
+                    event.dataTransfer.files.length > 0
+                    || Array.from(event.dataTransfer.types).includes(NOTE_DRAG_MIME)
+                  ) event.preventDefault();
                 }}
                 onDrop={(event) => {
+                  const noteId = noteIdFromDragPayload(event.dataTransfer);
+                  if (noteId) {
+                    event.preventDefault();
+                    onDropNoteReference?.(noteId);
+                    return;
+                  }
                   const files = [...event.dataTransfer.files];
                   if (files.length === 0) return;
                   event.preventDefault();

@@ -127,3 +127,27 @@ Required screenshot states:
 5. Full board — grouped items, source chips and collapsed uncertain section.
 
 For every screenshot compare: global balance, information density, card heights, line rhythm, text/icon baseline, focus state, action prominence and absence of accidental empty regions. Passing component tests without passing the whole-screen comparison is not visual completion.
+
+## 10. Local document library
+
+“我的文档”是“开始”内的二级工作面，不新增应用顶栏、AI 输入框或第三层导航。Start 左侧导航保持原位，右侧主区切换为一套本地云文档式双栏：文档 Explorer 负责组织，阅读 / 编辑区负责内容。
+
+| Element | 1440×900 target |
+| --- | --- |
+| Explorer | 248px; 1px right rule; white surface |
+| Explorer toolbar | 44px; search 32px; action buttons 30px square |
+| Tree row | 36px; 20px icon/chevron lane; 8px radius only for selected row |
+| Document header | 56px; breadcrumb and save state on one line |
+| Document canvas | `max-width: 1040px`; 36px horizontal breathing room; no card border around prose |
+| Format toolbar | 38px; top aligned; 1px rules; 30px square tools |
+| Attachment row | 44px; filename first; storage semantics and actions remain secondary |
+
+Explorer order is `收集箱 / 置顶 / 最近 / 我的文档树`. Parent notes remain editable documents and use the same document icon as leaf notes; only the chevron and indentation express hierarchy. A selected row uses a neutral grey surface plus a 2px Leemo-orange leading trace—never a saturated full-row fill.
+
+Entering the document library automatically compacts the outer Start navigation to its 72px icon rail so the writing surface receives the width; the existing topbar control can expand it again. The document header contains a compact breadcrumb, editable title, `阅读 / 编辑`, save status and restrained actions. Pin, archive and trash are real actions, not decorative icons. Existing external-file reference versus managed-copy semantics remain visible in the attachment row.
+
+The editable canvas fills the remaining viewport height with a minimum first-screen writing area of 520px. Attachments and backlinks follow the prose and never reserve a permanent top-of-page band. At 1440×900, the visible writing width should be roughly 960–1040px in compact-navigation mode, close to a Word document rather than a narrow note card.
+
+Local note references use `leemo-note://<encoded-id>`. Clicking never reaches browser navigation. Typing `@`, using the reference button, or dropping a document row into the editor opens/inserts the same stable reference. Backlinks appear below the document as quiet rows rather than graph decoration.
+
+At widths below 1100px the Explorer narrows to 224px. Below 820px it becomes a temporary overlay; the writing canvas keeps at least 560px when the window permits. Removing or hiding a panel requires a whole-parent balance check so the remaining toolbar and canvas never leave an accidental empty strip.

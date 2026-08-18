@@ -1,7 +1,9 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import CaptureEditor from "./CaptureEditor";
+
+afterEach(() => vi.unstubAllGlobals());
 
 function selectEditorContents(editor: HTMLElement): void {
   const range = document.createRange();
@@ -154,5 +156,35 @@ describe("CaptureEditor", () => {
       screen.getByRole("textbox", { name: "便签正文" }),
     ).toHaveAttribute("contenteditable", "false"));
     expect(screen.getByRole("button", { name: "加粗" })).toBeDisabled();
+  });
+
+  it("offers one note-reference affordance for click, @ typing and note drops", async () => {
+    vi.stubGlobal("DragEvent", Event);
+    const onOpenNoteReferenceMenu = vi.fn();
+    const onDropNoteReference = vi.fn();
+    render(
+      <CaptureEditor
+        markdown="正文"
+        onMarkdownChange={vi.fn()}
+        onSave={vi.fn()}
+        onOpenNoteReferenceMenu={onOpenNoteReferenceMenu}
+        onDropNoteReference={onDropNoteReference}
+      />,
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: "引用便签" }));
+    expect(onOpenNoteReferenceMenu).toHaveBeenCalledOnce();
+    fireEvent.keyDown(screen.getByRole("textbox", { name: "便签正文" }), { key: "@" });
+    expect(onOpenNoteReferenceMenu).toHaveBeenCalledTimes(2);
+
+    const data = JSON.stringify({ noteId: "note-target" });
+    fireEvent.drop(screen.getByRole("textbox", { name: "便签正文" }), {
+      dataTransfer: {
+        files: [],
+        types: ["application/x-leemo-note"],
+        getData: (type: string) => type === "application/x-leemo-note" ? data : "",
+      },
+    });
+    expect(onDropNoteReference).toHaveBeenCalledWith("note-target");
   });
 });
