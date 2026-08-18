@@ -67,6 +67,15 @@ describe("App", () => {
     }
   });
 
+  it("opens the static document library without exposing an AI composer", async () => {
+    render(<App />);
+    fireEvent.click(screen.getByRole("button", { name: "我的文档" }));
+    expect(await screen.findByTestId("start-documents-view")).toBeInTheDocument();
+    fireEvent.click(screen.getAllByRole("button", { name: "新建文档" })[0]);
+    expect(screen.getByRole("textbox", { name: "便签正文" })).toBeInTheDocument();
+    expect(screen.queryByLabelText("输入消息")).not.toBeInTheDocument();
+  });
+
   it("keeps an unsent draft when switching between buddy and workbench", () => {
     render(<App />);
     fireEvent.click(screen.getByRole("button", { name: "切换到搭子" }));

@@ -9,6 +9,7 @@ import type {
   UpdateNoteInput,
 } from "../../src/captures";
 import { createPersistence } from "../../src/main/persistence/schema";
+import { createTaskPersistence } from "../../src/main/persistence/task-persistence";
 
 interface CaptureStoreForTest {
   getQuickDraft(): QuickDraft | undefined;
@@ -584,5 +585,64 @@ describe("capture persistence", () => {
     expect(reopened.purgeExpired(500)).toEqual([]);
     expect(reopened.purgeExpired(501)).toMatchObject([{ id: "note-1", deletedAt: 400 }]);
     expect(reopened.listTrash()).toEqual([]);
+  });
+
+  it("normalizes the complete flat legacy fixture idempotently", () => {
+    const db = new Database(":memory:");
+    db.exec(`
+      CREATE TABLE notes (
+        id TEXT PRIMARY KEY, title TEXT NOT NULL, markdown TEXT NOT NULL, revision INTEGER NOT NULL,
+        created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, deleted_at INTEGER,
+        purge_after INTEGER, archived_at INTEGER
+      );
+      CREATE TABLE note_attachments (
+        id TEXT PRIMARY KEY, note_id TEXT NOT NULL, kind TEXT NOT NULL, storage TEXT NOT NULL,
+        name TEXT NOT NULL, file_path TEXT NOT NULL, mime_type TEXT, size INTEGER NOT NULL, created_at INTEGER NOT NULL
+      );
+      INSERT INTO notes VALUES
+        ('legacy-active', '进行中', '正文', 2, 10, 20, NULL, NULL, NULL),
+        ('legacy-archive', '已归档', '旧正文', 3, 11, 21, NULL, NULL, 30),
+        ('legacy-trash', '已删除', '待恢复', 4, 12, 22, 40, 2592000040, NULL);
+      INSERT INTO note_attachments VALUES
+        ('managed', 'legacy-active', 'file', 'managed', '简历.pdf', 'inbox-attachments/file-copies/legacy-active/resume.pdf', 'application/pdf', 12, 25),
+        ('external', 'legacy-active', 'file', 'external', '原稿.docx', 'E:/Documents/原稿.docx', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 24, 26);
+      CREATE TABLE user_tasks (
+        id TEXT PRIMARY KEY, title TEXT NOT NULL, details TEXT NOT NULL, status TEXT NOT NULL,
+        planned_at INTEGER, due_at INTEGER, reminder_at INTEGER, reminder_offset_minutes INTEGER,
+        recurrence TEXT, notebook_id TEXT, note_id TEXT, revision INTEGER NOT NULL,
+        created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, completed_at INTEGER
+      );
+      INSERT INTO user_tasks VALUES
+        ('legacy-task', '继续整理', '来源便签', 'open', NULL, NULL, NULL, NULL, NULL, NULL, 'legacy-active', 1, 10, 20, NULL);
+    `);
+
+    const normalized = () => {
+      const captures = createStore(db);
+      const tasks = createTaskPersistence(db);
+      return {
+        active: captures.listNotes(),
+        archived: captures.listArchivedNotes(),
+        trash: captures.listTrash(),
+        tasks: tasks.listTasks(),
+      };
+    };
+    const first = normalized();
+    const second = normalized();
+
+    expect(second).toEqual(first);
+    expect(first.active).toMatchObject([{
+      id: "legacy-active",
+      parentId: null,
+      sortOrder: 0,
+      pinnedAt: null,
+      organizedAt: null,
+      attachments: [
+        { id: "managed", storage: "managed" },
+        { id: "external", storage: "external", path: "E:/Documents/原稿.docx" },
+      ],
+    }]);
+    expect(first.archived).toMatchObject([{ id: "legacy-archive", archivedAt: 30 }]);
+    expect(first.trash).toMatchObject([{ id: "legacy-trash", deletedAt: 40 }]);
+    expect(first.tasks).toMatchObject([{ id: "legacy-task", noteId: "legacy-active" }]);
   });
 });
