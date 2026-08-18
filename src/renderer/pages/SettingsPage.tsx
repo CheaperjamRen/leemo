@@ -323,7 +323,7 @@ export function SettingsPage({
   const stores = useContext(BridgeContext) as BridgeStores;
   const { settings, providers, searchSources, mcpServers, approvals, usageSummary: usageStore, memory } = stores;
   const {
-    mode,
+    surface,
     personaCardId,
     personaCards,
     relationshipStyle,
@@ -337,13 +337,15 @@ export function SettingsPage({
     keepAwakeDuringTasks,
     desktopNotifications,
     taskModelParsingEnabled,
+    globalOverviewAutoEnabled,
+    globalOverviewAutoTime,
     launchAtLogin,
     continueInBackground,
     quickCaptureShortcut,
     captureStorageRoot,
     defaultWorkspaceId,
     captureFileDropMode,
-    setMode,
+    setSurface,
     setPersonaCard,
     setRelationshipStyle,
     upsertPersonaCard,
@@ -358,6 +360,8 @@ export function SettingsPage({
     setKeepAwakeDuringTasks,
     setDesktopNotifications,
     setTaskModelParsingEnabled,
+    setGlobalOverviewAutoEnabled,
+    setGlobalOverviewAutoTime,
     setLaunchAtLogin,
     setContinueInBackground,
     setQuickCaptureShortcut,
@@ -857,9 +861,10 @@ export function SettingsPage({
           </span>
           <select
             aria-label="启动后进入"
-            value={mode}
-            onChange={(event) => setMode(event.target.value as "buddy" | "workbench")}
+            value={surface}
+            onChange={(event) => setSurface(event.target.value as "start" | "buddy" | "workbench")}
           >
+            <option value="start">开始</option>
             <option value="buddy">搭子</option>
             <option value="workbench">工作台</option>
           </select>
@@ -896,6 +901,35 @@ export function SettingsPage({
                 className="mt-0.5"
               />
             </div>
+          </section>}
+
+          {activeTab === "general" && <section className="settings-section settings-overview-automation mb-8 border-t border-[var(--leemo-line)] pt-7">
+            <h3 className="settings-group-title mb-3 text-sm font-medium text-[var(--leemo-ink-2)]">工作总览</h3>
+            <div className="settings-row flex items-start justify-between gap-4 py-3">
+              <span>
+                <span className="settings-row-title block text-sm font-medium text-[var(--leemo-ink)]">每天自动整理待完成事项</span>
+                <span className="settings-row-description mt-0.5 block text-xs leading-5 text-[var(--leemo-ink-3)]">在设定时间之后，当天首次回到 Leemo 时整理一次。会使用默认模型并计入用量。</span>
+              </span>
+              <LeemoSwitch
+                label="每天自动整理待完成事项"
+                checked={globalOverviewAutoEnabled}
+                onCheckedChange={setGlobalOverviewAutoEnabled}
+                className="mt-0.5"
+              />
+            </div>
+            <label className="settings-overview-time">
+              <span>
+                <strong>整理时间</strong>
+                <small>只有当天首次回到前台且已过这个时间，才会尝试一次。</small>
+              </span>
+              <input
+                type="time"
+                aria-label="每天自动整理时间"
+                value={globalOverviewAutoTime}
+                disabled={!globalOverviewAutoEnabled}
+                onChange={(event) => setGlobalOverviewAutoTime(event.target.value)}
+              />
+            </label>
           </section>}
 
           {activeTab === "shortcuts" && <section className="mb-8">

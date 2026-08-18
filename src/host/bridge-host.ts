@@ -43,6 +43,7 @@ import {
   type ModelUsageCursor,
 } from "../bridge/events";
 import { resolvePricing } from "../bridge/pricing";
+import type { StandaloneUsageEvent } from "../bridge/global-pending-overview";
 import { fetchBalance } from "../bridge/balance";
 import { cloneModelCapabilityEvidenceMap } from "../bridge/model-capabilities";
 import { buildQueryFn, type ConversationExtras } from "./sdk-adapter";
@@ -79,6 +80,15 @@ import {
   type ProviderConfigFile,
 } from "./provider-config";
 import { requestProviderText, testProviderConnection, type ProviderTestTarget } from "./provider-test";
+import {
+  runOneShotInference as runOneShotInferenceDefault,
+  type OneShotInferenceResult,
+  type OneShotInferenceTarget,
+} from "./one-shot-inference";
+import {
+  generateGlobalPendingOverview,
+  normalizeGlobalOverviewFacts,
+} from "./global-pending-overview";
 import { listProviderModels, type ProviderModelsTarget } from "./provider-models";
 import type { ProviderSubscriptionAuth } from "./provider-subscription-auth";
 import type {
@@ -278,6 +288,13 @@ export interface HostDeps {
   /** SQLite-backed usage aggregation seam. Omit in lightweight dev/test hosts
    * and the channel returns an empty summary. */
   readUsageSummary?: (query: UsageSummaryQuery) => Promise<UsageSummary> | UsageSummary;
+  /** Non-conversation inference seam for global overview generation. */
+  runOneShotInference?: (
+    target: OneShotInferenceTarget,
+    prompt: string,
+  ) => Promise<OneShotInferenceResult>;
+  /** Main-owned usage writer. Renderer can never forge standalone usage. */
+  recordStandaloneUsage?: (event: StandaloneUsageEvent) => void;
   /** Global structured English-learning ledger. It stays outside memory prompt
    * injection and is exposed to momo only through bounded first-party tools. */
   learningService?: LearningService;
@@ -691,7 +708,7 @@ function parseResolvedTaskFields(
 }
 
 export function createBridgeHost(deps: HostDeps): BridgeHost {
-  const { catalog, providerStore, subscriptionAuth, codexRuntime, geminiRuntime, fetchFn, dataDir, workspaceRoot, routeRootArtifactPath, filesystemBoundary, firstProgressTimeoutMs, approvalTimeoutMs, push, queryImpl, toolGovernanceHookUrl, readGlobalMemory, memoryDir, memoryGovernance, skillsIO, skillAdmin, officeSkills, bundledSkills, superpowersSkills, openPath, resolveNotebook, readNotebookMemory, cliExecutablePath, builtinMcpRuntime, readUsageSummary, learningService, scheduledTasks, captures, tasks } = deps;
+  const { catalog, providerStore, subscriptionAuth, codexRuntime, geminiRuntime, fetchFn, dataDir, workspaceRoot, routeRootArtifactPath, filesystemBoundary, firstProgressTimeoutMs, approvalTimeoutMs, push, queryImpl, toolGovernanceHookUrl, readGlobalMemory, memoryDir, memoryGovernance, skillsIO, skillAdmin, officeSkills, bundledSkills, superpowersSkills, openPath, resolveNotebook, readNotebookMemory, cliExecutablePath, builtinMcpRuntime, readUsageSummary, runOneShotInference, recordStandaloneUsage, learningService, scheduledTasks, captures, tasks } = deps;
   const toolGovernanceHookPath = `/__leemo/hooks/tool-governance-${randomUUID()}`;
 
   const homeWorkspace: ConversationWorkspace = {
@@ -2909,6 +2926,43 @@ export function createBridgeHost(deps: HostDeps): BridgeHost {
     return { target };
   }
 
+  async function resolveGlobalOverviewTarget(
+    providerId: string,
+    modelId: string,
+  ): Promise<{ target: OneShotInferenceTarget } | { error: { message: string; retryable: boolean } }> {
+    const entry = getCatalog().find((candidate) => candidate.provider.id === providerId);
+    if (!entry || !entry.provider.models.includes(modelId)) {
+      return { error: { message: "当前选择的模型不可用，请先在模型设置中确认。", retryable: false } };
+    }
+    if (!providerIsReady(entry)) {
+      return { error: { message: setupMessage(entry), retryable: false } };
+    }
+    if (entry.spec.authMode === "oauth-subscription") {
+      try {
+        await requireLiveSubscription(entry);
+      } catch (error) {
+        return {
+          error: {
+            message: error instanceof Error ? error.message : "订阅登录已失效，请重新登录。",
+            retryable: false,
+          },
+        };
+      }
+      if (entry.executionEngine === "openai-app-server") {
+        return { target: { kind: "codex-subscription", providerId, modelId } };
+      }
+      if (entry.executionEngine === "gemini-acp") {
+        return { target: { kind: "gemini-subscription", providerId, modelId } };
+      }
+      return { target: { kind: "claude-subscription", provider: entry.provider, modelId } };
+    }
+    const direct = resolveProbeTarget(providerId, undefined, modelId);
+    if ("error" in direct) {
+      return { error: { message: direct.error.message, retryable: false } };
+    }
+    return { target: { kind: "direct", providerId, modelId, target: direct.target } };
+  }
+
   function resolveModelsTarget(
     providerId: string | undefined,
     draft: ProviderDraft | undefined
@@ -3049,6 +3103,51 @@ export function createBridgeHost(deps: HostDeps): BridgeHost {
         if (!reply.ok) return manual as R<"bridge:resolveTaskTimes"> as R<K>;
         const items = parseResolvedTaskFields(reply.text, texts);
         return (items ? { ok: true as const, items } : manual) as R<"bridge:resolveTaskTimes"> as R<K>;
+      }
+
+      case "bridge:generateGlobalPendingOverview": {
+        const r = req as BridgeInvokeMap["bridge:generateGlobalPendingOverview"]["request"];
+        const facts = normalizeGlobalOverviewFacts(r.facts);
+        if (
+          !r.providerId?.trim()
+          || !r.modelId?.trim()
+          || (r.trigger !== "manual" && r.trigger !== "scheduled")
+          || Number.isNaN(Date.parse(r.localNow))
+          || !facts
+        ) {
+          return {
+            ok: false,
+            message: "待梳理的数据不完整，请刷新后重试。",
+            retryable: true,
+          } as R<"bridge:generateGlobalPendingOverview"> as R<K>;
+        }
+        if (facts.length === 0) {
+          return {
+            ok: false,
+            message: "目前没有需要梳理的事项。",
+            retryable: false,
+          } as R<"bridge:generateGlobalPendingOverview"> as R<K>;
+        }
+        const resolved = await resolveGlobalOverviewTarget(r.providerId, r.modelId);
+        if ("error" in resolved) {
+          return { ok: false, ...resolved.error } as R<"bridge:generateGlobalPendingOverview"> as R<K>;
+        }
+        const execute = runOneShotInference ?? ((target: OneShotInferenceTarget, prompt: string) =>
+          runOneShotInferenceDefault(target, prompt, {
+            fetchFn: httpFetch(),
+            dataDir,
+            ...(queryImpl ? { queryImpl } : {}),
+            ...(codexRuntime ? { codexRuntime } : {}),
+            ...(geminiRuntime ? { geminiRuntime } : {}),
+            resolvePricing,
+          }));
+        const response = await generateGlobalPendingOverview({ ...r, facts }, resolved.target, {
+          runInference: execute,
+          recordStandaloneUsage: recordStandaloneUsage ?? (() => {
+            throw new Error("独立模型用量存储暂不可用。");
+          }),
+        });
+        return response as R<"bridge:generateGlobalPendingOverview"> as R<K>;
       }
 
       case "bridge:listRemoteModels": {

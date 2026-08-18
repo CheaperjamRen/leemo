@@ -33,7 +33,6 @@ import { resolveWorkbenchSidebarMode } from "../workbench-spatial";
 const SkillsPage = lazy(() => import("../pages/SkillsPage"));
 const ScheduledTasksPage = lazy(() => import("../pages/ScheduledTasksPage"));
 const EnglishLearningPage = lazy(() => import("../pages/EnglishLearningPage"));
-const OrganizerPage = lazy(() => import("../pages/OrganizerPage"));
 const ArtifactsPage = lazy(async () => {
   const module = await import("../pages/ArtifactsPage");
   return { default: module.ArtifactsPage };
@@ -450,13 +449,6 @@ export default function WorkbenchShell() {
       return (
         <Suspense fallback={<WorkbenchPageLoading label="英语学习" />}>
           <EnglishLearningPage />
-        </Suspense>
-      );
-    }
-    if (view === "organizer") {
-      return (
-        <Suspense fallback={<WorkbenchPageLoading label="工作看板" />}>
-          <OrganizerPage />
         </Suspense>
       );
     }

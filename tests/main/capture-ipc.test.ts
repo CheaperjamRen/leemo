@@ -74,7 +74,7 @@ describe("capture IPC dispatcher", () => {
       payload: { expectedRevision: 1 },
     })).toMatchObject({ ok: true, response: { id: "note-1", markdown: "正文" } });
 
-    for (const op of ["listNotes", "listArchivedNotes", "getNote", "createNote", "updateNote", "archiveNote", "unarchiveNote", "deleteNote", "attachExternalFile", "attachFileCopy", "removeAttachment", "migrateStorageRoot"]) {
+    for (const op of ["listNotes", "listArchivedNotes", "getNote", "createNote", "updateNote", "moveNote", "setNotePinned", "markNoteOrganized", "archiveNote", "unarchiveNote", "deleteNote", "attachExternalFile", "attachFileCopy", "removeAttachment", "migrateStorageRoot"]) {
       expect(await ipc.handle("quick", { op, payload: {} })).toMatchObject({
         ok: false,
         error: expect.stringMatching(/无权|不能|不允许/),
@@ -109,8 +109,8 @@ describe("capture IPC dispatcher", () => {
     })).toMatchObject({ ok: true, response: { revision: 2, title: "已更新" } });
     expect(await ipc.handle("main", {
       op: "archiveNote",
-      payload: { id: "note-1", expectedRevision: 2 },
-    })).toMatchObject({ ok: true, response: { revision: 3, archivedAt: expect.any(Number) } });
+      payload: { id: "note-1", expectedRevision: 2, childStrategy: "subtree" },
+    })).toMatchObject({ ok: true, response: [{ revision: 3, archivedAt: expect.any(Number) }] });
     expect(await ipc.handle("main", { op: "listNotes" })).toEqual({ ok: true, response: [] });
     expect(await ipc.handle("main", { op: "listArchivedNotes" })).toMatchObject({
       ok: true, response: [{ id: "note-1" }],
@@ -118,12 +118,48 @@ describe("capture IPC dispatcher", () => {
     expect(await ipc.handle("main", {
       op: "unarchiveNote",
       payload: { id: "note-1", expectedRevision: 3 },
-    })).toMatchObject({ ok: true, response: { revision: 4 } });
+    })).toMatchObject({ ok: true, response: [{ revision: 4 }] });
     expect(await ipc.handle("main", {
       op: "deleteNote",
-      payload: { id: "note-1", expectedRevision: 4 },
-    })).toEqual({ ok: true, response: undefined });
+      payload: { id: "note-1", expectedRevision: 4, childStrategy: "subtree" },
+    })).toMatchObject({ ok: true, response: [{ id: "note-1", deletedAt: expect.any(Number) }] });
     expect(await ipc.handle("main", { op: "listNotes" })).toEqual({ ok: true, response: [] });
+  });
+
+  it("lets only the main sender organize notes through the typed operation path", async () => {
+    const { ipc } = createHarness();
+    const parent = await ipc.handle("main", {
+      op: "createNote",
+      payload: { title: "求职准备", markdown: "" },
+    });
+    const child = await ipc.handle("main", {
+      op: "createNote",
+      payload: { title: "简历", markdown: "" },
+    });
+    expect(parent).toMatchObject({ ok: true, response: { id: "note-1" } });
+    expect(child).toMatchObject({ ok: true, response: { id: "note-2" } });
+
+    expect(await ipc.handle("quick", {
+      op: "moveNote",
+      payload: { id: "note-2", expectedRevision: 1, parentId: "note-1", index: 0 },
+    })).toMatchObject({ ok: false, error: expect.stringMatching(/无权|不能|不允许/) });
+    expect(await ipc.handle("main", {
+      op: "moveNote",
+      payload: { id: "note-2", expectedRevision: 1, parentId: "note-1", index: 0 },
+    })).toMatchObject({
+      ok: true,
+      response: expect.arrayContaining([expect.objectContaining({
+        id: "note-2", parentId: "note-1", revision: 2,
+      })]),
+    });
+    expect(await ipc.handle("main", {
+      op: "setNotePinned",
+      payload: { id: "note-2", expectedRevision: 2, pinned: true },
+    })).toMatchObject({ ok: true, response: { pinnedAt: 100, revision: 3 } });
+    expect(await ipc.handle("main", {
+      op: "markNoteOrganized",
+      payload: { id: "note-2", expectedRevision: 3, organized: true },
+    })).toMatchObject({ ok: true, response: { organizedAt: 100, revision: 4 } });
   });
 
   it("lets the quick window attach only to its committed note and honors the file-drop preference", async () => {

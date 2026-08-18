@@ -11,6 +11,11 @@
  * wiki_entries / settings / approval_whitelist.
  */
 import type { UsageSummary, UsageSummaryQuery } from "../../bridge/contract";
+import {
+  normalizePersistedGlobalOverviewState,
+  type PersistedGlobalOverviewState,
+  type StandaloneUsageEvent,
+} from "../../bridge/global-pending-overview";
 import type { ApprovalPersistence, WhitelistEntry } from "../../bridge/interact";
 import type { ConversationMeta } from "../../renderer/stores/conversations";
 import type { TimelineItem } from "../../renderer/stores/message-model";
@@ -142,6 +147,7 @@ export interface PersistedSnapshot {
    *  keeps its own default, which is what makes adding a new setting a no-op
    *  here. Empty object on a fresh install. */
   settings: Record<string, unknown>;
+  globalPendingOverview?: PersistedGlobalOverviewState;
 }
 
 export interface Persistence extends ApprovalPersistence {
@@ -172,6 +178,9 @@ export interface Persistence extends ApprovalPersistence {
    *  Whole-map replace, not per-key upsert: the renderer holds the authoritative
    *  state, so "what is in the store now" is the thing worth persisting. */
   saveSettings(settings: Record<string, unknown>): void;
+  loadGlobalOverviewState(): PersistedGlobalOverviewState | null;
+  saveGlobalOverviewState(state: PersistedGlobalOverviewState): void;
+  recordStandaloneUsage(event: StandaloneUsageEvent): void;
   /** Aggregate persisted usage over local calendar-day windows. `now` is
    * injectable only so boundary behavior can be deterministic in tests. */
   usageSummary(query: UsageSummaryQuery, now?: number): UsageSummary;
@@ -255,6 +264,26 @@ CREATE TABLE IF NOT EXISTS wiki_entries (
 CREATE TABLE IF NOT EXISTS settings (
   key TEXT PRIMARY KEY,
   value_json TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS global_overview_state (
+  singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
+  state_json TEXT NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS standalone_usage (
+  id TEXT PRIMARY KEY,
+  purpose TEXT NOT NULL CHECK (purpose IN ('global-overview')),
+  provider_id TEXT NOT NULL,
+  model_id TEXT NOT NULL,
+  input_tokens INTEGER NOT NULL,
+  output_tokens INTEGER NOT NULL,
+  cache_read_tokens INTEGER NOT NULL,
+  cache_creation_tokens INTEGER NOT NULL,
+  cost_usd TEXT,
+  cost_source TEXT NOT NULL CHECK (cost_source IN ('sdk', 'local-pricing', 'unpriced')),
+  tokens_estimated INTEGER NOT NULL,
+  duration_ms INTEGER NOT NULL,
+  created_at INTEGER NOT NULL
 );
 CREATE TABLE IF NOT EXISTS approval_whitelist (
   tool_name TEXT NOT NULL,
@@ -567,6 +596,22 @@ export function createPersistence(db: SqliteDatabase): Persistence & CapturePers
       (conversation_id, provider_id, model_id, input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens, cost_usd, cost_source, tokens_estimated, duration_ms, created_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
+  const upsertGlobalOverviewState = db.prepare(`
+    INSERT INTO global_overview_state (singleton, state_json, updated_at)
+    VALUES (1, ?, ?)
+    ON CONFLICT(singleton) DO UPDATE SET
+      state_json=excluded.state_json,
+      updated_at=excluded.updated_at
+  `);
+  const selectGlobalOverviewState = db.prepare(`
+    SELECT state_json FROM global_overview_state WHERE singleton = 1
+  `);
+  const insertStandaloneUsage = db.prepare(`
+    INSERT OR IGNORE INTO standalone_usage
+      (id, purpose, provider_id, model_id, input_tokens, output_tokens, cache_read_tokens,
+       cache_creation_tokens, cost_usd, cost_source, tokens_estimated, duration_ms, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `);
   const upsertWiki = db.prepare(`
     INSERT INTO wiki_entries (id, workspace_id, file_path, quoted_text, turns_json, created_at)
     VALUES (@id, @workspace_id, @file_path, @quoted_text, @turns_json, @created_at)
@@ -841,7 +886,13 @@ export function createPersistence(db: SqliteDatabase): Persistence & CapturePers
       }
     }
 
-    return { conversations, wikiEntries, settings };
+    const globalPendingOverview = loadGlobalOverviewState();
+    return {
+      conversations,
+      wikiEntries,
+      settings,
+      ...(globalPendingOverview ? { globalPendingOverview } : {}),
+    };
   }
 
   /** Replace the whole settings map in one transaction (see the interface note
@@ -858,6 +909,59 @@ export function createPersistence(db: SqliteDatabase): Persistence & CapturePers
         ins.run(key, JSON.stringify(value));
       }
     })();
+  }
+
+  function loadGlobalOverviewState(): PersistedGlobalOverviewState | null {
+    const row = selectGlobalOverviewState.get() as { state_json?: unknown } | undefined;
+    if (typeof row?.state_json !== "string") return null;
+    try {
+      return normalizePersistedGlobalOverviewState(JSON.parse(row.state_json));
+    } catch {
+      return null;
+    }
+  }
+
+  function saveGlobalOverviewState(state: PersistedGlobalOverviewState): void {
+    const normalized = normalizePersistedGlobalOverviewState(state);
+    if (!normalized) throw new Error("待完成事项快照无效，原数据仍保留。");
+    upsertGlobalOverviewState.run(JSON.stringify(normalized), Date.now());
+  }
+
+  function recordStandaloneUsage(event: StandaloneUsageEvent): void {
+    const counts = [
+      event.inputTokens,
+      event.outputTokens,
+      event.cacheReadTokens,
+      event.cacheCreationTokens,
+      event.durationMs,
+      event.createdAt,
+    ];
+    if (
+      !event.id.trim()
+      || event.purpose !== "global-overview"
+      || !event.providerId.trim()
+      || !event.modelId.trim()
+      || counts.some((value) => !Number.isFinite(value) || value < 0)
+      || !["sdk", "local-pricing", "unpriced"].includes(event.costSource)
+      || (event.costUsd !== undefined && !/^\d+(?:\.\d+)?$/.test(event.costUsd))
+    ) {
+      throw new Error("独立模型用量记录无效。");
+    }
+    insertStandaloneUsage.run(
+      event.id,
+      event.purpose,
+      event.providerId,
+      event.modelId,
+      Math.floor(event.inputTokens),
+      Math.floor(event.outputTokens),
+      Math.floor(event.cacheReadTokens),
+      Math.floor(event.cacheCreationTokens),
+      event.costUsd ?? null,
+      event.costSource,
+      event.tokensEstimated ? 1 : 0,
+      Math.floor(event.durationMs),
+      Math.floor(event.createdAt),
+    );
   }
 
   function listScheduledTasks(): ScheduledTask[] {
@@ -967,7 +1071,15 @@ export function createPersistence(db: SqliteDatabase): Persistence & CapturePers
     const rows = db.prepare(`
       SELECT provider_id, model_id, input_tokens, output_tokens,
              cache_read_tokens, cache_creation_tokens, cost_usd, created_at
-      FROM usage
+      FROM (
+        SELECT provider_id, model_id, input_tokens, output_tokens,
+               cache_read_tokens, cache_creation_tokens, cost_usd, created_at
+        FROM usage
+        UNION ALL
+        SELECT provider_id, model_id, input_tokens, output_tokens,
+               cache_read_tokens, cache_creation_tokens, cost_usd, created_at
+        FROM standalone_usage
+      ) AS all_usage
       WHERE created_at >= ? AND created_at < ?
         AND (? IS NULL OR provider_id = ?)
       ORDER BY created_at ASC
@@ -1186,6 +1298,9 @@ export function createPersistence(db: SqliteDatabase): Persistence & CapturePers
     rebuildConversationIndex,
     saveWikiEntry,
     saveSettings,
+    loadGlobalOverviewState,
+    saveGlobalOverviewState,
+    recordStandaloneUsage,
     loadAll,
     getWhitelist,
     addToWhitelist,

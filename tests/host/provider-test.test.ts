@@ -62,19 +62,41 @@ describe("requestProviderText", () => {
   it.each([
     {
       target: anthropicTarget,
-      response: { content: [{ type: "text", text: '{"items":[]}' }] },
+      response: {
+        content: [{ type: "text", text: '{"items":[]}' }],
+        usage: {
+          input_tokens: 11,
+          output_tokens: 5,
+          cache_read_input_tokens: 3,
+          cache_creation_input_tokens: 2,
+        },
+      },
       endpoint: "/v1/messages",
       tokenKey: "max_tokens",
     },
     {
       target: openaiTarget,
-      response: { choices: [{ message: { content: '{"items":[]}' } }] },
+      response: {
+        choices: [{ message: { content: '{"items":[]}' } }],
+        usage: {
+          prompt_tokens: 11,
+          completion_tokens: 5,
+          prompt_tokens_details: { cached_tokens: 3 },
+        },
+      },
       endpoint: "/chat/completions",
       tokenKey: "max_tokens",
     },
     {
       target: responsesTarget,
-      response: { output: [{ type: "message", content: [{ type: "output_text", text: '{"items":[]}' }] }] },
+      response: {
+        output: [{ type: "message", content: [{ type: "output_text", text: '{"items":[]}' }] }],
+        usage: {
+          input_tokens: 11,
+          output_tokens: 5,
+          input_tokens_details: { cached_tokens: 3 },
+        },
+      },
       endpoint: "/responses",
       tokenKey: "max_output_tokens",
     },
@@ -83,9 +105,20 @@ describe("requestProviderText", () => {
     const result = await requestProviderText(target, "Return JSON only.", {
       fetchFn: sequencedFetch([fakeResponse(200, response)], calls),
       maxTokens: 384,
+      now: fixedClock([100, 145]),
     });
 
-    expect(result).toEqual({ ok: true, text: '{"items":[]}' });
+    expect(result).toEqual({
+      ok: true,
+      text: '{"items":[]}',
+      usage: {
+        inputTokens: 11,
+        outputTokens: 5,
+        cacheReadTokens: 3,
+        cacheCreationTokens: target.apiFormat === "anthropic" ? 2 : 0,
+        durationMs: 45,
+      },
+    });
     expect(calls).toHaveLength(1);
     expect(calls[0].url).toContain(endpoint);
     const body = JSON.parse(calls[0].init.body ?? "{}");

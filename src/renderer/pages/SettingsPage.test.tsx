@@ -78,6 +78,31 @@ function MemorySourceSeeder(): React.JSX.Element {
 }
 
 describe("SettingsPage", () => {
+  it("keeps daily overview automation opt-in, local-time based, and free of eager model calls", async () => {
+    const user = userEvent.setup();
+    vi.mocked(mockClient.invoke).mockClear();
+    render(
+      <BridgeProvider client={mockClient}>
+        <SettingsPage />
+      </BridgeProvider>,
+    );
+
+    const toggle = screen.getByRole("switch", { name: "每天自动整理待完成事项" });
+    const time = screen.getByLabelText("每天自动整理时间");
+    expect(toggle).toHaveAttribute("aria-checked", "false");
+    expect(time).toBeDisabled();
+    expect(screen.getByText("在设定时间之后，当天首次回到 Leemo 时整理一次。会使用默认模型并计入用量。")).toBeInTheDocument();
+
+    await user.click(toggle);
+    expect(toggle).toHaveAttribute("aria-checked", "true");
+    expect(time).toBeEnabled();
+    fireEvent.change(time, { target: { value: "09:30" } });
+    expect(time).toHaveValue("09:30");
+    fireEvent.change(time, { target: { value: "invalid" } });
+    expect(time).toHaveValue("09:30");
+    expect(vi.mocked(mockClient.invoke).mock.calls.some(([channel]) => channel === "bridge:generateGlobalPendingOverview")).toBe(false);
+  });
+
   it("keeps the fixed nine user-facing categories and moves real storage and shortcut controls to their own pages", async () => {
     const user = userEvent.setup();
     render(
@@ -776,7 +801,7 @@ describe("SettingsPage", () => {
       </BridgeProvider>
     );
 
-    expect(screen.getByRole("combobox", { name: "启动后进入" })).toHaveValue("buddy");
+    expect(screen.getByRole("combobox", { name: "启动后进入" })).toHaveValue("start");
 
     await user.click(screen.getByRole("tab", { name: "个性化" }));
     expect(screen.getByRole("slider")).toHaveValue("3");

@@ -1,11 +1,12 @@
 import { useEffect, useId, useRef, useState, type MouseEvent, type ReactNode } from "react";
 import { Check, Copy } from "lucide-react";
 import { Highlight, themes, type Language } from "prism-react-renderer";
-import ReactMarkdown from "react-markdown";
+import ReactMarkdown, { defaultUrlTransform } from "react-markdown";
 import rehypeKatex from "rehype-katex";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
 import "katex/dist/katex.min.css";
+import { noteIdFromReferenceHref } from "../notes/note-references";
 
 export type MarkdownVariant = "answer" | "process" | "preview";
 
@@ -177,12 +178,15 @@ export default function MarkdownContent({
   variant = "answer",
   className = "",
   onOpenLocalLink,
+  onOpenNoteReference,
 }: {
   text: string;
   variant?: MarkdownVariant;
   className?: string;
   /** Relative Markdown links are desktop workspace paths, not renderer URLs. */
   onOpenLocalLink?: (href: string) => void;
+  /** Stable local document references stay inside Leemo's document library. */
+  onOpenNoteReference?: (noteId: string) => void;
 }) {
   const headings = HEADING_CLASSES[variant];
   const { frontmatter, body } = splitFrontmatter(text);
@@ -202,6 +206,7 @@ export default function MarkdownContent({
       <ReactMarkdown
         remarkPlugins={[remarkGfm, remarkMath, remarkCallouts]}
         rehypePlugins={[rehypeKatex]}
+        urlTransform={(url) => url.startsWith("leemo-note://") ? url : defaultUrlTransform(url)}
         components={{
           p: ({ children }) => <p className="mb-[0.65em] last:mb-0">{children}</p>,
           h1: ({ children }) => <h1 className={`mb-[0.55em] mt-[1em] first:mt-0 font-semibold leading-[1.45] text-[var(--leemo-ink)] ${headings[0]}`}>{children}</h1>,
@@ -233,15 +238,24 @@ export default function MarkdownContent({
           },
           pre: ({ children }) => <>{children}</>,
           a: ({ href, children }) => {
+            const noteReference = href ? noteIdFromReferenceHref(href) : null;
+            const malformedNoteReference = Boolean(href?.startsWith("leemo-note://") && !noteReference);
             const internal = href?.startsWith("#");
             const external = Boolean(href && (/^https?:\/\//i.test(href) || href.startsWith("//")));
-            const local = Boolean(href && !internal && !external);
+            const local = Boolean(href && !noteReference && !malformedNoteReference && !internal && !external);
             return (
               <a
                 href={href}
                 target={external ? "_blank" : undefined}
                 rel={external ? "noopener noreferrer" : undefined}
-                onClick={local
+                onClick={noteReference
+                  ? (event: MouseEvent<HTMLAnchorElement>) => {
+                      event.preventDefault();
+                      onOpenNoteReference?.(noteReference);
+                    }
+                  : malformedNoteReference
+                    ? (event: MouseEvent<HTMLAnchorElement>) => event.preventDefault()
+                    : local
                   ? (event: MouseEvent<HTMLAnchorElement>) => {
                       event.preventDefault();
                       onOpenLocalLink?.(href!);

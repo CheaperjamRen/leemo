@@ -6,11 +6,14 @@ import type {
   CommitQuickDraftInput,
   CreateNoteInput,
   DeleteNoteInput,
+  MarkNoteOrganizedInput,
+  MoveNoteInput,
   Note,
   MigrateCaptureStorageInput,
   QuickDraft,
   RemoveNoteAttachmentInput,
   SaveQuickDraftInput,
+  SetNotePinnedInput,
   UpdateNoteInput,
   UnarchiveNoteInput,
 } from "../../captures";
@@ -47,9 +50,12 @@ export interface CaptureClient {
   listArchivedNotes(): Promise<Note[]>;
   createNote(input: CreateNoteInput): Promise<Note>;
   updateNote(input: UpdateNoteInput): Promise<Note>;
-  archiveNote(input: ArchiveNoteInput): Promise<Note>;
-  unarchiveNote(input: UnarchiveNoteInput): Promise<Note>;
-  deleteNote(input: DeleteNoteInput): Promise<void>;
+  moveNote(input: MoveNoteInput): Promise<Note[]>;
+  setNotePinned(input: SetNotePinnedInput): Promise<Note>;
+  markNoteOrganized(input: MarkNoteOrganizedInput): Promise<Note>;
+  archiveNote(input: ArchiveNoteInput): Promise<Note[]>;
+  unarchiveNote(input: UnarchiveNoteInput): Promise<Note[]>;
+  deleteNote(input: DeleteNoteInput): Promise<Note[]>;
   attachImageBytes(input: AttachImageBytesInput): Promise<Note>;
   attachExternalFile(input: AttachFileInput): Promise<Note>;
   attachFileCopy(input: AttachFileInput): Promise<Note>;
@@ -112,15 +118,27 @@ export class IpcCaptureClient implements CaptureClient {
     return this.call("updateNote", input);
   }
 
-  archiveNote(input: ArchiveNoteInput): Promise<Note> {
+  moveNote(input: MoveNoteInput): Promise<Note[]> {
+    return this.call("moveNote", input);
+  }
+
+  setNotePinned(input: SetNotePinnedInput): Promise<Note> {
+    return this.call("setNotePinned", input);
+  }
+
+  markNoteOrganized(input: MarkNoteOrganizedInput): Promise<Note> {
+    return this.call("markNoteOrganized", input);
+  }
+
+  archiveNote(input: ArchiveNoteInput): Promise<Note[]> {
     return this.call("archiveNote", input);
   }
 
-  unarchiveNote(input: UnarchiveNoteInput): Promise<Note> {
+  unarchiveNote(input: UnarchiveNoteInput): Promise<Note[]> {
     return this.call("unarchiveNote", input);
   }
 
-  deleteNote(input: DeleteNoteInput): Promise<void> {
+  deleteNote(input: DeleteNoteInput): Promise<Note[]> {
     return this.call("deleteNote", input);
   }
 

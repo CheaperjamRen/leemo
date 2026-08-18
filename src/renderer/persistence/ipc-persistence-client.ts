@@ -3,6 +3,7 @@ import type { ConversationMeta } from "../stores/conversations";
 import type { TimelineItem } from "../stores/message-model";
 import type { WikiEntry } from "../stores/wiki-entries";
 import type { PersistenceClient, PersistedSnapshot } from "./client";
+import type { PersistedGlobalOverviewState } from "../../bridge/global-pending-overview";
 
 /** The exact surface the preload exposes on `window.leemoPersist`
  *  (see src/main/preload.ts). One multiplexed invoke, mirroring leemoBridge. */
@@ -53,5 +54,10 @@ export class IpcPersistenceClient implements PersistenceClient {
   async saveSettings(settings: Record<string, unknown>): Promise<void> {
     const res = await this.api.invoke("saveSettings", settings);
     if (!res.ok) throw new Error(res.error ?? "persist saveSettings failed");
+  }
+
+  async saveGlobalPendingOverview(state: PersistedGlobalOverviewState): Promise<void> {
+    const res = await this.api.invoke("saveGlobalPendingOverview", state);
+    if (!res.ok) throw new Error(res.error ?? "persist saveGlobalPendingOverview failed");
   }
 }

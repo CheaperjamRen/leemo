@@ -1,6 +1,7 @@
 import type { ConversationMeta } from "../stores/conversations";
 import type { TimelineItem } from "../stores/message-model";
 import type { WikiEntry } from "../stores/wiki-entries";
+import type { PersistedGlobalOverviewState } from "../../bridge/global-pending-overview";
 
 /**
  * Renderer-side persistence port. The renderer owns the store (and the reducer
@@ -26,6 +27,7 @@ export interface PersistedSnapshot {
   /** 轮 7 A3 —— persisted settings, keyed as the settings store names them.
    *  Optional so a main process that predates A3 still satisfies the port. */
   settings?: Record<string, unknown>;
+  globalPendingOverview?: PersistedGlobalOverviewState;
 }
 
 export interface PersistenceClient {
@@ -45,4 +47,5 @@ export interface PersistenceClient {
   saveWikiEntry(entry: WikiEntry): Promise<void>;
   /** 轮 7 A3 —— replace the persisted settings map. */
   saveSettings(settings: Record<string, unknown>): Promise<void>;
+  saveGlobalPendingOverview(state: PersistedGlobalOverviewState): Promise<void>;
 }

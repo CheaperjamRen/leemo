@@ -34,6 +34,7 @@ function mockPersist() {
     deleteConversation: vi.fn(async () => {}),
     saveWikiEntry: vi.fn(async (_entry: WikiEntry) => {}),
     saveSettings: vi.fn(async (_s: Record<string, unknown>) => {}),
+    saveGlobalPendingOverview: vi.fn(async () => {}),
   } satisfies PersistenceClient;
 }
 

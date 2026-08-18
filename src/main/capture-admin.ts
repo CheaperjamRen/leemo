@@ -13,12 +13,16 @@ import {
   type Note,
   type NoteAttachment,
   type MigrateCaptureStorageInput,
+  type MarkNoteOrganizedInput,
+  type MoveNoteInput,
+  type NoteChildStrategy,
   type QuickCaptureMode,
   type QuickDraftRecurrence,
   type QuickDraft,
   type RemoveNoteAttachmentInput,
   type RestoreNoteInput,
   type SaveQuickDraftInput,
+  type SetNotePinnedInput,
   type UpdateNoteInput,
   type UnarchiveNoteInput,
 } from "../captures";
@@ -38,9 +42,12 @@ export interface CaptureAdminService {
   getNote(id: string): Note | null;
   createNote(input: CreateNoteInput): Note;
   updateNote(input: UpdateNoteInput): Note;
-  archiveNote(input: ArchiveNoteInput): Note;
-  unarchiveNote(input: UnarchiveNoteInput): Note;
-  deleteNote(input: DeleteNoteInput): void;
+  moveNote(input: MoveNoteInput): Note[];
+  setNotePinned(input: SetNotePinnedInput): Note;
+  markNoteOrganized(input: MarkNoteOrganizedInput): Note;
+  archiveNote(input: ArchiveNoteInput): Note[];
+  unarchiveNote(input: UnarchiveNoteInput): Note[];
+  deleteNote(input: DeleteNoteInput): Note[];
   /** Optional during staged main-process wiring; createCaptureAdmin provides all five. */
   attachImageBytes?(input: AttachImageBytesInput): Promise<Note>;
   attachExternalFile?(input: AttachFileInput): Promise<Note>;
@@ -61,7 +68,7 @@ export type CaptureAdminWithAttachments = CaptureAdminService & Required<Pick<
 
 export type CaptureAdminWithTrash = CaptureAdminWithAttachments & {
   listTrash(): Note[];
-  restoreNote(input: RestoreNoteInput): Note;
+  restoreNote(input: RestoreNoteInput): Note[];
   permanentlyDeleteNote(input: PermanentlyDeleteNoteInput): Promise<void>;
   purgeExpired(now?: number): Promise<number>;
 };
@@ -99,6 +106,29 @@ function requireId(value: unknown): string {
   const id = requireString(value, "便签编号", 200).trim();
   if (!id) throw new Error("便签编号不能为空。");
   return id;
+}
+
+function requireParentId(value: unknown): string | null {
+  return value === null ? null : requireId(value);
+}
+
+function requireIndex(value: unknown): number {
+  if (!Number.isInteger(value) || Number(value) < 0) {
+    throw new Error("便签排序位置必须是非负整数。");
+  }
+  return Number(value);
+}
+
+function requireBoolean(value: unknown, label: string): boolean {
+  if (typeof value !== "boolean") throw new Error(`${label}格式不正确。`);
+  return value;
+}
+
+function requireChildStrategy(value: unknown): NoteChildStrategy {
+  if (value !== "subtree" && value !== "lift") {
+    throw new Error("请选择连同子便签处理，或只处理这条并上移子便签。");
+  }
+  return value;
 }
 
 function normalizeContent(value: unknown): { title: string; markdown: string } {
@@ -249,6 +279,10 @@ export function createCaptureAdmin(options: CaptureAdminOptions): CaptureAdminWi
         revision: 1,
         createdAt: timestamp,
         updatedAt: timestamp,
+        parentId: null,
+        sortOrder: 0,
+        pinnedAt: null,
+        organizedAt: null,
       };
       const committed = options.persistence.commitQuickDraft(note, expectedRevision);
       emit({ entity: "note", action: "created", id: committed.id, revision: committed.revision });
@@ -279,6 +313,10 @@ export function createCaptureAdmin(options: CaptureAdminOptions): CaptureAdminWi
         revision: 1,
         createdAt: timestamp,
         updatedAt: timestamp,
+        parentId: null,
+        sortOrder: 0,
+        pinnedAt: null,
+        organizedAt: null,
       });
       emit({ entity: "note", action: "created", id: created.id, revision: created.revision });
       return cloneNote(created);
@@ -295,15 +333,54 @@ export function createCaptureAdmin(options: CaptureAdminOptions): CaptureAdminWi
       emit({ entity: "note", action: "updated", id: updated.id, revision: updated.revision });
       return cloneNote(updated);
     },
+    moveNote(value) {
+      const input = requireRecord(value);
+      const id = requireId(input.id);
+      const affected = options.persistence.moveNote({
+        id,
+        expectedRevision: requireRevision(input.expectedRevision),
+        parentId: requireParentId(input.parentId),
+        index: requireIndex(input.index),
+      });
+      const moved = affected.find((note) => note.id === id);
+      if (!moved) throw new Error("便签移动后未返回当前记录，请刷新后重试。");
+      emit({ entity: "note", action: "moved", id, revision: moved.revision });
+      return affected.map(cloneNote);
+    },
+    setNotePinned(value) {
+      const input = requireRecord(value);
+      const note = options.persistence.setNotePinned({
+        id: requireId(input.id),
+        expectedRevision: requireRevision(input.expectedRevision),
+        pinned: requireBoolean(input.pinned, "置顶状态"),
+        updatedAt: now(),
+      });
+      emit({ entity: "note", action: "pinned", id: note.id, revision: note.revision });
+      return cloneNote(note);
+    },
+    markNoteOrganized(value) {
+      const input = requireRecord(value);
+      const note = options.persistence.markNoteOrganized({
+        id: requireId(input.id),
+        expectedRevision: requireRevision(input.expectedRevision),
+        organized: requireBoolean(input.organized, "整理状态"),
+        updatedAt: now(),
+      });
+      emit({ entity: "note", action: "organized", id: note.id, revision: note.revision });
+      return cloneNote(note);
+    },
     archiveNote(value) {
       const input = requireRecord(value);
-      const archived = options.persistence.archiveNote(
-        requireId(input.id),
-        requireRevision(input.expectedRevision),
-        now(),
-      );
-      emit({ entity: "note", action: "archived", id: archived.id, revision: archived.revision });
-      return cloneNote(archived);
+      const affected = options.persistence.archiveNote({
+        id: requireId(input.id),
+        expectedRevision: requireRevision(input.expectedRevision),
+        childStrategy: requireChildStrategy(input.childStrategy),
+        updatedAt: now(),
+      });
+      for (const note of affected) {
+        emit({ entity: "note", action: note.archivedAt !== undefined ? "archived" : "moved", id: note.id, revision: note.revision });
+      }
+      return affected.map(cloneNote);
     },
     unarchiveNote(value) {
       const input = requireRecord(value);
@@ -312,21 +389,25 @@ export function createCaptureAdmin(options: CaptureAdminOptions): CaptureAdminWi
         requireRevision(input.expectedRevision),
         now(),
       );
-      emit({ entity: "note", action: "unarchived", id: restored.id, revision: restored.revision });
-      return cloneNote(restored);
+      for (const note of restored) emit({ entity: "note", action: "unarchived", id: note.id, revision: note.revision });
+      return restored.map(cloneNote);
     },
     deleteNote(value) {
       const input = requireRecord(value);
       const id = requireId(input.id);
       const expectedRevision = requireRevision(input.expectedRevision);
       const timestamp = now();
-      const trashed = options.persistence.deleteNote(
+      const affected = options.persistence.deleteNote({
         id,
         expectedRevision,
-        timestamp,
-        timestamp + TRASH_RETENTION_MS,
-      );
-      emit({ entity: "note", action: "deleted", id, revision: trashed.revision });
+        childStrategy: requireChildStrategy(input.childStrategy),
+        deletedAt: timestamp,
+        purgeAfter: timestamp + TRASH_RETENTION_MS,
+      });
+      for (const note of affected) {
+        emit({ entity: "note", action: note.deletedAt !== undefined ? "deleted" : "moved", id: note.id, revision: note.revision });
+      }
+      return affected.map(cloneNote);
     },
     listTrash() {
       return options.persistence.listTrash().map(cloneNote);
@@ -338,8 +419,8 @@ export function createCaptureAdmin(options: CaptureAdminOptions): CaptureAdminWi
         requireRevision(input.expectedRevision),
         now(),
       );
-      emit({ entity: "note", action: "restored", id: restored.id, revision: restored.revision });
-      return cloneNote(restored);
+      for (const note of restored) emit({ entity: "note", action: "restored", id: note.id, revision: note.revision });
+      return restored.map(cloneNote);
     },
     async permanentlyDeleteNote(value) {
       const input = requireRecord(value);
@@ -348,12 +429,14 @@ export function createCaptureAdmin(options: CaptureAdminOptions): CaptureAdminWi
         requireRevision(input.expectedRevision),
       );
       if (options.storage) {
-        for (const attachment of deleted.attachments ?? []) {
-          if (attachment.storage !== "managed") continue;
-          await options.storage.removeAttachment(options.getStorageRoot?.(), attachment).catch(() => undefined);
+        for (const note of deleted) {
+          for (const attachment of note.attachments ?? []) {
+            if (attachment.storage !== "managed") continue;
+            await options.storage.removeAttachment(options.getStorageRoot?.(), attachment).catch(() => undefined);
+          }
         }
       }
-      emit({ entity: "note", action: "permanentlyDeleted", id: deleted.id, revision: deleted.revision });
+      for (const note of deleted) emit({ entity: "note", action: "permanentlyDeleted", id: note.id, revision: note.revision });
     },
     async purgeExpired(currentTime = now()) {
       const deleted = options.persistence.purgeExpired(currentTime);

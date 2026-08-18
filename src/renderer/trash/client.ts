@@ -34,7 +34,7 @@ export class IpcTrashClient {
     return this.call("list");
   }
 
-  restore(input: TrashItemInput): Promise<Note | UserTask> {
+  restore(input: TrashItemInput): Promise<Note[] | UserTask> {
     return this.call("restore", input);
   }
 

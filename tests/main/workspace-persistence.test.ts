@@ -11,6 +11,7 @@ import {
 import { HOME_WORKSPACE_ID, type WorkspaceRegistry } from "../../src/main/workspace-registry";
 import type { ConversationMeta } from "../../src/renderer/stores/conversations";
 import type { TimelineItem } from "../../src/renderer/stores/message-model";
+import type { PersistedGlobalOverviewState, StandaloneUsageEvent } from "../../src/bridge/global-pending-overview";
 
 const roots: string[] = [];
 
@@ -94,6 +95,11 @@ function fakeIndex(initial: PersistedConversation[] = []) {
     isConversationDeleted: vi.fn((conversationId: string) => tombstones.has(conversationId)),
     saveWikiEntry: vi.fn(),
     saveSettings: vi.fn(),
+    loadGlobalOverviewState: vi.fn(() => snapshot.globalPendingOverview ?? null),
+    saveGlobalOverviewState: vi.fn((state) => {
+      snapshot = { ...snapshot, globalPendingOverview: state };
+    }),
+    recordStandaloneUsage: vi.fn(),
     usageSummary: vi.fn(() => ({ byProvider: [] })),
     loadAll: vi.fn(() => snapshot),
     getWhitelist: vi.fn(() => []),
@@ -346,6 +352,35 @@ describe("workspace-backed persistence", () => {
 });
 
 describe("registered workspace persistence", () => {
+  it("delegates global overview state and standalone usage to the app index", () => {
+    const root = tempWorkspace();
+    const fixture = fakeIndex();
+    const persistence = createRegisteredWorkspacePersistence(fixture.index, fakeRegistry(root, tempWorkspace()));
+    const state: PersistedGlobalOverviewState = { version: 1, snapshot: null, overrides: [] };
+    const usage = {
+      id: "overview-use-1",
+      purpose: "global-overview",
+      providerId: "deepseek",
+      modelId: "deepseek-chat",
+      inputTokens: 1,
+      outputTokens: 1,
+      cacheReadTokens: 0,
+      cacheCreationTokens: 0,
+      costSource: "unpriced",
+      tokensEstimated: false,
+      durationMs: 10,
+      createdAt: 20,
+    } satisfies StandaloneUsageEvent;
+
+    persistence.saveGlobalOverviewState(state);
+    persistence.recordStandaloneUsage(usage);
+
+    expect(persistence.loadGlobalOverviewState()).toEqual(state);
+    expect(persistence.loadAll().globalPendingOverview).toEqual(state);
+    expect(fixture.index.saveGlobalOverviewState).toHaveBeenCalledWith(state);
+    expect(fixture.index.recordStandaloneUsage).toHaveBeenCalledWith(usage);
+  });
+
   it("writes an external conversation into that project's .leemo directory", () => {
     const homeRoot = tempWorkspace();
     const externalRoot = tempWorkspace();

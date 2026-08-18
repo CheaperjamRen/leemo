@@ -56,6 +56,18 @@ describe("buildQueryFn", () => {
     expect((captured[0].options as Record<string, unknown>)?.resume).toBe("sess-123");
   });
 
+  it("forwards tools:[] as an explicit empty SDK built-in tool set", async () => {
+    const captured: QueryParams[] = [];
+    const fakeQuery = (p: QueryParams) => { captured.push(p); return (async function* () {})(); };
+    const qfn = buildQueryFn(makeExtras(), fakeQuery as never);
+
+    await qfn({ prompt: "json only", options: { tools: [] } })[Symbol.asyncIterator]().next();
+    await qfn({ prompt: "ordinary" })[Symbol.asyncIterator]().next();
+
+    expect(captured[0].options).toHaveProperty("tools", []);
+    expect("tools" in (captured[1].options ?? {})).toBe(false);
+  });
+
   it("overlays cwd, permissionMode, streaming, subagent forwarding, settingSources, maxTurns", async () => {
     const captured: QueryParams[] = [];
     const fakeQuery = (p: QueryParams) => { captured.push(p); return (async function* () {})(); };

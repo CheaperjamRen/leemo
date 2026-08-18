@@ -449,4 +449,21 @@ describe("FixtureBridgeClient", () => {
     });
     await expect(client.invoke("bridge:getProviderConfig", { providerId: "missing" })).resolves.toBeNull();
   });
+
+  it("never pretends that fixture mode spent tokens to generate a global overview", async () => {
+    const client = new FixtureBridgeClient();
+
+    await expect(client.invoke("bridge:generateGlobalPendingOverview", {
+      providerId: "deepseek",
+      modelId: "deepseek-chat",
+      trigger: "manual",
+      localNow: "2026-08-18T22:00:00+08:00",
+      facts: [],
+      overrides: [],
+    })).resolves.toEqual({
+      ok: false,
+      message: "演示环境不会调用模型。",
+      retryable: false,
+    });
+  });
 });

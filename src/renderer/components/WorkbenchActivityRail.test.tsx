@@ -4,6 +4,7 @@ import { useContext } from "react";
 import { describe, expect, it } from "vitest";
 import { BridgeContext, BridgeProvider, type BridgeStores } from "../bridge/context";
 import WorkbenchActivityRail from "./WorkbenchActivityRail";
+import { startStore } from "../stores/start";
 
 function Capture({ onReady }: { onReady: (stores: BridgeStores) => void }): null {
   onReady(useContext(BridgeContext) as BridgeStores);
@@ -227,6 +228,8 @@ describe("WorkbenchActivityRail", () => {
 
     await user.click(screen.getByRole("button", { name: "概览" }));
     await user.click(screen.getByRole("button", { name: "打开完整看板" }));
-    expect(stores.ui.getState()).toMatchObject({ view: "organizer", organizerTab: "today", activeWorkbenchTool: null });
+    expect(stores.ui.getState().activeWorkbenchTool).toBeNull();
+    expect(stores.settings.getState().surface).toBe("start");
+    expect(startStore.getState().destination).toBe("home");
   });
 });

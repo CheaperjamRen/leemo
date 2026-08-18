@@ -155,6 +155,9 @@ export function buildQueryFn(
         ...(disallowedTools !== undefined
           ? { disallowedTools }
           : {}),
+        ...(options?.tools !== undefined
+          ? { tools: [...options.tools] }
+          : {}),
         // `Options.settings` is the SDK's flag-tier settings object. Keep app
         // settings and native memory in one object so neither silently replaces
         // the other; no environment-variable shim is involved.

@@ -33,6 +33,14 @@ export interface Note {
   revision: number;
   createdAt: number;
   updatedAt: number;
+  /** A note can contain child notes while remaining an editable document itself. */
+  parentId: string | null;
+  /** Stable zero-based order among siblings. */
+  sortOrder: number;
+  /** Present when the user pins the note; the timestamp keeps ordering deterministic. */
+  pinnedAt: number | null;
+  /** Present after the note leaves the unorganized inbox. */
+  organizedAt: number | null;
   /** Present when the note is hidden from the ordinary library. */
   archivedAt?: number;
   /** Present only while the note is in Leemo's trash. */
@@ -83,15 +91,36 @@ export interface CreateNoteInput {
   markdown: string;
 }
 
-export interface DeleteNoteInput {
+export interface MoveNoteInput {
   id: string;
   expectedRevision: number;
+  parentId: string | null;
+  index: number;
 }
 
-export interface ArchiveNoteInput {
+export interface SetNotePinnedInput {
   id: string;
   expectedRevision: number;
+  pinned: boolean;
 }
+
+export interface MarkNoteOrganizedInput {
+  id: string;
+  expectedRevision: number;
+  organized: boolean;
+}
+
+export type NoteChildStrategy = "subtree" | "lift";
+
+export interface MutateNoteTreeInput {
+  id: string;
+  expectedRevision: number;
+  childStrategy: NoteChildStrategy;
+}
+
+export type DeleteNoteInput = MutateNoteTreeInput;
+
+export type ArchiveNoteInput = MutateNoteTreeInput;
 
 export interface UnarchiveNoteInput {
   id: string;
@@ -140,6 +169,9 @@ export interface CaptureOperationInputs {
   listNotes: undefined;
   listArchivedNotes: undefined;
   updateNote: UpdateNoteInput;
+  moveNote: MoveNoteInput;
+  setNotePinned: SetNotePinnedInput;
+  markNoteOrganized: MarkNoteOrganizedInput;
   attachImageBytes: AttachImageBytesInput;
   attachExternalFile: AttachFileInput;
   attachFileCopy: AttachFileInput;
@@ -158,7 +190,7 @@ export type CaptureChange =
   }
   | {
     entity: "note";
-    action: "created" | "updated" | "archived" | "unarchived" | "deleted" | "restored" | "permanentlyDeleted";
+    action: "created" | "updated" | "moved" | "pinned" | "organized" | "archived" | "unarchived" | "deleted" | "restored" | "permanentlyDeleted";
     id: string;
     revision: number;
   };

@@ -26,6 +26,7 @@ import {
   useFileTree,
   useNotebooks,
   usePreviewContent,
+  useSettings,
   useUi,
   useWorkspace,
   useWorkspaces,
@@ -34,6 +35,7 @@ import { deriveConversationStatus } from "../stores/conversation-status";
 import { scopeKeyForSelection } from "../stores/workbench-scope";
 import { WORKBENCH_SIDEBAR_WIDTH } from "../stores/ui";
 import { HOME_WORKSPACE_ID } from "../stores/workspaces";
+import { startStore } from "../stores/start";
 import {
   WORKBENCH_COMPACT_SIDEBAR_WIDTH,
   resolveWorkbenchSidebarMode,
@@ -83,6 +85,7 @@ export default function WorkbenchSidebar({ onNewConversation, shellWidth }: Work
   const openSettings = useUi((state) => state.openSettings);
   const transitioning = useUi((state) => state.workspaceTransitioning);
   const setTransitioning = useUi((state) => state.setWorkspaceTransitioning);
+  const setSurface = useSettings((state) => state.setSurface);
 
   const conversations = useConversations((state) => state.byId);
   const order = useConversations((state) => state.order);
@@ -554,11 +557,19 @@ export default function WorkbenchSidebar({ onNewConversation, shellWidth }: Work
     // Keep unfinished scenario surfaces registered here, but out of the dock
     // until their user journey is ready for everyday use.
     { id: "learning" as const, label: "英语学习", shortLabel: "英语", visible: false, Icon: Languages },
-    { id: "organizer" as const, label: "看板", shortLabel: "看板", visible: true, Icon: LayoutGrid },
+    { id: "start" as const, label: "开始", shortLabel: "开始", visible: true, Icon: LayoutGrid },
     { id: "skills" as const, label: "技能", shortLabel: "技能", visible: true, Icon: Wrench },
     { id: "scheduled" as const, label: "定时任务", shortLabel: "定时", visible: true, Icon: CalendarClock },
   ];
   const shortcutButtons = toolButtons.filter((button) => button.visible);
+  const openShortcut = (id: (typeof shortcutButtons)[number]["id"]) => {
+    if (id === "start") {
+      startStore.getState().open("home");
+      setSurface("start");
+      return;
+    }
+    setView(id);
+  };
 
   return (
     <aside
@@ -576,7 +587,7 @@ export default function WorkbenchSidebar({ onNewConversation, shellWidth }: Work
           </div>
           <div className="mt-auto flex w-full shrink-0 flex-col items-center gap-1 border-t border-[var(--leemo-line)] py-2">
             {shortcutButtons.map(({ id, label, Icon }) => (
-              <button key={id} type="button" onClick={() => setView(id)} className={`leemo-icon-btn ${view === id ? "bg-[var(--leemo-card)] text-[var(--leemo-ink)] shadow-sm" : ""}`} aria-label={label} aria-current={view === id ? "page" : undefined} title={label}>
+              <button key={id} type="button" onClick={() => openShortcut(id)} className={`leemo-icon-btn ${id !== "start" && view === id ? "bg-[var(--leemo-card)] text-[var(--leemo-ink)] shadow-sm" : ""}`} aria-label={label} aria-current={id !== "start" && view === id ? "page" : undefined} title={label}>
                 <Icon className="h-4 w-4" aria-hidden />
               </button>
             ))}
@@ -695,11 +706,11 @@ export default function WorkbenchSidebar({ onNewConversation, shellWidth }: Work
               <button
                 key={id}
                 type="button"
-                onClick={() => setView(id)}
-                className={`flex h-[42px] min-w-0 flex-col items-center justify-center gap-1 rounded-md px-1 transition-colors ${view === id ? "bg-[var(--leemo-card)] font-medium text-[var(--leemo-ink)] ring-1 ring-inset ring-[var(--leemo-line-soft)]" : "text-[var(--leemo-ink-2)] hover:bg-[var(--leemo-side-hover)]"}`}
+                onClick={() => openShortcut(id)}
+                className={`flex h-[42px] min-w-0 flex-col items-center justify-center gap-1 rounded-md px-1 transition-colors ${id !== "start" && view === id ? "bg-[var(--leemo-card)] font-medium text-[var(--leemo-ink)] ring-1 ring-inset ring-[var(--leemo-line-soft)]" : "text-[var(--leemo-ink-2)] hover:bg-[var(--leemo-side-hover)]"}`}
                 title={label}
                 aria-label={label}
-                aria-current={view === id ? "page" : undefined}
+                aria-current={id !== "start" && view === id ? "page" : undefined}
               >
                 <Icon className="h-4 w-4 shrink-0" aria-hidden />
                 <span className="max-w-full truncate text-[11px] leading-none">{shortLabel}</span>

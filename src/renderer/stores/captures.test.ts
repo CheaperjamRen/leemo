@@ -10,6 +10,10 @@ const first: Note = {
   revision: 1,
   createdAt: 10,
   updatedAt: 10,
+  parentId: null,
+  sortOrder: 0,
+  pinnedAt: null,
+  organizedAt: null,
 };
 
 const second: Note = {
@@ -19,6 +23,10 @@ const second: Note = {
   revision: 1,
   createdAt: 20,
   updatedAt: 20,
+  parentId: null,
+  sortOrder: 0,
+  pinnedAt: null,
+  organizedAt: null,
 };
 
 function captureClient(overrides: Partial<CaptureClient> = {}): CaptureClient {
@@ -30,9 +38,12 @@ function captureClient(overrides: Partial<CaptureClient> = {}): CaptureClient {
     listArchivedNotes: vi.fn(async () => []),
     createNote: vi.fn(async () => first),
     updateNote: vi.fn(async () => first),
-    archiveNote: vi.fn(async () => ({ ...first, archivedAt: 20, revision: 2 })),
-    unarchiveNote: vi.fn(async () => first),
-    deleteNote: vi.fn(async () => undefined),
+    moveNote: vi.fn(async () => [first]),
+    setNotePinned: vi.fn(async () => first),
+    markNoteOrganized: vi.fn(async () => first),
+    archiveNote: vi.fn(async () => [{ ...first, archivedAt: 20, revision: 2 }]),
+    unarchiveNote: vi.fn(async () => [first]),
+    deleteNote: vi.fn(async () => [{ ...first, deletedAt: 20, revision: 2 }]),
     onChanged: vi.fn(() => vi.fn()),
     ...overrides,
   } as CaptureClient;
@@ -116,5 +127,80 @@ describe("captures store", () => {
       saving: false,
       error: "内容已在别处更新，请刷新后重试。",
     });
+  });
+
+  it("applies an organization sibling snapshot without refreshing or losing selection", async () => {
+    const movedFirst = { ...first, sortOrder: 1 };
+    const movedSecond = { ...second, sortOrder: 0, revision: 2, parentId: first.id };
+    const listNotes = vi.fn(async () => [first, second]);
+    const moveNote = vi.fn(async () => [movedFirst, movedSecond]);
+    const store = createCapturesStore(captureClient({ listNotes, moveNote }));
+    await store.getState().refresh();
+    store.getState().selectNote(second.id);
+
+    await expect(store.getState().moveNote({
+      id: second.id,
+      expectedRevision: second.revision,
+      parentId: first.id,
+      index: 0,
+    })).resolves.toEqual([movedFirst, movedSecond]);
+
+    expect(moveNote).toHaveBeenCalledOnce();
+    expect(listNotes).toHaveBeenCalledOnce();
+    expect(store.getState()).toMatchObject({
+      notes: [movedFirst, movedSecond],
+      selectedId: second.id,
+      saving: false,
+      error: null,
+    });
+  });
+
+  it("keeps the current list and selection when an organization write fails", async () => {
+    const setNotePinned = vi.fn(async () => {
+      throw new Error("内容已在别处更新，请刷新后重试。");
+    });
+    const store = createCapturesStore(captureClient({
+      listNotes: vi.fn(async () => [first]),
+      setNotePinned,
+    }));
+    await store.getState().refresh();
+    store.getState().selectNote(first.id);
+
+    await expect(store.getState().setNotePinned({
+      id: first.id,
+      expectedRevision: first.revision,
+      pinned: true,
+    })).rejects.toThrow(/更新|版本/);
+    expect(store.getState()).toMatchObject({
+      notes: [first],
+      selectedId: first.id,
+      saving: false,
+      error: "内容已在别处更新，请刷新后重试。",
+    });
+  });
+
+  it("applies subtree archive and lift-delete snapshots without a full refresh", async () => {
+    const parent = { ...first, id: "parent", title: "求职", sortOrder: 0 };
+    const child = { ...second, id: "child", title: "简历", parentId: parent.id, sortOrder: 0 };
+    const archivedParent = { ...parent, archivedAt: 30, revision: 2, updatedAt: 30 };
+    const archivedChild = { ...child, archivedAt: 30, revision: 2, updatedAt: 30 };
+    const liftedChild = { ...archivedChild, parentId: null, sortOrder: 0, revision: 3, updatedAt: 40 };
+    const trashedParent = { ...archivedParent, deletedAt: 40, purgeAfter: 50, revision: 3, updatedAt: 40 };
+    const archiveNote = vi.fn(async () => [archivedParent, archivedChild]);
+    const deleteNote = vi.fn(async () => [trashedParent, liftedChild]);
+    const store = createCapturesStore(captureClient({
+      listNotes: vi.fn(async () => [parent, child]),
+      archiveNote,
+      deleteNote,
+    }));
+    await store.getState().refresh();
+
+    await store.getState().archiveNote({ id: parent.id, expectedRevision: 1, childStrategy: "subtree" });
+    expect(store.getState().notes).toEqual([]);
+    expect(store.getState().archivedNotes).toEqual(expect.arrayContaining([archivedParent, archivedChild]));
+
+    await store.getState().deleteNote({ id: parent.id, expectedRevision: 2, childStrategy: "lift" });
+    expect(store.getState().archivedNotes).toEqual([liftedChild]);
+    expect(store.getState().notes).toEqual([]);
   });
 });

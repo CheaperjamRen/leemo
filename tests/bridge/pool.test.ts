@@ -80,6 +80,20 @@ afterEach(() => {
 // ---- DIRECT wiring ----------------------------------------------------------
 
 describe("pool — DIRECT wiring env reaches the SDK", () => {
+  it("keeps an explicit empty built-in tool list distinct from an omitted list", async () => {
+    const { queryFn, calls } = makeFakeQuery({
+      scripts: [oneTurnStream("sess-tools-empty", "ok"), oneTurnStream("sess-tools-default", "ok")],
+    });
+    const bridge = createBridge({ queryFn, dataDir: freshDataDir() });
+    const convo = bridge.createConversation({ provider: deepseekDirect, modelId: "deepseek-v4pro" });
+
+    await drain(convo.send("no tools", { tools: [] }));
+    await drain(convo.send("defaults"));
+
+    expect(calls[0].options).toHaveProperty("tools", []);
+    expect("tools" in calls[1].options).toBe(false);
+  });
+
   it("steers the active SDK query without starting a second round", async () => {
     const streamInput = vi.fn(async () => {});
     let release!: () => void;

@@ -63,6 +63,10 @@ const note: Note = {
   revision: 1,
   createdAt: 43,
   updatedAt: 43,
+  parentId: null,
+  sortOrder: 0,
+  pinnedAt: null,
+  organizedAt: null,
 };
 
 const task: UserTask = {

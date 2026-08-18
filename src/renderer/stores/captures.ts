@@ -1,5 +1,15 @@
 import { createStore, type StoreApi } from "zustand/vanilla";
-import type { ArchiveNoteInput, CreateNoteInput, DeleteNoteInput, Note, UnarchiveNoteInput, UpdateNoteInput } from "../../captures";
+import type {
+  ArchiveNoteInput,
+  CreateNoteInput,
+  DeleteNoteInput,
+  MarkNoteOrganizedInput,
+  MoveNoteInput,
+  Note,
+  SetNotePinnedInput,
+  UnarchiveNoteInput,
+  UpdateNoteInput,
+} from "../../captures";
 import type { CaptureClient } from "../capture/client";
 
 export type CapturesStatus = "idle" | "loading" | "ready" | "error";
@@ -15,9 +25,12 @@ export interface CapturesState {
   selectNote(id: string | null): void;
   createNote(input: CreateNoteInput): Promise<Note>;
   updateNote(input: UpdateNoteInput): Promise<Note>;
-  deleteNote(input: DeleteNoteInput): Promise<void>;
-  archiveNote(input: ArchiveNoteInput): Promise<Note>;
-  unarchiveNote(input: UnarchiveNoteInput): Promise<Note>;
+  moveNote(input: MoveNoteInput): Promise<Note[]>;
+  setNotePinned(input: SetNotePinnedInput): Promise<Note>;
+  markNoteOrganized(input: MarkNoteOrganizedInput): Promise<Note>;
+  deleteNote(input: DeleteNoteInput): Promise<Note[]>;
+  archiveNote(input: ArchiveNoteInput): Promise<Note[]>;
+  unarchiveNote(input: UnarchiveNoteInput): Promise<Note[]>;
 }
 
 function messageFor(error: unknown): string {
@@ -26,6 +39,29 @@ function messageFor(error: unknown): string {
 
 function newestFirst(notes: Note[], note: Note): Note[] {
   return [note, ...notes.filter((candidate) => candidate.id !== note.id)];
+}
+
+function mergeNoteSnapshot(notes: Note[], snapshot: readonly Note[]): Note[] {
+  const replacements = new Map(snapshot.map((note) => [note.id, note]));
+  const merged = notes.map((note) => replacements.get(note.id) ?? note);
+  for (const note of snapshot) {
+    if (!notes.some((candidate) => candidate.id === note.id)) merged.push(note);
+  }
+  return merged;
+}
+
+function replaceNote(notes: Note[], replacement: Note): Note[] {
+  return notes.map((note) => note.id === replacement.id ? replacement : note);
+}
+
+function applyTreeMutation(notes: Note[], archivedNotes: Note[], affected: readonly Note[]) {
+  const ids = new Set(affected.map((note) => note.id));
+  const active = affected.filter((note) => note.deletedAt === undefined && note.archivedAt === undefined);
+  const archived = affected.filter((note) => note.deletedAt === undefined && note.archivedAt !== undefined);
+  return {
+    notes: mergeNoteSnapshot(notes.filter((note) => !ids.has(note.id)), active),
+    archivedNotes: mergeNoteSnapshot(archivedNotes.filter((note) => !ids.has(note.id)), archived),
+  };
 }
 
 const NO_CAPTURE_CLIENT = "此环境未连接本地便签。";
@@ -106,19 +142,76 @@ export function createCapturesStore(client?: CaptureClient): StoreApi<CapturesSt
       }
     },
 
-    deleteNote: async (input) => {
+    moveNote: async (input) => {
       set({ saving: true, error: null });
       try {
-        await requireClient().deleteNote(input);
+        const affected = await requireClient().moveNote(input);
         latestRefreshRequest += 1;
         set((state) => ({
-          notes: state.notes.filter((candidate) => candidate.id !== input.id),
-          archivedNotes: state.archivedNotes.filter((candidate) => candidate.id !== input.id),
-          selectedId: state.selectedId === input.id ? null : state.selectedId,
+          notes: mergeNoteSnapshot(state.notes, affected),
+          archivedNotes: mergeNoteSnapshot(state.archivedNotes, affected),
           status: "ready",
           saving: false,
           error: null,
         }));
+        return affected;
+      } catch (error: unknown) {
+        set({ saving: false, error: messageFor(error) });
+        throw error;
+      }
+    },
+
+    setNotePinned: async (input) => {
+      set({ saving: true, error: null });
+      try {
+        const note = await requireClient().setNotePinned(input);
+        latestRefreshRequest += 1;
+        set((state) => ({
+          notes: replaceNote(state.notes, note),
+          archivedNotes: replaceNote(state.archivedNotes, note),
+          status: "ready",
+          saving: false,
+          error: null,
+        }));
+        return note;
+      } catch (error: unknown) {
+        set({ saving: false, error: messageFor(error) });
+        throw error;
+      }
+    },
+
+    markNoteOrganized: async (input) => {
+      set({ saving: true, error: null });
+      try {
+        const note = await requireClient().markNoteOrganized(input);
+        latestRefreshRequest += 1;
+        set((state) => ({
+          notes: replaceNote(state.notes, note),
+          archivedNotes: replaceNote(state.archivedNotes, note),
+          status: "ready",
+          saving: false,
+          error: null,
+        }));
+        return note;
+      } catch (error: unknown) {
+        set({ saving: false, error: messageFor(error) });
+        throw error;
+      }
+    },
+
+    deleteNote: async (input) => {
+      set({ saving: true, error: null });
+      try {
+        const affected = await requireClient().deleteNote(input);
+        latestRefreshRequest += 1;
+        set((state) => ({
+          ...applyTreeMutation(state.notes, state.archivedNotes, affected),
+          selectedId: affected.some((note) => note.deletedAt !== undefined && note.id === state.selectedId) ? null : state.selectedId,
+          status: "ready",
+          saving: false,
+          error: null,
+        }));
+        return affected;
       } catch (error: unknown) {
         const message = messageFor(error);
         set({ saving: false, error: message });
@@ -129,17 +222,16 @@ export function createCapturesStore(client?: CaptureClient): StoreApi<CapturesSt
     archiveNote: async (input) => {
       set({ saving: true, error: null });
       try {
-        const note = await requireClient().archiveNote(input);
+        const affected = await requireClient().archiveNote(input);
         latestRefreshRequest += 1;
         set((state) => ({
-          notes: state.notes.filter((candidate) => candidate.id !== note.id),
-          archivedNotes: newestFirst(state.archivedNotes, note),
-          selectedId: note.id,
+          ...applyTreeMutation(state.notes, state.archivedNotes, affected),
+          selectedId: input.id,
           status: "ready",
           saving: false,
           error: null,
         }));
-        return note;
+        return affected;
       } catch (error: unknown) {
         const message = messageFor(error);
         set({ saving: false, error: message });
@@ -150,17 +242,16 @@ export function createCapturesStore(client?: CaptureClient): StoreApi<CapturesSt
     unarchiveNote: async (input) => {
       set({ saving: true, error: null });
       try {
-        const note = await requireClient().unarchiveNote(input);
+        const affected = await requireClient().unarchiveNote(input);
         latestRefreshRequest += 1;
         set((state) => ({
-          notes: newestFirst(state.notes, note),
-          archivedNotes: state.archivedNotes.filter((candidate) => candidate.id !== note.id),
-          selectedId: note.id,
+          ...applyTreeMutation(state.notes, state.archivedNotes, affected),
+          selectedId: input.id,
           status: "ready",
           saving: false,
           error: null,
         }));
-        return note;
+        return affected;
       } catch (error: unknown) {
         const message = messageFor(error);
         set({ saving: false, error: message });

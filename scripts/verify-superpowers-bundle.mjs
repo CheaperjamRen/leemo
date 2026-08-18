@@ -7,7 +7,7 @@ const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..
 export const EXPECTED_REPOSITORY = "https://github.com/obra/superpowers.git";
 export const EXPECTED_REVISION = "3dcbd5c4b48e02263fbf4a3c01e3fe4f81d584d9";
 export const EXPECTED_VERSION = "6.2.0";
-export const EXPECTED_LICENSE_SHA256 = "0da33ed814ee87e72db078f489c4447af72f13d9f25d9e17476f32efd77705fc";
+export const EXPECTED_LICENSE_SHA256 = "a37e0e9697144819e1d965176ac4ae5bc3fa02d11e7812036bbcadf6dafe2400";
 export const EXPECTED_SKILLS = [
   "brainstorming", "dispatching-parallel-agents", "executing-plans",
   "finishing-a-development-branch", "receiving-code-review",

@@ -61,11 +61,11 @@ describe("ui store", () => {
     expect(pickPersistedWorkbenchUi(store.getState()).sidebarPreference).toBe("auto");
   });
 
-  it("opens the requested workboard section from a desktop notification", () => {
+  it("ignores the removed duplicate organizer view", () => {
     const store = createUiStore();
-    store.getState().openOrganizer("tasks");
+    store.getState().setView("organizer" as never);
 
-    expect(store.getState()).toMatchObject({ view: "organizer", organizerTab: "tasks" });
+    expect(store.getState().view).toBe("chat");
   });
 
   it("deduplicates preview tabs while activating the requested path", () => {

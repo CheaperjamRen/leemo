@@ -97,6 +97,7 @@ function persistenceWith(...conversations: ReturnType<typeof storedConversation>
     deleteConversation: vi.fn(async () => {}),
     saveWikiEntry: vi.fn(async () => {}),
     saveSettings: vi.fn(async () => {}),
+    saveGlobalPendingOverview: vi.fn(async () => {}),
   };
 }
 
@@ -255,6 +256,7 @@ describe("HistoryDrawer — real conversations, not fixtures", () => {
       deleteConversation: vi.fn(async () => {}),
       saveWikiEntry: vi.fn(async () => {}),
       saveSettings: vi.fn(async () => {}),
+      saveGlobalPendingOverview: vi.fn(async () => {}),
     };
     render(<BridgeProvider client={client} persist={persist}><BuddyShell /></BridgeProvider>);
     await waitFor(() => expect(persist.loadAll).toHaveBeenCalled());

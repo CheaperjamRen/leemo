@@ -8,6 +8,13 @@ import type { ComposerDraft } from "../stores/composer-drafts";
 import type { WorkspaceFileNode } from "../workspace/client";
 import type { Note } from "../../captures";
 
+const NOTE_ORGANIZATION = {
+  parentId: null,
+  sortOrder: 0,
+  pinnedAt: null,
+  organizedAt: null,
+} as const;
+
 describe("InputArea", () => {
   it("shares one composer across surfaces with a real plus menu and standalone slash/reference actions", async () => {
     const user = userEvent.setup();
@@ -130,8 +137,8 @@ describe("InputArea", () => {
     const user = userEvent.setup();
     const onSend = vi.fn();
     const notes: Note[] = [
-      { id: "note-course", title: "课程计划", markdown: "复习第三章", revision: 1, createdAt: 1, updatedAt: 1 },
-      { id: "note-job", title: "求职记录", markdown: "投递两家公司", revision: 1, createdAt: 1, updatedAt: 1 },
+      { id: "note-course", title: "课程计划", markdown: "复习第三章", revision: 1, createdAt: 1, updatedAt: 1, ...NOTE_ORGANIZATION },
+      { id: "note-job", title: "求职记录", markdown: "投递两家公司", revision: 1, createdAt: 1, updatedAt: 1, ...NOTE_ORGANIZATION },
     ];
     function ControlledComposer() {
       const [value, setValue] = useState("请帮我整理 @课");
@@ -158,7 +165,7 @@ describe("InputArea", () => {
   it("opens one unified @ picker with both notes and workspace files", async () => {
     const user = userEvent.setup();
     const notes: Note[] = [
-      { id: "note-course", title: "课程计划", markdown: "复习第三章", revision: 1, createdAt: 1, updatedAt: 1 },
+      { id: "note-course", title: "课程计划", markdown: "复习第三章", revision: 1, createdAt: 1, updatedAt: 1, ...NOTE_ORGANIZATION },
     ];
     const workspaceFiles: WorkspaceFileNode[] = [{
       name: "课程",
@@ -217,7 +224,7 @@ describe("InputArea", () => {
     const user = userEvent.setup();
     const onQueue = vi.fn();
     const notes: Note[] = [
-      { id: "note-course", title: "课程计划", markdown: "复习第三章", revision: 1, createdAt: 1, updatedAt: 1 },
+      { id: "note-course", title: "课程计划", markdown: "复习第三章", revision: 1, createdAt: 1, updatedAt: 1, ...NOTE_ORGANIZATION },
     ];
     function ControlledComposer() {
       const [value, setValue] = useState("运行中也整理 @课");

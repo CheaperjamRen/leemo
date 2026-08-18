@@ -15,6 +15,7 @@ export interface TasksState {
   update(input: UpdateTaskInput): Promise<UserTask>;
   delete(input: DeleteTaskInput): Promise<void>;
   toggle(id: string): Promise<UserTask>;
+  tasksForNote(noteId: string): UserTask[];
 }
 
 function errorMessage(error: unknown): string {
@@ -112,6 +113,8 @@ export function createTasksStore(client?: TaskClient): StoreApi<TasksState> {
           status: current.status === "done" ? "open" : "done",
         });
       },
+
+      tasksForNote: (noteId) => get().tasks.filter((task) => task.noteId === noteId),
     };
   });
 

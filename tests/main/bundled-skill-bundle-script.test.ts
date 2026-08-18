@@ -135,8 +135,8 @@ describe("bundled Skill build validator", () => {
         revision: "3dcbd5c4b48e02263fbf4a3c01e3fe4f81d584d9",
         skillCount: 14,
         files: 51,
-        bytes: 353_462,
-        sha256: "f3355d5b89693b8337584fcb23a43a647e5fd388e6b7e03e3bffc180dba9a026",
+        bytes: 352_207,
+        sha256: "76e35d728ea2b4fe528952774ac176bbb5c5c8767673aa6893c30b9916e2efa8",
       },
     });
   });

@@ -25,14 +25,14 @@
   "files": [
     {
       "path": "LICENSE.upstream",
-      "bytes": 1091,
-      "sha256": "0da33ed814ee87e72db078f489c4447af72f13d9f25d9e17476f32efd77705fc",
+      "bytes": 1070,
+      "sha256": "a37e0e9697144819e1d965176ac4ae5bc3fa02d11e7812036bbcadf6dafe2400",
       "mode": "100644"
     },
     {
       "path": "skills/brainstorming/scripts/frame-template.html",
-      "bytes": 8307,
-      "sha256": "7b9418e9939dded0cf8e6a5549a18162b7c7e5495deeefa83a12f3394b81395d",
+      "bytes": 8094,
+      "sha256": "6a8a4e58bd6a44b904e2e3c57de774481d909204597e1498de53f1b2fecc4c4e",
       "mode": "100644"
     },
     {
@@ -43,8 +43,8 @@
     },
     {
       "path": "skills/brainstorming/scripts/server.cjs",
-      "bytes": 26416,
-      "sha256": "ee89af11506ac4933324c89a2cfb36b391fe611f82efb9eeb3b814e40825145f",
+      "bytes": 25693,
+      "sha256": "2d2961ea8d11f56c5f4c3a1a68d22709efa5d7601a2246d8c880774e7e9e8412",
       "mode": "100644"
     },
     {
@@ -127,20 +127,20 @@
     },
     {
       "path": "skills/subagent-driven-development/scripts/review-package",
-      "bytes": 1515,
-      "sha256": "7cfee68ad5c53dea3532acd4c34d85148d3e591f2f8da94853478ffd57bf4211",
+      "bytes": 1469,
+      "sha256": "fac3d4bd7f94369e8037b9ead2a8a502dca6ab333902b560b9455dbb3c450ebe",
       "mode": "100755"
     },
     {
       "path": "skills/subagent-driven-development/scripts/sdd-workspace",
-      "bytes": 1626,
-      "sha256": "36c0cad20d4891dace227110c17624e09a1e607329841b5de02fb84fd37d4207",
+      "bytes": 1586,
+      "sha256": "95a09d9d3983ad1aafd093ca72b4587946dea885c6e302caa02a779a2f911c31",
       "mode": "100755"
     },
     {
       "path": "skills/subagent-driven-development/scripts/task-brief",
-      "bytes": 1199,
-      "sha256": "be4896abf0918da67832e81cad80d39599f85e461e721f4613828a3810f3e493",
+      "bytes": 1158,
+      "sha256": "d6954ef7841c7da3d77373e6ff5118b3f2f2e998606fd95d33e6527851bce044",
       "mode": "100755"
     },
     {
@@ -301,8 +301,8 @@
     },
     {
       "path": "skills/writing-skills/graphviz-conventions.dot",
-      "bytes": 6141,
-      "sha256": "b18a02773875f6c7b92f2a260e88550c92a62549b0009df9d680f7e9541d0ecc",
+      "bytes": 5970,
+      "sha256": "e2890a593c91370e384b42f2f67b1a6232c9e69dddea7891a0c1c46d7b20b694",
       "mode": "100644"
     },
     {

@@ -27,6 +27,7 @@ describe("buildGreeting", () => {
 describe("settings store", () => {
   it("keeps legacy defaults and starts with safe, key-free foundation values", () => {
     const state = createSettingsStore().getState();
+    expect(state.surface).toBe("start");
     expect(state.mode).toBe("buddy");
     expect(state.persona).toBe("momo");
     expect(state.personaCardId).toBe("momo");
@@ -174,6 +175,42 @@ describe("settings store", () => {
     const restored = createSettingsStore();
     restored.getState().hydrate({ taskModelParsingEnabled: false });
     expect(restored.getState().taskModelParsingEnabled).toBe(false);
+  });
+
+  it("keeps daily global overview automation opt-in and validates its local time", () => {
+    const store = createSettingsStore();
+    expect(store.getState()).toMatchObject({
+      globalOverviewAutoEnabled: false,
+      globalOverviewAutoTime: "09:00",
+    });
+
+    store.getState().setGlobalOverviewAutoEnabled(true);
+    store.getState().setGlobalOverviewAutoTime("18:30");
+    expect(pickPersistedSettings(store.getState())).toMatchObject({
+      globalOverviewAutoEnabled: true,
+      globalOverviewAutoTime: "18:30",
+    });
+
+    const restored = createSettingsStore();
+    restored.getState().hydrate({ globalOverviewAutoEnabled: true, globalOverviewAutoTime: "99:88" });
+    expect(restored.getState()).toMatchObject({
+      globalOverviewAutoEnabled: true,
+      globalOverviewAutoTime: "09:00",
+    });
+  });
+
+  it("persists a distinct Start surface without widening the Agent runtime mode", () => {
+    const store = createSettingsStore({ mode: "workbench" });
+    store.getState().setSurface("start");
+    expect(store.getState()).toMatchObject({ surface: "start", mode: "workbench" });
+    expect(pickPersistedSettings(store.getState())).toMatchObject({ surface: "start", mode: "workbench" });
+
+    store.getState().setSurface("buddy");
+    expect(store.getState()).toMatchObject({ surface: "buddy", mode: "buddy" });
+
+    const legacy = createSettingsStore();
+    legacy.getState().hydrate({ mode: "workbench" });
+    expect(legacy.getState()).toMatchObject({ surface: "workbench", mode: "workbench" });
   });
 
   it("keeps file storage unset until the user chooses it and persists the future file-drop preference", () => {

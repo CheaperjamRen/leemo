@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <title>Leemo</title>
+  <rect x="19" y="19" width="26" height="26" rx="8" fill="#F8F1E4"/>
+  <path d="M12 4h25a5 5 0 0 1 5 5v10a5 5 0 0 1-5 5h-9a8 8 0 0 0-8 8v10H9a5 5 0 0 1-5-5V12a8 8 0 0 1 8-8Z" fill="#0F1B2E"/>
+  <path d="M52 60H27a5 5 0 0 1-5-5V45a5 5 0 0 1 5-5h9a8 8 0 0 0 8-8V22h11a5 5 0 0 1 5 5v25a8 8 0 0 1-8 8Z" fill="#0F1B2E"/>
+  <rect x="27" y="27" width="10" height="10" rx="2.25" fill="#D7822B"/>
+</svg>

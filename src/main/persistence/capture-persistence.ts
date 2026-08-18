@@ -1,8 +1,12 @@
 import type {
+  MarkNoteOrganizedInput,
+  MoveNoteInput,
+  MutateNoteTreeInput,
   Note,
   NoteAttachment,
   QuickDraft,
   SaveQuickDraftInput,
+  SetNotePinnedInput,
   UpdateNoteInput,
 } from "../../captures";
 import type { SqliteDatabase } from "./schema";
@@ -16,12 +20,15 @@ export interface CapturePersistence {
   getNote(id: string): Note | undefined;
   createNote(note: Note): Note;
   updateNote(input: UpdateNoteInput & { updatedAt: number }): Note;
-  archiveNote(id: string, expectedRevision: number, archivedAt: number): Note;
-  unarchiveNote(id: string, expectedRevision: number, updatedAt: number): Note;
-  deleteNote(id: string, expectedRevision: number, deletedAt: number, purgeAfter: number): Note;
+  moveNote(input: MoveNoteInput): Note[];
+  setNotePinned(input: SetNotePinnedInput & { updatedAt: number }): Note;
+  markNoteOrganized(input: MarkNoteOrganizedInput & { updatedAt: number }): Note;
+  archiveNote(input: MutateNoteTreeInput & { updatedAt: number }): Note[];
+  unarchiveNote(id: string, expectedRevision: number, updatedAt: number): Note[];
+  deleteNote(input: MutateNoteTreeInput & { deletedAt: number; purgeAfter: number }): Note[];
   listTrash(): Note[];
-  restoreNote(id: string, expectedRevision: number, updatedAt: number): Note;
-  permanentlyDeleteNote(id: string, expectedRevision: number): Note;
+  restoreNote(id: string, expectedRevision: number, updatedAt: number): Note[];
+  permanentlyDeleteNote(id: string, expectedRevision: number): Note[];
   purgeExpired(now: number): Note[];
   addNoteAttachment(
     noteId: string,
@@ -60,6 +67,10 @@ interface NoteRow {
   deleted_at: number | null;
   purge_after: number | null;
   archived_at: number | null;
+  parent_id: string | null;
+  sort_order: number;
+  pinned_at: number | null;
+  organized_at: number | null;
 }
 
 interface NoteAttachmentRow {
@@ -84,6 +95,14 @@ function staleRevisionError(): Error {
 
 function noteNotFoundError(): Error {
   return new Error("这条便签不存在，可能已被删除。");
+}
+
+function noteParentNotFoundError(): Error {
+  return new Error("目标父级便签不存在，可能已被删除。");
+}
+
+function noteCycleError(): Error {
+  return new Error("便签不能放进自己或自己的子级中，已取消这次循环移动。");
 }
 
 function toQuickDraft(row: QuickDraftRow): QuickDraft {
@@ -122,6 +141,10 @@ function toNote(row: NoteRow, attachments: NoteAttachment[]): Note {
     revision: row.revision,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+    parentId: row.parent_id,
+    sortOrder: row.sort_order,
+    pinnedAt: row.pinned_at,
+    organizedAt: row.organized_at,
     ...(row.deleted_at !== null ? { deletedAt: row.deleted_at } : {}),
     ...(row.purge_after !== null ? { purgeAfter: row.purge_after } : {}),
     ...(row.archived_at !== null ? { archivedAt: row.archived_at } : {}),
@@ -152,7 +175,11 @@ export function createCapturePersistence(db: SqliteDatabase): CapturePersistence
       updated_at INTEGER NOT NULL,
       deleted_at INTEGER,
       purge_after INTEGER,
-      archived_at INTEGER
+      archived_at INTEGER,
+      parent_id TEXT,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      pinned_at INTEGER,
+      organized_at INTEGER
     );
     CREATE TABLE IF NOT EXISTS note_attachments (
       id TEXT PRIMARY KEY,
@@ -175,7 +202,13 @@ export function createCapturePersistence(db: SqliteDatabase): CapturePersistence
   if (!noteColumns.has("deleted_at")) db.exec(`ALTER TABLE notes ADD COLUMN deleted_at INTEGER`);
   if (!noteColumns.has("purge_after")) db.exec(`ALTER TABLE notes ADD COLUMN purge_after INTEGER`);
   if (!noteColumns.has("archived_at")) db.exec(`ALTER TABLE notes ADD COLUMN archived_at INTEGER`);
+  if (!noteColumns.has("parent_id")) db.exec(`ALTER TABLE notes ADD COLUMN parent_id TEXT`);
+  if (!noteColumns.has("sort_order")) db.exec(`ALTER TABLE notes ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0`);
+  if (!noteColumns.has("pinned_at")) db.exec(`ALTER TABLE notes ADD COLUMN pinned_at INTEGER`);
+  if (!noteColumns.has("organized_at")) db.exec(`ALTER TABLE notes ADD COLUMN organized_at INTEGER`);
   db.exec(`CREATE INDEX IF NOT EXISTS notes_trash_purge_idx ON notes(deleted_at, purge_after)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS notes_parent_sort_idx ON notes(parent_id, sort_order, id)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS notes_pinned_idx ON notes(pinned_at, id)`);
 
   const quickDraftColumns = new Set(
     (db.prepare(`PRAGMA table_info(quick_drafts)`).all() as { name: string }[]).map((column) => column.name),
@@ -205,31 +238,50 @@ export function createCapturePersistence(db: SqliteDatabase): CapturePersistence
     DELETE FROM quick_drafts WHERE id = 'quick' AND revision = ?
   `);
   const getNoteStatement = db.prepare(`
-    SELECT id, title, markdown, revision, created_at, updated_at, deleted_at, purge_after, archived_at
+    SELECT id, title, markdown, revision, created_at, updated_at, deleted_at, purge_after, archived_at,
+           parent_id, sort_order, pinned_at, organized_at
     FROM notes WHERE id = ? AND deleted_at IS NULL
   `);
   const listNotesStatement = db.prepare(`
-    SELECT id, title, markdown, revision, created_at, updated_at, deleted_at, purge_after, archived_at
+    SELECT id, title, markdown, revision, created_at, updated_at, deleted_at, purge_after, archived_at,
+           parent_id, sort_order, pinned_at, organized_at
     FROM notes WHERE deleted_at IS NULL AND archived_at IS NULL
     ORDER BY updated_at DESC, created_at DESC, id ASC
   `);
   const listArchivedNotesStatement = db.prepare(`
-    SELECT id, title, markdown, revision, created_at, updated_at, deleted_at, purge_after, archived_at
+    SELECT id, title, markdown, revision, created_at, updated_at, deleted_at, purge_after, archived_at,
+           parent_id, sort_order, pinned_at, organized_at
     FROM notes WHERE deleted_at IS NULL AND archived_at IS NOT NULL
     ORDER BY archived_at DESC, updated_at DESC, created_at DESC, id ASC
   `);
   const getTrashNoteStatement = db.prepare(`
-    SELECT id, title, markdown, revision, created_at, updated_at, deleted_at, purge_after, archived_at
+    SELECT id, title, markdown, revision, created_at, updated_at, deleted_at, purge_after, archived_at,
+           parent_id, sort_order, pinned_at, organized_at
     FROM notes WHERE id = ? AND deleted_at IS NOT NULL
   `);
   const listTrashStatement = db.prepare(`
-    SELECT id, title, markdown, revision, created_at, updated_at, deleted_at, purge_after, archived_at
+    SELECT id, title, markdown, revision, created_at, updated_at, deleted_at, purge_after, archived_at,
+           parent_id, sort_order, pinned_at, organized_at
     FROM notes WHERE deleted_at IS NOT NULL
     ORDER BY deleted_at DESC, id ASC
   `);
+  const listOrganizationRowsStatement = db.prepare(`
+    SELECT id, title, markdown, revision, created_at, updated_at, deleted_at, purge_after, archived_at,
+           parent_id, sort_order, pinned_at, organized_at
+    FROM notes
+    WHERE deleted_at IS NULL
+  `);
+  const listAllNoteRowsStatement = db.prepare(`
+    SELECT id, title, markdown, revision, created_at, updated_at, deleted_at, purge_after, archived_at,
+           parent_id, sort_order, pinned_at, organized_at
+    FROM notes
+  `);
   const insertNoteStatement = db.prepare(`
-    INSERT INTO notes (id, title, markdown, revision, created_at, updated_at, deleted_at, purge_after, archived_at)
-    VALUES (?, ?, ?, ?, ?, ?, NULL, NULL, NULL)
+    INSERT INTO notes (
+      id, title, markdown, revision, created_at, updated_at, deleted_at, purge_after, archived_at,
+      parent_id, sort_order, pinned_at, organized_at
+    )
+    VALUES (?, ?, ?, ?, ?, ?, NULL, NULL, NULL, ?, ?, ?, ?)
   `);
   const updateNoteStatement = db.prepare(`
     UPDATE notes
@@ -239,22 +291,22 @@ export function createCapturePersistence(db: SqliteDatabase): CapturePersistence
   const archiveNoteStatement = db.prepare(`
     UPDATE notes
     SET archived_at = ?, revision = revision + 1, updated_at = ?
-    WHERE id = ? AND revision = ? AND deleted_at IS NULL AND archived_at IS NULL
+    WHERE id = ? AND deleted_at IS NULL AND archived_at IS NULL
   `);
   const unarchiveNoteStatement = db.prepare(`
     UPDATE notes
     SET archived_at = NULL, revision = revision + 1, updated_at = ?
-    WHERE id = ? AND revision = ? AND deleted_at IS NULL AND archived_at IS NOT NULL
+    WHERE id = ? AND deleted_at IS NULL AND archived_at IS NOT NULL
   `);
   const trashNoteStatement = db.prepare(`
     UPDATE notes
     SET deleted_at = ?, purge_after = ?, revision = revision + 1, updated_at = ?
-    WHERE id = ? AND revision = ? AND deleted_at IS NULL
+    WHERE id = ? AND deleted_at IS NULL
   `);
   const restoreNoteStatement = db.prepare(`
     UPDATE notes
     SET deleted_at = NULL, purge_after = NULL, revision = revision + 1, updated_at = ?
-    WHERE id = ? AND revision = ? AND deleted_at IS NOT NULL
+    WHERE id = ? AND deleted_at IS NOT NULL
   `);
   const permanentlyDeleteNoteStatement = db.prepare(`
     DELETE FROM notes WHERE id = ? AND revision = ? AND deleted_at IS NOT NULL
@@ -285,6 +337,31 @@ export function createCapturePersistence(db: SqliteDatabase): CapturePersistence
     UPDATE notes
     SET revision = ?, updated_at = ?
     WHERE id = ? AND revision = ?
+  `);
+  const updateNoteSortStatement = db.prepare(`
+    UPDATE notes
+    SET sort_order = ?
+    WHERE id = ? AND deleted_at IS NULL
+  `);
+  const moveNoteStatement = db.prepare(`
+    UPDATE notes
+    SET parent_id = ?, sort_order = ?, revision = revision + 1
+    WHERE id = ? AND revision = ? AND deleted_at IS NULL
+  `);
+  const liftNoteStatement = db.prepare(`
+    UPDATE notes
+    SET parent_id = ?, sort_order = ?, revision = revision + 1, updated_at = ?
+    WHERE id = ?
+  `);
+  const setNotePinnedStatement = db.prepare(`
+    UPDATE notes
+    SET pinned_at = ?, revision = revision + 1, updated_at = ?
+    WHERE id = ? AND revision = ? AND deleted_at IS NULL
+  `);
+  const markNoteOrganizedStatement = db.prepare(`
+    UPDATE notes
+    SET organized_at = ?, revision = revision + 1, updated_at = ?
+    WHERE id = ? AND revision = ? AND deleted_at IS NULL
   `);
 
   const listNoteAttachments = (noteId: string): NoteAttachment[] =>
@@ -355,6 +432,10 @@ export function createCapturePersistence(db: SqliteDatabase): CapturePersistence
       note.revision,
       note.createdAt,
       note.updatedAt,
+      note.parentId,
+      note.sortOrder,
+      note.pinnedAt,
+      note.organizedAt,
     );
     return { ...note };
   };
@@ -405,22 +486,196 @@ export function createCapturePersistence(db: SqliteDatabase): CapturePersistence
     };
   }) as (input: UpdateNoteInput & { updatedAt: number }) => Note;
 
-  const archiveNote = db.transaction((id: string, expectedRevision: number, archivedAt: number): Note => {
-    const current = getNote(id);
+  const sortSiblings = (rows: NoteRow[]): NoteRow[] => [...rows].sort((left, right) => (
+    left.sort_order - right.sort_order
+    || right.updated_at - left.updated_at
+    || right.created_at - left.created_at
+    || left.id.localeCompare(right.id)
+  ));
+
+  const sameParent = (left: string | null, right: string | null): boolean => left === right;
+
+  const isActiveRow = (row: NoteRow): boolean => row.deleted_at === null && row.archived_at === null;
+  const isSameLibraryRow = (row: NoteRow, root: NoteRow): boolean => (
+    row.deleted_at === null && (row.archived_at === null) === (root.archived_at === null)
+  );
+
+  const collectSubtreeRows = (
+    rows: NoteRow[],
+    rootId: string,
+    eligible: (row: NoteRow) => boolean,
+  ): NoteRow[] => {
+    const byId = new Map(rows.map((row) => [row.id, row]));
+    const byParent = new Map<string | null, NoteRow[]>();
+    for (const row of rows) {
+      if (!eligible(row)) continue;
+      const siblings = byParent.get(row.parent_id) ?? [];
+      siblings.push(row);
+      byParent.set(row.parent_id, siblings);
+    }
+    const result: NoteRow[] = [];
+    const visited = new Set<string>();
+    const visit = (id: string) => {
+      if (visited.has(id)) return;
+      const row = byId.get(id);
+      if (!row || !eligible(row)) return;
+      visited.add(id);
+      result.push(row);
+      for (const child of sortSiblings(byParent.get(id) ?? [])) visit(child.id);
+    };
+    visit(rootId);
+    return result;
+  };
+
+  const liftDirectChildren = (
+    rows: NoteRow[],
+    root: NoteRow,
+    eligible: (row: NoteRow) => boolean,
+    updatedAt: number,
+  ): string[] => {
+    const directChildren = sortSiblings(rows.filter((row) => row.parent_id === root.id && eligible(row)));
+    if (directChildren.length === 0) return [];
+    const rootSiblings = sortSiblings(rows.filter((row) => (
+      row.id !== root.id && sameParent(row.parent_id, root.parent_id) && eligible(row)
+    )));
+    const originalGroup = sortSiblings([...rootSiblings, root]);
+    const foundIndex = originalGroup.findIndex((row) => row.id === root.id);
+    const rootIndex = foundIndex < 0 ? rootSiblings.length : foundIndex;
+    const replacement = [...rootSiblings];
+    replacement.splice(rootIndex, 0, ...directChildren);
+    const directIds = new Set(directChildren.map((row) => row.id));
+    const changed = new Set<string>();
+
+    for (const [index, row] of replacement.entries()) {
+      if (directIds.has(row.id)) {
+        liftNoteStatement.run(root.parent_id, index, updatedAt, row.id);
+        changed.add(row.id);
+      } else if (row.sort_order !== index) {
+        updateNoteSortStatement.run(index, row.id);
+        changed.add(row.id);
+      }
+    }
+    return [...changed];
+  };
+
+  const moveNote = db.transaction((input: MoveNoteInput): Note[] => {
+    if (!Number.isInteger(input.index) || input.index < 0) {
+      throw new Error("便签排序位置必须是非负整数。");
+    }
+    const rows = listOrganizationRowsStatement.all() as NoteRow[];
+    const byId = new Map(rows.map((row) => [row.id, row]));
+    const current = byId.get(input.id);
     if (!current) throw noteNotFoundError();
-    if (current.revision !== expectedRevision) throw staleRevisionError();
-    const result = archiveNoteStatement.run(archivedAt, archivedAt, id, expectedRevision) as RunResult;
+    if (current.revision !== input.expectedRevision) throw staleRevisionError();
+    if (input.parentId === input.id) throw noteCycleError();
+    if (input.parentId !== null && !byId.has(input.parentId)) throw noteParentNotFoundError();
+
+    let ancestorId = input.parentId;
+    const visited = new Set<string>();
+    while (ancestorId !== null) {
+      if (ancestorId === input.id) throw noteCycleError();
+      if (visited.has(ancestorId)) throw noteCycleError();
+      visited.add(ancestorId);
+      ancestorId = byId.get(ancestorId)?.parent_id ?? null;
+    }
+
+    const oldSiblings = sortSiblings(rows.filter((row) => (
+      row.id !== input.id && sameParent(row.parent_id, current.parent_id)
+    )));
+    const targetSiblings = sameParent(current.parent_id, input.parentId)
+      ? oldSiblings
+      : sortSiblings(rows.filter((row) => (
+        row.id !== input.id && sameParent(row.parent_id, input.parentId)
+      )));
+    const insertionIndex = Math.min(input.index, targetSiblings.length);
+    const nextTargetSiblings = [...targetSiblings];
+    nextTargetSiblings.splice(insertionIndex, 0, { ...current, parent_id: input.parentId });
+
+    for (const [index, row] of oldSiblings.entries()) {
+      if (row.sort_order !== index) updateNoteSortStatement.run(index, row.id);
+    }
+    for (const [index, row] of nextTargetSiblings.entries()) {
+      if (row.id === input.id) continue;
+      if (row.sort_order !== index) updateNoteSortStatement.run(index, row.id);
+    }
+    const moved = moveNoteStatement.run(
+      input.parentId,
+      insertionIndex,
+      input.id,
+      input.expectedRevision,
+    ) as RunResult;
+    if (moved.changes !== 1) throw staleRevisionError();
+
+    const affectedIds = sameParent(current.parent_id, input.parentId)
+      ? nextTargetSiblings.map((row) => row.id)
+      : [...oldSiblings.map((row) => row.id), ...nextTargetSiblings.map((row) => row.id)];
+    return affectedIds.map((id) => getNote(id)!).filter(Boolean);
+  }) as CapturePersistence["moveNote"];
+
+  const setNotePinned = db.transaction((
+    input: SetNotePinnedInput & { updatedAt: number },
+  ): Note => {
+    const current = getNote(input.id);
+    if (!current) throw noteNotFoundError();
+    if (current.revision !== input.expectedRevision) throw staleRevisionError();
+    const result = setNotePinnedStatement.run(
+      input.pinned ? input.updatedAt : null,
+      input.updatedAt,
+      input.id,
+      input.expectedRevision,
+    ) as RunResult;
     if (result.changes !== 1) throw staleRevisionError();
-    return getNote(id)!;
+    return getNote(input.id)!;
+  }) as CapturePersistence["setNotePinned"];
+
+  const markNoteOrganized = db.transaction((
+    input: MarkNoteOrganizedInput & { updatedAt: number },
+  ): Note => {
+    const current = getNote(input.id);
+    if (!current) throw noteNotFoundError();
+    if (current.revision !== input.expectedRevision) throw staleRevisionError();
+    const result = markNoteOrganizedStatement.run(
+      input.organized ? input.updatedAt : null,
+      input.updatedAt,
+      input.id,
+      input.expectedRevision,
+    ) as RunResult;
+    if (result.changes !== 1) throw staleRevisionError();
+    return getNote(input.id)!;
+  }) as CapturePersistence["markNoteOrganized"];
+
+  const archiveNote = db.transaction((input: MutateNoteTreeInput & { updatedAt: number }): Note[] => {
+    const rows = listAllNoteRowsStatement.all() as NoteRow[];
+    const current = rows.find((row) => row.id === input.id && isActiveRow(row));
+    if (!current) throw noteNotFoundError();
+    if (current.revision !== input.expectedRevision) throw staleRevisionError();
+    const liftedIds = input.childStrategy === "lift"
+      ? liftDirectChildren(rows, current, isActiveRow, input.updatedAt)
+      : [];
+    const targets = input.childStrategy === "subtree"
+      ? collectSubtreeRows(rows, current.id, isActiveRow)
+      : [current];
+    for (const row of targets) {
+      const result = archiveNoteStatement.run(input.updatedAt, input.updatedAt, row.id) as RunResult;
+      if (result.changes !== 1) throw staleRevisionError();
+    }
+    return [
+      ...targets.map((row) => getNote(row.id)!).filter(Boolean),
+      ...liftedIds.map((id) => getNote(id)!).filter(Boolean),
+    ];
   }) as CapturePersistence["archiveNote"];
 
-  const unarchiveNote = db.transaction((id: string, expectedRevision: number, updatedAt: number): Note => {
-    const current = getNote(id);
+  const unarchiveNote = db.transaction((id: string, expectedRevision: number, updatedAt: number): Note[] => {
+    const rows = listAllNoteRowsStatement.all() as NoteRow[];
+    const current = rows.find((row) => row.id === id && row.deleted_at === null && row.archived_at !== null);
     if (!current) throw noteNotFoundError();
     if (current.revision !== expectedRevision) throw staleRevisionError();
-    const result = unarchiveNoteStatement.run(updatedAt, id, expectedRevision) as RunResult;
-    if (result.changes !== 1) throw staleRevisionError();
-    return getNote(id)!;
+    const targets = collectSubtreeRows(rows, id, (row) => row.deleted_at === null && row.archived_at !== null);
+    for (const row of targets) {
+      const result = unarchiveNoteStatement.run(updatedAt, row.id) as RunResult;
+      if (result.changes !== 1) throw staleRevisionError();
+    }
+    return targets.map((row) => getNote(row.id)!).filter(Boolean);
   }) as CapturePersistence["unarchiveNote"];
 
   const addNoteAttachment = db.transaction((
@@ -468,37 +723,57 @@ export function createCapturePersistence(db: SqliteDatabase): CapturePersistence
     return getNote(noteId)!;
   }) as CapturePersistence["removeNoteAttachment"];
 
-  const deleteNote = db.transaction((
-    id: string,
-    expectedRevision: number,
-    deletedAt: number,
-    purgeAfter: number,
-  ): Note => {
-    const current = getNote(id);
+  const deleteNote = db.transaction((input: MutateNoteTreeInput & {
+    deletedAt: number;
+    purgeAfter: number;
+  }): Note[] => {
+    const rows = listAllNoteRowsStatement.all() as NoteRow[];
+    const current = rows.find((row) => row.id === input.id && row.deleted_at === null);
     if (!current) throw noteNotFoundError();
-    if (current.revision !== expectedRevision) throw staleRevisionError();
-    const result = trashNoteStatement.run(deletedAt, purgeAfter, deletedAt, id, expectedRevision) as RunResult;
-    if (result.changes !== 1) throw staleRevisionError();
-    return getTrashNote(id)!;
+    if (current.revision !== input.expectedRevision) throw staleRevisionError();
+    const eligible = (row: NoteRow) => isSameLibraryRow(row, current);
+    const liftedIds = input.childStrategy === "lift"
+      ? liftDirectChildren(rows, current, eligible, input.deletedAt)
+      : [];
+    const targets = input.childStrategy === "subtree"
+      ? collectSubtreeRows(rows, current.id, eligible)
+      : [current];
+    for (const row of targets) {
+      const result = trashNoteStatement.run(input.deletedAt, input.purgeAfter, input.deletedAt, row.id) as RunResult;
+      if (result.changes !== 1) throw staleRevisionError();
+    }
+    return [
+      ...targets.map((row) => getTrashNote(row.id)!).filter(Boolean),
+      ...liftedIds.map((id) => getNote(id)!).filter(Boolean),
+    ];
   }) as CapturePersistence["deleteNote"];
 
-  const restoreNote = db.transaction((id: string, expectedRevision: number, updatedAt: number): Note => {
-    const current = getTrashNote(id);
+  const restoreNote = db.transaction((id: string, expectedRevision: number, updatedAt: number): Note[] => {
+    const rows = listAllNoteRowsStatement.all() as NoteRow[];
+    const current = rows.find((row) => row.id === id && row.deleted_at !== null);
     if (!current) throw noteNotFoundError();
     if (current.revision !== expectedRevision) throw staleRevisionError();
-    const result = restoreNoteStatement.run(updatedAt, id, expectedRevision) as RunResult;
-    if (result.changes !== 1) throw staleRevisionError();
-    return getNote(id)!;
+    const targets = collectSubtreeRows(rows, id, (row) => row.deleted_at !== null);
+    for (const row of targets) {
+      const result = restoreNoteStatement.run(updatedAt, row.id) as RunResult;
+      if (result.changes !== 1) throw staleRevisionError();
+    }
+    return targets.map((row) => getNote(row.id)!).filter(Boolean);
   }) as CapturePersistence["restoreNote"];
 
-  const permanentlyDeleteNote = db.transaction((id: string, expectedRevision: number): Note => {
-    const current = getTrashNote(id);
+  const permanentlyDeleteNote = db.transaction((id: string, expectedRevision: number): Note[] => {
+    const rows = listAllNoteRowsStatement.all() as NoteRow[];
+    const current = rows.find((row) => row.id === id && row.deleted_at !== null);
     if (!current) throw noteNotFoundError();
     if (current.revision !== expectedRevision) throw staleRevisionError();
-    deleteNoteAttachmentsStatement.run(id);
-    const result = permanentlyDeleteNoteStatement.run(id, expectedRevision) as RunResult;
-    if (result.changes !== 1) throw staleRevisionError();
-    return current;
+    const targets = collectSubtreeRows(rows, id, (row) => row.deleted_at !== null).reverse();
+    const deleted = targets.map((row) => getTrashNote(row.id)!).filter(Boolean);
+    for (const row of targets) {
+      deleteNoteAttachmentsStatement.run(row.id);
+      const result = permanentlyDeleteNoteStatement.run(row.id, row.revision) as RunResult;
+      if (result.changes !== 1) throw staleRevisionError();
+    }
+    return deleted;
   }) as CapturePersistence["permanentlyDeleteNote"];
 
   const purgeExpired = db.transaction((now: number): Note[] => {
@@ -522,6 +797,9 @@ export function createCapturePersistence(db: SqliteDatabase): CapturePersistence
     getNote,
     createNote,
     updateNote,
+    moveNote,
+    setNotePinned,
+    markNoteOrganized,
     archiveNote,
     unarchiveNote,
     deleteNote,

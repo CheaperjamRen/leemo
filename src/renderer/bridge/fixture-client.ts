@@ -164,6 +164,12 @@ function sameMemoryScope(left: MemoryScopeView, right: MemoryScopeView): boolean
           ok: false,
           message: "演示环境不会调用模型，请手动确认时间。",
         } as BridgeInvokeMap[K]["response"];
+      case "bridge:generateGlobalPendingOverview":
+        return {
+          ok: false,
+          message: "演示环境不会调用模型。",
+          retryable: false,
+        } as BridgeInvokeMap[K]["response"];
       case "bridge:getProviderConfig": {
          const request = req as BridgeInvokeMap["bridge:getProviderConfig"]["request"];
          const provider = FIXTURE_PROVIDERS.find((candidate) => candidate.id === request.providerId);

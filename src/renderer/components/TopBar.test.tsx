@@ -20,11 +20,12 @@ describe("TopBar", () => {
     expect(within(identity).getByText("Leemo")).toHaveClass("text-[18px]");
 
     expect(within(topbar).getByRole("button", { name: "历史对话" })).toHaveClass("leemo-topbar-history");
-    expect(within(topbar).getByRole("navigation", { name: "模式切换" })).toHaveClass("leemo-mode-switcher-topbar");
+    expect(within(topbar).getByRole("navigation", { name: "工作区切换" })).toHaveClass("leemo-mode-switcher-topbar");
 
     const controls = within(topbar).getAllByRole("button");
-    expect(controls.slice(0, 5).map((control) => control.getAttribute("aria-label"))).toEqual([
+    expect(controls.slice(0, 6).map((control) => control.getAttribute("aria-label"))).toEqual([
       "历史对话",
+      "切换到开始",
       "切换到搭子",
       "切换到工作台",
       "设置",
@@ -52,6 +53,7 @@ describe("TopBar", () => {
       "回顾今天",
     ]);
     expect(within(primaryControls).getAllByRole("button").map((control) => control.getAttribute("aria-label"))).toEqual([
+      "切换到开始",
       "切换到搭子",
       "切换到工作台",
       "设置",

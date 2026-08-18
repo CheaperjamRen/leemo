@@ -41,6 +41,12 @@ import type { CaptureClient } from "../capture/client";
 import { createCapturesStore, type CapturesState } from "../stores/captures";
 import type { TaskClient } from "../tasks/client";
 import { createTasksStore, type TasksState } from "../stores/tasks";
+import { startStore } from "../stores/start";
+import {
+  createGlobalPendingOverviewStore,
+  type GlobalPendingOverviewState,
+} from "../stores/global-pending-overview";
+import { buildGlobalOverviewFactPack } from "../global-overview/facts";
 
 export interface BridgeStores {
   conversations: ReturnType<typeof createConversationsStore>;
@@ -71,6 +77,8 @@ export interface BridgeStores {
   captures?: ReturnType<typeof createCapturesStore>;
   /** Optional only for old isolated component fixtures; BridgeProvider always supplies it. */
   tasks?: ReturnType<typeof createTasksStore>;
+  /** Optional only for old isolated component fixtures; BridgeProvider always supplies it. */
+  globalPendingOverview?: ReturnType<typeof createGlobalPendingOverviewStore>;
 }
 
 const Ctx = createContext<BridgeStores | null>(null);
@@ -223,6 +231,35 @@ export function BridgeProvider({ client, live, persist, workspace, scheduler, le
     const artifacts = createArtifactsStore();
     const wikiEntries = createWikiEntriesStore(c, { resolveConversationDefaults: resolveDefaults });
     const notifications = createNotificationsStore(live ? [] : FIXTURE_NOTIFICATIONS);
+    const globalPendingOverview = createGlobalPendingOverviewStore(c, {
+      getProviderSelection: () => {
+        const settingsState = settings.getState();
+        const first = orderConfiguredProviders(providers.getState().configured, settingsState.providerOrder, {
+          providerId: settingsState.defaultProviderId,
+          modelId: settingsState.defaultModelId,
+        })[0];
+        return first ? { providerId: first.id, modelId: first.models[0] } : null;
+      },
+      getFactPack: () => {
+        const conversationState = conversations.getState();
+        const workspaceState = workspaces.getState();
+        const pending = approvals.getState().pendingByConversation;
+        return buildGlobalOverviewFactPack({
+          tasks: taskStore.getState().tasks,
+          conversations: conversationState.byId,
+          timelines: conversationState.timelines,
+          runIds: conversationState.runIds,
+          pendingConversationIds: new Set(Object.entries(pending).flatMap(([id, value]) => value ? [id] : [])),
+          artifacts: artifacts.getState().entries,
+          workspaceLabels: Object.fromEntries(workspaceState.list.map((entry) => [entry.id, entry.name])),
+        });
+      },
+      getAutoSettings: () => ({
+        enabled: settings.getState().globalOverviewAutoEnabled,
+        localTime: settings.getState().globalOverviewAutoTime,
+      }),
+      ...(persist ? { persistence: persist } : {}),
+    });
     const scheduledTasks = createScheduledTasksStore(activeScheduler, {
       conversations,
       workspaces,
@@ -284,6 +321,7 @@ export function BridgeProvider({ client, live, persist, workspace, scheduler, le
       composerDrafts,
       captures,
       tasks: taskStore,
+      globalPendingOverview,
       // 轮 4「预览区通电」: 预览内容按 path 缓存。没有 workspace（浏览器 dev）时
       // 它会把每次 load 记成"这个环境读不了文件"，而不是留一个空白面板。
       previewContent: createPreviewContentStore(workspace, {
@@ -324,7 +362,8 @@ export function BridgeProvider({ client, live, persist, workspace, scheduler, le
         return;
       }
       if (target.kind === "task" && typeof target.taskId === "string") {
-        stores.ui.getState().openOrganizer("tasks");
+        startStore.getState().open("tasks", { taskId: target.taskId });
+        stores.settings.getState().setSurface("start");
       }
     });
   }, [stores]);
@@ -440,6 +479,9 @@ export function BridgeProvider({ client, live, persist, workspace, scheduler, le
             stores.conversations.getState().byId,
           );
         }
+        if (snap.globalPendingOverview) {
+          stores.globalPendingOverview?.getState().hydrate(snap.globalPendingOverview);
+        }
         // The persisted scope is a UI preference, but it must also drive the
         // real workspace/notebook stores before the first shell render. Without
         // this bridge, a restart could show a highlighted notebook while new
@@ -523,6 +565,28 @@ export function BridgeProvider({ client, live, persist, workspace, scheduler, le
     return stores.scheduledTasks?.getState().start();
   }, [persistenceReady, stores]);
 
+  useEffect(() => {
+    if (!persistenceReady || !stores.globalPendingOverview) return;
+    const check = () => {
+      if (document.visibilityState !== "visible") return;
+      void stores.globalPendingOverview!.getState().maybeAutoRefresh();
+    };
+    const checkWhenProviderReady = () => {
+      if (stores.providers.getState().status === "ready") check();
+    };
+    checkWhenProviderReady();
+    const stopProvider = stores.providers.subscribe((state, previous) => {
+      if (state.status === "ready" && previous.status !== "ready") check();
+    });
+    window.addEventListener("focus", check);
+    document.addEventListener("visibilitychange", check);
+    return () => {
+      stopProvider();
+      window.removeEventListener("focus", check);
+      document.removeEventListener("visibilitychange", check);
+    };
+  }, [persistenceReady, stores]);
+
   return (
     <ClientCtx.Provider value={activeClient}>
       <Ctx.Provider value={stores}>
@@ -600,6 +664,13 @@ export const useCaptures = <T,>(sel: (s: CapturesState) => T): T =>
 const FALLBACK_TASKS = createTasksStore();
 export const useTasks = <T,>(sel: (s: TasksState) => T): T =>
   useStore(useStores().tasks ?? FALLBACK_TASKS, sel);
+const FALLBACK_GLOBAL_PENDING_OVERVIEW = createGlobalPendingOverviewStore(new FixtureBridgeClient(), {
+  getProviderSelection: () => null,
+  getFactPack: () => ({ generatedAt: 0, facts: [] }),
+  getAutoSettings: () => ({ enabled: false, localTime: "09:00" }),
+});
+export const useGlobalPendingOverview = <T,>(sel: (s: GlobalPendingOverviewState) => T): T =>
+  useStore(useStores().globalPendingOverview ?? FALLBACK_GLOBAL_PENDING_OVERVIEW, sel);
 
 /** The Workspace client itself (轮 3 卡 G), not a store: `pathForFile` and
  *  `reveal` are one-shot capabilities with no state to subscribe to. Undefined

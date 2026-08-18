@@ -64,7 +64,10 @@ describe("applyMarkdownFormat", () => {
     expect(screen.getByRole("heading", { name: "缩放点积注意力机制" })).toBeInTheDocument();
     expect(document.querySelector(".katex")).toBeInTheDocument();
     expect(editor.querySelector(".markdown-editor__math-block")).toBeInTheDocument();
-    expect(editor.querySelector("table")).toHaveTextContent("项目状态公式完成");
+    expect(screen.getByRole("textbox", { name: "表头 1" })).toHaveValue("项目");
+    expect(screen.getByRole("textbox", { name: "表头 2" })).toHaveValue("状态");
+    expect(screen.getByRole("textbox", { name: "第 1 行第 1 列" })).toHaveValue("公式");
+    expect(screen.getByRole("textbox", { name: "第 1 行第 2 列" })).toHaveValue("完成");
     expect(editor.querySelector(".markdown-editor__mermaid")).toBeInTheDocument();
     expect(editor.querySelector(".markdown-editor__list-item--checked")).toHaveTextContent("保持方差稳定");
     expect(screen.getByRole("toolbar", { name: "文档格式" })).toBeInTheDocument();
