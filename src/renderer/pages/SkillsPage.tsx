@@ -15,6 +15,7 @@ import {
   Folder,
   FolderCog,
   FolderOpen,
+  GitBranch,
   Library,
   Lightbulb,
   Loader2,
@@ -333,7 +334,7 @@ export default function SkillsPage() {
         <div className="leemo-page-frame">
           <div className="flex min-w-0 items-center gap-3">
             <div className="min-w-0">
-              <h1 className="text-[17px] font-semibold text-[var(--leemo-ink)]">技能</h1>
+              <h1 className="text-[22px] font-semibold tracking-[-0.02em] text-[var(--leemo-ink)]">技能</h1>
               {status === "ready" && (
                 <div className="mt-1 flex items-center gap-2 text-[11px] tabular-nums text-[var(--leemo-ink-3)]">
                   <span>{enabledCount} 个已启用</span>
@@ -914,6 +915,39 @@ function categoryIcon(skill: SkillInfo): ComponentType<{ className?: string; "ar
   return CATEGORY_META[categoryId(skill)]?.Icon ?? Tags;
 }
 
+type SkillIconTone = "amber" | "blue" | "green" | "plum" | "slate";
+
+function installedSkillVisual(skill: SkillInfo): {
+  Icon: ComponentType<{ className?: string; "aria-hidden"?: boolean }>;
+  tone: SkillIconTone;
+} {
+  const text = `${skillDisplayName(skill)} ${skill.name} ${skill.description}`;
+  if (/需求与方案|需求梳理/.test(text)) return { Icon: Lightbulb, tone: "amber" };
+  if (/分任务协作/.test(text)) return { Icon: GitBranch, tone: "blue" };
+  if (/并行任务|并行协作/.test(text)) return { Icon: Blocks, tone: "blue" };
+  if (/按计划执行|执行计划/.test(text)) return { Icon: CheckCircle2, tone: "green" };
+  if (/开发分支|分支收尾/.test(text)) return { Icon: Archive, tone: "slate" };
+  if (/处理代码评审|评审意见/.test(text)) return { Icon: Code2, tone: "blue" };
+  if (/发起代码评审|请求评审/.test(text)) return { Icon: ShieldCheck, tone: "green" };
+  if (/系统化调试|调试/.test(text)) return { Icon: Compass, tone: "amber" };
+  if (/测试驱动/.test(text)) return { Icon: CheckCircle2, tone: "plum" };
+  if (/隔离开发|工作区/.test(text)) return { Icon: FolderCog, tone: "slate" };
+  if (/开发流程调度|流程调度/.test(text)) return { Icon: Compass, tone: "blue" };
+  if (/完成前验证|完成验证/.test(text)) return { Icon: ShieldCheck, tone: "green" };
+  if (/编写实施计划/.test(text)) return { Icon: PenLine, tone: "amber" };
+  if (/编写工作技能|写技能/.test(text)) return { Icon: Sparkles, tone: "plum" };
+  if (/(测试|验证|评审|审查|安全)/.test(text)) return { Icon: ShieldCheck, tone: "green" };
+  if (/(并行|协作|分工|子任务)/.test(text)) return { Icon: Blocks, tone: "blue" };
+  if (/(分支|隔离|工作区|目录)/.test(text)) return { Icon: FolderCog, tone: "slate" };
+  if (/(调试|代码|开发)/.test(text)) return { Icon: Code2, tone: "blue" };
+  if (/(写作|编写|文案|表达)/.test(text)) return { Icon: PenLine, tone: "plum" };
+  if (/(学习|研究|论文|阅读)/.test(text)) return { Icon: BookOpen, tone: "green" };
+  if (/(求职|简历|面试)/.test(text)) return { Icon: Briefcase, tone: "slate" };
+  if (/(计划|规划|需求|方案|决策)/.test(text)) return { Icon: Lightbulb, tone: "amber" };
+  if (/(流程|调度|执行)/.test(text)) return { Icon: Compass, tone: "blue" };
+  return { Icon: skill.category ? categoryIcon(skill) : Sparkles, tone: "slate" };
+}
+
 function CommunitySkillCard({
   skill,
   installing,
@@ -1029,11 +1063,8 @@ function SkillRow({
 }) {
   const available = skill.available !== false;
   const displayName = skillDisplayName(skill);
-  const Icon = skill.category
-    ? categoryIcon(skill)
-    : skill.trust === "community"
-      ? ShieldCheck
-      : Sparkles;
+  const visual = installedSkillVisual(skill);
+  const Icon = visual.Icon;
   const requirementLabels = (skill.requirements ?? [])
     .map((requirement) => REQUIREMENT_LABELS[requirement])
     .filter((label): label is string => Boolean(label));
@@ -1043,10 +1074,10 @@ function SkillRow({
       data-testid="skill-installed-card"
       className={`leemo-skill-card leemo-skill-card--installed flex min-h-[112px] min-w-0 gap-3 p-3 ${available ? "" : "opacity-65"}`}
     >
-      <div className="leemo-skill-card__icon mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-[7px] text-[var(--leemo-ink-2)]">
+      <div className="leemo-skill-card__icon mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-[7px] text-[var(--leemo-ink-2)]" data-tone={visual.tone}>
         <Icon className="h-3.5 w-3.5" aria-hidden />
       </div>
-      <div className="min-w-0 flex-1">
+      <div className="flex min-w-0 flex-1 flex-col">
         <div className="flex min-w-0 items-center gap-1.5">
           <h3 className="min-w-0 truncate text-[13px] font-medium">
             <button
@@ -1062,60 +1093,55 @@ function SkillRow({
           <span className="leemo-skill-card__source shrink-0 rounded-[5px] px-1.5 py-0.5 text-[9.5px] text-[var(--leemo-ink-3)]">
             {sourceBadge(skill)}
           </span>
+          <div className="ml-auto flex shrink-0 items-center gap-1">
+            {onScan && (
+              <button
+                type="button"
+                aria-label={`扫描 ${displayName}`}
+                title="安全扫描（只报告，不会自动停用）"
+                onClick={() => onScan(skillKey(skill))}
+                disabled={scanBusy}
+                className="grid h-6 w-6 place-items-center rounded-[5px] text-[var(--leemo-ink-3)] hover:bg-[var(--leemo-side-hover)] hover:text-[var(--leemo-amber-strong)] disabled:cursor-wait disabled:opacity-40"
+              >
+                <ShieldCheck className="h-3.5 w-3.5" aria-hidden />
+              </button>
+            )}
+            {showRemove && skill.canRemove && (
+              <button
+                type="button"
+                aria-label={`移除 ${displayName}`}
+                title="移除"
+                onClick={() => onRemove(skill)}
+                className="grid h-6 w-6 place-items-center rounded-[5px] text-[var(--leemo-ink-3)] hover:bg-[var(--leemo-danger-soft)] hover:text-[var(--leemo-danger)]"
+              >
+                <Trash2 className="h-3.5 w-3.5" aria-hidden />
+              </button>
+            )}
+          </div>
         </div>
-        <p className="mt-1 line-clamp-2 text-[11.5px] leading-[1.55] text-[var(--leemo-ink-3)]">{skill.description}</p>
-        {available ? (
-          requirementLabels.length > 0 && (
-            <div className="mt-1.5 flex flex-wrap gap-2">
-              {requirementLabels.map((label) => (
-                <span key={label} className="text-[10px] text-[var(--leemo-ink-3)]">{label}</span>
-              ))}
-            </div>
-          )
-        ) : showAvailabilityReason ? (
-          <p className="mt-1.5 flex items-center gap-1 text-[10.5px] text-[var(--leemo-danger)]">
-            <AlertCircle className="h-3 w-3 shrink-0" aria-hidden />
-            {skill.unavailableReason ?? "暂时不可用"}
-          </p>
-        ) : null}
-      </div>
-      <div className="flex shrink-0 items-start gap-1.5 pt-1">
-        {onScan && (
-          <button
-            type="button"
-            aria-label={`扫描 ${displayName}`}
-            title="安全扫描（只报告，不会自动停用）"
-            onClick={() => onScan(skillKey(skill))}
-            disabled={scanBusy}
-            className="grid h-6 w-6 place-items-center rounded-[5px] text-[var(--leemo-ink-3)] hover:bg-[var(--leemo-side-hover)] hover:text-[var(--leemo-amber-strong)] disabled:cursor-wait disabled:opacity-40"
-          >
-            <ShieldCheck className="h-3.5 w-3.5" aria-hidden />
-          </button>
-        )}
-        {showRemove && skill.canRemove && (
-          <button
-            type="button"
-            aria-label={`移除 ${displayName}`}
-            title="移除"
-            onClick={() => onRemove(skill)}
-            className="grid h-6 w-6 place-items-center rounded-[5px] text-[var(--leemo-ink-3)] hover:bg-[var(--leemo-danger-soft)] hover:text-[var(--leemo-danger)]"
-          >
-            <Trash2 className="h-3.5 w-3.5" aria-hidden />
-          </button>
-        )}
-        <label className={`relative inline-flex h-5 w-9 items-center ${available ? "cursor-pointer" : "cursor-not-allowed"}`}>
-          <input
-            type="checkbox"
-            checked={enabled}
-            disabled={!available}
-            onChange={() => onToggle(skillKey(skill))}
-            className="peer sr-only"
-            aria-label={`让 momo 用 ${displayName}`}
-            title={!available ? skill.unavailableReason : enabled ? "momo 可以用这个技能" : "已关闭"}
-          />
-          <span className="absolute inset-0 rounded-full bg-[var(--leemo-line)] transition-colors peer-checked:bg-[var(--leemo-amber)] peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-[var(--leemo-amber)] peer-disabled:opacity-70" />
-          <span className="relative ml-0.5 h-4 w-4 rounded-full bg-white shadow-sm transition-transform peer-checked:translate-x-4" />
-        </label>
+        <p className="mt-1 line-clamp-2 text-[12px] leading-[1.5] text-[var(--leemo-ink-2)]">{skill.description}</p>
+        <div data-testid="skill-card-footer" className="leemo-skill-card__footer mt-auto flex min-h-6 items-end justify-between gap-3 pt-1.5">
+          <div className="min-w-0 flex flex-wrap gap-x-2 gap-y-1">
+            {available ? requirementLabels.map((label) => (
+              <span key={label} className="text-[10px] text-[var(--leemo-ink-3)]">{label}</span>
+            )) : showAvailabilityReason ? (
+              <span className="flex items-center gap-1 text-[10.5px] text-[var(--leemo-danger)]"><AlertCircle className="h-3 w-3 shrink-0" aria-hidden />{skill.unavailableReason ?? "暂时不可用"}</span>
+            ) : null}
+          </div>
+          <label className={`relative inline-flex h-5 w-9 shrink-0 items-center ${available ? "cursor-pointer" : "cursor-not-allowed"}`}>
+            <input
+              type="checkbox"
+              checked={enabled}
+              disabled={!available}
+              onChange={() => onToggle(skillKey(skill))}
+              className="peer sr-only"
+              aria-label={`让 momo 用 ${displayName}`}
+              title={!available ? skill.unavailableReason : enabled ? "momo 可以用这个技能" : "已关闭"}
+            />
+            <span className="absolute inset-0 rounded-full bg-[var(--leemo-line)] transition-colors peer-checked:bg-[var(--leemo-amber)] peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-[var(--leemo-amber)] peer-disabled:opacity-70" />
+            <span className="relative ml-0.5 h-4 w-4 rounded-full bg-white shadow-sm transition-transform peer-checked:translate-x-4" />
+          </label>
+        </div>
       </div>
     </article>
   );

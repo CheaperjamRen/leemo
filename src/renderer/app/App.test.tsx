@@ -110,7 +110,7 @@ describe("App", () => {
     render(<App />);
 
     fireEvent.click(screen.getByRole("button", { name: "设置" }));
-    expect(screen.getByTestId("settings-overlay")).toBeInTheDocument();
+    expect(screen.getByTestId("settings-overlay")).toHaveClass("z-[80]");
     expect(screen.getByTestId("settings-window")).toBeInTheDocument();
     expect(screen.getByRole("status", { name: "正在打开设置" })).toBeInTheDocument();
     expect(await screen.findByRole("tablist", { name: "设置分类" })).toBeInTheDocument();

@@ -393,6 +393,19 @@ describe("SkillsPage — product-facing sections", () => {
     expect(screen.queryByText(/提交版本|静态分析文件|qualified/)).not.toBeInTheDocument();
   });
 
+  it("keeps the enable switch in the card footer so it does not compete with the skill name", async () => {
+    renderPage(catalog);
+    expect(await screen.findByText("每日计划")).toBeInTheDocument();
+
+    expect(screen.getByRole("heading", { level: 1, name: "技能" })).toHaveClass("text-[22px]");
+
+    const card = screen.getAllByTestId("skill-installed-card")[0];
+    expect(within(card).getByText("每日计划 的明确用途说明")).toHaveClass("text-[12px]");
+    const footer = within(card).getByTestId("skill-card-footer");
+    expect(within(footer).getByRole("checkbox", { name: "让 momo 用 每日计划" })).toBeInTheDocument();
+    expect(card.querySelector(".leemo-skill-card__icon")).toHaveAttribute("data-tone", "amber");
+  });
+
   it("keeps the discovery surface to three compact cards per desktop row", async () => {
     const user = userEvent.setup();
     const entries = [

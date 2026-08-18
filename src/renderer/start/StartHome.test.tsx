@@ -15,4 +15,13 @@ describe("StartHome", () => {
     ]);
     expect(invoke).not.toHaveBeenCalledWith("bridge:generateGlobalPendingOverview", expect.anything());
   });
+
+  it("marks empty cards for compact layout instead of stretching four blank panels", () => {
+    render(<BridgeProvider><StartHome onOpen={vi.fn()} /></BridgeProvider>);
+
+    for (const name of ["待完成事项", "今天", "收集箱", "最近"]) {
+      expect(screen.getByRole("heading", { level: 2, name }).closest("section"))
+        .toHaveAttribute("data-density", "compact");
+    }
+  });
 });

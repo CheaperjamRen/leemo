@@ -310,7 +310,11 @@ async function closeServer(server) {
   await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
 }
 
-async function connectRenderer(port, timeoutMs = 60_000) {
+async function connectRenderer(
+  port,
+  timeoutMs = 60_000,
+  readySelector = 'textarea[aria-label="输入消息"]',
+) {
   const deadline = Date.now() + timeoutMs;
   let lastTargets = [];
   while (Date.now() < deadline) {
@@ -339,11 +343,11 @@ async function connectRenderer(port, timeoutMs = 60_000) {
   page.on("console", (message) => {
     if (message.type() === "error") rendererErrors.push(`console.error: ${message.text()}`);
   });
-  await page.locator('textarea[aria-label="输入消息"]').waitFor({ state: "attached", timeout: 60_000 });
+  await page.locator(readySelector).waitFor({ state: "attached", timeout: 60_000 });
   return { browser, page, rendererErrors };
 }
 
-async function launchApp(auditRoot, label, extraArgs = []) {
+async function launchApp(auditRoot, label, extraArgs = [], readySelector) {
   const port = await freePort();
   const logs = [];
   const startedAt = Date.now();
@@ -361,7 +365,7 @@ async function launchApp(auditRoot, label, extraArgs = []) {
   child.stdout.on("data", (chunk) => logs.push(chunk.toString()));
   child.stderr.on("data", (chunk) => logs.push(chunk.toString()));
   try {
-    const { browser, page, rendererErrors } = await connectRenderer(port);
+    const { browser, page, rendererErrors } = await connectRenderer(port, 60_000, readySelector);
     const workspaceRoot = await page.evaluate(async () => {
       const response = await window.leemoWorkspace.invoke("listNotebooks", undefined);
       if (!response.ok) throw new Error(response.error || "listNotebooks failed");
@@ -412,7 +416,7 @@ export async function skipOnboarding(page) {
 
 export async function openSettingsTab(page, label) {
   if (!await page.getByTestId("settings-window").isVisible().catch(() => false)) {
-    await page.getByRole("button", { name: "设置", exact: true }).click();
+    await page.getByTestId("topbar-primary-controls").getByRole("button", { name: "设置", exact: true }).click();
   }
   await page.getByTestId("settings-window").waitFor({ state: "visible" });
   const search = page.getByRole("searchbox", { name: "搜索设置" });
@@ -653,6 +657,7 @@ export async function createMemoryAcceptanceHarness({
   seedWorkspace,
   streamRouter,
   launchArgs,
+  readySelector,
 } = {}) {
   insist(process.platform === "win32", "该验收针对 Windows 打包应用");
   insist(fs.existsSync(PACKAGED_EXE), `找不到打包应用：${PACKAGED_EXE}`);
@@ -676,14 +681,14 @@ export async function createMemoryAcceptanceHarness({
     baseUrl: mock.baseUrl,
     get current() { return current; },
     async start(label = "首次启动") {
-      current = await launchApp(auditRoot, label, resolvedLaunchArgs(label));
+      current = await launchApp(auditRoot, label, resolvedLaunchArgs(label), readySelector);
       insist(path.resolve(current.workspaceRoot) === path.resolve(workspaceRoot), `工作区未隔离：${current.workspaceRoot}`);
       await skipOnboarding(current.page);
       return current;
     },
     async restart(label = "重启验收") {
       await stopApp(current);
-      current = await launchApp(auditRoot, label, resolvedLaunchArgs(label));
+      current = await launchApp(auditRoot, label, resolvedLaunchArgs(label), readySelector);
       insist(path.resolve(current.workspaceRoot) === path.resolve(workspaceRoot), `重启后工作区未隔离：${current.workspaceRoot}`);
       await skipOnboarding(current.page);
       return current;

@@ -72,7 +72,7 @@ export default function AppOverlays() {
     <>
       {settingsOpen && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-[#17191c]/30 p-4 backdrop-blur-[1px] sm:p-6"
+          className="fixed inset-0 z-[80] flex items-center justify-center bg-[#17191c]/30 p-4 backdrop-blur-[1px] sm:p-6"
           data-testid="settings-overlay"
           data-shell="workbench"
           role="dialog"

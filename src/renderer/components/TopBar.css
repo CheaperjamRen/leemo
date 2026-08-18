@@ -82,14 +82,17 @@
   align-items: center;
   gap: 6px;
   border-radius: 10px;
+  border: 1px solid transparent;
   padding-inline: 10px;
   color: var(--leemo-ink-2);
+  background: transparent;
   font-size: 12.5px;
   line-height: 1;
   transition: background 160ms ease, color 160ms ease;
 }
 
 .leemo-topbar-relationship-action:hover {
+  border-color: color-mix(in srgb, var(--leemo-line) 82%, transparent);
   background: var(--leemo-hover);
   color: var(--leemo-ink);
 }
@@ -219,6 +222,16 @@
     justify-content: center;
     padding-inline: 0;
   }
+}
+
+[data-shell="buddy"] .leemo-topbar-relationship-action {
+  border-color: transparent;
+  background: transparent;
+}
+
+[data-shell="buddy"] .leemo-topbar-relationship-action:hover {
+  border-color: color-mix(in srgb, var(--leemo-line) 82%, transparent);
+  background: color-mix(in srgb, var(--leemo-card) 72%, transparent);
 }
 
 @media (max-width: 860px) {

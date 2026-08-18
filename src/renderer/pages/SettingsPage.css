@@ -783,14 +783,43 @@
     padding-inline: 20px 56px;
   }
 
+  .settings-page .settings-body {
+    flex-direction: column;
+  }
+
   .settings-page .settings-sidebar {
     width: 100%;
-    padding: 12px 20px;
+    flex: 0 0 auto;
+    padding: 10px 16px 11px;
+    border-right: 0;
+    border-bottom: 1px solid var(--leemo-line-soft);
+  }
+
+  .settings-page .settings-sidebar > input[type="search"] {
+    height: 34px;
+    margin-bottom: 8px;
+  }
+
+  .settings-page .settings-tabs {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 3px;
   }
 
   .settings-page .settings-tab {
-    min-height: 38px;
-    padding-inline: 12px;
+    min-width: 0;
+    min-height: 36px;
+    justify-content: center;
+    gap: 6px;
+    padding-inline: 8px;
+    font-size: 12px;
+  }
+
+  .settings-page .settings-tab[aria-selected="true"]::before {
+    inset: auto 10px -2px;
+    width: auto;
+    height: 2px;
+    border-radius: 2px 2px 0 0;
   }
 
   .settings-page .settings-row-select {
@@ -809,5 +838,80 @@
 
   .settings-page .settings-usage__metrics {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .settings-page .settings-models-heading {
+    margin-bottom: 8px;
+  }
+
+  .settings-page .provider-list {
+    height: 94px;
+  }
+
+  .settings-page .provider-list-header {
+    height: 34px;
+  }
+
+  .settings-page [data-testid="provider-list-row"] {
+    height: 54px;
+  }
+
+  .settings-page .provider-config-header {
+    min-height: 40px;
+    padding-block: 5px;
+  }
+
+  .settings-page .provider-config-tabs {
+    height: 36px;
+    gap: 18px;
+    padding-inline: 16px;
+  }
+
+  .settings-page .provider-config-scroll {
+    overflow-x: hidden;
+    padding: 12px 16px;
+  }
+
+  .settings-page .provider-config-content {
+    min-width: 0;
+    row-gap: 20px;
+  }
+
+  .settings-page .provider-config-footer {
+    min-height: 48px;
+    padding-block: 6px;
+  }
+}
+
+@media (max-width: 520px) {
+  .settings-page .settings-tabs {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 760px) and (max-height: 680px) {
+  .settings-page .provider-list {
+    height: 58px;
+  }
+
+  .settings-page .provider-list-header {
+    display: none;
+  }
+
+  .settings-page .provider-list-scroll {
+    padding-block: 0;
+  }
+
+  .settings-page [data-testid="provider-list-row"] {
+    height: 58px;
+  }
+
+  .settings-page .provider-config-header {
+    min-height: 36px;
+    padding-block: 4px;
+  }
+
+  .settings-page .provider-config-tabs {
+    height: 34px;
   }
 }

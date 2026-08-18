@@ -114,7 +114,7 @@ export function ProviderList({
         ) : <span className="h-7 w-7" aria-hidden />}
       </div>
 
-      <div className="flex min-h-0 flex-1 overflow-x-auto py-1.5 lg:block lg:overflow-x-hidden lg:overflow-y-auto">
+      <div className="provider-list-scroll flex min-h-0 flex-1 overflow-x-auto overflow-y-hidden py-1.5 lg:block lg:overflow-x-hidden lg:overflow-y-auto">
         {addedProviders.length === 0 ? (
           <div className="flex h-full min-w-[220px] flex-col items-center justify-center px-3 py-4 text-center lg:min-w-0">
             <Server className="h-5 w-5 text-[var(--leemo-ink-3)]" aria-hidden />

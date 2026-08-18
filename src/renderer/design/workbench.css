@@ -291,3 +291,33 @@
     padding-inline: 12px;
   }
 }
+/* Raw tool records stay bounded so one verbose command cannot take over the
+ * conversation. A quiet, arrow-free inner scrollbar keeps that trust surface
+ * distinguishable from the timeline's primary scroll track. */
+.leemo-raw-tool-details::-webkit-scrollbar,
+.leemo-timeline-scroll::-webkit-scrollbar {
+  width: 7px;
+  height: 7px;
+}
+
+.leemo-raw-tool-details::-webkit-scrollbar-track,
+.leemo-timeline-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.leemo-raw-tool-details::-webkit-scrollbar-thumb,
+.leemo-timeline-scroll::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--leemo-ink-3) 38%, transparent);
+  background-clip: padding-box;
+}
+
+.leemo-raw-tool-details::-webkit-scrollbar-button,
+.leemo-timeline-scroll::-webkit-scrollbar-button,
+.leemo-raw-tool-details::-webkit-scrollbar-button:single-button,
+.leemo-timeline-scroll::-webkit-scrollbar-button:single-button {
+  display: none;
+  width: 0;
+  height: 0;
+}

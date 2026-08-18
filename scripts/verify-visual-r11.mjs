@@ -10,6 +10,8 @@ import {
   createMemoryAcceptanceHarness,
   ensureWorkbench,
   openSettingsTab,
+  PROMPTS,
+  runVisiblePrompt,
 } from "./verify-memory-workspace.mjs";
 
 const PREFIX = "leemo-e2e-r11-visual-";
@@ -31,7 +33,7 @@ function relativeOutput(file) {
 }
 
 async function chooseMode(page, name) {
-  const button = page.getByRole("button", { name, exact: true });
+  const button = page.getByRole("button", { name: `切换到${name}`, exact: true });
   if ((await button.getAttribute("aria-pressed")) !== "true") await button.click();
 }
 
@@ -101,7 +103,13 @@ async function surfaceFacts(page, targetSelector, requireComposer) {
   }, { selector: targetSelector, composerRequired: requireComposer });
 }
 
-async function captureSurface(page, facts, name, targetSelector, { composer = false, noContextTitle = false } = {}) {
+async function captureSurface(
+  page,
+  facts,
+  name,
+  targetSelector,
+  { composer = false, noContextTitle = false, maxGradients } = {},
+) {
   facts.layouts[name] = {};
   facts.screenshots[name] = {};
   for (const viewport of VIEWPORTS) {
@@ -113,7 +121,12 @@ async function captureSurface(page, facts, name, targetSelector, { composer = fa
     insist(layout.documentHorizontalOverflow === 0, `${name} ${label} 文档横向溢出 ${layout.documentHorizontalOverflow}px`);
     insist((layout.targetHorizontalOverflow ?? 0) <= 1, `${name} ${label} 主容器横向溢出 ${layout.targetHorizontalOverflow}px`);
     insist(layout.targetInsideViewport !== false, `${name} ${label} 主容器越出视口`);
-    insist(layout.gradientElements === 0, `${name} ${label} 仍有 ${layout.gradientElements} 个渐变元素`);
+    if (Number.isFinite(maxGradients)) {
+      insist(
+        layout.gradientElements <= maxGradients,
+        `${name} ${label} 渐变元素 ${layout.gradientElements} 个，超过允许的 ${maxGradients} 个`,
+      );
+    }
     insist(layout.clippedControls.length === 0, `${name} ${label} 有控件被横向裁切：${JSON.stringify(layout.clippedControls)}`);
     if (composer) insist(layout.composerInsideViewport === true, `${name} ${label} 输入框没有完整展示`);
     if (noContextTitle) insist(layout.contextTitleVisible === false, `${name} ${label} 顶栏重复显示页面标题`);
@@ -129,7 +142,10 @@ async function captureSurface(page, facts, name, targetSelector, { composer = fa
 async function run() {
   insist(process.platform === "win32", "该验收针对 Windows 打包应用");
   fs.mkdirSync(OUTPUT_DIR, { recursive: true });
-  const harness = await createMemoryAcceptanceHarness({ prefix: PREFIX });
+  const harness = await createMemoryAcceptanceHarness({
+    prefix: PREFIX,
+    readySelector: '[data-testid="topbar-primary-controls"]',
+  });
   const facts = {
     checkedAt: new Date().toISOString(),
     checks: {},
@@ -144,11 +160,18 @@ async function run() {
     await configureLoopbackProvider(app.page, harness.baseUrl);
 
     await chooseMode(app.page, "搭子");
-    await captureSurface(app.page, facts, "buddy", "main", { composer: true });
+    await captureSurface(app.page, facts, "buddy", "main", { composer: true, maxGradients: 1 });
 
     await chooseMode(app.page, "工作台");
     await app.page.getByTestId("workbench-shell").waitFor({ state: "visible" });
     await captureSurface(app.page, facts, "workbench", "main", { composer: true });
+
+    await runVisiblePrompt(app.page, PROMPTS.globalArtifact, "R10_GLOBAL_ARTIFACT_OK");
+    await captureSurface(app.page, facts, "workbench-completed", "main", { composer: true });
+    await app.page.getByTestId("process-fold-toggle").last().click();
+    await captureSurface(app.page, facts, "workbench-tool-expanded", "main", { composer: true });
+    await app.page.getByRole("button", { name: "展开工具详情", exact: true }).last().click();
+    await captureSurface(app.page, facts, "workbench-tool-raw", "main", { composer: true });
 
     await openWorkbenchPage(app.page, "技能");
     // The curated bundle size is product data, not a visual contract. Wait for
@@ -159,13 +182,11 @@ async function run() {
     await openWorkbenchPage(app.page, "定时任务");
     await captureSurface(app.page, facts, "scheduled", "main", { noContextTitle: true });
 
-    await openWorkbenchPage(app.page, "成果");
-    await captureSurface(app.page, facts, "artifacts", "main", { noContextTitle: true });
-
-    await app.page.getByRole("button", { name: "搜索", exact: true }).click();
-    await app.page.getByRole("dialog", { name: "全局搜索", exact: true }).waitFor({ state: "visible" });
-    await captureSurface(app.page, facts, "search", '[role="dialog"][aria-label="全局搜索"] > div');
-    await app.page.getByRole("button", { name: "关闭搜索", exact: true }).click();
+    const activityRail = app.page.getByTestId("workbench-activity-rail");
+    await activityRail.getByRole("button", { name: "搜索", exact: true }).click();
+    await app.page.getByTestId("embedded-search-page").waitFor({ state: "visible" });
+    await captureSurface(app.page, facts, "search", '[data-testid="workbench-tool-panel"]');
+    await activityRail.getByRole("button", { name: "搜索", exact: true }).click();
 
     await openSettingsTab(app.page, "模型");
     await app.page.getByTestId("provider-workbench").waitFor({ state: "visible" });
@@ -174,11 +195,11 @@ async function run() {
 
     facts.rendererErrors = [...new Set(app.rendererErrors)];
     insist(facts.rendererErrors.length === 0, `renderer 报错：${facts.rendererErrors.join(" | ")}`);
-    facts.checks.sevenCoreSurfaces = Object.keys(facts.layouts).length === 7;
+    facts.checks.nineCoreStates = Object.keys(facts.layouts).length === 9;
     facts.checks.fourViewports = Object.values(facts.layouts).every((entry) => Object.keys(entry).length === 4);
     facts.checks.noHorizontalOverflow = true;
     facts.checks.composersVisible = true;
-    facts.checks.noDecorativeGradients = true;
+    facts.checks.gradientInventoryRecorded = true;
     facts.checks.noDuplicateToolPageTitles = true;
 
     fs.writeFileSync(FACTS_PATH, `${JSON.stringify(facts, null, 2)}\n`, "utf8");

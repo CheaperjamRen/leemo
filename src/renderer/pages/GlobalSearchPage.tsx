@@ -362,7 +362,7 @@ export default function GlobalSearchPage({ embedded = false, onClose, initialSco
           </p>
         )}
         {!query.trim() ? (
-          <div className="leemo-global-search__empty">
+          <div className="leemo-global-search__empty" data-state="idle">
             <Search aria-hidden />
             <p>
               <span>输入关键词搜索</span>
@@ -370,12 +370,12 @@ export default function GlobalSearchPage({ embedded = false, onClose, initialSco
             </p>
           </div>
         ) : loadingAllFiles && (filter === "all" || filter === "files") && results.length === 0 ? (
-          <div className="leemo-global-search__empty">
+          <div className="leemo-global-search__empty" data-state="loading">
             <Search aria-hidden />
             <p>正在读取文件…</p>
           </div>
         ) : results.length === 0 ? (
-          <div className="leemo-global-search__empty">
+          <div className="leemo-global-search__empty" data-state="no-results">
             <Search aria-hidden />
             <p>没找到相关内容</p>
           </div>

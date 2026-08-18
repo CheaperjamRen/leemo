@@ -152,7 +152,7 @@ describe("GlobalSearchPage", () => {
 
   it("shows empty state when query is empty", () => {
     renderSeeded();
-    expect(screen.getByText("输入关键词搜索")).toBeInTheDocument();
+    expect(screen.getByText("输入关键词搜索").closest("div")).toHaveAttribute("data-state", "idle");
   });
 
   it("offers an explicit close action", async () => {

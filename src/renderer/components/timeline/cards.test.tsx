@@ -21,6 +21,25 @@ describe("timeline cards render their data", () => {
     expect(screen.getByText(/38 pages/)).toBeInTheDocument();
   });
 
+  it("keeps absolute paths in raw details while the collapsed write summary stays compact", () => {
+    const item: Of<"tool"> = {
+      kind: "tool",
+      id: "write-compact",
+      runId: "r",
+      toolUseId: "write-compact",
+      name: "Write",
+      input: { file_path: "E:\\Temp\\private-root\\交付.md", content: "正文" },
+      status: "ok",
+      summary: "File created successfully at: E:\\Temp\\private-root\\交付.md",
+    };
+    render(<ToolCard item={item} />);
+
+    expect(screen.getByText("已写入 交付.md")).toBeInTheDocument();
+    expect(screen.queryByText(/private-root/)).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "展开工具详情" }));
+    expect(screen.getByTestId("raw-tool-details")).toHaveTextContent("E:\\Temp\\private-root\\交付.md");
+  });
+
   it("ToolCard expands retained inputs and results as the actual technical record", () => {
     const item: Of<"tool"> = {
       kind: "tool", id: "raw", runId: "r", toolUseId: "tool-raw", name: "Read",
@@ -30,13 +49,15 @@ describe("timeline cards render their data", () => {
     fireEvent.click(screen.getByRole("button", { name: "展开工具详情" }));
 
     const details = screen.getByTestId("raw-tool-details");
-    expect(details).toHaveTextContent("Read");
+    expect(details).toHaveTextContent("读取文件");
     expect(details).toHaveTextContent('"file_path": "课程/讲义.pdf"');
     expect(details).toHaveTextContent("完成");
     expect(details).toHaveTextContent("参数");
     expect(details).toHaveTextContent("返回结果");
     expect(details).toHaveTextContent("读取了 38 页");
     expect(details).toHaveClass("max-h-72", "overflow-auto", "select-text");
+    expect(screen.getByRole("button", { name: "复制参数" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "复制返回结果" })).toBeInTheDocument();
     expect(details).not.toHaveTextContent(/完整输出|stdout|stderr|工作目录|退出代码|耗时/);
   });
 

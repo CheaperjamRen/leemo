@@ -97,7 +97,7 @@ export default function StartHome({
           onOpenItem={() => onOpen("overview")}
         />
 
-        <section className="leemo-start-card" aria-labelledby="start-today-title">
+        <section className="leemo-start-card" data-density={todayTasks.length === 0 ? "compact" : todayTasks.length < 3 ? "regular" : "full"} aria-labelledby="start-today-title">
           <header className="leemo-start-card__header">
             <span className="leemo-start-card__index">02</span>
             <div className="leemo-start-card__heading"><h2 id="start-today-title">今天</h2><span>{todayTaskCount} 项</span></div>
@@ -108,7 +108,7 @@ export default function StartHome({
           <footer className="leemo-start-card__footer"><span>只展示明确属于今天的待办</span><button onClick={() => onOpen("tasks")}>查看待办 <ArrowRight aria-hidden /></button></footer>
         </section>
 
-        <section className="leemo-start-card" aria-labelledby="start-inbox-title">
+        <section className="leemo-start-card" data-density={inbox.length === 0 ? "compact" : inbox.length < 3 ? "regular" : "full"} aria-labelledby="start-inbox-title">
           <header className="leemo-start-card__header">
             <span className="leemo-start-card__index">03</span>
             <div className="leemo-start-card__heading"><h2 id="start-inbox-title">收集箱</h2><span>{inboxCount} 条最近记录</span></div>
@@ -119,7 +119,7 @@ export default function StartHome({
           <footer className="leemo-start-card__footer"><span><Sparkles aria-hidden />记录后不会自动叫醒 AI</span><button onClick={() => onOpen("inbox")}>打开收集箱 <ArrowRight aria-hidden /></button></footer>
         </section>
 
-        <section className="leemo-start-card" aria-labelledby="start-recent-title">
+        <section className="leemo-start-card" data-density={recent.length === 0 ? "compact" : recent.length < 3 ? "regular" : "full"} aria-labelledby="start-recent-title">
           <header className="leemo-start-card__header">
             <span className="leemo-start-card__index">04</span>
             <div className="leemo-start-card__heading"><h2 id="start-recent-title">最近</h2><span>本地文档</span></div>

@@ -45,8 +45,8 @@
   flex: 1 1 auto;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
-  padding: 18px 16px 28px;
+  justify-content: flex-end;
+  padding: 18px 16px clamp(64px, 9vh, 88px);
   color: var(--leemo-ink);
 }
 
@@ -207,7 +207,7 @@
   }
 
   .leemo-buddy-landing {
-    padding-block: 8px 12px;
+    padding: 8px 16px 42px;
   }
 
   .leemo-buddy-intro {

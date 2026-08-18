@@ -1,5 +1,7 @@
+import { Check, Copy } from "lucide-react";
+import { useState } from "react";
 import type { TimelineItem } from "../../stores/message-model";
-import { toolOutcomeLabel } from "../tool-labels";
+import { toolActionLabel, toolOutcomeLabel } from "../tool-labels";
 
 const STATUS_LABEL = { running: "进行中", ok: "完成", error: "失败" } as const;
 
@@ -22,20 +24,47 @@ function isShellTool(name: string): boolean {
   return /^(?:bash|shell|powershell|command)$/i.test(name);
 }
 
+function RawCopyButton({ value, label }: { value: string; label: string }) {
+  const [copied, setCopied] = useState(false);
+  const copy = async () => {
+    try {
+      if (!navigator.clipboard?.writeText) return;
+      await navigator.clipboard.writeText(value);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1_600);
+    } catch {
+      setCopied(false);
+    }
+  };
+  return (
+    <button
+      type="button"
+      aria-label={copied ? `已复制${label}` : `复制${label}`}
+      title={copied ? "已复制" : `复制${label}`}
+      onClick={() => void copy()}
+      className="inline-grid h-6 w-6 place-items-center rounded-[5px] text-[var(--leemo-ink-3)] transition-colors hover:bg-[var(--leemo-side-hover)] hover:text-[var(--leemo-ink)]"
+    >
+      {copied ? <Check className="h-3.5 w-3.5" aria-hidden /> : <Copy className="h-3.5 w-3.5" aria-hidden />}
+    </button>
+  );
+}
+
 export default function RawToolDetails({ item }: { item: Extract<TimelineItem, { kind: "tool" }> }) {
   const input = inputRecord(item.input);
   const shell = isShellTool(item.name) && typeof input?.command === "string";
   const result = item.summary?.trim() || (item.status === "running" ? "等待返回结果" : "没有返回内容");
+  const serializedInput = serializeInput(item.input);
   const statusLabel = toolOutcomeLabel(item.outcome, STATUS_LABEL[item.status]);
+  const actionLabel = shell ? "执行命令" : toolActionLabel(item.name);
 
   return (
     <div
       data-testid="raw-tool-details"
-      className="max-h-72 select-text overflow-auto border-t border-[var(--leemo-line-soft)] bg-[var(--leemo-card)] px-3 py-2.5 text-[11.5px] text-[var(--leemo-ink-2)]"
+      className="leemo-raw-tool-details max-h-72 select-text overflow-auto border-t border-[var(--leemo-line-soft)] bg-[var(--leemo-card)] px-3 py-2.5 text-[11.5px] text-[var(--leemo-ink-2)]"
     >
-      <header className="mb-2 flex items-center gap-2">
-        <span className="font-mono text-[12px] font-medium text-[var(--leemo-ink)]">{shell ? "Shell" : item.name}</span>
-        <span className="text-[10.5px] text-[var(--leemo-ink-3)]">{statusLabel}</span>
+      <header className="mb-2 flex items-center gap-1.5">
+        <span className="text-[12px] font-medium text-[var(--leemo-ink)]" title={item.name}>{actionLabel}</span>
+        <span className="text-[10.5px] text-[var(--leemo-ink-3)]">· {statusLabel}</span>
       </header>
       {item.userFeedback?.trim() ? (
         <section className="mb-2 rounded-[6px] border border-[var(--leemo-line-soft)] bg-[var(--leemo-panel)] px-2.5 py-2">
@@ -56,22 +85,23 @@ export default function RawToolDetails({ item }: { item: Extract<TimelineItem, {
             </p>
           ) : null}
           <section>
-            <h5 className="mb-1 text-[10.5px] font-medium text-[var(--leemo-ink-3)]">{item.status === "error" ? "错误" : "输出"}</h5>
-            <pre data-testid="raw-tool-output" className="whitespace-pre-wrap break-words font-mono leading-5 text-[var(--leemo-ink-2)]">{result}</pre>
+            <div className="mb-1 flex items-center justify-between gap-2"><h5 className="text-[10.5px] font-medium text-[var(--leemo-ink-3)]">{item.status === "error" ? "错误" : "输出"}</h5><RawCopyButton value={result} label={item.status === "error" ? "错误" : "输出"} /></div>
+            <pre data-testid="raw-tool-output" className="whitespace-pre-wrap break-words rounded-[6px] bg-[var(--leemo-panel)] px-2.5 py-2 font-mono leading-5 text-[var(--leemo-ink-2)]">{result}</pre>
           </section>
         </div>
       ) : (
         <div className="space-y-2.5">
           <section>
-            <h5 className="mb-1 text-[10.5px] font-medium text-[var(--leemo-ink-3)]">参数</h5>
-            <pre className="whitespace-pre-wrap break-words rounded-[6px] bg-[var(--leemo-panel)] px-2.5 py-2 font-mono leading-5 text-[var(--leemo-ink)]">{serializeInput(item.input)}</pre>
+            <div className="mb-1 flex items-center justify-between gap-2"><h5 className="text-[10.5px] font-medium text-[var(--leemo-ink-3)]">参数</h5><RawCopyButton value={serializedInput} label="参数" /></div>
+            <pre className="whitespace-pre-wrap break-words rounded-[6px] bg-[var(--leemo-panel)] px-2.5 py-2 font-mono leading-5 text-[var(--leemo-ink)]">{serializedInput}</pre>
           </section>
           <section>
-            <h5 className="mb-1 text-[10.5px] font-medium text-[var(--leemo-ink-3)]">返回结果</h5>
-            <pre data-testid="raw-tool-output" className="whitespace-pre-wrap break-words font-mono leading-5 text-[var(--leemo-ink-2)]">{result}</pre>
+            <div className="mb-1 flex items-center justify-between gap-2"><h5 className="text-[10.5px] font-medium text-[var(--leemo-ink-3)]">返回结果</h5><RawCopyButton value={result} label="返回结果" /></div>
+            <pre data-testid="raw-tool-output" className="whitespace-pre-wrap break-words rounded-[6px] bg-[var(--leemo-panel)] px-2.5 py-2 font-mono leading-5 text-[var(--leemo-ink-2)]">{result}</pre>
           </section>
         </div>
       )}
+      <footer className="mt-2 border-t border-[var(--leemo-line-soft)] pt-2 text-[10.5px] text-[var(--leemo-ink-3)]">{statusLabel} · 原始记录</footer>
     </div>
   );
 }

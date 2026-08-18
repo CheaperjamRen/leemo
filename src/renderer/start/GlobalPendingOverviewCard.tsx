@@ -24,8 +24,13 @@ export default function GlobalPendingOverviewCard({
   onOpenItem(item: GlobalOverviewDisplayItem): void;
 }) {
   const hasSnapshot = snapshot !== null;
+  const density = !hasSnapshot || items.length === 0
+    ? "compact"
+    : items.length < 3
+      ? "regular"
+      : "full";
   return (
-    <section className="leemo-start-card leemo-start-overview-card" aria-labelledby="start-overview-title">
+    <section className="leemo-start-card leemo-start-overview-card" data-density={density} aria-labelledby="start-overview-title">
       <header className="leemo-start-card__header">
         <span className="leemo-start-card__index">01</span>
         <div className="leemo-start-card__heading">

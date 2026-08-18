@@ -171,6 +171,23 @@
   text-align: center;
 }
 
+.leemo-global-search__empty[data-state="idle"] {
+  min-height: 0;
+  flex: 0 0 auto;
+  grid-template-columns: 18px minmax(0, auto);
+  place-content: start;
+  justify-items: start;
+  gap: 8px;
+  padding: 26px 4px 18px;
+  text-align: left;
+}
+
+.leemo-global-search__empty[data-state="idle"] > svg {
+  width: 17px;
+  height: 17px;
+  margin-top: 1px;
+}
+
 .leemo-global-search__empty > svg {
   width: 22px;
   height: 22px;

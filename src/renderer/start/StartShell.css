@@ -197,6 +197,14 @@
   background: var(--start-surface);
 }
 
+.leemo-start-card[data-density="regular"] {
+  min-height: 226px;
+}
+
+.leemo-start-card[data-density="compact"] {
+  min-height: 184px;
+}
+
 .leemo-start-card__header {
   display: grid;
   grid-template-columns: 28px minmax(0, 1fr) auto;
@@ -1983,6 +1991,8 @@
 @media (max-width: 1099px) {
   .leemo-start-home__grid { grid-template-columns: minmax(0, 1fr); }
   .leemo-start-card { min-height: 276px; }
+  .leemo-start-card[data-density="regular"] { min-height: 220px; }
+  .leemo-start-card[data-density="compact"] { min-height: 176px; }
   .leemo-start-main { height: auto; min-height: calc(100vh - 72px); }
   .leemo-start-overview-item { grid-template-columns: minmax(0, 1fr); }
   .leemo-start-overview-item__actions { grid-column: 1; grid-row: auto; padding-left: 68px; }

@@ -6,6 +6,20 @@ import RawToolDetails from "./RawToolDetails";
 
 const STATUS_LABEL = { running: "进行中…", ok: "完成", error: "失败" } as const;
 
+function compactFallback(item: Extract<TimelineItem, { kind: "tool" }>): string {
+  if (item.status === "ok" && (item.name === "Write" || item.name === "Edit")) {
+    const input = item.input && typeof item.input === "object" && !Array.isArray(item.input)
+      ? item.input as Record<string, unknown>
+      : undefined;
+    const path = [input?.file_path, input?.path, input?.file].find((value): value is string => typeof value === "string" && value.trim().length > 0);
+    if (path) {
+      const name = path.split(/[\\/]/).filter(Boolean).at(-1) ?? path;
+      return `${item.name === "Write" ? "已写入" : "已更新"} ${name}`;
+    }
+  }
+  return item.summary ?? STATUS_LABEL[item.status];
+}
+
 /* 工具类型图标（按 name）：Read→doc, Grep→search, Write→pencil, 其它→通用扳手。
    stroke 风格照 k3/workbench-mode.html：fill=none stroke=currentColor 1.7 round。 */
 function typeIcon(name: string) {
@@ -65,7 +79,7 @@ export default function ToolCard({
   const neutralStop = item.outcome === "denied" || item.outcome === "cancelled" || item.outcome === "interrupted";
   const resultLabel = toolOutcomeLabel(
     item.outcome,
-    toolResultLabel(item.name, item.status, item.summary ?? STATUS_LABEL[item.status]),
+    toolResultLabel(item.name, item.status, compactFallback(item)),
   );
   return (
     <div className="w-full overflow-hidden rounded-[8px] border border-[var(--leemo-line-2)] bg-[var(--leemo-panel)] transition-colors hover:border-[var(--leemo-line)] hover:bg-[var(--leemo-card)]">
