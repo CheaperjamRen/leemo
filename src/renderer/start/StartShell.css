@@ -1352,10 +1352,20 @@
 }
 
 .leemo-document-editor-wrap .capture-editor__toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 5;
   min-height: 38px;
   padding-inline: 0;
   border-top: 0;
   background: var(--start-surface);
+}
+
+.leemo-document-editor-wrap .capture-editor__source {
+  min-height: max(480px, calc(100vh - 294px));
+  flex: none;
+  field-sizing: content;
+  overflow: hidden;
 }
 
 .leemo-document-editor-wrap .capture-editor__tool-button {

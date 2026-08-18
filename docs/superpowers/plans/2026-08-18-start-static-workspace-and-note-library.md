@@ -515,11 +515,11 @@ git commit -m "refactor: route organizer work through start"
 - Create: `scripts/verify-start-workspace.mjs`
 - Create: `docs/verification/2026-08-18-start-workspace.md`
 
-- [ ] **Step 1: Add a deterministic legacy migration fixture**
+- [x] **Step 1: Add a deterministic legacy migration fixture**
 
 Create flat notes, archived notes, trash, managed/external attachments and linked Todo rows; run migration twice and assert identical normalized output.
 
-- [ ] **Step 2: Run static verification**
+- [x] **Step 2: Run static verification**
 
 ```powershell
 npx vitest run tests/main/capture-persistence.test.ts tests/main/capture-admin.test.ts tests/main/capture-ipc.test.ts src/renderer/stores/captures.test.ts src/renderer/stores/tasks.test.ts src/renderer/start src/renderer/app/App.test.tsx src/renderer/pages/OrganizerPage.test.tsx
@@ -529,15 +529,15 @@ npm run build:main
 node scripts/verify-start-workspace.mjs
 ```
 
-- [ ] **Step 3: Run real Electron journeys**
+- [x] **Step 3: Run real Electron journeys**
 
 At 1440×900 and 960×680 verify Start homepage, create/edit/restart note, parent/child drag, local reference/backlink, note-created Todo/source return, attachment reference/copy, archive/trash/restore, and zero model requests for ordinary Start operations. Run the global overview plan's separate manual / automatic model-call acceptance before final release.
 
-- [ ] **Step 4: Compare with the authority**
+- [x] **Step 4: Compare with the authority**
 
 Record measured differences in `docs/verification/2026-08-18-start-workspace.md`. Require no clipped navigation, unintended horizontal scroll, editor compression, focus loss or layout shift from overlays.
 
-- [ ] **Step 5: Commit verification**
+- [x] **Step 5: Commit verification**
 
 ```powershell
 git add scripts/verify-start-workspace.mjs docs/verification/2026-08-18-start-workspace.md src/renderer/app/App.test.tsx src/renderer/pages/OrganizerPage.test.tsx tests/main/capture-persistence.test.ts

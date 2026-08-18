@@ -158,6 +158,7 @@ async function seedAndExercise(page) {
     "- [ ] 打磨 Leemo 的产品故事与 PRD",
     "- [ ] 把简历按 AI 产品岗位重新组织",
     "- [ ] 梳理 WorkBuddy、Codex 与 Kimi 的真实工作流差异",
+    "- [x] 已确认先由用户思考，再按需调用 AI",
     "",
     "> 先让自己的想法多活一会儿，再决定什么时候让 AI 介入。",
     "",
@@ -258,12 +259,35 @@ async function seedAndExercise(page) {
   insist(geometry1440.bodyScrollWidth <= geometry1440.bodyClientWidth + 1, "1440 页面出现水平滚动");
   await page.screenshot({ path: screenshot1440, animations: "disabled" });
   await page.getByRole("textbox", { name: "表头 1" }).scrollIntoViewIfNeeded();
+  const richEditorVisualContract = await page.evaluate(() => {
+    const scroll = document.querySelector(".leemo-document-scroll");
+    const toolbar = document.querySelector(".leemo-document-editor-wrap .capture-editor__toolbar");
+    const unchecked = document.querySelector(".capture-editor__list-item--unchecked");
+    const checked = document.querySelector(".capture-editor__list-item--checked");
+    scroll.scrollTo({ top: 320, left: 0 });
+    const scrollRect = scroll.getBoundingClientRect();
+    const toolbarRect = toolbar.getBoundingClientRect();
+    return {
+      toolbarPosition: getComputedStyle(toolbar).position,
+      toolbarPinned: Math.abs(toolbarRect.top - scrollRect.top) <= 2,
+      uncheckedRadius: getComputedStyle(unchecked, "::before").borderRadius,
+      checkedContent: getComputedStyle(checked, "::before").content,
+    };
+  });
+  insist(richEditorVisualContract.toolbarPosition === "sticky" && richEditorVisualContract.toolbarPinned, "长文滚动后格式栏没有保持可达");
+  insist(richEditorVisualContract.uncheckedRadius === "4px", `清单仍显示为单选圆点：${richEditorVisualContract.uncheckedRadius}`);
+  insist(richEditorVisualContract.checkedContent.includes("✓"), "已完成清单没有显示勾选状态");
   await page.screenshot({ path: screenshotObjects1440, animations: "disabled" });
   await page.getByRole("button", { name: "编辑 Markdown 源码" }).click();
   const visibleSourceEditor = page.getByRole("textbox", { name: "Markdown 源码" });
   await visibleSourceEditor.waitFor();
   await page.locator(".leemo-document-scroll").evaluate((element) => element.scrollTo({ top: 0, left: 0 }));
   await visibleSourceEditor.evaluate((element) => { element.scrollTop = 0; });
+  const sourceEditorVisualContract = await visibleSourceEditor.evaluate((element) => ({
+    overflowY: getComputedStyle(element).overflowY,
+    hasInnerScroll: element.scrollHeight > element.clientHeight + 1,
+  }));
+  insist(sourceEditorVisualContract.overflowY === "hidden" && !sourceEditorVisualContract.hasInnerScroll, "Markdown 源码仍有嵌套滚动条");
   await page.screenshot({ path: screenshotSource1440, animations: "disabled" });
   await page.getByRole("button", { name: "编辑文档" }).click();
   await ensureEditMode(page);
@@ -289,7 +313,7 @@ async function seedAndExercise(page) {
 
   const modelCalls = await page.evaluate(() => window.__leemoStartModelCalls ?? []);
   insist(modelCalls.length === 0, `静态 Start 操作意外调用模型：${modelCalls.join(", ")}`);
-  return { parentId: parent.id, childId: child.id, geometry1440, modelCalls };
+  return { parentId: parent.id, childId: child.id, geometry1440, modelCalls, richEditorVisualContract, sourceEditorVisualContract };
 }
 
 async function verifyRestart(page, ids) {
@@ -368,6 +392,10 @@ try {
     linkedTodoCreated: true,
     richMarkdownObjects: true,
     sourceModeSwitch: true,
+    editorVisualContract: {
+      ...first.richEditorVisualContract,
+      ...first.sourceEditorVisualContract,
+    },
     geometry1440: first.geometry1440,
     geometry960: restart.geometry,
     rendererConsoleErrors: 0,

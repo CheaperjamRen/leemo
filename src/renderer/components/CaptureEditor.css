@@ -204,7 +204,7 @@
   width: 15px;
   height: 15px;
   border: 1px solid #a3a9af;
-  border-radius: 50%;
+  border-radius: 4px;
   content: "";
 }
 
@@ -216,7 +216,12 @@
 .capture-editor__list-item--checked::before {
   border-color: var(--leemo-action-accent, #b86116);
   background: var(--leemo-action-accent, #b86116);
-  box-shadow: inset 0 0 0 3px #fff;
+  color: #fff;
+  content: "✓";
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 13px;
+  text-align: center;
 }
 
 .capture-editor--source {
