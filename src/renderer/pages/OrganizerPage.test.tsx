@@ -87,6 +87,19 @@ function captureClient(notes: Note[] = [], archivedNotes: Note[] = []): CaptureC
       pinnedAt: null,
       organizedAt: null,
     })),
+    moveNote: vi.fn(async () => notes),
+    setNotePinned: vi.fn(async ({ id, expectedRevision, pinned }) => ({
+      ...(notes.find((note) => note.id === id)!),
+      pinnedAt: pinned ? 50 : null,
+      revision: expectedRevision + 1,
+      updatedAt: 50,
+    })),
+    markNoteOrganized: vi.fn(async ({ id, expectedRevision, organized }) => ({
+      ...(notes.find((note) => note.id === id)!),
+      organizedAt: organized ? 50 : null,
+      revision: expectedRevision + 1,
+      updatedAt: 50,
+    })),
     archiveNote: vi.fn(async ({ id, expectedRevision }) => ({
       ...(notes.find((note) => note.id === id)!), archivedAt: 50, revision: expectedRevision + 1, updatedAt: 50,
     })),

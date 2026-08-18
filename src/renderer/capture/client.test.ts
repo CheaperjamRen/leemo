@@ -4,9 +4,12 @@ import type {
   CommitQuickDraftInput,
   CreateNoteInput,
   DeleteNoteInput,
+  MarkNoteOrganizedInput,
+  MoveNoteInput,
   Note,
   QuickDraft,
   SaveQuickDraftInput,
+  SetNotePinnedInput,
 } from "../../captures";
 import type { CreateTaskInput, UserTask } from "../../tasks";
 import {
@@ -89,6 +92,32 @@ describe("capture clients", () => {
     await expect(client.deleteNote(deleteInput)).resolves.toBeUndefined();
     expect(invoke).toHaveBeenNthCalledWith(1, "createNote", createInput);
     expect(invoke).toHaveBeenNthCalledWith(2, "deleteNote", deleteInput);
+  });
+
+  it("forwards note organization operations through the main-window client", async () => {
+    const moveInput: MoveNoteInput = {
+      id: note.id,
+      expectedRevision: note.revision,
+      parentId: "parent-note",
+      index: 0,
+    };
+    const pinInput: SetNotePinnedInput = { id: note.id, expectedRevision: 2, pinned: true };
+    const organizedInput: MarkNoteOrganizedInput = { id: note.id, expectedRevision: 3, organized: true };
+    const moved = { ...note, parentId: "parent-note", revision: 2 };
+    const pinned = { ...moved, pinnedAt: 100, revision: 3 };
+    const organized = { ...pinned, organizedAt: 200, revision: 4 };
+    const invoke = vi.fn()
+      .mockResolvedValueOnce({ ok: true, response: [moved] })
+      .mockResolvedValueOnce({ ok: true, response: pinned })
+      .mockResolvedValueOnce({ ok: true, response: organized });
+    const client = new IpcCaptureClient({ invoke, onChanged: vi.fn(() => vi.fn()) });
+
+    await expect(client.moveNote(moveInput)).resolves.toEqual([moved]);
+    await expect(client.setNotePinned(pinInput)).resolves.toEqual(pinned);
+    await expect(client.markNoteOrganized(organizedInput)).resolves.toEqual(organized);
+    expect(invoke).toHaveBeenNthCalledWith(1, "moveNote", moveInput);
+    expect(invoke).toHaveBeenNthCalledWith(2, "setNotePinned", pinInput);
+    expect(invoke).toHaveBeenNthCalledWith(3, "markNoteOrganized", organizedInput);
   });
 
   it("uses only named methods in the quick window and forwards exact inputs", async () => {

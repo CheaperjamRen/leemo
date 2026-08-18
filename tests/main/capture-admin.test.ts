@@ -95,6 +95,10 @@ describe("capture admin", () => {
       revision: 1,
       createdAt: 200,
       updatedAt: 200,
+      parentId: null,
+      sortOrder: 0,
+      pinnedAt: null,
+      organizedAt: null,
     });
     expect(admin.getQuickDraft()).toMatchObject({ revision: 0, markdown: "" });
     expect(admin.listNotes()).toEqual([committed]);
@@ -102,6 +106,60 @@ describe("capture admin", () => {
       { entity: "note", action: "created", id: "note-1", revision: 1 },
       { entity: "quickDraft", action: "cleared", id: "quick", revision: 1 },
     ]);
+  });
+
+  it("validates and emits note organization changes without partial writes", () => {
+    const { admin, setTime } = createHarness();
+    const parent = admin.createNote({ title: "求职准备", markdown: "" });
+    const child = admin.createNote({ title: "简历", markdown: "" });
+    const changes: CaptureChange[] = [];
+    admin.subscribe((change) => changes.push(change));
+
+    expect(() => admin.moveNote({
+      id: child.id,
+      expectedRevision: child.revision,
+      parentId: "missing",
+      index: 0,
+    })).toThrow(/父级|不存在/);
+    expect(() => admin.moveNote({
+      id: child.id,
+      expectedRevision: child.revision,
+      parentId: parent.id,
+      index: -1,
+    })).toThrow(/排序|位置/);
+    expect(changes).toEqual([]);
+
+    const affected = admin.moveNote({
+      id: child.id,
+      expectedRevision: child.revision,
+      parentId: parent.id,
+      index: 0,
+    });
+    expect(affected.find((note) => note.id === child.id)).toMatchObject({
+      parentId: parent.id,
+      sortOrder: 0,
+      revision: 2,
+    });
+    expect(() => admin.moveNote({
+      id: child.id,
+      expectedRevision: child.revision,
+      parentId: null,
+      index: 0,
+    })).toThrow(/更新|版本/);
+
+    setTime(300);
+    expect(admin.setNotePinned({
+      id: child.id,
+      expectedRevision: 2,
+      pinned: true,
+    })).toMatchObject({ pinnedAt: 300, revision: 3 });
+    setTime(400);
+    expect(admin.markNoteOrganized({
+      id: child.id,
+      expectedRevision: 3,
+      organized: true,
+    })).toMatchObject({ organizedAt: 400, revision: 4 });
+    expect(changes.map(({ action }) => action)).toEqual(["moved", "pinned", "organized"]);
   });
 
   it("keeps task-mode and empty drafts because Task commit is outside this milestone", () => {

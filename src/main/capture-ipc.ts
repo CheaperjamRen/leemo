@@ -5,9 +5,12 @@ import type {
   CommitQuickDraftInput,
   CreateNoteInput,
   DeleteNoteInput,
+  MarkNoteOrganizedInput,
   MigrateCaptureStorageInput,
+  MoveNoteInput,
   RemoveNoteAttachmentInput,
   SaveQuickDraftInput,
+  SetNotePinnedInput,
   UpdateNoteInput,
   UnarchiveNoteInput,
 } from "../captures";
@@ -44,6 +47,9 @@ const MAIN_OPERATIONS = new Set([
   "getNote",
   "createNote",
   "updateNote",
+  "moveNote",
+  "setNotePinned",
+  "markNoteOrganized",
   "archiveNote",
   "unarchiveNote",
   "deleteNote",
@@ -115,6 +121,15 @@ export function createCaptureIpcDispatcher(
             break;
           case "updateNote":
             response = admin.updateNote(message.payload as UpdateNoteInput);
+            break;
+          case "moveNote":
+            response = admin.moveNote(message.payload as MoveNoteInput);
+            break;
+          case "setNotePinned":
+            response = admin.setNotePinned(message.payload as SetNotePinnedInput);
+            break;
+          case "markNoteOrganized":
+            response = admin.markNoteOrganized(message.payload as MarkNoteOrganizedInput);
             break;
           case "archiveNote":
             response = admin.archiveNote(message.payload as ArchiveNoteInput);

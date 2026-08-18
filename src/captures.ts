@@ -167,6 +167,9 @@ export interface CaptureOperationInputs {
   listNotes: undefined;
   listArchivedNotes: undefined;
   updateNote: UpdateNoteInput;
+  moveNote: MoveNoteInput;
+  setNotePinned: SetNotePinnedInput;
+  markNoteOrganized: MarkNoteOrganizedInput;
   attachImageBytes: AttachImageBytesInput;
   attachExternalFile: AttachFileInput;
   attachFileCopy: AttachFileInput;
@@ -185,7 +188,7 @@ export type CaptureChange =
   }
   | {
     entity: "note";
-    action: "created" | "updated" | "archived" | "unarchived" | "deleted" | "restored" | "permanentlyDeleted";
+    action: "created" | "updated" | "moved" | "pinned" | "organized" | "archived" | "unarchived" | "deleted" | "restored" | "permanentlyDeleted";
     id: string;
     revision: number;
   };

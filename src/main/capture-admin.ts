@@ -13,12 +13,15 @@ import {
   type Note,
   type NoteAttachment,
   type MigrateCaptureStorageInput,
+  type MarkNoteOrganizedInput,
+  type MoveNoteInput,
   type QuickCaptureMode,
   type QuickDraftRecurrence,
   type QuickDraft,
   type RemoveNoteAttachmentInput,
   type RestoreNoteInput,
   type SaveQuickDraftInput,
+  type SetNotePinnedInput,
   type UpdateNoteInput,
   type UnarchiveNoteInput,
 } from "../captures";
@@ -38,6 +41,9 @@ export interface CaptureAdminService {
   getNote(id: string): Note | null;
   createNote(input: CreateNoteInput): Note;
   updateNote(input: UpdateNoteInput): Note;
+  moveNote(input: MoveNoteInput): Note[];
+  setNotePinned(input: SetNotePinnedInput): Note;
+  markNoteOrganized(input: MarkNoteOrganizedInput): Note;
   archiveNote(input: ArchiveNoteInput): Note;
   unarchiveNote(input: UnarchiveNoteInput): Note;
   deleteNote(input: DeleteNoteInput): void;
@@ -99,6 +105,22 @@ function requireId(value: unknown): string {
   const id = requireString(value, "便签编号", 200).trim();
   if (!id) throw new Error("便签编号不能为空。");
   return id;
+}
+
+function requireParentId(value: unknown): string | null {
+  return value === null ? null : requireId(value);
+}
+
+function requireIndex(value: unknown): number {
+  if (!Number.isInteger(value) || Number(value) < 0) {
+    throw new Error("便签排序位置必须是非负整数。");
+  }
+  return Number(value);
+}
+
+function requireBoolean(value: unknown, label: string): boolean {
+  if (typeof value !== "boolean") throw new Error(`${label}格式不正确。`);
+  return value;
 }
 
 function normalizeContent(value: unknown): { title: string; markdown: string } {
@@ -302,6 +324,42 @@ export function createCaptureAdmin(options: CaptureAdminOptions): CaptureAdminWi
       });
       emit({ entity: "note", action: "updated", id: updated.id, revision: updated.revision });
       return cloneNote(updated);
+    },
+    moveNote(value) {
+      const input = requireRecord(value);
+      const id = requireId(input.id);
+      const affected = options.persistence.moveNote({
+        id,
+        expectedRevision: requireRevision(input.expectedRevision),
+        parentId: requireParentId(input.parentId),
+        index: requireIndex(input.index),
+      });
+      const moved = affected.find((note) => note.id === id);
+      if (!moved) throw new Error("便签移动后未返回当前记录，请刷新后重试。");
+      emit({ entity: "note", action: "moved", id, revision: moved.revision });
+      return affected.map(cloneNote);
+    },
+    setNotePinned(value) {
+      const input = requireRecord(value);
+      const note = options.persistence.setNotePinned({
+        id: requireId(input.id),
+        expectedRevision: requireRevision(input.expectedRevision),
+        pinned: requireBoolean(input.pinned, "置顶状态"),
+        updatedAt: now(),
+      });
+      emit({ entity: "note", action: "pinned", id: note.id, revision: note.revision });
+      return cloneNote(note);
+    },
+    markNoteOrganized(value) {
+      const input = requireRecord(value);
+      const note = options.persistence.markNoteOrganized({
+        id: requireId(input.id),
+        expectedRevision: requireRevision(input.expectedRevision),
+        organized: requireBoolean(input.organized, "整理状态"),
+        updatedAt: now(),
+      });
+      emit({ entity: "note", action: "organized", id: note.id, revision: note.revision });
+      return cloneNote(note);
     },
     archiveNote(value) {
       const input = requireRecord(value);
