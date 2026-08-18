@@ -101,7 +101,7 @@ export default function StartDocumentsView({
   const taskError = useTasks((state) => state.error);
   const [activeId, setActiveId] = useState<string | null>(selectedNoteId);
   const [draft, setDraft] = useState<DocumentDraft | null>(null);
-  const [viewMode, setViewMode] = useState<"preview" | "edit">("preview");
+  const [viewMode, setViewMode] = useState<"preview" | "rich" | "source">("preview");
   const [referenceMenuOpen, setReferenceMenuOpen] = useState(false);
   const [editorVersion, setEditorVersion] = useState(0);
   const [localError, setLocalError] = useState<string | null>(null);
@@ -195,7 +195,7 @@ export default function StartDocumentsView({
       revision: null,
       attachments: [],
     });
-    setViewMode("edit");
+    setViewMode("rich");
     setReferenceMenuOpen(false);
     setTaskCandidates(null);
     setTaskReceipt(null);
@@ -462,7 +462,8 @@ export default function StartDocumentsView({
               <div className="leemo-document-header__actions">
                 <div className="leemo-document-mode" role="group" aria-label="文档模式">
                   <button type="button" aria-pressed={viewMode === "preview"} onClick={() => setViewMode("preview")}>阅读</button>
-                  <button type="button" aria-label="编辑文档" aria-pressed={viewMode === "edit"} onClick={() => setViewMode("edit")}>编辑</button>
+                  <button type="button" aria-label="编辑文档" title="所见即所得编辑" aria-pressed={viewMode === "rich"} onClick={() => setViewMode("rich")}>编辑</button>
+                  <button type="button" aria-label="编辑 Markdown 源码" title="编辑 Markdown 源码" aria-pressed={viewMode === "source"} onClick={() => setViewMode("source")}>源码</button>
                 </div>
                 <span className={dirty ? "is-dirty" : "is-saved"}>{dirty ? "未保存" : "已保存"}</span>
                 <button type="button" aria-label="保存文档" title="保存文档 (Ctrl+S)" disabled={!dirty || saving} onClick={() => void saveDocument()}><Save aria-hidden /></button>
@@ -496,16 +497,19 @@ export default function StartDocumentsView({
             {(localError || storeError) ? <p className="leemo-document-error" role="alert">{localError || storeError}</p> : null}
             <div className="leemo-document-scroll">
               <div className="leemo-document-canvas">
-                {viewMode === "edit" ? (
+                {viewMode !== "preview" ? (
                   <div className="leemo-document-editor-wrap">
                     <CaptureEditor
-                      key={`${draft.key}:${editorVersion}`}
+                      key={`${draft.key}:${editorVersion}:${viewMode}`}
+                      variant="document"
+                      mode={viewMode}
                       markdown={draft.markdown}
                       onMarkdownChange={(markdown) => setDraft((current) => current ? { ...current, markdown } : current)}
                       onSave={() => void saveDocument()}
                       onPasteImage={(file) => void attachPastedImage(file)}
                       onDropFiles={(files) => void attachFiles(files)}
                       onOpenNoteReferenceMenu={() => setReferenceMenuOpen(true)}
+                      onOpenNoteReference={openDocumentId}
                       onDropNoteReference={(noteId) => {
                         const target = noteById.get(noteId);
                         if (target) insertReference(target);

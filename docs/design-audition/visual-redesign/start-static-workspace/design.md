@@ -148,6 +148,8 @@ Entering the document library automatically compacts the outer Start navigation 
 
 The editable canvas fills the remaining viewport height with a minimum first-screen writing area of 520px. Attachments and backlinks follow the prose and never reserve a permanent top-of-page band. At 1440×900, the visible writing width should be roughly 960–1040px in compact-navigation mode, close to a Word document rather than a narrow note card.
 
+Editing defaults to rendered rich Markdown: headings, emphasis, lists, links, code, formulas, tables and diagrams appear as the objects the user is editing, not as exposed `#`, `**` or `[label](url)` punctuation. The document mode control is `阅读 / 编辑 / 源码`; `编辑` is the Word-like rich surface and `源码` is an explicit escape hatch for users who prefer raw Markdown. Both modes update the same Markdown string, switch without data conversion or loss, preserve `Ctrl+S`, and use familiar formatting shortcuts such as `Ctrl+B` as toggles.
+
 Local note references use `leemo-note://<encoded-id>`. Clicking never reaches browser navigation. Typing `@`, using the reference button, or dropping a document row into the editor opens/inserts the same stable reference. Backlinks appear below the document as quiet rows rather than graph decoration.
 
 At widths below 1100px the Explorer narrows to 224px. Below 820px it becomes a temporary overlay; the writing canvas keeps at least 560px when the window permits. Removing or hiding a panel requires a whole-parent balance check so the remaining toolbar and canvas never leave an accidental empty strip.

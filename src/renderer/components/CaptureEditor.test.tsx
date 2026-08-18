@@ -1,7 +1,14 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import CaptureEditor from "./CaptureEditor";
+
+if (!("getBoundingClientRect" in Range.prototype)) {
+  Object.defineProperty(Range.prototype, "getBoundingClientRect", {
+    configurable: true,
+    value: () => new DOMRect(0, 0, 0, 0),
+  });
+}
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -43,6 +50,127 @@ describe("CaptureEditor", () => {
     expect(editor.querySelector("blockquote")).toHaveTextContent("只记录，不打断思路");
   });
 
+  it("renders standard Markdown objects without exposing their source punctuation", () => {
+    render(
+      <CaptureEditor
+        variant="document"
+        markdown={"# 求职主线\n\n先看[产品故事](leemo-note://story)，再整理 `证据`。"}
+        onMarkdownChange={vi.fn()}
+        onSave={vi.fn()}
+      />,
+    );
+
+    const editor = screen.getByRole("textbox", { name: "便签正文" });
+    expect(within(editor).getByRole("heading", { name: "求职主线" })).toBeInTheDocument();
+    expect(within(editor).getByRole("link", { name: "产品故事" })).toBeInTheDocument();
+    expect(editor).not.toHaveTextContent("# 求职主线");
+    expect(editor).not.toHaveTextContent("leemo-note://story");
+    expect(editor.querySelector("code")).toHaveTextContent("证据");
+  });
+
+  it("renders cloud-document Markdown blocks instead of leaking unsupported source", () => {
+    render(
+      <CaptureEditor
+        variant="document"
+        markdown={[
+          "> [!IMPORTANT]",
+          "> 先保留自己的判断。",
+          "",
+          "==需要复核==，公式 $\\sqrt{d_k}$。",
+          "",
+          "```ts",
+          "const ready = true;",
+          "```",
+          "",
+          "| 项目 | 状态 |",
+          "| --- | --- |",
+          "| 主线 | 进行中 |",
+          "",
+          "```mermaid",
+          "flowchart LR",
+          "  A --> B",
+          "```",
+        ].join("\n")}
+        onMarkdownChange={vi.fn()}
+        onSave={vi.fn()}
+      />,
+    );
+
+    const editor = screen.getByRole("textbox", { name: "便签正文" });
+    expect(within(editor).getByRole("combobox", { name: "高亮块类型" })).toHaveValue("important");
+    expect(within(editor).getByRole("textbox", { name: "高亮块内容" })).toHaveValue("先保留自己的判断。");
+    expect(editor).not.toHaveTextContent("[!IMPORTANT]");
+    expect(editor.querySelector(".capture-editor__highlight")).toHaveTextContent("需要复核");
+    expect(editor.querySelector(".katex")).toBeInTheDocument();
+    expect(editor.querySelector(".capture-editor__code")).toHaveTextContent("const ready = true;");
+    expect(within(editor).getByRole("textbox", { name: "表头 1" })).toHaveValue("项目");
+    expect(within(editor).getByRole("textbox", { name: "表头 2" })).toHaveValue("状态");
+    expect(within(editor).getByRole("textbox", { name: "第 1 行第 1 列" })).toHaveValue("主线");
+    expect(within(editor).getByRole("textbox", { name: "第 1 行第 2 列" })).toHaveValue("进行中");
+    expect(editor.querySelector(".markdown-editor__mermaid")).toBeInTheDocument();
+  });
+
+  it("creates and edits a table as a visual document object", async () => {
+    const user = userEvent.setup();
+    const onMarkdownChange = vi.fn();
+    render(
+      <CaptureEditor
+        variant="document"
+        markdown=""
+        onMarkdownChange={onMarkdownChange}
+        onSave={vi.fn()}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "插入表格" }));
+    const firstHeader = await screen.findByRole("textbox", { name: "表头 1" });
+    await user.clear(firstHeader);
+    await user.type(firstHeader, "任务");
+    await user.click(screen.getByRole("button", { name: "添加表格行" }));
+    await user.click(screen.getByRole("button", { name: "切换表格对齐" }));
+
+    await waitFor(() => {
+      const markdown = String(onMarkdownChange.mock.calls.at(-1)?.[0] ?? "");
+      expect(markdown).toContain("| 任务 | 列 2 |");
+      expect(markdown).toContain("| :---: | :---: |");
+      expect(markdown.split("\n")).toHaveLength(5);
+    });
+  });
+
+  it("offers a source mode whose Ctrl+B shortcut toggles Markdown markers", async () => {
+    const onMarkdownChange = vi.fn();
+    const { rerender } = render(
+      <CaptureEditor
+        variant="document"
+        mode="source"
+        markdown="重点"
+        onMarkdownChange={onMarkdownChange}
+        onSave={vi.fn()}
+      />,
+    );
+
+    const source = screen.getByRole("textbox", { name: "Markdown 源码" }) as HTMLTextAreaElement;
+    source.focus();
+    source.setSelectionRange(0, 2);
+    fireEvent.keyDown(source, { key: "b", ctrlKey: true });
+    expect(onMarkdownChange).toHaveBeenLastCalledWith("**重点**");
+
+    rerender(
+      <CaptureEditor
+        variant="document"
+        mode="source"
+        markdown="**重点**"
+        onMarkdownChange={onMarkdownChange}
+        onSave={vi.fn()}
+      />,
+    );
+    const wrapped = screen.getByRole("textbox", { name: "Markdown 源码" }) as HTMLTextAreaElement;
+    wrapped.focus();
+    wrapped.setSelectionRange(2, 4);
+    fireEvent.keyDown(wrapped, { key: "b", ctrlKey: true });
+    expect(onMarkdownChange).toHaveBeenLastCalledWith("重点");
+  });
+
   it("writes bold rich text back as Markdown", async () => {
     const user = userEvent.setup();
     const onMarkdownChange = vi.fn();
@@ -58,6 +186,25 @@ describe("CaptureEditor", () => {
     selectEditorContents(editor);
 
     await user.click(screen.getByRole("button", { name: "加粗" }));
+
+    await waitFor(() => expect(onMarkdownChange).toHaveBeenLastCalledWith("**重要想法**"));
+  });
+
+  it("uses the familiar Ctrl+B shortcut in rendered editing", async () => {
+    const user = userEvent.setup();
+    const onMarkdownChange = vi.fn();
+    render(
+      <CaptureEditor
+        variant="document"
+        markdown="重要想法"
+        onMarkdownChange={onMarkdownChange}
+        onSave={vi.fn()}
+      />,
+    );
+
+    const editor = screen.getByRole("textbox", { name: "便签正文" });
+    await user.click(editor);
+    await user.keyboard("{Control>}a{/Control}{Control>}b{/Control}");
 
     await waitFor(() => expect(onMarkdownChange).toHaveBeenLastCalledWith("**重要想法**"));
   });

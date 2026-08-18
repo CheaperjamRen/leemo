@@ -114,6 +114,24 @@ describe("StartDocumentsView", () => {
     })));
   });
 
+  it("defaults to rendered editing and lets the user explicitly switch to Markdown source", async () => {
+    const source = note("source", {
+      title: "求职主线",
+      markdown: "# 先想清楚\n\n保留[产品故事](leemo-note://story)",
+    });
+    const story = note("story", { title: "产品故事" });
+    const captures = captureClient([source, story]);
+    render(<BridgeProvider capture={captures.client}><StartDocumentsView selectedNoteId={source.id} /></BridgeProvider>);
+
+    await userEvent.click(await screen.findByRole("button", { name: "编辑文档" }));
+    const richEditor = screen.getByRole("textbox", { name: "便签正文" });
+    expect(within(richEditor).getByRole("heading", { name: "先想清楚" })).toBeInTheDocument();
+    expect(richEditor).not.toHaveTextContent("# 先想清楚");
+
+    await userEvent.click(screen.getByRole("button", { name: "编辑 Markdown 源码" }));
+    expect(screen.getByRole("textbox", { name: "Markdown 源码" })).toHaveValue(source.markdown);
+  });
+
   it("inserts a stable reference from the @ menu and shows backlinks", async () => {
     const source = note("source", { title: "来源", markdown: "[目标](leemo-note://target)" });
     const target = note("target", { title: "目标" });

@@ -86,12 +86,70 @@
   margin: 0 0 0.64em;
 }
 
+.capture-editor__h1,
+.capture-editor__h2,
+.capture-editor__h3,
+.capture-editor__h4,
+.capture-editor__h5,
+.capture-editor__h6 {
+  margin: 1em 0 0.48em;
+  color: var(--leemo-text-primary, #0f1b2e);
+  font-weight: 700;
+  line-height: 1.38;
+}
+
+.capture-editor__h1:first-child,
+.capture-editor__h2:first-child,
+.capture-editor__h3:first-child { margin-top: 0; }
+.capture-editor__h1 { font-size: 1.72em; letter-spacing: -0.025em; }
+.capture-editor__h2 { font-size: 1.38em; letter-spacing: -0.015em; }
+.capture-editor__h3 { font-size: 1.16em; }
+.capture-editor__h4,
+.capture-editor__h5,
+.capture-editor__h6 { font-size: 1em; }
+
 .capture-editor__bold {
   font-weight: 700;
 }
 
 .capture-editor__italic {
   font-style: italic;
+}
+
+.capture-editor__strikethrough { text-decoration: line-through; }
+
+.capture-editor__highlight {
+  border-radius: 2px;
+  background: #fff0b5;
+  padding: 0 2px;
+}
+
+.capture-editor__inline-code {
+  border-radius: 4px;
+  background: var(--leemo-surface-subtle, #f2f4f6);
+  padding: 1px 4px;
+  font-family: "Cascadia Code", Consolas, monospace;
+  font-size: 0.9em;
+}
+
+.capture-editor__link {
+  color: var(--leemo-action-accent-strong, #a74f0b);
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, currentColor 42%, transparent);
+  text-underline-offset: 3px;
+}
+
+.capture-editor__code {
+  display: block;
+  margin: 0.85em 0;
+  border: 1px solid var(--leemo-border-soft, #e8ecef);
+  border-radius: 8px;
+  background: var(--leemo-surface-subtle, #f5f6f7);
+  padding: 13px 15px;
+  font-family: "Cascadia Code", Consolas, monospace;
+  font-size: 0.9em;
+  line-height: 1.65;
+  white-space: pre-wrap;
 }
 
 .capture-editor__quote {
@@ -159,4 +217,62 @@
   border-color: var(--leemo-action-accent, #b86116);
   background: var(--leemo-action-accent, #b86116);
   box-shadow: inset 0 0 0 3px #fff;
+}
+
+.capture-editor--source {
+  min-height: 100%;
+}
+
+.capture-editor__source-bar {
+  display: flex;
+  min-height: 38px;
+  flex: none;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--leemo-border-soft, #e8ecef);
+  color: var(--leemo-text-tertiary, #68727c);
+  font-size: 11.5px;
+}
+
+.capture-editor__source-bar > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.capture-editor__source-bar button {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--leemo-text-secondary, #58616a);
+  cursor: pointer;
+}
+
+.capture-editor__source-bar button:hover,
+.capture-editor__source-bar button:focus-visible {
+  background: var(--leemo-surface-hover, #ebeff2);
+  outline: none;
+}
+
+.capture-editor__source {
+  min-height: 0;
+  flex: 1;
+  resize: none;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: var(--leemo-text-primary, #0f1b2e);
+  padding: 22px 0 38px;
+  font-family: "Cascadia Code", Consolas, "Microsoft YaHei UI", monospace;
+  font-size: 13.5px;
+  line-height: 1.72;
+  tab-size: 2;
+}
+
+.capture-editor__source::selection {
+  background: #cfe3fb;
 }
