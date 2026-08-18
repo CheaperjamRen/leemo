@@ -61,7 +61,7 @@ git commit -m "docs: freeze start workspace visual authority"
 - Produces: `Note.parentId`, `Note.sortOrder`, `Note.pinnedAt`, `Note.organizedAt`; `CapturePersistence.moveNote`, `setNotePinned`, `markNoteOrganized`.
 - Consumes: existing `Note` and optimistic `revision` semantics.
 
-- [ ] **Step 1: Write failing migration and ordering tests**
+- [x] **Step 1: Write failing migration and ordering tests**
 
 Create a legacy `notes` table, reopen it through `createCapturePersistence`, and assert:
 
@@ -76,7 +76,7 @@ expect(persistence.listNotes()[0]).toMatchObject({
 
 Also cover moving beneath another note, sibling reorder, rejecting self/descendant cycles, pinning, organizing, and stale revision atomicity.
 
-- [ ] **Step 2: Run RED**
+- [x] **Step 2: Run RED**
 
 ```powershell
 npx vitest run tests/main/capture-persistence.test.ts
@@ -84,7 +84,7 @@ npx vitest run tests/main/capture-persistence.test.ts
 
 Expected: failures because organization columns and persistence methods do not exist.
 
-- [ ] **Step 3: Add exact domain types**
+- [x] **Step 3: Add exact domain types**
 
 ```ts
 export interface Note {
@@ -117,11 +117,11 @@ export interface MarkNoteOrganizedInput {
 
 Update construction sites and test factories with explicit defaults; do not silence type failures with casts.
 
-- [ ] **Step 4: Implement migration and transactions**
+- [x] **Step 4: Implement migration and transactions**
 
 Add `parent_id`, `sort_order`, `pinned_at`, `organized_at` and indexes on `(parent_id, sort_order, id)` and `pinned_at`. `moveNote` reindexes only old/new sibling groups to contiguous integers, increments the moved note revision once, and rejects cycles before any update.
 
-- [ ] **Step 5: Verify and commit**
+- [x] **Step 5: Verify and commit**
 
 ```powershell
 npx vitest run tests/main/capture-persistence.test.ts
@@ -146,25 +146,25 @@ git commit -m "feat: persist note organization"
 - Consumes: Task 1 inputs.
 - Produces: `CaptureClient.moveNote`, `setNotePinned`, `markNoteOrganized` and matching Zustand actions.
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 Cover invalid parent ID, negative index, stale revision, quick-capture sender denial, main sender success, state update without a second refresh, and rollback on client failure.
 
-- [ ] **Step 2: Run RED**
+- [x] **Step 2: Run RED**
 
 ```powershell
 npx vitest run tests/main/capture-admin.test.ts tests/main/capture-ipc.test.ts src/renderer/stores/captures.test.ts
 ```
 
-- [ ] **Step 3: Add narrow operations**
+- [x] **Step 3: Add narrow operations**
 
 Add operation names to `CaptureOperationInputs` and `MAIN_OPERATIONS`, never `QUICK_OPERATIONS`. Normalize IDs, revision, boolean and index in admin before persistence.
 
-- [ ] **Step 4: Update renderer state atomically**
+- [x] **Step 4: Update renderer state atomically**
 
 After a move, apply the returned sibling snapshot without `refresh()`. Keep `selectedId` and the editor draft stable.
 
-- [ ] **Step 5: Verify and commit**
+- [x] **Step 5: Verify and commit**
 
 ```powershell
 npx vitest run tests/main/capture-admin.test.ts tests/main/capture-ipc.test.ts src/renderer/stores/captures.test.ts
@@ -194,21 +194,21 @@ export function extractNoteReferenceIds(markdown: string): string[];
 export function buildBacklinks(notes: readonly Note[]): Map<string, string[]>;
 ```
 
-- [ ] **Step 1: Write failing pure tests**
+- [x] **Step 1: Write failing pure tests**
 
 Cover deterministic sibling order, missing parents promoted to top level, no input mutation, duplicate references deduplicated in first-seen order, malformed links ignored, and backlinks rebuilt after editing Markdown.
 
-- [ ] **Step 2: Run RED**
+- [x] **Step 2: Run RED**
 
 ```powershell
 npx vitest run src/renderer/notes/note-tree.test.ts src/renderer/notes/note-references.test.ts
 ```
 
-- [ ] **Step 3: Implement minimal functions**
+- [x] **Step 3: Implement minimal functions**
 
 Use a two-pass `Map` tree build. Encode IDs with `encodeURIComponent` and accept only `leemo-note://` targets. Markdown remains the reference truth; do not add a backlinks table.
 
-- [ ] **Step 4: Verify and commit**
+- [x] **Step 4: Verify and commit**
 
 ```powershell
 npx vitest run src/renderer/notes/note-tree.test.ts src/renderer/notes/note-references.test.ts
