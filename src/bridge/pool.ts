@@ -43,10 +43,14 @@ export interface QueryOptions {
   /** Built-in tools removed for this round only. Conversation-wide settings
    * are merged later by the SDK adapter. */
   disallowedTools?: string[];
+  /** Explicit SDK built-in tool allow-list for this round. `[]` means no
+   * built-in tools and must remain distinct from an omitted key. */
+  tools?: string[];
 }
 
 export interface ConversationRoundOptions {
   disallowedTools?: string[];
+  tools?: string[];
 }
 
 /** Custom-spawn acknowledgement written synchronously by sdk-process.ts when
@@ -298,6 +302,9 @@ class Conversation implements ConversationHandle {
       abortController,
       ...(roundOptions?.disallowedTools !== undefined
         ? { disallowedTools: [...roundOptions.disallowedTools] }
+        : {}),
+      ...(roundOptions?.tools !== undefined
+        ? { tools: [...roundOptions.tools] }
         : {}),
     };
     if (this.sessionId) options.resume = this.sessionId;

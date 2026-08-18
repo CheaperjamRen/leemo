@@ -80,6 +80,94 @@ function makeDeps(
   return { deps, pushed };
 }
 
+describe("bridge-host — global pending overview", () => {
+  const fact = {
+    id: "task:t1",
+    kind: "task" as const,
+    label: "完成产品故事",
+    state: "open" as const,
+    updatedAt: 10,
+    relatedIds: [],
+    evidence: ["待办仍未完成"],
+  };
+
+  it("resolves the configured model in Host, records usage, and returns no credential material", async () => {
+    const { deps } = makeDeps();
+    const runOneShotInference = vi.fn(async (_target: unknown, _prompt: string) => ({
+      ok: true as const,
+      text: JSON.stringify({
+        items: [{
+          anchorSourceId: "task:t1",
+          sourceIds: ["task:t1"],
+          title: "完成产品故事",
+          progressSummary: "仍待完成",
+          priority: "now",
+        }],
+        uncertainSourceIds: [],
+      }),
+      usage: {
+        inputTokens: 10,
+        outputTokens: 2,
+        cacheReadTokens: 0,
+        cacheCreationTokens: 0,
+        costSource: "unpriced" as const,
+        tokensEstimated: false,
+        durationMs: 30,
+      },
+    }));
+    const recordStandaloneUsage = vi.fn();
+    const host = createBridgeHost({ ...deps, runOneShotInference, recordStandaloneUsage });
+
+    const response = await host.handleInvoke("bridge:generateGlobalPendingOverview", {
+      providerId: "deepseek",
+      modelId: "deepseek-chat",
+      trigger: "manual",
+      localNow: "2026-08-18T22:00:00+08:00",
+      timeZone: "Asia/Shanghai",
+      facts: [fact],
+      overrides: [],
+    });
+
+    expect(response).toMatchObject({
+      ok: true,
+      snapshot: {
+        providerId: "deepseek",
+        modelId: "deepseek-chat",
+        items: [{ anchorSourceId: "task:t1" }],
+      },
+    });
+    expect(runOneShotInference).toHaveBeenCalledTimes(1);
+    expect(runOneShotInference.mock.calls[0]?.[0]).toMatchObject({
+      kind: "direct",
+      providerId: "deepseek",
+      modelId: "deepseek-chat",
+      target: { apiKey: "test-key-secret" },
+    });
+    expect(recordStandaloneUsage).toHaveBeenCalledTimes(1);
+    expect(JSON.stringify(response)).not.toContain("test-key-secret");
+  });
+
+  it("fails before inference when the provider or selected model is unavailable", async () => {
+    const { deps } = makeDeps();
+    const runOneShotInference = vi.fn();
+    const host = createBridgeHost({ ...deps, runOneShotInference });
+
+    await expect(host.handleInvoke("bridge:generateGlobalPendingOverview", {
+      providerId: "deepseek",
+      modelId: "missing-model",
+      trigger: "manual",
+      localNow: "2026-08-18T22:00:00+08:00",
+      facts: [fact],
+      overrides: [],
+    })).resolves.toEqual({
+      ok: false,
+      message: "当前选择的模型不可用，请先在模型设置中确认。",
+      retryable: false,
+    });
+    expect(runOneShotInference).not.toHaveBeenCalled();
+  });
+});
+
 describe("bridge-host — per-turn subagent control", () => {
   it("structurally removes Agent and Task for only the opted-out turn", async () => {
     const seen: Record<string, unknown>[] = [];

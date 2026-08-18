@@ -84,7 +84,7 @@ describe("BuddyShell", () => {
     expect(within(topBar).getByText("Leemo")).toBeInTheDocument();
     expect(topBar.querySelector("svg[data-tone='brand']")).toBeInTheDocument();
     expect(within(topBar).getByRole("button", { name: "历史对话" })).toBeInTheDocument();
-    expect(within(topBar).getByRole("navigation", { name: "模式切换" })).toBeInTheDocument();
+    expect(within(topBar).getByRole("navigation", { name: "工作区切换" })).toBeInTheDocument();
     expect(within(topBar).getByRole("button", { name: "让 momo 认识我" })).toBeInTheDocument();
     expect(within(topBar).getByRole("button", { name: "回顾今天" })).toBeInTheDocument();
     expect(within(topBar).getByRole("button", { name: "设置" })).toBeInTheDocument();

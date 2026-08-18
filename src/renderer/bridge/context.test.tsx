@@ -48,6 +48,9 @@ function liveClient(skills: import("../../bridge/contract").SkillInfo[] = []): B
       if (channel === "bridge:createConversation") {
         return { conversationId: `conv-${++conversationSequence}` };
       }
+      if (channel === "bridge:generateGlobalPendingOverview") {
+        return { ok: false, message: "offline", retryable: true };
+      }
       return undefined;
     }),
     subscribe: vi.fn(() => vi.fn()),
@@ -189,10 +192,64 @@ function persistence(snapshot: PersistedSnapshot | Error): PersistenceClient {
     deleteConversation: vi.fn(async () => {}),
     saveWikiEntry: vi.fn(async () => {}),
     saveSettings: vi.fn(async () => {}),
+    saveGlobalPendingOverview: vi.fn(async () => {}),
   };
 }
 
 describe("BridgeProvider settings wiring", () => {
+  it("checks daily overview only on a visible foreground event and not when the switch merely changes", async () => {
+    const client = liveClient();
+    const persist = persistence({
+      conversations: [{
+        meta: {
+          id: "conv-overview",
+          title: "打磨产品故事",
+          titleManuallyUpdated: false,
+          bookId: null,
+          source: "workbench",
+          providerId: "first-provider",
+          modelId: "shared-model",
+          createdAt: Date.now(),
+          lastActivityAt: Date.now(),
+          unread: false,
+          pinned: false,
+          archived: false,
+          lastOpenedAt: Date.now(),
+        },
+        timeline: [{ kind: "text", id: "u1", runId: "r1", role: "user", text: "继续打磨产品故事", streaming: false }],
+      }],
+      wikiEntries: [],
+      settings: {
+        globalOverviewAutoEnabled: false,
+        globalOverviewAutoTime: "00:00",
+        defaultProviderId: "first-provider",
+        defaultModelId: "shared-model",
+      },
+      globalPendingOverview: { version: 1, snapshot: null, overrides: [] },
+    });
+    let stores!: BridgeStores;
+
+    render(
+      <BridgeProvider client={client} live persist={persist}>
+        <CaptureStores onReady={(value) => { stores = value; }} />
+      </BridgeProvider>,
+    );
+    await waitFor(() => expect(stores?.providers.getState().status).toBe("ready"));
+
+    act(() => stores.settings.getState().setGlobalOverviewAutoEnabled(true));
+    await Promise.resolve();
+    expect(client.invoke).not.toHaveBeenCalledWith("bridge:generateGlobalPendingOverview", expect.anything());
+
+    act(() => window.dispatchEvent(new Event("focus")));
+    await waitFor(() => expect(client.invoke).toHaveBeenCalledWith(
+      "bridge:generateGlobalPendingOverview",
+      expect.objectContaining({ trigger: "scheduled" }),
+    ));
+    expect(persist.saveGlobalPendingOverview).toHaveBeenCalledWith(expect.objectContaining({
+      lastAutoAttemptDate: expect.any(String),
+    }));
+  });
+
   it("synchronizes persisted skill overrides to the host before revealing the app", async () => {
     const client = liveClient([
       {

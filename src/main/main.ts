@@ -118,6 +118,7 @@ import {
   resolveComputerMcpExecutable,
 } from "./mcp-runtime";
 import type { BridgeInvokeMap } from "../bridge/contract";
+import { normalizePersistedGlobalOverviewState } from "../bridge/global-pending-overview";
 import { applyE2EIsolationFromArgv, resolveE2EWorkspaceCandidate } from "./e2e-isolation";
 import {
   HOME_WORKSPACE_ID,
@@ -1132,6 +1133,7 @@ function setupHost(): void {
     builtinMcpRuntime,
     approvalPersistence: activePersistence,
     readUsageSummary: (query) => activePersistence.usageSummary(query),
+    recordStandaloneUsage: (event) => activePersistence.recordStandaloneUsage(event),
     learningService,
     scheduledTasks: scheduledTaskAdmin,
     // Guard against a destroyed window: events only flow after the renderer
@@ -1311,6 +1313,13 @@ function setupHost(): void {
             taskWakeLock?.setEnabled(keepAwakeSetting(confirmedSettings));
             desktopNotifications?.setEnabled(desktopNotificationsSetting(confirmedSettings));
             launchAtLogin?.setEnabled(launchAtLoginSetting(confirmedSettings));
+            return { ok: true };
+          }
+          case "saveGlobalPendingOverview":
+          {
+            const state = normalizePersistedGlobalOverviewState(msg.payload);
+            if (!state) throw new Error("待完成事项快照无效，原数据仍保留。");
+            persistence!.saveGlobalOverviewState(state);
             return { ok: true };
           }
           default:

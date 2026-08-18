@@ -5,6 +5,10 @@ import type { ConversationMeta } from "../../src/renderer/stores/conversations";
 import type { TimelineItem } from "../../src/renderer/stores/message-model";
 import type { WikiEntry } from "../../src/renderer/stores/wiki-entries";
 import type { ScheduledTask, ScheduledTaskRun } from "../../src/scheduled-tasks";
+import type {
+  PersistedGlobalOverviewState,
+  StandaloneUsageEvent,
+} from "../../src/bridge/global-pending-overview";
 
 function makeDb() {
   return new Database(":memory:");
@@ -63,6 +67,36 @@ describe("persistence schema", () => {
     const snap = p.loadAll();
     expect(snap.conversations).toHaveLength(1);
     expect(snap.conversations[0].meta.title).toBe("updated");
+  });
+
+  it("round-trips the singleton global overview state without touching conversations", () => {
+    const state: PersistedGlobalOverviewState = {
+      version: 1,
+      snapshot: null,
+      overrides: [],
+      lastAutoAttemptDate: "2026-08-18",
+    };
+    p.saveConversation(meta, items);
+
+    p.saveGlobalOverviewState(state);
+
+    expect(p.loadGlobalOverviewState()).toEqual(state);
+    expect(p.loadAll()).toMatchObject({
+      conversations: [{ meta, timeline: items }],
+      globalPendingOverview: state,
+    });
+  });
+
+  it("ignores a corrupt global overview blob while preserving all other startup data", () => {
+    p.saveConversation(meta, items);
+    db.prepare(`INSERT INTO global_overview_state (singleton, state_json, updated_at) VALUES (1, ?, ?)`)
+      .run('{"version":1,"snapshot":"broken"}', 123);
+
+    expect(p.loadGlobalOverviewState()).toBeNull();
+    const snapshot = p.loadAll();
+    expect(snapshot.globalPendingOverview).toBeUndefined();
+    expect(snapshot.conversations).toHaveLength(1);
+    expect(snapshot.conversations[0]?.meta.id).toBe(meta.id);
   });
 
   it("restores the active conversation goal after restart", () => {
@@ -624,6 +658,53 @@ describe("usage summaries", () => {
       },
     };
   }
+
+  it("includes standalone overview usage exactly once and keeps it across index rebuilds", () => {
+    const db = makeDb();
+    const p = createPersistence(db);
+    const now = new Date(2026, 7, 18, 14, 0, 0).getTime();
+    p.saveConversation(
+      { ...meta, id: "conversation-usage", lastActivityAt: now },
+      [usage("deepseek", "deepseek-chat", 10, 2, "0.000010", 1, 0)],
+    );
+    const standalone: StandaloneUsageEvent = {
+      id: "overview-usage-1",
+      purpose: "global-overview",
+      providerId: "deepseek",
+      modelId: "deepseek-chat",
+      inputTokens: 20,
+      outputTokens: 4,
+      cacheReadTokens: 3,
+      cacheCreationTokens: 1,
+      costUsd: "0.000020",
+      costSource: "local-pricing",
+      tokensEstimated: false,
+      durationMs: 120,
+      createdAt: now,
+    };
+    p.recordStandaloneUsage(standalone);
+    p.recordStandaloneUsage(standalone);
+
+    expect(p.usageSummary({ range: "today" }, now)).toMatchObject({
+      callCount: 2,
+      inputTokens: 30,
+      outputTokens: 6,
+      cacheReadTokens: 4,
+      cacheCreationTokens: 1,
+      totalCostUsd: "0.000030",
+    });
+
+    p.rebuildConversationIndex([]);
+
+    expect(p.usageSummary({ range: "today" }, now)).toMatchObject({
+      callCount: 1,
+      inputTokens: 20,
+      outputTokens: 4,
+      cacheReadTokens: 3,
+      cacheCreationTokens: 1,
+      totalCostUsd: "0.000020",
+    });
+  });
 
   it("aggregates today and last seven local days without floating-point cost drift", () => {
     const p = createPersistence(makeDb());

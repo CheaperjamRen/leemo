@@ -1,0 +1,932 @@
+.leemo-start-shell {
+  --start-bg: #f7f7f8;
+  --start-surface: #ffffff;
+  --start-surface-active: #fff7ef;
+  --start-nav-active: #f0f2f4;
+  --start-ink: #101827;
+  --start-ink-2: #475467;
+  --start-ink-3: #7a8494;
+  --start-line: #dde2e8;
+  --start-line-soft: #eceff2;
+  --start-accent: #f56a00;
+  --start-accent-strong: #df5d00;
+  --start-accent-soft: #fff0e2;
+  --start-focus-ring: rgba(245, 106, 0, 0.30);
+  min-height: 100vh;
+  color: var(--start-ink);
+  background: var(--start-bg);
+}
+
+.leemo-start-shell .leemo-app-topbar {
+  height: 72px;
+  padding-inline: 24px;
+  background: color-mix(in srgb, var(--start-surface) 96%, var(--start-bg));
+  border-bottom-color: var(--start-line);
+  backdrop-filter: none;
+}
+
+.leemo-start-shell__body {
+  display: grid;
+  min-height: 100vh;
+  grid-template-columns: 288px minmax(0, 1fr);
+  padding-top: 72px;
+  transition: grid-template-columns 160ms ease;
+}
+
+.leemo-start-shell__body.is-sidebar-collapsed {
+  grid-template-columns: 72px minmax(0, 1fr);
+}
+
+.leemo-start-sidebar {
+  position: sticky;
+  top: 72px;
+  z-index: 8;
+  height: calc(100vh - 72px);
+  padding: 20px;
+  overflow: hidden auto;
+  border-right: 1px solid var(--start-line);
+  background: var(--start-surface);
+}
+
+.leemo-start-sidebar nav {
+  display: grid;
+  gap: 18px;
+}
+
+.leemo-start-sidebar section {
+  display: grid;
+  gap: 4px;
+}
+
+.leemo-start-sidebar section > p {
+  margin: 0 0 4px 10px;
+  color: var(--start-ink-3);
+  font-size: 11.5px;
+  line-height: 18px;
+}
+
+.leemo-start-sidebar button {
+  position: relative;
+  display: flex;
+  width: 100%;
+  height: 38px;
+  align-items: center;
+  gap: 10px;
+  padding: 0 10px;
+  border-radius: 7px;
+  color: var(--start-ink-2);
+  font-size: 14px;
+  text-align: left;
+  transition: color 120ms ease, background-color 120ms ease;
+}
+
+.leemo-start-sidebar button svg {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 18px;
+  stroke-width: 1.7;
+}
+
+.leemo-start-sidebar button:hover {
+  color: var(--start-ink);
+  background: #f5f6f7;
+}
+
+.leemo-start-sidebar button[aria-current="page"] {
+  color: var(--start-ink);
+  background: var(--start-nav-active);
+  font-weight: 550;
+}
+
+.leemo-start-sidebar button[aria-current="page"]::before {
+  position: absolute;
+  inset: 8px auto 8px 0;
+  width: 2px;
+  border-radius: 2px;
+  background: var(--start-accent);
+  content: "";
+}
+
+.leemo-start-sidebar.is-collapsed {
+  padding-inline: 16px;
+}
+
+.leemo-start-sidebar.is-collapsed section > p,
+.leemo-start-sidebar.is-collapsed button span {
+  display: none;
+}
+
+.leemo-start-sidebar.is-collapsed button {
+  justify-content: center;
+  padding: 0;
+}
+
+.leemo-start-main {
+  min-width: 0;
+  height: calc(100vh - 72px);
+  overflow: auto;
+  padding: 24px;
+}
+
+.leemo-start-home,
+.leemo-start-overview-page,
+.leemo-start-simple-page {
+  width: 100%;
+  max-width: 1320px;
+  margin: 0 auto;
+  animation: leemo-start-enter 160ms ease-out both;
+}
+
+.leemo-start-home__hero,
+.leemo-start-page-heading {
+  margin-bottom: 20px;
+}
+
+.leemo-start-home__hero h1,
+.leemo-start-page-heading h1 {
+  margin: 0;
+  color: var(--start-ink);
+  font-size: 28px;
+  font-weight: 600;
+  line-height: 36px;
+  letter-spacing: -0.02em;
+}
+
+.leemo-start-home__hero p,
+.leemo-start-page-heading p {
+  margin: 3px 0 0;
+  color: var(--start-ink-2);
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.leemo-start-home__summary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.leemo-start-home__summary svg {
+  width: 15px;
+  height: 15px;
+  color: var(--start-ink-2);
+  stroke-width: 1.7;
+}
+
+.leemo-start-home__summary i {
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: var(--start-line);
+}
+
+.leemo-start-home__grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 20px;
+}
+
+.leemo-start-card {
+  display: flex;
+  min-width: 0;
+  min-height: 310px;
+  flex-direction: column;
+  padding: 20px;
+  border: 1px solid var(--start-line);
+  border-radius: 10px;
+  background: var(--start-surface);
+}
+
+.leemo-start-card__header {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) auto;
+  min-height: 38px;
+  align-items: start;
+  gap: 10px;
+}
+
+.leemo-start-card__index {
+  color: var(--start-accent);
+  font-size: 18px;
+  font-weight: 650;
+  line-height: 24px;
+}
+
+.leemo-start-card__heading h2,
+.leemo-start-overview-group h2 {
+  margin: 0;
+  color: var(--start-ink);
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 24px;
+  letter-spacing: -0.012em;
+}
+
+.leemo-start-card__heading :is(span, time) {
+  display: block;
+  margin-top: 2px;
+  color: var(--start-ink-3);
+  font-size: 12px;
+  line-height: 17px;
+}
+
+.leemo-start-card__refresh {
+  display: inline-flex;
+  min-height: 34px;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 0 12px;
+  border: 1px solid color-mix(in srgb, var(--start-accent) 36%, var(--start-line));
+  border-radius: 6px;
+  color: var(--start-accent-strong);
+  background: var(--start-surface-active);
+  font-size: 13px;
+  font-weight: 550;
+  transition: border-color 120ms ease, background-color 120ms ease, transform 120ms ease;
+}
+
+.leemo-start-card__refresh:hover:not(:disabled) {
+  border-color: var(--start-accent);
+  background: var(--start-accent-soft);
+}
+
+.leemo-start-card__refresh:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.leemo-start-card__refresh:disabled {
+  cursor: wait;
+  opacity: 0.72;
+}
+
+.leemo-start-card__refresh svg,
+.leemo-start-card__footer svg {
+  width: 15px;
+  height: 15px;
+  stroke-width: 1.8;
+}
+
+.leemo-start-card__refresh svg.is-spinning {
+  animation: leemo-start-spin 900ms linear infinite;
+}
+
+.leemo-start-card__refresh-icon {
+  display: inline-grid;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  border-radius: 6px;
+  color: var(--start-ink-3);
+  transition: color 120ms ease, background-color 120ms ease;
+}
+
+.leemo-start-card__refresh-icon:hover:not(:disabled) {
+  color: var(--start-accent-strong);
+  background: var(--start-accent-soft);
+}
+
+.leemo-start-card__refresh-icon svg {
+  width: 15px;
+  height: 15px;
+  stroke-width: 1.8;
+}
+
+.leemo-start-card__refresh-icon svg.is-spinning {
+  animation: leemo-start-spin 900ms linear infinite;
+}
+
+.leemo-start-overview-card__empty,
+.leemo-start-card__quiet-state {
+  display: flex;
+  min-height: 148px;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin: 12px 0;
+  color: var(--start-ink-2);
+  text-align: center;
+}
+
+.leemo-start-overview-card__empty svg {
+  width: 20px;
+  height: 20px;
+  flex: 0 0 20px;
+  color: var(--start-accent);
+}
+
+.leemo-start-overview-card__empty p,
+.leemo-start-card__quiet-state {
+  max-width: 390px;
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.leemo-start-overview-card__rows {
+  margin-top: 12px;
+  border-top: 1px solid var(--start-line-soft);
+}
+
+.leemo-start-overview-card__row {
+  display: grid;
+  width: 100%;
+  min-height: 48px;
+  grid-template-columns: 20px minmax(0, 1fr) 16px;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 4px;
+  border-bottom: 1px solid var(--start-line-soft);
+  color: var(--start-ink);
+  text-align: left;
+  transition: background-color 120ms ease;
+}
+
+.leemo-start-overview-card__row:hover {
+  background: #fafafa;
+}
+
+.leemo-start-overview-card__rank {
+  color: var(--start-ink-2);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.leemo-start-overview-card__copy {
+  min-width: 0;
+}
+
+.leemo-start-overview-card__copy strong,
+.leemo-start-overview-card__copy span {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.leemo-start-overview-card__copy strong {
+  font-size: 14px;
+  font-weight: 550;
+  line-height: 19px;
+}
+
+.leemo-start-overview-card__copy span,
+.leemo-start-overview-card__meta {
+  color: var(--start-ink-3);
+  font-size: 12px;
+  line-height: 17px;
+}
+
+.leemo-start-overview-card__row > svg {
+  width: 14px;
+  height: 14px;
+  color: var(--start-ink-3);
+}
+
+.leemo-start-overview-card__error {
+  display: flex;
+  min-height: 30px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 8px;
+  padding: 5px 8px;
+  border: 1px solid var(--start-line-soft);
+  border-radius: 5px;
+  color: var(--start-ink-2);
+  background: #fafafa;
+  font-size: 12px;
+}
+
+.leemo-start-overview-card__error details {
+  position: relative;
+  flex: 0 0 auto;
+}
+
+.leemo-start-overview-card__error summary {
+  cursor: pointer;
+  color: var(--start-ink-2);
+}
+
+.leemo-start-overview-card__error details p {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 8px);
+  z-index: 12;
+  width: min(360px, 68vw);
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--start-line);
+  border-radius: 7px;
+  background: var(--start-surface);
+  box-shadow: 0 12px 28px -18px rgb(16 24 39 / 0.45);
+  line-height: 18px;
+}
+
+.leemo-start-card__footer {
+  display: flex;
+  min-height: 35px;
+  align-items: end;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: auto;
+  padding-top: 12px;
+  color: var(--start-ink-3);
+  font-size: 12px;
+}
+
+.leemo-start-card__footer :is(span, button) {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.leemo-start-card__footer-actions {
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.leemo-start-card__footer button {
+  color: var(--start-ink-2);
+  font-size: 12.5px;
+  transition: color 120ms ease;
+}
+
+.leemo-start-card__footer button:hover {
+  color: var(--start-accent-strong);
+}
+
+.leemo-start-card__footer button.is-primary {
+  min-height: 34px;
+  padding: 0 12px;
+  border-radius: 6px;
+  color: #fff;
+  background: var(--start-accent);
+  font-size: 13px;
+  font-weight: 550;
+  transition: background-color 120ms ease, transform 120ms ease;
+}
+
+.leemo-start-card__footer button.is-primary:hover:not(:disabled) {
+  color: #fff;
+  background: var(--start-accent-strong);
+}
+
+.leemo-start-card__footer button.is-primary:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.leemo-start-card__footer button.is-primary:disabled {
+  cursor: wait;
+  opacity: 0.72;
+}
+
+.leemo-start-card__footer button.is-primary svg.is-spinning {
+  animation: leemo-start-spin 900ms linear infinite;
+}
+
+.leemo-start-plain-list {
+  display: grid;
+  align-content: start;
+  flex: 1;
+  margin-top: 12px;
+  border-top: 1px solid var(--start-line-soft);
+}
+
+.leemo-start-plain-list > button {
+  display: grid;
+  width: 100%;
+  min-height: 46px;
+  grid-template-columns: 18px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  border-bottom: 1px solid var(--start-line-soft);
+  color: var(--start-ink-2);
+  font-size: 14px;
+  text-align: left;
+  transition: background-color 120ms ease;
+}
+
+.leemo-start-plain-list > button:hover {
+  background: #fafafa;
+}
+
+.leemo-start-plain-list > button > span {
+  min-width: 0;
+}
+
+.leemo-start-plain-list > button :is(strong, small) {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.leemo-start-plain-list > button strong {
+  color: var(--start-ink-2);
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.leemo-start-plain-list > button small {
+  margin-top: 1px;
+  color: var(--start-ink-3);
+  font-size: 11.5px;
+}
+
+.leemo-start-plain-list svg {
+  width: 16px;
+  height: 16px;
+  color: var(--start-ink-3);
+  stroke-width: 1.7;
+}
+
+.leemo-start-plain-list time {
+  color: var(--start-ink-3);
+  font-size: 12px;
+}
+
+.leemo-start-plain-list > p {
+  align-self: center;
+  margin: 0;
+  color: var(--start-ink-3);
+  font-size: 13px;
+  text-align: center;
+}
+
+.leemo-start-back {
+  display: inline-flex;
+  height: 30px;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 10px;
+  color: var(--start-ink-2);
+  font-size: 13px;
+}
+
+.leemo-start-back svg {
+  width: 15px;
+  height: 15px;
+}
+
+.leemo-start-overview-group {
+  margin-top: 22px;
+}
+
+.leemo-start-overview-group > header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--start-line);
+}
+
+.leemo-start-overview-group > header span {
+  color: var(--start-ink-3);
+  font-size: 12px;
+}
+
+.leemo-start-overview-group__list {
+  display: grid;
+}
+
+.leemo-start-overview-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px 20px;
+  padding: 16px 4px;
+  border-bottom: 1px solid var(--start-line-soft);
+}
+
+.leemo-start-overview-item__main {
+  display: grid;
+  grid-template-columns: 56px minmax(0, 1fr);
+  gap: 12px;
+}
+
+.leemo-start-overview-item__priority {
+  height: 22px;
+  padding: 0 7px;
+  border: 1px solid var(--start-line);
+  border-radius: 4px;
+  color: var(--start-ink-3);
+  font-size: 11px;
+  line-height: 20px;
+  text-align: center;
+}
+
+.leemo-start-overview-item__priority.is-now {
+  border-color: color-mix(in srgb, var(--start-accent) 45%, var(--start-line));
+  color: var(--start-accent-strong);
+  background: var(--start-accent-soft);
+}
+
+.leemo-start-overview-item h3,
+.leemo-start-note-list h2 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 21px;
+}
+
+.leemo-start-overview-item p {
+  margin: 3px 0 0;
+  color: var(--start-ink-2);
+  font-size: 13px;
+  line-height: 19px;
+}
+
+.leemo-start-overview-item__next {
+  display: flex;
+  gap: 8px;
+}
+
+.leemo-start-overview-item__next strong {
+  color: var(--start-ink);
+  font-weight: 550;
+}
+
+.leemo-start-overview-item__sources {
+  display: flex;
+  grid-column: 1;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding-left: 68px;
+}
+
+.leemo-start-overview-item__sources button {
+  max-width: 220px;
+  overflow: hidden;
+  padding: 3px 7px;
+  border: 1px solid var(--start-line);
+  border-radius: 4px;
+  color: var(--start-ink-2);
+  background: #fafafa;
+  font-family: inherit;
+  font-size: 11.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.leemo-start-overview-item__sources button:hover {
+  border-color: color-mix(in srgb, var(--start-accent) 45%, var(--start-line));
+  color: var(--start-accent-strong);
+}
+
+.leemo-start-overview-item__actions {
+  display: flex;
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  align-items: flex-start;
+  gap: 4px;
+}
+
+.leemo-start-overview-item__actions button {
+  display: inline-flex;
+  height: 30px;
+  align-items: center;
+  gap: 5px;
+  padding: 0 8px;
+  border-radius: 5px;
+  color: var(--start-ink-3);
+  font-size: 12px;
+}
+
+.leemo-start-overview-item__actions button:hover {
+  color: var(--start-ink);
+  background: var(--start-nav-active);
+}
+
+.leemo-start-overview-item__actions svg {
+  width: 14px;
+  height: 14px;
+}
+
+.leemo-start-overview-uncertain {
+  margin: 24px 0;
+  padding: 12px 0;
+  border-top: 1px solid var(--start-line);
+  color: var(--start-ink-2);
+  font-size: 13px;
+}
+
+.leemo-start-overview-uncertain summary {
+  cursor: pointer;
+}
+
+.leemo-start-overview-uncertain div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding-top: 10px;
+}
+
+.leemo-start-overview-uncertain div > span {
+  display: inline-flex;
+  padding: 3px 7px;
+  border: 1px solid var(--start-line-soft);
+  border-radius: 4px;
+  color: var(--start-ink-3);
+  background: var(--start-surface);
+  font-family: inherit;
+  font-size: 12px;
+}
+
+.leemo-start-overview-page__empty,
+.leemo-start-simple-empty {
+  display: grid;
+  min-height: 280px;
+  place-items: center;
+  align-content: center;
+  gap: 10px;
+  color: var(--start-ink-3);
+  text-align: center;
+}
+
+.leemo-start-overview-page__empty svg,
+.leemo-start-simple-empty svg {
+  width: 24px;
+  height: 24px;
+  stroke-width: 1.5;
+}
+
+.leemo-start-overview-page__empty h2,
+.leemo-start-overview-page__empty p,
+.leemo-start-simple-empty p {
+  margin: 0;
+}
+
+.leemo-start-overview-page__empty h2 {
+  color: var(--start-ink-2);
+  font-size: 16px;
+}
+
+.leemo-start-task-list,
+.leemo-start-note-list {
+  border-top: 1px solid var(--start-line);
+}
+
+.leemo-start-task-list > button,
+.leemo-start-note-list > article {
+  display: grid;
+  width: 100%;
+  min-height: 54px;
+  align-items: center;
+  gap: 12px;
+  padding: 9px 8px;
+  border-bottom: 1px solid var(--start-line-soft);
+  text-align: left;
+}
+
+.leemo-start-task-list > button {
+  grid-template-columns: 22px minmax(0, 1fr);
+}
+
+.leemo-start-task-list > button:hover,
+.leemo-start-task-list > button.is-selected {
+  background: var(--start-nav-active);
+}
+
+.leemo-start-task-list__check svg {
+  width: 17px;
+  height: 17px;
+  color: var(--start-ink-3);
+}
+
+.leemo-start-task-list strong,
+.leemo-start-task-list small {
+  display: block;
+}
+
+.leemo-start-task-list strong {
+  font-size: 14px;
+  font-weight: 550;
+}
+
+.leemo-start-task-list small {
+  margin-top: 2px;
+  color: var(--start-ink-3);
+  font-size: 12px;
+}
+
+.leemo-start-note-list > article {
+  grid-template-columns: 20px minmax(0, 1fr) auto;
+}
+
+.leemo-start-note-list > article.is-selected {
+  box-shadow: inset 2px 0 0 var(--start-accent);
+  background: var(--start-surface-active);
+}
+
+.leemo-start-note-list > article > svg {
+  width: 17px;
+  height: 17px;
+  color: var(--start-ink-3);
+}
+
+.leemo-start-note-list p {
+  margin: 2px 0 0;
+  overflow: hidden;
+  color: var(--start-ink-3);
+  font-size: 12px;
+  line-height: 18px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.leemo-start-note-list time {
+  color: var(--start-ink-3);
+  font-size: 12px;
+}
+
+.leemo-start-source-error {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  margin: -8px 0 12px;
+  padding: 7px 10px;
+  border: 1px solid color-mix(in srgb, var(--leemo-danger) 28%, var(--start-line));
+  border-radius: 6px;
+  color: var(--leemo-danger);
+  background: var(--start-surface);
+  font-size: 12.5px;
+}
+
+.leemo-start-sidebar-backdrop {
+  display: none;
+}
+
+.leemo-start-shell :is(button, summary):focus-visible {
+  outline: 2px solid var(--start-focus-ring);
+  outline-offset: 2px;
+}
+
+@keyframes leemo-start-enter {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes leemo-start-spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (max-width: 1439px) {
+  .leemo-start-shell__body { grid-template-columns: 248px minmax(0, 1fr); }
+  .leemo-start-shell__body.is-sidebar-collapsed { grid-template-columns: 72px minmax(0, 1fr); }
+  .leemo-start-card { padding: 16px; }
+}
+
+@media (max-width: 1099px) {
+  .leemo-start-home__grid { grid-template-columns: minmax(0, 1fr); }
+  .leemo-start-card { min-height: 276px; }
+  .leemo-start-main { height: auto; min-height: calc(100vh - 72px); }
+  .leemo-start-overview-item { grid-template-columns: minmax(0, 1fr); }
+  .leemo-start-overview-item__actions { grid-column: 1; grid-row: auto; padding-left: 68px; }
+}
+
+@media (max-width: 1023px) {
+  .leemo-start-shell__body,
+  .leemo-start-shell__body.is-sidebar-collapsed { display: block; }
+  .leemo-start-sidebar {
+    position: fixed;
+    inset: 72px auto 0 0;
+    width: min(288px, calc(100vw - 44px));
+    height: auto;
+    transform: translateX(-102%);
+    box-shadow: 16px 0 36px -28px rgb(16 24 39 / 0.48);
+    transition: transform 160ms ease;
+  }
+  .leemo-start-sidebar.is-mobile-open { transform: translateX(0); }
+  .leemo-start-sidebar.is-collapsed { padding: 20px; }
+  .leemo-start-sidebar.is-collapsed section > p,
+  .leemo-start-sidebar.is-collapsed button span { display: initial; }
+  .leemo-start-sidebar.is-collapsed button { justify-content: flex-start; padding: 0 10px; }
+  .leemo-start-sidebar-backdrop {
+    position: fixed;
+    inset: 72px 0 0;
+    z-index: 7;
+    display: block;
+    background: rgb(16 24 39 / 0.20);
+  }
+}
+
+@media (max-width: 819px) {
+  .leemo-start-main { padding: 18px 14px 24px; }
+  .leemo-start-overview-card__meta { display: none; }
+  .leemo-start-overview-card__row { grid-template-columns: 20px minmax(0, 1fr) 16px; }
+  .leemo-start-overview-item__main { grid-template-columns: 48px minmax(0, 1fr); }
+  .leemo-start-overview-item__sources,
+  .leemo-start-overview-item__actions { padding-left: 60px; }
+  .leemo-start-overview-item__actions { flex-wrap: wrap; }
+  .leemo-start-card__refresh span { display: none; }
+  .leemo-start-card__refresh { width: 34px; padding: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .leemo-start-home,
+  .leemo-start-overview-page,
+  .leemo-start-simple-page,
+  .leemo-start-card__refresh svg.is-spinning { animation: none; }
+  .leemo-start-sidebar,
+  .leemo-start-shell__body { transition: none; }
+}

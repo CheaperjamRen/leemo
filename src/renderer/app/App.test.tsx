@@ -46,9 +46,10 @@ const draftWorkspace: WorkspaceClient = {
 };
 
 describe("App", () => {
-  it("renders the buddy shell greeting", () => {
+  it("opens the quiet Start surface by default", () => {
     render(<App />);
-    expect(screen.getByText(/今天想从哪儿开始/)).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "开始" })).toBeInTheDocument();
+    expect(screen.queryByLabelText("输入消息")).not.toBeInTheDocument();
   });
 
   it("loads durable notes through the desktop capture bridge", async () => {
@@ -68,14 +69,15 @@ describe("App", () => {
 
   it("keeps an unsent draft when switching between buddy and workbench", () => {
     render(<App />);
+    fireEvent.click(screen.getByRole("button", { name: "切换到搭子" }));
     fireEvent.change(screen.getByLabelText("输入消息"), {
       target: { value: "这段话切换模式也不能丢" },
     });
 
-    fireEvent.click(screen.getByText("工作台", { selector: "button" }));
+    fireEvent.click(screen.getByRole("button", { name: "切换到工作台" }));
     expect(screen.getByLabelText("输入消息")).toHaveValue("这段话切换模式也不能丢");
 
-    fireEvent.click(screen.getByText("搭子", { selector: "button" }));
+    fireEvent.click(screen.getByRole("button", { name: "切换到搭子" }));
     expect(screen.getByLabelText("输入消息")).toHaveValue("这段话切换模式也不能丢");
   });
 
@@ -89,9 +91,9 @@ describe("App", () => {
     await userEvent.upload(document.querySelector('input[type="file"]') as HTMLInputElement, file);
     expect(screen.getByText("英语复习材料.pdf")).toBeInTheDocument();
 
-    fireEvent.click(screen.getByText("工作台", { selector: "button" }));
+    fireEvent.click(screen.getByRole("button", { name: "切换到工作台" }));
     expect(screen.getByText("英语复习材料.pdf")).toBeInTheDocument();
-    fireEvent.click(screen.getByText("搭子", { selector: "button" }));
+    fireEvent.click(screen.getByRole("button", { name: "切换到搭子" }));
     expect(screen.getByText("英语复习材料.pdf")).toBeInTheDocument();
   });
 
@@ -176,6 +178,7 @@ describe("App", () => {
 
   it("default browser fixture sends events back into the same conversation", async () => {
     render(<App />);
+    fireEvent.click(screen.getByRole("button", { name: "切换到搭子" }));
     fireEvent.change(screen.getByPlaceholderText("输入消息…"), { target: { value: "整理课程笔记" } });
     fireEvent.click(screen.getByRole("button", { name: "发送" }));
 
@@ -255,6 +258,7 @@ describe("BridgeProvider persistence gate", () => {
       deleteConversation: vi.fn(async () => {}),
       saveWikiEntry: vi.fn(async () => {}),
       saveSettings: vi.fn(async () => {}),
+      saveGlobalPendingOverview: vi.fn(async () => {}),
     };
 
     render(

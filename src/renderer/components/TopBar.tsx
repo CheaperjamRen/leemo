@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Bell, CalendarCheck2, Copy, Minus, PanelLeft, PanelLeftClose, PanelLeftOpen, Settings, Square, UserRound, X } from "lucide-react";
 import { useNotifications, useUi } from "../bridge/context";
 import LeemoMark from "./brand/LeemoMark";
-import ModeSwitcher from "./ModeSwitcher";
+import AppSurfaceSwitcher from "./AppSurfaceSwitcher";
 import "./TopBar.css";
 
 export default function TopBar({
@@ -115,7 +115,7 @@ export default function TopBar({
           </div>
         )}
         <div className="leemo-topbar-primary-controls" data-testid="topbar-primary-controls">
-          <ModeSwitcher className="leemo-mode-switcher-topbar" />
+          <AppSurfaceSwitcher className="leemo-mode-switcher-topbar" />
           <span className="leemo-topbar-primary-divider" aria-hidden />
           <button aria-label="设置" title="设置" className="leemo-icon-btn" onClick={() => openSettings()}>
             <Settings className="h-[18px] w-[18px]" strokeWidth={1.7} aria-hidden />

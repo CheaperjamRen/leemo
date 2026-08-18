@@ -19,7 +19,7 @@ describe("WorkbenchShell", () => {
     );
 
     expect(screen.getByTestId("topbar-product-identity")).toHaveTextContent("Leemo");
-    expect(screen.getAllByRole("navigation", { name: "模式切换" })).toHaveLength(1);
+    expect(screen.getAllByRole("navigation", { name: "工作区切换" })).toHaveLength(1);
     expect(screen.getByRole("button", { name: "选择本子，当前 Leemo 工作台" })).toBeInTheDocument();
     expect(screen.getByLabelText("新建对话")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "收起侧栏" })).toBeInTheDocument();

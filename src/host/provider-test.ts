@@ -38,10 +38,19 @@ export interface ProviderTestDeps {
 export interface ProviderTextRequestDeps {
   fetchFn: typeof fetch;
   maxTokens?: number;
+  now?: () => number;
+}
+
+export interface ProviderTextUsage {
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheCreationTokens: number;
+  durationMs: number;
 }
 
 export type ProviderTextRequestResult =
-  | { ok: true; text: string }
+  | { ok: true; text: string; usage: ProviderTextUsage }
   | { ok: false; error: ProviderError };
 
 const ANTHROPIC_VERSION = "2023-06-01";
@@ -83,6 +92,12 @@ const VISION_NEGATIVE_RE =
 interface AnthropicMessageResponse {
   model?: string;
   content?: Array<{ type?: string; text?: string; thinking?: string }>;
+  usage?: {
+    input_tokens?: number;
+    output_tokens?: number;
+    cache_read_input_tokens?: number;
+    cache_creation_input_tokens?: number;
+  };
 }
 
 interface OpenAIChatResponse {
@@ -96,6 +111,9 @@ interface OpenAIChatResponse {
     };
   }>;
   usage?: {
+    prompt_tokens?: number;
+    completion_tokens?: number;
+    prompt_tokens_details?: { cached_tokens?: number };
     completion_tokens_details?: { reasoning_tokens?: number };
   };
 }
@@ -107,7 +125,53 @@ interface OpenAIResponsesResponse {
     content?: Array<{ type?: string; text?: string }>;
     summary?: Array<{ type?: string; text?: string }>;
   }>;
-  usage?: { output_tokens_details?: { reasoning_tokens?: number } };
+  usage?: {
+    input_tokens?: number;
+    output_tokens?: number;
+    input_tokens_details?: { cached_tokens?: number };
+    output_tokens_details?: { reasoning_tokens?: number };
+  };
+}
+
+function finiteToken(value: unknown): number {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0
+    ? Math.floor(value)
+    : 0;
+}
+
+function providerTextUsageOf(
+  apiFormat: ProviderApiFormat,
+  body: unknown,
+  durationMs: number,
+): ProviderTextUsage {
+  if (apiFormat === "anthropic") {
+    const usage = (body as AnthropicMessageResponse).usage;
+    return {
+      inputTokens: finiteToken(usage?.input_tokens),
+      outputTokens: finiteToken(usage?.output_tokens),
+      cacheReadTokens: finiteToken(usage?.cache_read_input_tokens),
+      cacheCreationTokens: finiteToken(usage?.cache_creation_input_tokens),
+      durationMs,
+    };
+  }
+  if (apiFormat === "openai-responses") {
+    const usage = (body as OpenAIResponsesResponse).usage;
+    return {
+      inputTokens: finiteToken(usage?.input_tokens),
+      outputTokens: finiteToken(usage?.output_tokens),
+      cacheReadTokens: finiteToken(usage?.input_tokens_details?.cached_tokens),
+      cacheCreationTokens: 0,
+      durationMs,
+    };
+  }
+  const usage = (body as OpenAIChatResponse).usage;
+  return {
+    inputTokens: finiteToken(usage?.prompt_tokens),
+    outputTokens: finiteToken(usage?.completion_tokens),
+    cacheReadTokens: finiteToken(usage?.prompt_tokens_details?.cached_tokens),
+    cacheCreationTokens: 0,
+    durationMs,
+  };
 }
 
 function buildAnthropicHeaders(target: ProviderTestTarget): Record<string, string> {
@@ -237,6 +301,8 @@ export async function requestProviderText(
   deps: ProviderTextRequestDeps,
 ): Promise<ProviderTextRequestResult> {
   const maxTokens = deps.maxTokens ?? 512;
+  const now = deps.now ?? (() => Date.now());
+  const startedAt = now();
   const isAnthropic = target.apiFormat === "anthropic";
   const isResponses = target.apiFormat === "openai-responses";
 
@@ -287,7 +353,11 @@ export async function requestProviderText(
         }),
       };
     }
-    return { ok: true, text };
+    return {
+      ok: true,
+      text,
+      usage: providerTextUsageOf(target.apiFormat, result.body, Math.max(0, now() - startedAt)),
+    };
   } catch (thrown) {
     return { ok: false, error: classifyProviderError({ thrown, apiKey: target.apiKey }) };
   }

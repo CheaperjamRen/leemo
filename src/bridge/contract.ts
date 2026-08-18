@@ -48,6 +48,12 @@ export type {
   BrowserCaptureRef,
 } from "./events";
 import type { MemoryChangeAction, MemoryScopeView } from "./events";
+import type {
+  GlobalOverviewFact,
+  GlobalOverviewOverride,
+  GlobalOverviewSnapshot,
+  GlobalOverviewTrigger,
+} from "./global-pending-overview";
 
 // ===========================================================================
 // Re-exports — B2 pricing (src/bridge/pricing.ts) + balance (balance.ts)
@@ -695,6 +701,20 @@ export type ResolveTaskTimesResponse =
   | { ok: true; items: Array<{ index: number; fields: ResolvedTaskField[] }> }
   | { ok: false; message: string };
 
+export interface GenerateGlobalOverviewRequest {
+  providerId: string;
+  modelId: string;
+  trigger: GlobalOverviewTrigger;
+  localNow: string;
+  timeZone?: string;
+  facts: GlobalOverviewFact[];
+  overrides: GlobalOverviewOverride[];
+}
+
+export type GenerateGlobalOverviewResponse =
+  | { ok: true; snapshot: GlobalOverviewSnapshot }
+  | { ok: false; message: string; detail?: string; retryable: boolean };
+
 export interface SkillSourceCandidateView {
   name: string;
   description: string;
@@ -1044,6 +1064,7 @@ export const BRIDGE_CHANNELS = {
   logoutProvider: "bridge:logoutProvider",
   testConnection: "bridge:testConnection",
   resolveTaskTimes: "bridge:resolveTaskTimes",
+  generateGlobalPendingOverview: "bridge:generateGlobalPendingOverview",
   listRemoteModels: "bridge:listRemoteModels",
   usageSummary: "bridge:usageSummary", // Phase 1 (reserved)
   listWhitelist: "bridge:listWhitelist",
@@ -1254,6 +1275,10 @@ export interface BridgeInvokeMap {
   /** Real upstream round-trip with human-readable failure classification. */
   "bridge:testConnection": { request: ConnectionTestRequest; response: ConnectionTestResult };
   "bridge:resolveTaskTimes": { request: ResolveTaskTimesRequest; response: ResolveTaskTimesResponse };
+  "bridge:generateGlobalPendingOverview": {
+    request: GenerateGlobalOverviewRequest;
+    response: GenerateGlobalOverviewResponse;
+  };
   /** Ask the vendor what models exist (each family's discovery URL differs). */
   "bridge:listRemoteModels": { request: ListRemoteModelsRequest; response: ListRemoteModelsResult };
   /** Phase 1 (reserved — unimplemented first release). */

@@ -165,6 +165,64 @@
   line-height: 1.45;
 }
 
+.settings-page .settings-overview-time {
+  display: flex;
+  min-height: 56px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  border-top: 1px solid var(--leemo-line);
+  padding: 10px 0;
+}
+
+.settings-page .settings-overview-time > span {
+  min-width: 0;
+}
+
+.settings-page .settings-overview-time strong,
+.settings-page .settings-overview-time small {
+  display: block;
+}
+
+.settings-page .settings-overview-time strong {
+  color: var(--leemo-ink);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.settings-page .settings-overview-time small {
+  margin-top: 2px;
+  color: var(--leemo-ink-3);
+  font-size: 11.5px;
+  line-height: 18px;
+}
+
+.settings-page .settings-overview-time input {
+  width: 112px;
+  height: 34px;
+  flex: 0 0 auto;
+  border: 1px solid var(--leemo-line);
+  border-radius: 7px;
+  background: var(--leemo-card, #fff);
+  padding: 0 9px;
+  color: var(--leemo-ink);
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+  outline: none;
+}
+
+.settings-page .settings-overview-time input:focus-visible {
+  border-color: var(--leemo-amber);
+  box-shadow: 0 0 0 3px var(--leemo-focus-ring, rgb(245 106 0 / 0.18));
+}
+
+.settings-page .settings-overview-time input:disabled {
+  cursor: not-allowed;
+  background: var(--leemo-bg);
+  color: var(--leemo-ink-3);
+  opacity: 0.72;
+}
+
 .settings-page .settings-row-select select,
 .settings-page select {
   min-width: 190px;

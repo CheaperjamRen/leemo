@@ -3,6 +3,7 @@ import { IpcPersistenceClient } from "./ipc-persistence-client";
 import type { ConversationMeta } from "../stores/conversations";
 import type { TimelineItem } from "../stores/message-model";
 import type { WikiEntry } from "../stores/wiki-entries";
+import type { PersistedGlobalOverviewState } from "../../bridge/global-pending-overview";
 
 const META = { id: "c1" } as unknown as ConversationMeta;
 
@@ -54,5 +55,15 @@ describe("IpcPersistenceClient", () => {
       timeline: tl,
     });
     expect(api.invoke).toHaveBeenNthCalledWith(2, "deleteConversation", { conversationId: "c1" });
+  });
+
+  it("saves the global pending overview through its dedicated operation", async () => {
+    const api = { invoke: vi.fn(async () => ({ ok: true })) };
+    const c = new IpcPersistenceClient(api);
+    const state: PersistedGlobalOverviewState = { version: 1, snapshot: null, overrides: [] };
+
+    await c.saveGlobalPendingOverview(state);
+
+    expect(api.invoke).toHaveBeenCalledWith("saveGlobalPendingOverview", state);
   });
 });

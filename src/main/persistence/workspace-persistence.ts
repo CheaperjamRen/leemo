@@ -369,6 +369,18 @@ export function createRegisteredWorkspacePersistence(
       index.saveSettings(settings);
     },
 
+    loadGlobalOverviewState() {
+      return index.loadGlobalOverviewState();
+    },
+
+    saveGlobalOverviewState(state) {
+      index.saveGlobalOverviewState(state);
+    },
+
+    recordStandaloneUsage(event) {
+      index.recordStandaloneUsage(event);
+    },
+
     usageSummary(query, now) {
       return index.usageSummary(query, now);
     },
@@ -525,6 +537,18 @@ export function createWorkspaceBackedPersistence(
 
     saveSettings(settings) {
       index.saveSettings(settings);
+    },
+
+    loadGlobalOverviewState() {
+      return index.loadGlobalOverviewState();
+    },
+
+    saveGlobalOverviewState(state) {
+      index.saveGlobalOverviewState(state);
+    },
+
+    recordStandaloneUsage(event) {
+      index.recordStandaloneUsage(event);
     },
 
     usageSummary(query, now) {

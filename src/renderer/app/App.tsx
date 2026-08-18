@@ -10,14 +10,20 @@ import { IpcCaptureClient } from "../capture/client";
 import { IpcTaskClient } from "../tasks/client";
 import BuddyShell from "../components/BuddyShell";
 import WorkbenchShell from "../components/WorkbenchShell";
+import StartShell from "../start/StartShell";
 import { OnboardingWizard } from "../components/OnboardingWizard";
 import AppOverlays from "../components/AppOverlays";
 
 function AppShell() {
+  const surface = useSettings((s) => s.surface);
   const mode = useSettings((s) => s.mode);
   return (
     <>
-      {mode === "buddy" ? <BuddyShell /> : <WorkbenchShell />}
+      {surface === "start"
+        ? <StartShell />
+        : mode === "buddy"
+          ? <BuddyShell />
+          : <WorkbenchShell />}
       <AppOverlays />
       <OnboardingWizard />
     </>

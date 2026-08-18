@@ -1,5 +1,9 @@
 import { createStore, type StoreApi } from "zustand/vanilla";
 import type { PermissionMode } from "../../bridge/contract";
+import {
+  isValidGlobalOverviewTime,
+  normalizeGlobalOverviewTime,
+} from "../global-overview/auto-refresh";
 
 /** momo's opening line: time-of-day tone + optional memory recall (02 §4.1). */
 export function buildGreeting(hour: number, memory?: string): string {
@@ -24,6 +28,7 @@ export interface PersonaCardDraft {
 }
 
 export type RelationshipStyle = "companion" | "friend" | "senior" | "mentor";
+export type AppSurface = "start" | "buddy" | "workbench";
 
 export const RELATIONSHIP_STYLE_OPTIONS: ReadonlyArray<{
   id: RelationshipStyle;
@@ -73,6 +78,7 @@ export function resolveMomoPersonaText(
 }
 
 export interface SettingsState {
+  surface: AppSurface;
   mode: "buddy" | "workbench";
   persona: string;
   personaCardId: string;
@@ -102,6 +108,9 @@ export interface SettingsState {
   desktopNotifications: boolean;
   /** Allow one small provider request only when local task-time parsing is ambiguous. */
   taskModelParsingEnabled: boolean;
+  /** Optional once-per-day foreground refresh for the global pending overview. */
+  globalOverviewAutoEnabled: boolean;
+  globalOverviewAutoTime: string;
   /** Start the packaged desktop app after the user signs in to Windows. */
   launchAtLogin: boolean;
   /** Keep Leemo available from the tray after the main window is closed. */
@@ -128,6 +137,7 @@ export interface SettingsState {
   skillOverrides: Record<string, boolean>;
 
   setMode(mode: SettingsState["mode"]): void;
+  setSurface(surface: AppSurface): void;
   setPersonaCard(id: string): void;
   setRelationshipStyle(style: RelationshipStyle): void;
   /** Create or edit a user-authored card. Returns its stable id, or null when
@@ -149,6 +159,8 @@ export interface SettingsState {
   setKeepAwakeDuringTasks(enabled: boolean): void;
   setDesktopNotifications(enabled: boolean): void;
   setTaskModelParsingEnabled(enabled: boolean): void;
+  setGlobalOverviewAutoEnabled(enabled: boolean): void;
+  setGlobalOverviewAutoTime(time: string): void;
   setLaunchAtLogin(enabled: boolean): void;
   setContinueInBackground(enabled: boolean): void;
   setQuickCaptureShortcut(shortcut: string): void;
@@ -184,6 +196,7 @@ export interface SettingsState {
  *  to lose. `mode` is included so Leemo reopens in the shell you left it in
  *  (06 §2.1「此后每次启动记住上次模式」). */
 export const PERSISTED_SETTING_KEYS = [
+  "surface",
   "mode",
   "personaCardId",
   "relationshipStyle",
@@ -200,6 +213,8 @@ export const PERSISTED_SETTING_KEYS = [
   "keepAwakeDuringTasks",
   "desktopNotifications",
   "taskModelParsingEnabled",
+  "globalOverviewAutoEnabled",
+  "globalOverviewAutoTime",
   "launchAtLogin",
   "continueInBackground",
   "quickCaptureShortcut",
@@ -251,6 +266,7 @@ export const webFetchActive = (s: WebCapabilityFlags): boolean =>
   s.webEnabled && s.webFetchEnabled;
 
 export interface SettingsInitial {
+  surface?: AppSurface;
   mode?: SettingsState["mode"];
   persona?: string;
   personaCardId?: string;
@@ -270,6 +286,8 @@ export interface SettingsInitial {
   keepAwakeDuringTasks?: boolean;
   desktopNotifications?: boolean;
   taskModelParsingEnabled?: boolean;
+  globalOverviewAutoEnabled?: boolean;
+  globalOverviewAutoTime?: string;
   launchAtLogin?: boolean;
   continueInBackground?: boolean;
   quickCaptureShortcut?: string;
@@ -325,6 +343,7 @@ const BUILTIN_PERSONA_CARDS: PersonaCard[] = [
 
 const isTalkStyle = (value: unknown): value is 1 | 2 | 3 => value === 1 || value === 2 || value === 3;
 const isMode = (value: unknown): value is SettingsState["mode"] => value === "buddy" || value === "workbench";
+const isSurface = (value: unknown): value is AppSurface => value === "start" || isMode(value);
 const isRelationshipStyle = (value: unknown): value is RelationshipStyle => (
   typeof value === "string" && RELATIONSHIP_STYLE_IDS.has(value as RelationshipStyle)
 );
@@ -451,6 +470,7 @@ export function createSettingsStore(initial: SettingsInitial = {}): StoreApi<Set
     : personaCards[0]?.id ?? "momo";
 
   return createStore<SettingsState>((set, get) => ({
+    surface: isSurface(initial.surface) ? initial.surface : initial.mode ?? "start",
     mode: initial.mode ?? "buddy",
     persona: initial.persona ?? "momo",
     personaCardId,
@@ -473,6 +493,8 @@ export function createSettingsStore(initial: SettingsInitial = {}): StoreApi<Set
     keepAwakeDuringTasks: initial.keepAwakeDuringTasks ?? true,
     desktopNotifications: initial.desktopNotifications ?? true,
     taskModelParsingEnabled: initial.taskModelParsingEnabled ?? true,
+    globalOverviewAutoEnabled: initial.globalOverviewAutoEnabled ?? false,
+    globalOverviewAutoTime: normalizeGlobalOverviewTime(initial.globalOverviewAutoTime),
     launchAtLogin: initial.launchAtLogin ?? false,
     continueInBackground: initial.continueInBackground ?? true,
     quickCaptureShortcut: cleanGlobalShortcut(initial.quickCaptureShortcut) ?? "Alt+N",
@@ -486,7 +508,14 @@ export function createSettingsStore(initial: SettingsInitial = {}): StoreApi<Set
     skillOverrides: cleanSkillOverrides(initial.skillOverrides) ?? {},
 
     setMode: (mode) => {
-      if (isMode(mode)) set({ mode });
+      if (isMode(mode)) set({ mode, surface: mode });
+    },
+    setSurface: (surface) => {
+      if (!isSurface(surface)) return;
+      set((state) => ({
+        surface,
+        mode: surface === "start" ? state.mode : surface,
+      }));
     },
     setPersonaCard: (id) => {
       if (get().personaCards.some((card) => card.id === id)) set({ personaCardId: id });
@@ -577,6 +606,14 @@ export function createSettingsStore(initial: SettingsInitial = {}): StoreApi<Set
     setTaskModelParsingEnabled: (taskModelParsingEnabled) => {
       if (typeof taskModelParsingEnabled === "boolean") set({ taskModelParsingEnabled });
     },
+    setGlobalOverviewAutoEnabled: (globalOverviewAutoEnabled) => {
+      if (typeof globalOverviewAutoEnabled === "boolean") set({ globalOverviewAutoEnabled });
+    },
+    setGlobalOverviewAutoTime: (globalOverviewAutoTime) => {
+      if (isValidGlobalOverviewTime(globalOverviewAutoTime)) {
+        set({ globalOverviewAutoTime: normalizeGlobalOverviewTime(globalOverviewAutoTime) });
+      }
+    },
     setLaunchAtLogin: (launchAtLogin) => {
       if (typeof launchAtLogin === "boolean") set({ launchAtLogin });
     },
@@ -632,6 +669,8 @@ export function createSettingsStore(initial: SettingsInitial = {}): StoreApi<Set
       };
 
       if (isMode(persisted.mode)) patch.mode = persisted.mode;
+      if (isSurface(persisted.surface)) patch.surface = persisted.surface;
+      else if (isMode(persisted.mode)) patch.surface = persisted.mode;
       if (isTalkStyle(persisted.talkStyle)) patch.talkStyle = persisted.talkStyle;
       if (isRelationshipStyle(persisted.relationshipStyle)) patch.relationshipStyle = persisted.relationshipStyle;
       if (isPermissionMode(persisted.permissionMode)) patch.permissionMode = persisted.permissionMode;
@@ -668,6 +707,10 @@ export function createSettingsStore(initial: SettingsInitial = {}): StoreApi<Set
       bool("keepAwakeDuringTasks");
       bool("desktopNotifications");
       bool("taskModelParsingEnabled");
+      bool("globalOverviewAutoEnabled");
+      if (isValidGlobalOverviewTime(persisted.globalOverviewAutoTime)) {
+        patch.globalOverviewAutoTime = normalizeGlobalOverviewTime(persisted.globalOverviewAutoTime);
+      }
       bool("launchAtLogin");
       bool("continueInBackground");
       const quickCaptureShortcut = cleanGlobalShortcut(persisted.quickCaptureShortcut);

@@ -294,6 +294,7 @@ describe("contract — channel table is frozen + payload types correspond 1:1", 
     expect(BRIDGE_CHANNELS.askUser).toBe("bridge:askUser");
     expect(BRIDGE_CHANNELS.usageSummary).toBe("bridge:usageSummary");
     expect(BRIDGE_CHANNELS.resolveTaskTimes).toBe("bridge:resolveTaskTimes");
+    expect(BRIDGE_CHANNELS.generateGlobalPendingOverview).toBe("bridge:generateGlobalPendingOverview");
     expect(BRIDGE_CHANNELS.listWhitelist).toBe("bridge:listWhitelist");
     expect(BRIDGE_CHANNELS.revokeWhitelist).toBe("bridge:revokeWhitelist");
     expect(BRIDGE_CHANNELS.listMemory).toBe("bridge:listMemory");
@@ -359,6 +360,7 @@ describe("contract — channel table is frozen + payload types correspond 1:1", 
       "bridge:logoutProvider",
       "bridge:testConnection",
       "bridge:resolveTaskTimes",
+      "bridge:generateGlobalPendingOverview",
       "bridge:listRemoteModels",
     ]);
     const eventKeys = new Set<keyof BridgeEventMap>([
