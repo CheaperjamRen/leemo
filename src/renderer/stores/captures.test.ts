@@ -10,6 +10,10 @@ const first: Note = {
   revision: 1,
   createdAt: 10,
   updatedAt: 10,
+  parentId: null,
+  sortOrder: 0,
+  pinnedAt: null,
+  organizedAt: null,
 };
 
 const second: Note = {
@@ -19,6 +23,10 @@ const second: Note = {
   revision: 1,
   createdAt: 20,
   updatedAt: 20,
+  parentId: null,
+  sortOrder: 0,
+  pinnedAt: null,
+  organizedAt: null,
 };
 
 function captureClient(overrides: Partial<CaptureClient> = {}): CaptureClient {

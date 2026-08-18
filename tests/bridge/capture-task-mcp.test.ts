@@ -14,6 +14,10 @@ const NOTE: Note = {
   revision: 2,
   createdAt: 1,
   updatedAt: 2,
+  parentId: null,
+  sortOrder: 0,
+  pinnedAt: null,
+  organizedAt: null,
 };
 
 const TASK: UserTask = {

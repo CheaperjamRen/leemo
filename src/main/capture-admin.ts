@@ -249,6 +249,10 @@ export function createCaptureAdmin(options: CaptureAdminOptions): CaptureAdminWi
         revision: 1,
         createdAt: timestamp,
         updatedAt: timestamp,
+        parentId: null,
+        sortOrder: 0,
+        pinnedAt: null,
+        organizedAt: null,
       };
       const committed = options.persistence.commitQuickDraft(note, expectedRevision);
       emit({ entity: "note", action: "created", id: committed.id, revision: committed.revision });
@@ -279,6 +283,10 @@ export function createCaptureAdmin(options: CaptureAdminOptions): CaptureAdminWi
         revision: 1,
         createdAt: timestamp,
         updatedAt: timestamp,
+        parentId: null,
+        sortOrder: 0,
+        pinnedAt: null,
+        organizedAt: null,
       });
       emit({ entity: "note", action: "created", id: created.id, revision: created.revision });
       return cloneNote(created);

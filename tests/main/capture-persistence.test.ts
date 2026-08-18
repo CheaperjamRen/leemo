@@ -37,7 +37,32 @@ interface CaptureStoreForTest {
     expectedRevision: number,
     updatedAt: number,
   ): Note;
+  moveNote(input: {
+    id: string;
+    expectedRevision: number;
+    parentId: string | null;
+    index: number;
+  }): Note[];
+  setNotePinned(input: {
+    id: string;
+    expectedRevision: number;
+    pinned: boolean;
+    updatedAt: number;
+  }): Note;
+  markNoteOrganized(input: {
+    id: string;
+    expectedRevision: number;
+    organized: boolean;
+    updatedAt: number;
+  }): Note;
 }
+
+type OrganizedNote = Note & {
+  parentId: string | null;
+  sortOrder: number;
+  pinnedAt: number | null;
+  organizedAt: number | null;
+};
 
 function createStore(db = new Database(":memory:")): CaptureStoreForTest {
   return createPersistence(db) as unknown as CaptureStoreForTest;
@@ -51,6 +76,21 @@ function note(overrides: Partial<Note> = {}): Note {
     revision: 1,
     createdAt: 100,
     updatedAt: 100,
+    parentId: null,
+    sortOrder: 0,
+    pinnedAt: null,
+    organizedAt: null,
+    ...overrides,
+  };
+}
+
+function organizedNote(overrides: Partial<OrganizedNote> = {}): OrganizedNote {
+  return {
+    ...note(),
+    parentId: null,
+    sortOrder: 0,
+    pinnedAt: null,
+    organizedAt: null,
     ...overrides,
   };
 }
@@ -230,6 +270,149 @@ describe("capture persistence", () => {
     expect(restored).toMatchObject({ revision: 3, updatedAt: 300 });
     expect(restored).not.toHaveProperty("archivedAt");
     expect(createStore(db).listNotes()).toMatchObject([{ id: "legacy-note" }]);
+  });
+
+  it("migrates legacy notes with explicit organization defaults", () => {
+    const db = new Database(":memory:");
+    db.exec(`
+      CREATE TABLE notes (
+        id TEXT PRIMARY KEY,
+        title TEXT NOT NULL,
+        markdown TEXT NOT NULL,
+        revision INTEGER NOT NULL,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        deleted_at INTEGER,
+        purge_after INTEGER,
+        archived_at INTEGER
+      );
+      INSERT INTO notes VALUES ('legacy-note', '旧便签', '旧正文', 1, 10, 10, NULL, NULL, NULL);
+    `);
+
+    expect(createStore(db).listNotes()[0]).toMatchObject({
+      id: "legacy-note",
+      parentId: null,
+      sortOrder: 0,
+      pinnedAt: null,
+      organizedAt: null,
+    });
+  });
+
+  it("moves notes between parents and reindexes only the affected sibling groups", () => {
+    const persistence = createStore();
+    persistence.createNote(organizedNote({ id: "parent", title: "求职准备", sortOrder: 2 }));
+    persistence.createNote(organizedNote({ id: "root-a", title: "根一", sortOrder: 0 }));
+    persistence.createNote(organizedNote({ id: "root-b", title: "根二", sortOrder: 1 }));
+    persistence.createNote(organizedNote({ id: "child-a", title: "简历", parentId: "parent", sortOrder: 0 }));
+
+    const affected = persistence.moveNote({
+      id: "root-b",
+      expectedRevision: 1,
+      parentId: "parent",
+      index: 0,
+    });
+
+    expect(persistence.getNote("root-b")).toMatchObject({
+      parentId: "parent",
+      sortOrder: 0,
+      revision: 2,
+    });
+    expect(persistence.getNote("child-a")).toMatchObject({ parentId: "parent", sortOrder: 1, revision: 1 });
+    expect(persistence.getNote("root-a")).toMatchObject({ parentId: null, sortOrder: 0, revision: 1 });
+    expect(persistence.getNote("parent")).toMatchObject({ parentId: null, sortOrder: 1, revision: 1 });
+    expect(affected.map(({ id }) => id)).toEqual(["root-a", "parent", "root-b", "child-a"]);
+
+    persistence.moveNote({
+      id: "child-a",
+      expectedRevision: 1,
+      parentId: "parent",
+      index: 0,
+    });
+    expect(persistence.getNote("child-a")).toMatchObject({ sortOrder: 0, revision: 2 });
+    expect(persistence.getNote("root-b")).toMatchObject({ sortOrder: 1, revision: 2 });
+  });
+
+  it("rejects missing parents, self-parenting and descendant cycles without partial reorder", () => {
+    const persistence = createStore();
+    persistence.createNote(organizedNote({ id: "parent", title: "父级", sortOrder: 0 }));
+    persistence.createNote(organizedNote({ id: "child", title: "子级", parentId: "parent", sortOrder: 0 }));
+    persistence.createNote(organizedNote({ id: "sibling", title: "同级", sortOrder: 1 }));
+
+    expect(() => persistence.moveNote({
+      id: "parent",
+      expectedRevision: 1,
+      parentId: "missing",
+      index: 0,
+    })).toThrow(/父级|不存在/);
+    expect(() => persistence.moveNote({
+      id: "parent",
+      expectedRevision: 1,
+      parentId: "parent",
+      index: 0,
+    })).toThrow(/自己|循环/);
+    expect(() => persistence.moveNote({
+      id: "parent",
+      expectedRevision: 1,
+      parentId: "child",
+      index: 0,
+    })).toThrow(/循环/);
+
+    expect(persistence.getNote("parent")).toMatchObject({ parentId: null, sortOrder: 0, revision: 1 });
+    expect(persistence.getNote("child")).toMatchObject({ parentId: "parent", sortOrder: 0, revision: 1 });
+    expect(persistence.getNote("sibling")).toMatchObject({ parentId: null, sortOrder: 1, revision: 1 });
+  });
+
+  it("keeps note organization atomic when a stale revision tries to move it", () => {
+    const persistence = createStore();
+    persistence.createNote(organizedNote({ id: "note-a", sortOrder: 0 }));
+    persistence.createNote(organizedNote({ id: "note-b", sortOrder: 1 }));
+    persistence.updateNote({
+      id: "note-b",
+      title: "已更新",
+      markdown: "正文",
+      expectedRevision: 1,
+      updatedAt: 200,
+    });
+
+    expect(() => persistence.moveNote({
+      id: "note-b",
+      expectedRevision: 1,
+      parentId: null,
+      index: 0,
+    })).toThrow(/更新|版本/);
+    expect(persistence.getNote("note-a")).toMatchObject({ sortOrder: 0, revision: 1 });
+    expect(persistence.getNote("note-b")).toMatchObject({ sortOrder: 1, revision: 2 });
+  });
+
+  it("persists pin and inbox-organization timestamps with optimistic revisions", () => {
+    const db = new Database(":memory:");
+    const persistence = createStore(db);
+    persistence.createNote(organizedNote());
+
+    expect(persistence.setNotePinned({
+      id: "note-1",
+      expectedRevision: 1,
+      pinned: true,
+      updatedAt: 200,
+    })).toMatchObject({ pinnedAt: 200, revision: 2, updatedAt: 200 });
+    expect(persistence.markNoteOrganized({
+      id: "note-1",
+      expectedRevision: 2,
+      organized: true,
+      updatedAt: 300,
+    })).toMatchObject({ organizedAt: 300, revision: 3, updatedAt: 300 });
+
+    expect(createStore(db).getNote("note-1")).toMatchObject({
+      pinnedAt: 200,
+      organizedAt: 300,
+      revision: 3,
+    });
+    expect(() => persistence.setNotePinned({
+      id: "note-1",
+      expectedRevision: 2,
+      pinned: false,
+      updatedAt: 400,
+    })).toThrow(/更新|版本/);
   });
 
   it("persists captures in the injected database without adding them to loadAll", () => {

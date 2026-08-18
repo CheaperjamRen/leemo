@@ -71,6 +71,10 @@ describe("BridgeProvider capture wiring", () => {
       revision: 1,
       createdAt: 1,
       updatedAt: 1,
+      parentId: null,
+      sortOrder: 0,
+      pinnedAt: null,
+      organizedAt: null,
     };
     const updated = { ...original, title: "论文待确认", revision: 2, updatedAt: 2 };
     let notes = [original];

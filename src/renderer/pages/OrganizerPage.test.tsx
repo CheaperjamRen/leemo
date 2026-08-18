@@ -19,6 +19,10 @@ const titled: Note = {
   revision: 1,
   createdAt: 10,
   updatedAt: 10,
+  parentId: null,
+  sortOrder: 0,
+  pinnedAt: null,
+  organizedAt: null,
 };
 
 const untitled: Note = {
@@ -28,6 +32,10 @@ const untitled: Note = {
   revision: 1,
   createdAt: 20,
   updatedAt: 20,
+  parentId: null,
+  sortOrder: 0,
+  pinnedAt: null,
+  organizedAt: null,
 };
 
 const openTask: UserTask = {
@@ -62,6 +70,10 @@ function captureClient(notes: Note[] = [], archivedNotes: Note[] = []): CaptureC
       revision: 1,
       createdAt: 30,
       updatedAt: 30,
+      parentId: null,
+      sortOrder: 0,
+      pinnedAt: null,
+      organizedAt: null,
     })),
     updateNote: vi.fn(async ({ id, title, markdown, expectedRevision }) => ({
       id,
@@ -70,6 +82,10 @@ function captureClient(notes: Note[] = [], archivedNotes: Note[] = []): CaptureC
       revision: expectedRevision + 1,
       createdAt: 10,
       updatedAt: 40,
+      parentId: null,
+      sortOrder: 0,
+      pinnedAt: null,
+      organizedAt: null,
     })),
     archiveNote: vi.fn(async ({ id, expectedRevision }) => ({
       ...(notes.find((note) => note.id === id)!), archivedAt: 50, revision: expectedRevision + 1, updatedAt: 50,
