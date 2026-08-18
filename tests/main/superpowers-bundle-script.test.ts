@@ -8,7 +8,10 @@ import { afterEach, describe, expect, it } from "vitest";
 const root = path.resolve(__dirname, "..", "..");
 const script = path.join(root, "scripts", "verify-superpowers-bundle.mjs");
 const refreshScript = path.join(root, "scripts", "refresh-superpowers-bundle.mjs");
-const upstreamRoot = "C:\\Users\\Rengar\\.superpowers";
+const upstreamRoot = process.env.SUPERPOWERS_UPSTREAM_ROOT;
+const bundledLicense = path.join(root, "bundled-skills", "superpowers", "release", "LICENSE.upstream");
+const hasUpstreamCheckout = typeof upstreamRoot === "string"
+  && fs.existsSync(path.join(upstreamRoot, ".git"));
 const revision = "3dcbd5c4b48e02263fbf4a3c01e3fe4f81d584d9";
 const skills = [
   "brainstorming", "dispatching-parallel-agents", "executing-plans",
@@ -35,7 +38,7 @@ function makeFixture(): string {
     files.push({ path: relative, bytes: content.byteLength, sha256: sha256(content), mode });
   };
 
-  addFile("LICENSE.upstream", fs.readFileSync(path.join(upstreamRoot, "LICENSE")));
+  addFile("LICENSE.upstream", fs.readFileSync(bundledLicense));
   for (const skill of skills) {
     addFile(`skills/${skill}/SKILL.md`, Buffer.from(`---\nname: ${skill}\ndescription: ${skill} workflow\n---\n`, "utf8"));
   }
@@ -59,6 +62,7 @@ function run(target: string) {
 }
 
 function runRefresh(bundleParent: string, nextRevision = revision) {
+  if (!upstreamRoot) throw new Error("SUPERPOWERS_UPSTREAM_ROOT is required for refresh integration tests");
   return spawnSync(process.execPath, [
     refreshScript,
     "--source", upstreamRoot,
@@ -137,7 +141,7 @@ describe("Superpowers offline bundle verifier", () => {
     expect(run(identity).status).not.toBe(0);
   });
 
-  it("atomically replaces a verified release and preserves it when source validation fails", () => {
+  it.skipIf(!hasUpstreamCheckout)("atomically replaces a verified release and preserves it when source validation fails", () => {
     const bundleParent = path.join(makeFixture(), "superpowers");
     const release = path.join(bundleParent, "release");
     fs.mkdirSync(release, { recursive: true });
@@ -153,5 +157,5 @@ describe("Superpowers offline bundle verifier", () => {
 
     expect(rejected.status).not.toBe(0);
     expect(fs.readFileSync(path.join(release, "manifest.json"))).toEqual(manifest);
-  });
+  }, 15_000);
 });

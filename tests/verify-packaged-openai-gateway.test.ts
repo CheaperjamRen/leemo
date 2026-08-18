@@ -34,6 +34,7 @@ describe.skipIf(process.platform !== "win32")("packaged OpenAI gateway acceptanc
     const auditTag = `openai-gateway-failure-${process.pid}-${Date.now()}`;
     const factsPath = path.join(repoRoot, "docs", "research", "audit-shots", `${auditTag}-facts.json`);
     const rootsBefore = ownedAuditRoots();
+    fs.mkdirSync(path.dirname(factsPath), { recursive: true });
     fs.writeFileSync(factsPath, '{"packaged":true}\n');
 
     try {

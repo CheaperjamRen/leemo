@@ -122,7 +122,7 @@ const PRODUCT_COPY: Record<SuperpowersSkillName, ProductCopy> = {
 const SUPERPOWERS_REPOSITORY = "https://github.com/obra/superpowers.git";
 const SUPERPOWERS_UPSTREAM_REVISION = "3dcbd5c4b48e02263fbf4a3c01e3fe4f81d584d9";
 const SUPERPOWERS_UPSTREAM_VERSION = "6.2.0";
-const SUPERPOWERS_LICENSE_SHA256 = "0da33ed814ee87e72db078f489c4447af72f13d9f25d9e17476f32efd77705fc";
+const SUPERPOWERS_LICENSE_SHA256 = "a37e0e9697144819e1d965176ac4ae5bc3fa02d11e7812036bbcadf6dafe2400";
 const EXECUTABLE_FILES = new Set([
   "skills/brainstorming/scripts/start-server.sh",
   "skills/brainstorming/scripts/stop-server.sh",

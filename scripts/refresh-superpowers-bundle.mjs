@@ -38,6 +38,12 @@ function git(source, args) {
   return result.stdout.trim();
 }
 
+function gitBlob(source, object) {
+  const result = spawnSync("git", ["-C", source, "cat-file", "blob", object]);
+  if (result.status !== 0) fail(`git cat-file blob ${object} 失败。`);
+  return result.stdout;
+}
+
 function verifySource(source, revision) {
   if (revision !== EXPECTED_REVISION) fail(`revision 必须固定为 ${EXPECTED_REVISION}。`);
   if (!fs.existsSync(source) || fs.lstatSync(source).isSymbolicLink() || !fs.lstatSync(source).isDirectory()) {
@@ -61,15 +67,15 @@ function verifySource(source, revision) {
 function sourceFiles(source) {
   const rows = git(source, ["ls-files", "-s", "--", "skills"]).split(/\r?\n/u).filter(Boolean);
   const files = rows.map((row) => {
-    const match = /^(100644|100755) [0-9a-f]{40} 0\t(skills\/[^/]+\/.+)$/u.exec(row);
+    const match = /^(100644|100755) ([0-9a-f]{40}) 0\t(skills\/[^/]+\/.+)$/u.exec(row);
     if (!match) fail(`上游 tracked 文件无效：${row}`);
-    const [, mode, relative] = match;
+    const [, mode, object, relative] = match;
     const skill = relative.split("/")[1];
     if (!EXPECTED_SKILLS.includes(skill)) fail(`上游包含不在固定清单内的 Skill：${skill}`);
     const absolute = path.join(source, ...relative.split("/"));
     const info = fs.lstatSync(absolute);
     if (info.isSymbolicLink() || !info.isFile()) fail(`上游包含链接或非普通文件：${relative}`);
-    return { relative, absolute, mode };
+    return { relative, absolute, mode, object };
   }).sort((left, right) => left.relative.localeCompare(right.relative, "en"));
   const names = [...new Set(files.map((file) => file.relative.split("/")[1]))];
   if (names.length !== EXPECTED_SKILLS.length || names.some((name, index) => name !== EXPECTED_SKILLS[index])) {
@@ -82,7 +88,7 @@ function sourceFiles(source) {
 function copyPayload(source, staging) {
   const files = sourceFiles(source);
   const manifestFiles = [];
-  const license = fs.readFileSync(path.join(source, "LICENSE"));
+  const license = gitBlob(source, "HEAD:LICENSE");
   const licenseTarget = path.join(staging, "LICENSE.upstream");
   fs.writeFileSync(licenseTarget, license);
   manifestFiles.push({
@@ -94,7 +100,7 @@ function copyPayload(source, staging) {
   for (const file of files) {
     const target = path.join(staging, ...file.relative.split("/"));
     fs.mkdirSync(path.dirname(target), { recursive: true });
-    fs.copyFileSync(file.absolute, target);
+    fs.writeFileSync(target, gitBlob(source, file.object));
     fs.chmodSync(target, Number.parseInt(file.mode.slice(-3), 8));
     const data = fs.readFileSync(target);
     manifestFiles.push({ path: file.relative, bytes: data.byteLength, sha256: createHash("sha256").update(data).digest("hex"), mode: file.mode });
