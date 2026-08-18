@@ -196,8 +196,8 @@ export default function StartShell() {
               sourceLabels={sourceLabels}
             />
           )}
-          {destination === "tasks" && <StartTasksView selectedTaskId={selectedTaskId} />}
-          {destination === "documents" && <StartDocumentsView selectedNoteId={selectedNoteId} />}
+          {destination === "tasks" && <StartTasksView selectedTaskId={selectedTaskId} onOpenNote={(noteId) => startStore.getState().open("documents", { noteId })} />}
+          {destination === "documents" && <StartDocumentsView selectedNoteId={selectedNoteId} onOpenTask={(taskId) => startStore.getState().open("tasks", { taskId })} />}
           {destination !== "home" && destination !== "overview" && destination !== "tasks" && destination !== "documents" && (
             <StartNotesView destination={destination} selectedNoteId={selectedNoteId} />
           )}

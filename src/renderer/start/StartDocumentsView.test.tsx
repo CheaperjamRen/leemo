@@ -1,8 +1,10 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import type { Note } from "../../captures";
 import type { CaptureClient } from "../capture/client";
+import type { TaskClient } from "../tasks/client";
+import type { CreateTaskInput, UserTask } from "../../tasks";
 import { BridgeProvider } from "../bridge/context";
 import StartDocumentsView from "./StartDocumentsView";
 
@@ -54,6 +56,34 @@ function captureClient(notes: Note[]) {
   return { client, updateNote };
 }
 
+function taskClient() {
+  const createManyTasks = vi.fn(async ({ tasks }: { tasks: CreateTaskInput[] }): Promise<UserTask[]> => tasks.map((task, index) => ({
+    id: `task-${index + 1}`,
+    title: task.title,
+    details: task.details ?? "",
+    status: "open",
+    plannedAt: task.plannedAt ?? null,
+    dueAt: task.dueAt ?? null,
+    reminderAt: task.reminderAt ?? null,
+    reminderOffsetMinutes: task.reminderOffsetMinutes ?? null,
+    recurrence: task.recurrence ?? null,
+    notebookId: task.notebookId ?? null,
+    noteId: task.noteId ?? null,
+    revision: 1,
+    createdAt: 100,
+    updatedAt: 100,
+    completedAt: null,
+  })));
+  const client: TaskClient = {
+    listTasks: vi.fn(async () => []),
+    createTask: vi.fn(),
+    createManyTasks,
+    updateTask: vi.fn(),
+    deleteTask: vi.fn(),
+  };
+  return { client, createManyTasks };
+}
+
 describe("StartDocumentsView", () => {
   it("opens local note references inside the same library and edits the selected document", async () => {
     const parent = note("parent", {
@@ -89,5 +119,32 @@ describe("StartDocumentsView", () => {
     await userEvent.click(screen.getByRole("button", { name: "引用便签" }));
     await userEvent.click(screen.getByRole("option", { name: /来源/ }));
     expect(screen.getByRole("textbox", { name: "便签正文" })).toHaveTextContent("来源");
+  });
+
+  it("copies selected document lines into linked Todos and keeps the source unchanged", async () => {
+    const source = note("source", {
+      title: "求职主线",
+      markdown: "- [ ] 打磨产品故事\n- [ ] 优化简历",
+    });
+    const captures = captureClient([source]);
+    const tasks = taskClient();
+    render(
+      <BridgeProvider capture={captures.client} tasks={tasks.client}>
+        <StartDocumentsView selectedNoteId={source.id} />
+      </BridgeProvider>,
+    );
+
+    await userEvent.click(await screen.findByRole("button", { name: "从便签创建待办" }));
+    const panel = screen.getByLabelText("创建待办预览");
+    await userEvent.click(within(panel).getByRole("button", { name: "创建 2 条待办" }));
+
+    await waitFor(() => expect(tasks.createManyTasks).toHaveBeenCalledWith({
+      tasks: [
+        { title: "打磨产品故事", details: "- [ ] 打磨产品故事", noteId: source.id },
+        { title: "优化简历", details: "- [ ] 优化简历", noteId: source.id },
+      ],
+    }));
+    expect(screen.getByText("已创建 2 条待办 · 便签原文保留")).toBeInTheDocument();
+    expect(captures.updateNote).not.toHaveBeenCalled();
   });
 });

@@ -349,25 +349,25 @@ git commit -m "feat: add start navigation and action views"
 
 Implementation rule: extract the existing note editor, attachment handlers and note-created-task preview from `OrganizerPage`; `StartDocumentsView` owns the extracted implementation and the legacy page temporarily composes it. Do not fork CaptureEditor or attachment semantics.
 
-- [ ] **Step 1: Write interaction tests**
+- [x] **Step 1: Write interaction tests**
 
 Cover opening a parent note, editing its own body, expanding children, moving notes, inserting references by `@` and drag, opening `leemo-note://` without browser navigation, returning to source, and missing/deleted targets.
 
-- [ ] **Step 2: Run RED**
+- [x] **Step 2: Run RED**
 
 ```powershell
 npx vitest run src/renderer/start/StartDocumentsView.test.tsx src/renderer/start/NoteExplorer.test.tsx src/renderer/start/NoteReferenceMenu.test.tsx src/renderer/components/CaptureEditor.test.tsx src/renderer/components/MarkdownContent.test.tsx
 ```
 
-- [ ] **Step 3: Implement one drag contract**
+- [x] **Step 3: Implement one drag contract**
 
 Use MIME `application/x-leemo-note` with JSON `{"noteId":"..."}`. Tree drop calls `moveNote`; editor drop inserts `[标题](leemo-note://<encoded-id>)`. Reject malformed payloads and cycles before mutation.
 
-- [ ] **Step 4: Intercept local links**
+- [x] **Step 4: Intercept local links**
 
 Add `onOpenNoteReference(noteId)` to `MarkdownContent`. Local note links never reach `window.open`, Electron shell or browser navigation.
 
-- [ ] **Step 5: Verify and commit**
+- [x] **Step 5: Verify and commit**
 
 ```powershell
 npx vitest run src/renderer/start/StartDocumentsView.test.tsx src/renderer/start/NoteExplorer.test.tsx src/renderer/start/NoteReferenceMenu.test.tsx src/renderer/components/CaptureEditor.test.tsx src/renderer/components/MarkdownContent.test.tsx
@@ -392,21 +392,21 @@ git commit -m "feat: add local note document explorer"
 - Consumes: existing `CreateManyTasksInput.tasks[].noteId`.
 - Produces: `tasksForNote(noteId): UserTask[]` and one-click source navigation.
 
-- [ ] **Step 1: Write wording and data tests**
+- [x] **Step 1: Write wording and data tests**
 
 Assert `创建待办`, `从便签创建待办`, `创建 2 条待办` and `已创建 2 条待办 · 便签原文保留`. The note title/Markdown/revision remain unchanged; each task has `noteId` and can return to the source note.
 
-- [ ] **Step 2: Run RED**
+- [x] **Step 2: Run RED**
 
 ```powershell
 npx vitest run src/renderer/pages/OrganizerPage.test.tsx src/renderer/start/StartDocumentsView.test.tsx src/renderer/start/StartTasksView.test.tsx src/renderer/stores/tasks.test.ts
 ```
 
-- [ ] **Step 3: Keep the existing copy implementation**
+- [x] **Step 3: Keep the existing copy implementation**
 
 Retain `createManyTasks` and `noteId`; change only semantics and backlinks. Do not update/delete the note and do not add a synchronization watcher.
 
-- [ ] **Step 4: Verify and commit**
+- [x] **Step 4: Verify and commit**
 
 ```powershell
 npx vitest run src/renderer/pages/OrganizerPage.test.tsx src/renderer/start/StartDocumentsView.test.tsx src/renderer/start/StartTasksView.test.tsx src/renderer/stores/tasks.test.ts

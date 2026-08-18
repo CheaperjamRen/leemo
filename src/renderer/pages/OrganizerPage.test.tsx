@@ -472,12 +472,12 @@ describe("OrganizerPage", () => {
 
     await user.click(screen.getByRole("tab", { name: "便签" }));
     await user.click(await screen.findByRole("button", { name: /秋招材料/ }));
-    await user.click(screen.getByRole("button", { name: "转为待办" }));
+    await user.click(screen.getByRole("button", { name: "从便签创建待办" }));
 
-    const preview = screen.getByLabelText("转为待办预览");
+    const preview = screen.getByLabelText("创建待办预览");
     expect(within(preview).getAllByRole("checkbox")).toHaveLength(4);
     expect(within(preview).queryByDisplayValue("已经完成")).not.toBeInTheDocument();
-    await user.click(within(preview).getByRole("button", { name: "转为 4 条待办" }));
+    await user.click(within(preview).getByRole("button", { name: "创建 4 条待办" }));
 
     await waitFor(() => expect(tasks.createManyTasks).toHaveBeenCalledWith({
       tasks: [
@@ -492,7 +492,8 @@ describe("OrganizerPage", () => {
         { title: "跟进面试", details: "- [ ] 跟进面试", noteId: note.id },
       ],
     }));
-    expect(screen.queryByLabelText("转为待办预览")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("创建待办预览")).not.toBeInTheDocument();
+    expect(screen.getByText("已创建 4 条待办 · 便签原文保留")).toBeInTheDocument();
   });
 
   it("lets a user exclude a note line before creating the task batch", async () => {
@@ -503,9 +504,9 @@ describe("OrganizerPage", () => {
 
     await user.click(screen.getByRole("tab", { name: "便签" }));
     await user.click(await screen.findByRole("button", { name: /秋招材料/ }));
-    await user.click(screen.getByRole("button", { name: "转为待办" }));
+    await user.click(screen.getByRole("button", { name: "从便签创建待办" }));
     await user.click(screen.getByRole("checkbox", { name: "选择待办 修改简历" }));
-    await user.click(screen.getByRole("button", { name: "转为 1 条待办" }));
+    await user.click(screen.getByRole("button", { name: "创建 1 条待办" }));
 
     await waitFor(() => expect(tasks.createManyTasks).toHaveBeenCalledWith({
       tasks: [{ title: "跟进面试", details: "- 跟进面试", noteId: note.id }],
@@ -520,14 +521,14 @@ describe("OrganizerPage", () => {
 
     await user.click(screen.getByRole("tab", { name: "便签" }));
     await user.click(await screen.findByRole("button", { name: /秋招材料/ }));
-    await user.click(screen.getByRole("button", { name: "转为待办" }));
+    await user.click(screen.getByRole("button", { name: "从便签创建待办" }));
 
     expect(screen.getByText(/多个日期.*无法.*判断/)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "转为 1 条待办" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "创建 1 条待办" })).toBeDisabled();
     const title = screen.getByRole("textbox", { name: "待办标题 1" });
     await user.clear(title);
     await user.type(title, "看两家公司");
-    await user.click(screen.getByRole("button", { name: "转为 1 条待办" }));
+    await user.click(screen.getByRole("button", { name: "创建 1 条待办" }));
 
     await waitFor(() => expect(tasks.createManyTasks).toHaveBeenCalledWith({
       tasks: [{
@@ -564,10 +565,10 @@ describe("OrganizerPage", () => {
 
     await user.click(screen.getByRole("tab", { name: "便签" }));
     await user.click(await screen.findByRole("button", { name: /秋招材料/ }));
-    await user.click(screen.getByRole("button", { name: "转为待办" }));
+    await user.click(screen.getByRole("button", { name: "从便签创建待办" }));
     await user.click(await screen.findByRole("button", { name: "截止 8月16日" }));
     fireEvent.change(screen.getByLabelText("截止时间 1"), { target: { value: "2026-08-17T18:00" } });
-    await user.click(screen.getByRole("button", { name: "转为 1 条待办" }));
+    await user.click(screen.getByRole("button", { name: "创建 1 条待办" }));
 
     await waitFor(() => expect(tasks.createManyTasks).toHaveBeenCalledWith({
       tasks: [expect.objectContaining({

@@ -570,6 +570,13 @@
   color: white;
 }
 
+.organizer-note-tasks__receipt {
+  margin: 8px 18px 0;
+  color: var(--leemo-success, #2d8a55);
+  font-size: 12px;
+  line-height: 18px;
+}
+
 .organizer-notes__save-error {
   margin: 0;
   border-bottom: 1px solid var(--leemo-danger-line);

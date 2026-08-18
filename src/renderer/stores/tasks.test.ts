@@ -41,6 +41,15 @@ function taskClient(overrides: Partial<TaskClient> = {}): TaskClient {
 }
 
 describe("tasks store", () => {
+  it("projects linked tasks for one source note without duplicating records", async () => {
+    const linked = { ...openTask, noteId: "note-1" };
+    const other = { ...openTask, id: "task-2", noteId: "note-2" };
+    const store = createTasksStore(taskClient({ listTasks: vi.fn(async () => [linked, other]) }));
+    await store.getState().refresh();
+
+    expect(store.getState().tasksForNote("note-1")).toEqual([linked]);
+    expect(store.getState().tasks).toEqual([linked, other]);
+  });
   it("loads persisted tasks without inventing examples", async () => {
     const listTasks = vi.fn(async () => [openTask]);
     const store = createTasksStore(taskClient({ listTasks }));

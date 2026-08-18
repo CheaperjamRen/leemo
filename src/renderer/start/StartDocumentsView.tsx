@@ -4,6 +4,7 @@ import {
   Check,
   FilePlus2,
   Link2,
+  ListPlus,
   Paperclip,
   Pin,
   Save,
@@ -12,7 +13,7 @@ import {
 import type { Note, NoteAttachment } from "../../captures";
 import CaptureEditor from "../components/CaptureEditor";
 import MarkdownContent from "../components/MarkdownContent";
-import { useCaptures, useSettings } from "../bridge/context";
+import { useCaptures, useSettings, useTasks } from "../bridge/context";
 import { IpcCaptureClient } from "../capture/client";
 import { buildBacklinks, noteReferenceHref } from "../notes/note-references";
 import NoteExplorer from "./NoteExplorer";
@@ -25,6 +26,13 @@ interface DocumentDraft {
   markdown: string;
   revision: number | null;
   attachments: NoteAttachment[];
+}
+
+interface NoteTaskCandidate {
+  id: string;
+  title: string;
+  details: string;
+  selected: boolean;
 }
 
 function draftFromNote(note: Note): DocumentDraft {
@@ -42,7 +50,26 @@ function visibleTitle(note: Pick<Note, "title" | "markdown">): string {
   return note.title.trim() || note.markdown.trim().split(/\r?\n/u)[0]?.slice(0, 60) || "无标题文档";
 }
 
-export default function StartDocumentsView({ selectedNoteId = null }: { selectedNoteId?: string | null }) {
+function noteTaskCandidates(markdown: string): NoteTaskCandidate[] {
+  return markdown.replace(/\r\n/gu, "\n").split("\n").flatMap((details, index) => {
+    const line = details.trim();
+    if (!line || /^[-*+]\s+\[[xX]\]\s+/u.test(line)) return [];
+    const title = line
+      .replace(/^[-*+]\s+\[ \]\s+/u, "")
+      .replace(/^[-*+]\s+/u, "")
+      .replace(/^\d+[.)]\s+/u, "")
+      .trim();
+    return title ? [{ id: `${index}:${details}`, title, details, selected: true }] : [];
+  });
+}
+
+export default function StartDocumentsView({
+  selectedNoteId = null,
+  onOpenTask,
+}: {
+  selectedNoteId?: string | null;
+  onOpenTask?: (taskId: string) => void;
+}) {
   const notes = useCaptures((state) => state.notes);
   const status = useCaptures((state) => state.status);
   const storeError = useCaptures((state) => state.error);
@@ -56,6 +83,10 @@ export default function StartDocumentsView({ selectedNoteId = null }: { selected
   const archiveNote = useCaptures((state) => state.archiveNote);
   const deleteNote = useCaptures((state) => state.deleteNote);
   const captureFileDropMode = useSettings((state) => state.captureFileDropMode);
+  const createManyTasks = useTasks((state) => state.createMany);
+  const tasksForNote = useTasks((state) => state.tasksForNote);
+  const taskSaving = useTasks((state) => state.saving);
+  const taskError = useTasks((state) => state.error);
   const [activeId, setActiveId] = useState<string | null>(selectedNoteId);
   const [draft, setDraft] = useState<DocumentDraft | null>(null);
   const [viewMode, setViewMode] = useState<"preview" | "edit">("preview");
@@ -63,6 +94,8 @@ export default function StartDocumentsView({ selectedNoteId = null }: { selected
   const [editorVersion, setEditorVersion] = useState(0);
   const [localError, setLocalError] = useState<string | null>(null);
   const [attachmentBusy, setAttachmentBusy] = useState(false);
+  const [taskCandidates, setTaskCandidates] = useState<NoteTaskCandidate[] | null>(null);
+  const [taskReceipt, setTaskReceipt] = useState<string | null>(null);
   const newDraftNumber = useRef(0);
   const lastExternalSelection = useRef<string | null | undefined>(undefined);
 
@@ -71,6 +104,7 @@ export default function StartDocumentsView({ selectedNoteId = null }: { selected
   const backlinks = useMemo(() => buildBacklinks(notes), [notes]);
   const backlinkNotes = (activeId ? backlinks.get(activeId) ?? [] : [])
     .flatMap((id) => noteById.get(id) ?? []);
+  const linkedTasks = draft?.noteId ? tasksForNote(draft.noteId) : [];
 
   useEffect(() => {
     if (selectedNoteId === lastExternalSelection.current) return;
@@ -102,6 +136,8 @@ export default function StartDocumentsView({ selectedNoteId = null }: { selected
     setDraft(draftFromNote(note));
     setViewMode("preview");
     setReferenceMenuOpen(false);
+    setTaskCandidates(null);
+    setTaskReceipt(null);
     setLocalError(null);
   };
 
@@ -128,6 +164,8 @@ export default function StartDocumentsView({ selectedNoteId = null }: { selected
     });
     setViewMode("edit");
     setReferenceMenuOpen(false);
+    setTaskCandidates(null);
+    setTaskReceipt(null);
     setLocalError(null);
   };
 
@@ -220,6 +258,29 @@ export default function StartDocumentsView({ selectedNoteId = null }: { selected
     });
     setReferenceMenuOpen(false);
     setEditorVersion((version) => version + 1);
+  };
+
+  const openTaskCopy = () => {
+    if (!draft?.noteId) return;
+    setTaskReceipt(null);
+    setTaskCandidates(noteTaskCandidates(draft.markdown));
+  };
+
+  const submitTaskCopy = async () => {
+    if (!draft?.noteId || !taskCandidates) return;
+    const selected = taskCandidates.filter((candidate) => candidate.selected && candidate.title.trim());
+    if (selected.length === 0) return;
+    try {
+      const created = await createManyTasks(selected.map((candidate) => ({
+        title: candidate.title.trim(),
+        details: candidate.details,
+        noteId: draft.noteId,
+      })));
+      setTaskCandidates(null);
+      setTaskReceipt(`已创建 ${created.length} 条待办 · 便签原文保留`);
+    } catch {
+      // Task store exposes the user-facing error in the copy panel.
+    }
   };
 
   const requireAttachmentClient = (): IpcCaptureClient => {
@@ -384,6 +445,31 @@ export default function StartDocumentsView({ selectedNoteId = null }: { selected
                 ) : (
                   <div className="leemo-document-empty-copy"><FilePlus2 aria-hidden /><p>这是一份空白文档。切换到编辑开始书写。</p></div>
                 )}
+
+                {draft.noteId ? (
+                  <section className="leemo-document-task-link" aria-label="关联待办">
+                    <header>
+                      <div><ListPlus aria-hidden /><strong>关联待办</strong></div>
+                      <button type="button" aria-label="从便签创建待办" disabled={taskSaving || noteTaskCandidates(draft.markdown).length === 0} onClick={openTaskCopy}>从便签创建待办</button>
+                    </header>
+                    {taskReceipt ? <p className="leemo-document-task-link__receipt" role="status">{taskReceipt}</p> : null}
+                    {linkedTasks.length > 0 ? <div className="leemo-document-task-link__existing">{linkedTasks.map((task) => <button key={task.id} type="button" onClick={() => onOpenTask?.(task.id)}><span>{task.title}</span><small>{task.status === "done" ? "已完成" : "待办"}</small></button>)}</div> : null}
+                  </section>
+                ) : null}
+
+                {taskCandidates ? (
+                  <section className="leemo-document-task-copy" aria-label="创建待办预览">
+                    <header><div><strong>从便签创建待办</strong><span>原文不会改变；只复制你保留的条目。</span></div><button type="button" onClick={() => setTaskCandidates(null)}>取消</button></header>
+                    <div>{taskCandidates.map((candidate, index) => (
+                      <label key={candidate.id}>
+                        <input type="checkbox" aria-label={`选择待办 ${candidate.title}`} checked={candidate.selected} onChange={(event) => setTaskCandidates((current) => current?.map((item) => item.id === candidate.id ? { ...item, selected: event.currentTarget.checked } : item) ?? null)} />
+                        <input type="text" aria-label={`待办标题 ${index + 1}`} value={candidate.title} onChange={(event) => setTaskCandidates((current) => current?.map((item) => item.id === candidate.id ? { ...item, title: event.currentTarget.value } : item) ?? null)} />
+                      </label>
+                    ))}</div>
+                    {taskError ? <p role="alert">{taskError}</p> : null}
+                    <footer><span>已选 {taskCandidates.filter((candidate) => candidate.selected).length} 条</span><button type="button" disabled={taskSaving || taskCandidates.every((candidate) => !candidate.selected || !candidate.title.trim())} onClick={() => void submitTaskCopy()}>创建 {taskCandidates.filter((candidate) => candidate.selected).length} 条待办</button></footer>
+                  </section>
+                ) : null}
 
                 <section className="leemo-document-attachments" aria-label="附件与引用">
                   <header><div><Paperclip aria-hidden /><strong>附件与引用</strong></div><label><input type="file" multiple disabled={!draft.noteId || attachmentBusy} onChange={(event) => { void attachFiles(Array.from(event.currentTarget.files ?? [])); event.currentTarget.value = ""; }} /><span>添加文件</span></label></header>

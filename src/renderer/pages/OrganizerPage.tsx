@@ -328,6 +328,7 @@ export default function OrganizerPage() {
   const [noteSearch, setNoteSearch] = useState("");
   const [draft, setDraft] = useState<EditorDraft | null>(null);
   const [noteTaskDrafts, setNoteTaskDrafts] = useState<NoteTaskCandidate[] | null>(null);
+  const [noteTaskReceipt, setNoteTaskReceipt] = useState<string | null>(null);
   const [attachmentError, setAttachmentError] = useState<string | null>(null);
   const [attachmentBusy, setAttachmentBusy] = useState(false);
   const [trash, setTrash] = useState<TrashSnapshot | null>(null);
@@ -553,6 +554,7 @@ export default function OrganizerPage() {
     selectNote(note.id);
     setDraft(noteDraft(note));
     setNoteTaskDrafts(null);
+    setNoteTaskReceipt(null);
     setTab("notes");
   };
 
@@ -565,6 +567,7 @@ export default function OrganizerPage() {
     newDraftNumber.current += 1;
     selectNote(null);
     setNoteTaskDrafts(null);
+    setNoteTaskReceipt(null);
     setDraft({
       key: `new:${newDraftNumber.current}`,
       noteId: null,
@@ -692,13 +695,14 @@ export default function OrganizerPage() {
 
   const openNoteTaskPreview = () => {
     if (!draft?.noteId) return;
+    setNoteTaskReceipt(null);
     setNoteTaskDrafts(noteTaskCandidates(draft.markdown));
   };
 
   const submitNoteTasks = async () => {
     if (!draft?.noteId || noteTaskSubmitDisabled) return;
     try {
-      await createManyTasks(selectedNoteTasks.map((candidate) => ({
+      const created = await createManyTasks(selectedNoteTasks.map((candidate) => ({
         ...parsedInput(candidate.title, candidate.parsed.fields),
         ...(candidate.plannedAt ? { plannedAt: new Date(candidate.plannedAt).getTime() } : {}),
         ...(candidate.dueAt ? { dueAt: new Date(candidate.dueAt).getTime() } : {}),
@@ -707,6 +711,7 @@ export default function OrganizerPage() {
         noteId: draft.noteId,
       })));
       setNoteTaskDrafts(null);
+      setNoteTaskReceipt(`已创建 ${created.length} 条待办 · 便签原文保留`);
     } catch {
       // The shared task store renders its user-facing error in the preview.
     }
@@ -1121,11 +1126,11 @@ export default function OrganizerPage() {
                     <button
                       type="button"
                       className="organizer-notes__convert"
-                      aria-label="转为待办"
+                      aria-label="从便签创建待办"
                       disabled={saving || taskSaving || noteTaskCandidates(draft.markdown).length === 0}
                       onClick={openNoteTaskPreview}
                     >
-                      转为待办
+                      从便签创建待办
                     </button>
                   ) : null}
                   <button
@@ -1141,10 +1146,10 @@ export default function OrganizerPage() {
                 </div>
                 {error ? <p className="organizer-notes__save-error" role="alert">{error}</p> : null}
                 {noteTaskDrafts ? (
-                  <section className="organizer-note-tasks" aria-label="转为待办预览">
+                  <section className="organizer-note-tasks" aria-label="创建待办预览">
                     <header>
                       <div>
-                        <strong>转为待办</strong>
+                        <strong>从便签创建待办</strong>
                         <span>确认要保留的条目，便签内容不会改变。</span>
                       </div>
                       <button type="button" onClick={() => setNoteTaskDrafts(null)}>取消</button>
@@ -1239,11 +1244,12 @@ export default function OrganizerPage() {
                         disabled={noteTaskSubmitDisabled}
                         onClick={() => void submitNoteTasks()}
                       >
-                        转为 {selectedNoteTasks.length} 条待办
+                        创建 {selectedNoteTasks.length} 条待办
                       </button>
                     </footer>
                   </section>
                 ) : null}
+                {noteTaskReceipt ? <p className="organizer-note-tasks__receipt" role="status">{noteTaskReceipt}</p> : null}
                 {draft.noteId ? (
                   <section
                     className="organizer-note-attachments"
