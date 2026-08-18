@@ -180,7 +180,7 @@ export function createCaptureTaskMcp(options: CaptureTaskMcpOptions): CaptureTas
 
   const runDeleteNote: CaptureTaskMcp["runDeleteNote"] = async (input) => {
     try {
-      options.captures.deleteNote(input);
+      options.captures.deleteNote({ ...input, childStrategy: "subtree" });
       return { text: "便签已删除。", isError: false };
     } catch (error) {
       return conciseError("便签", error);

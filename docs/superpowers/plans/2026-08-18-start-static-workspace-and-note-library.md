@@ -440,25 +440,25 @@ export interface MutateNoteTreeInput {
 }
 ```
 
-- [ ] **Step 1: Write atomic subtree tests**
+- [x] **Step 1: Write atomic subtree tests**
 
 Cover archive/restore subtree, trash/restore subtree, lift preserving order, permanent deletion cleaning only managed attachments, and external originals never deleted.
 
-- [ ] **Step 2: Run RED**
+- [x] **Step 2: Run RED**
 
 ```powershell
 npx vitest run tests/main/capture-persistence.test.ts tests/main/capture-admin.test.ts src/renderer/start/StartDocumentsView.test.tsx
 ```
 
-- [ ] **Step 3: Implement one transaction per action**
+- [x] **Step 3: Implement one transaction per action**
 
 Resolve descendants first, validate the root revision, mutate structural rows atomically, and emit events only after commit.
 
-- [ ] **Step 4: Add the explicit choice**
+- [x] **Step 4: Add the explicit choice**
 
 Parents show affected count and exactly `连同子便签一起处理` / `只处理这条，子便签上移`. Leaves keep the current one-step action.
 
-- [ ] **Step 5: Verify and commit**
+- [x] **Step 5: Verify and commit**
 
 ```powershell
 npx vitest run tests/main/capture-persistence.test.ts tests/main/capture-admin.test.ts tests/main/capture-ipc.test.ts src/renderer/stores/captures.test.ts src/renderer/start/StartDocumentsView.test.tsx

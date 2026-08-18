@@ -12,7 +12,7 @@ const COPY: Record<Exclude<StartDestination, "home" | "overview" | "tasks">, { t
   trash: { title: "回收站", description: "删除内容仍沿用现有恢复与永久删除规则。", icon: Trash2 },
 };
 
-export default function StartNotesView({ destination, selectedNoteId = null }: { destination: Exclude<StartDestination, "home" | "overview" | "tasks">; selectedNoteId?: string | null }) {
+export default function StartNotesView({ destination, selectedNoteId = null, onOpenNote }: { destination: Exclude<StartDestination, "home" | "overview" | "tasks">; selectedNoteId?: string | null; onOpenNote?: (noteId: string) => void }) {
   const notes = useCaptures((state) => destination === "archive" ? state.archivedNotes : state.notes);
   const copy = COPY[destination];
   const Icon = copy.icon;
@@ -22,7 +22,7 @@ export default function StartNotesView({ destination, selectedNoteId = null }: {
       <header className="leemo-start-page-heading"><div><h1>{copy.title}</h1><p>{copy.description}</p></div></header>
       {shown.length > 0 && ["inbox", "recent", "archive"].includes(destination) ? (
         <section className="leemo-start-note-list" aria-label={copy.title}>
-          {shown.map((note) => <article key={note.id} className={selectedNoteId === note.id ? "is-selected" : undefined}><Icon aria-hidden /><div><h2>{note.title || "无标题便签"}</h2><p>{note.markdown.slice(0, 120) || "空白便签"}</p></div><time>{new Date(note.updatedAt).toLocaleDateString("zh-CN")}</time></article>)}
+          {shown.map((note) => <article key={note.id} className={selectedNoteId === note.id ? "is-selected" : undefined}><button type="button" aria-label={`打开文档 ${note.title || "无标题便签"}`} onClick={() => onOpenNote?.(note.id)}><Icon aria-hidden /><div><h2>{note.title || "无标题便签"}</h2><p>{note.markdown.slice(0, 120) || "空白便签"}</p></div><time>{new Date(note.updatedAt).toLocaleDateString("zh-CN")}</time></button></article>)}
         </section>
       ) : (
         <div className="leemo-start-simple-empty"><Icon aria-hidden /><p>{destination === "inbox" ? "随手记下的内容会出现在这里。" : copy.description}</p></div>

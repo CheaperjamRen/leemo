@@ -209,14 +209,14 @@ describe("capture admin", () => {
     })).toThrow(/更新|版本/);
     expect(changes).toHaveLength(2);
 
-    const archived = admin.archiveNote({ id: created.id, expectedRevision: 2 });
+    const [archived] = admin.archiveNote({ id: created.id, expectedRevision: 2, childStrategy: "subtree" });
     expect(admin.listNotes()).toEqual([]);
     expect(admin.getNote(created.id)).toMatchObject({ id: created.id, archivedAt: 200 });
     expect(admin.listArchivedNotes()).toEqual([archived]);
-    const restored = admin.unarchiveNote({ id: created.id, expectedRevision: 3 });
+    const [restored] = admin.unarchiveNote({ id: created.id, expectedRevision: 3 });
     expect(restored).not.toHaveProperty("archivedAt");
 
-    admin.deleteNote({ id: created.id, expectedRevision: 4 });
+    admin.deleteNote({ id: created.id, expectedRevision: 4, childStrategy: "subtree" });
     expect(admin.getNote(created.id)).toBeNull();
     expect(changes).toEqual([
       { entity: "note", action: "created", id: created.id, revision: 1 },
@@ -338,7 +338,7 @@ describe("capture admin", () => {
       });
       const managedPath = path.join(root, "storage", withImage.attachments![0].path);
 
-      admin.deleteNote({ id: note.id, expectedRevision: 3 });
+      admin.deleteNote({ id: note.id, expectedRevision: 3, childStrategy: "subtree" });
       expect(admin.listTrash()).toMatchObject([{ id: note.id, attachments: withExternal.attachments }]);
       expect(fs.existsSync(managedPath)).toBe(true);
 

@@ -51,9 +51,9 @@ function captureAdmin(): CaptureAdminService {
     moveNote: vi.fn(() => [NOTE]),
     setNotePinned: vi.fn(() => NOTE),
     markNoteOrganized: vi.fn(() => NOTE),
-    archiveNote: vi.fn(() => NOTE),
-    unarchiveNote: vi.fn(() => NOTE),
-    deleteNote: vi.fn(),
+    archiveNote: vi.fn(() => [NOTE]),
+    unarchiveNote: vi.fn(() => [NOTE]),
+    deleteNote: vi.fn(() => [NOTE]),
     subscribe: vi.fn(() => () => {}),
   };
 }
@@ -115,7 +115,7 @@ describe("momo notes and tasks MCP", () => {
       title: "论文想法（更新）",
       markdown: "补充反例。",
     });
-    expect(captures.deleteNote).toHaveBeenCalledWith({ id: "note-1", expectedRevision: 2 });
+    expect(captures.deleteNote).toHaveBeenCalledWith({ id: "note-1", expectedRevision: 2, childStrategy: "subtree" });
   });
 
   it("adds one or many tasks to the current notebook without asking for its internal id", async () => {

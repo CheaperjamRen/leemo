@@ -35,6 +35,11 @@ interface NoteTaskCandidate {
   selected: boolean;
 }
 
+interface PendingTreeAction {
+  kind: "archive" | "trash";
+  childCount: number;
+}
+
 function draftFromNote(note: Note): DocumentDraft {
   return {
     key: `note:${note.id}`,
@@ -66,11 +71,17 @@ function noteTaskCandidates(markdown: string): NoteTaskCandidate[] {
 export default function StartDocumentsView({
   selectedNoteId = null,
   onOpenTask,
+  libraryMode = "active",
+  onRestored,
 }: {
   selectedNoteId?: string | null;
   onOpenTask?: (taskId: string) => void;
+  libraryMode?: "active" | "archive";
+  onRestored?: (noteId: string) => void;
 }) {
-  const notes = useCaptures((state) => state.notes);
+  const activeNotes = useCaptures((state) => state.notes);
+  const archivedNotes = useCaptures((state) => state.archivedNotes);
+  const notes = libraryMode === "archive" ? archivedNotes : activeNotes;
   const status = useCaptures((state) => state.status);
   const storeError = useCaptures((state) => state.error);
   const saving = useCaptures((state) => state.saving);
@@ -81,6 +92,7 @@ export default function StartDocumentsView({
   const setNotePinned = useCaptures((state) => state.setNotePinned);
   const markNoteOrganized = useCaptures((state) => state.markNoteOrganized);
   const archiveNote = useCaptures((state) => state.archiveNote);
+  const unarchiveNote = useCaptures((state) => state.unarchiveNote);
   const deleteNote = useCaptures((state) => state.deleteNote);
   const captureFileDropMode = useSettings((state) => state.captureFileDropMode);
   const createManyTasks = useTasks((state) => state.createMany);
@@ -96,6 +108,7 @@ export default function StartDocumentsView({
   const [attachmentBusy, setAttachmentBusy] = useState(false);
   const [taskCandidates, setTaskCandidates] = useState<NoteTaskCandidate[] | null>(null);
   const [taskReceipt, setTaskReceipt] = useState<string | null>(null);
+  const [pendingTreeAction, setPendingTreeAction] = useState<PendingTreeAction | null>(null);
   const newDraftNumber = useRef(0);
   const lastExternalSelection = useRef<string | null | undefined>(undefined);
 
@@ -105,6 +118,25 @@ export default function StartDocumentsView({
   const backlinkNotes = (activeId ? backlinks.get(activeId) ?? [] : [])
     .flatMap((id) => noteById.get(id) ?? []);
   const linkedTasks = draft?.noteId ? tasksForNote(draft.noteId) : [];
+  const descendantCount = useMemo(() => {
+    if (!currentNote) return 0;
+    const childrenByParent = new Map<string, Note[]>();
+    for (const note of notes) {
+      if (!note.parentId) continue;
+      const children = childrenByParent.get(note.parentId) ?? [];
+      children.push(note);
+      childrenByParent.set(note.parentId, children);
+    }
+    const visited = new Set<string>();
+    const stack = [...(childrenByParent.get(currentNote.id) ?? [])];
+    while (stack.length > 0) {
+      const note = stack.pop()!;
+      if (visited.has(note.id)) continue;
+      visited.add(note.id);
+      stack.push(...(childrenByParent.get(note.id) ?? []));
+    }
+    return visited.size;
+  }, [currentNote, notes]);
 
   useEffect(() => {
     if (selectedNoteId === lastExternalSelection.current) return;
@@ -138,6 +170,7 @@ export default function StartDocumentsView({
     setReferenceMenuOpen(false);
     setTaskCandidates(null);
     setTaskReceipt(null);
+    setPendingTreeAction(null);
     setLocalError(null);
   };
 
@@ -166,6 +199,7 @@ export default function StartDocumentsView({
     setReferenceMenuOpen(false);
     setTaskCandidates(null);
     setTaskReceipt(null);
+    setPendingTreeAction(null);
     setLocalError(null);
   };
 
@@ -224,10 +258,11 @@ export default function StartDocumentsView({
     }
   };
 
-  const archiveCurrent = async () => {
+  const archiveCurrent = async (childStrategy: "subtree" | "lift") => {
     if (!currentNote) return;
+    setPendingTreeAction(null);
     try {
-      await archiveNote({ id: currentNote.id, expectedRevision: currentNote.revision });
+      await archiveNote({ id: currentNote.id, expectedRevision: currentNote.revision, childStrategy });
       setDraft(null);
       setActiveId(null);
       selectNote(null);
@@ -236,13 +271,37 @@ export default function StartDocumentsView({
     }
   };
 
-  const trashCurrent = async () => {
+  const trashCurrent = async (childStrategy: "subtree" | "lift") => {
     if (!currentNote) return;
+    setPendingTreeAction(null);
     try {
-      await deleteNote({ id: currentNote.id, expectedRevision: currentNote.revision });
+      await deleteNote({ id: currentNote.id, expectedRevision: currentNote.revision, childStrategy });
       setDraft(null);
       setActiveId(null);
       selectNote(null);
+    } catch {
+      // Store error is rendered below the header.
+    }
+  };
+
+  const requestTreeAction = (kind: PendingTreeAction["kind"]) => {
+    if (!currentNote) return;
+    if (descendantCount === 0) {
+      if (kind === "archive") void archiveCurrent("subtree");
+      else void trashCurrent("subtree");
+      return;
+    }
+    setPendingTreeAction({ kind, childCount: descendantCount });
+  };
+
+  const restoreCurrent = async () => {
+    if (!currentNote) return;
+    try {
+      await unarchiveNote({ id: currentNote.id, expectedRevision: currentNote.revision });
+      setDraft(null);
+      setActiveId(null);
+      selectNote(null);
+      onRestored?.(currentNote.id);
     } catch {
       // Store error is rendered below the header.
     }
@@ -382,6 +441,8 @@ export default function StartDocumentsView({
         onSelect={openDocument}
         onCreate={startDocument}
         onMove={(noteId, parentId, index) => { void moveDocument(noteId, parentId, index); }}
+        readOnly={libraryMode === "archive"}
+        title={libraryMode === "archive" ? "已归档" : "我的文档"}
       />
       <section className="leemo-document-workspace" aria-label="文档阅读与编辑">
         {draft ? (
@@ -406,10 +467,32 @@ export default function StartDocumentsView({
                 <span className={dirty ? "is-dirty" : "is-saved"}>{dirty ? "未保存" : "已保存"}</span>
                 <button type="button" aria-label="保存文档" title="保存文档 (Ctrl+S)" disabled={!dirty || saving} onClick={() => void saveDocument()}><Save aria-hidden /></button>
                 <button type="button" aria-label={currentNote?.pinnedAt === null ? "置顶文档" : "取消置顶"} title={currentNote?.pinnedAt === null ? "置顶" : "取消置顶"} disabled={!currentNote || saving} onClick={() => void togglePin()}><Pin aria-hidden /></button>
-                <button type="button" aria-label="归档文档" title="归档" disabled={!currentNote || saving} onClick={() => void archiveCurrent()}><Archive aria-hidden /></button>
-                <button type="button" aria-label="移到回收站" title="移到回收站" disabled={!currentNote || saving} onClick={() => void trashCurrent()}><Trash2 aria-hidden /></button>
+                {libraryMode === "archive"
+                  ? <button type="button" aria-label="恢复文档" title="恢复" disabled={!currentNote || saving} onClick={() => void restoreCurrent()}><Archive aria-hidden /></button>
+                  : <button type="button" aria-label="归档文档" title="归档" disabled={!currentNote || saving} onClick={() => requestTreeAction("archive")}><Archive aria-hidden /></button>}
+                <button type="button" aria-label="移到回收站" title="移到回收站" disabled={!currentNote || saving} onClick={() => requestTreeAction("trash")}><Trash2 aria-hidden /></button>
               </div>
             </header>
+            {pendingTreeAction ? (
+              <div className="leemo-document-tree-action-backdrop">
+                <section
+                  className="leemo-document-tree-action"
+                  role="dialog"
+                  aria-modal="true"
+                  aria-label={pendingTreeAction.kind === "archive" ? "归档父便签" : "删除父便签"}
+                >
+                  <div>
+                    <strong>{pendingTreeAction.kind === "archive" ? "归档这组文档？" : "把这组文档移到回收站？"}</strong>
+                    <p>将影响 {pendingTreeAction.childCount} 条子便签。你可以保留整棵结构，或只处理当前父便签。</p>
+                  </div>
+                  <div className="leemo-document-tree-action__choices">
+                    <button type="button" onClick={() => pendingTreeAction.kind === "archive" ? void archiveCurrent("subtree") : void trashCurrent("subtree")}>连同子便签一起处理</button>
+                    <button type="button" onClick={() => pendingTreeAction.kind === "archive" ? void archiveCurrent("lift") : void trashCurrent("lift")}>只处理这条，子便签上移</button>
+                  </div>
+                  <button type="button" className="leemo-document-tree-action__cancel" onClick={() => setPendingTreeAction(null)}>取消</button>
+                </section>
+              </div>
+            ) : null}
             {(localError || storeError) ? <p className="leemo-document-error" role="alert">{localError || storeError}</p> : null}
             <div className="leemo-document-scroll">
               <div className="leemo-document-canvas">

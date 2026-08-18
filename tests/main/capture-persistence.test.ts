@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import type {
   Note,
   NoteAttachment,
+  MutateNoteTreeInput,
   QuickDraft,
   SaveQuickDraftInput,
   UpdateNoteInput,
@@ -18,12 +19,12 @@ interface CaptureStoreForTest {
   createNote(note: Note): Note;
   updateNote(input: UpdateNoteInput & { updatedAt: number }): Note;
   listArchivedNotes(): Note[];
-  archiveNote(id: string, expectedRevision: number, archivedAt: number): Note;
-  unarchiveNote(id: string, expectedRevision: number, updatedAt: number): Note;
-  deleteNote(id: string, expectedRevision: number, deletedAt: number, purgeAfter: number): Note;
+  archiveNote(input: MutateNoteTreeInput & { updatedAt: number }): Note[];
+  unarchiveNote(id: string, expectedRevision: number, updatedAt: number): Note[];
+  deleteNote(input: MutateNoteTreeInput & { deletedAt: number; purgeAfter: number }): Note[];
   listTrash(): Note[];
-  restoreNote(id: string, expectedRevision: number, updatedAt: number): Note;
-  permanentlyDeleteNote(id: string, expectedRevision: number): Note;
+  restoreNote(id: string, expectedRevision: number, updatedAt: number): Note[];
+  permanentlyDeleteNote(id: string, expectedRevision: number): Note[];
   purgeExpired(now: number): Note[];
   addNoteAttachment(
     noteId: string,
@@ -236,9 +237,9 @@ describe("capture persistence", () => {
       expectedRevision: 1,
       updatedAt: 400,
     })).toThrow(/更新|版本/);
-    expect(() => persistence.deleteNote("note-1", 1, 400, 2_592_000_400)).toThrow(/更新|版本/);
+    expect(() => persistence.deleteNote({ id: "note-1", expectedRevision: 1, childStrategy: "subtree", deletedAt: 400, purgeAfter: 2_592_000_400 })).toThrow(/更新|版本/);
 
-    persistence.deleteNote("note-1", 2, 500, 2_592_000_500);
+    persistence.deleteNote({ id: "note-1", expectedRevision: 2, childStrategy: "subtree", deletedAt: 500, purgeAfter: 2_592_000_500 });
     expect(persistence.getNote("note-1")).toBeUndefined();
   });
 
@@ -259,14 +260,14 @@ describe("capture persistence", () => {
     `);
     const persistence = createStore(db);
 
-    const archived = persistence.archiveNote("legacy-note", 1, 200);
+    const [archived] = persistence.archiveNote({ id: "legacy-note", expectedRevision: 1, childStrategy: "subtree", updatedAt: 200 });
 
     expect(persistence.listNotes()).toEqual([]);
     expect(persistence.getNote("legacy-note")).toMatchObject({
       id: "legacy-note", archivedAt: 200, revision: 2,
     });
     expect(persistence.listArchivedNotes()).toEqual([archived]);
-    const restored = createStore(db).unarchiveNote("legacy-note", 2, 300);
+    const [restored] = createStore(db).unarchiveNote("legacy-note", 2, 300);
     expect(restored).toMatchObject({ revision: 3, updatedAt: 300 });
     expect(restored).not.toHaveProperty("archivedAt");
     expect(createStore(db).listNotes()).toMatchObject([{ id: "legacy-note" }]);
@@ -360,6 +361,88 @@ describe("capture persistence", () => {
     expect(persistence.getNote("parent")).toMatchObject({ parentId: null, sortOrder: 0, revision: 1 });
     expect(persistence.getNote("child")).toMatchObject({ parentId: "parent", sortOrder: 0, revision: 1 });
     expect(persistence.getNote("sibling")).toMatchObject({ parentId: null, sortOrder: 1, revision: 1 });
+  });
+
+  it("archives and restores an entire note subtree without losing its structure", () => {
+    const persistence = createStore();
+    persistence.createNote(organizedNote({ id: "parent", title: "求职", sortOrder: 0 }));
+    persistence.createNote(organizedNote({ id: "child", title: "简历", parentId: "parent", sortOrder: 0 }));
+    persistence.createNote(organizedNote({ id: "grandchild", title: "项目", parentId: "child", sortOrder: 0 }));
+    persistence.createNote(organizedNote({ id: "sibling", title: "学习", sortOrder: 1 }));
+
+    expect(persistence.archiveNote({
+      id: "parent",
+      expectedRevision: 1,
+      childStrategy: "subtree",
+      updatedAt: 200,
+    })).toMatchObject([
+      { id: "parent", archivedAt: 200, revision: 2, parentId: null },
+      { id: "child", archivedAt: 200, revision: 2, parentId: "parent" },
+      { id: "grandchild", archivedAt: 200, revision: 2, parentId: "child" },
+    ]);
+    expect(persistence.listNotes()).toMatchObject([{ id: "sibling" }]);
+
+    expect(persistence.unarchiveNote("parent", 2, 300)).toMatchObject([
+      { id: "parent", revision: 3, parentId: null },
+      { id: "child", revision: 3, parentId: "parent" },
+      { id: "grandchild", revision: 3, parentId: "child" },
+    ]);
+    expect(persistence.listNotes().map(({ id }) => id)).toEqual(expect.arrayContaining(["parent", "child", "grandchild", "sibling"]));
+  });
+
+  it("can archive only a parent while lifting its children into the parent position", () => {
+    const persistence = createStore();
+    persistence.createNote(organizedNote({ id: "before", sortOrder: 0 }));
+    persistence.createNote(organizedNote({ id: "parent", sortOrder: 1 }));
+    persistence.createNote(organizedNote({ id: "after", sortOrder: 2 }));
+    persistence.createNote(organizedNote({ id: "child-a", parentId: "parent", sortOrder: 0 }));
+    persistence.createNote(organizedNote({ id: "child-b", parentId: "parent", sortOrder: 1 }));
+
+    persistence.archiveNote({
+      id: "parent",
+      expectedRevision: 1,
+      childStrategy: "lift",
+      updatedAt: 200,
+    });
+
+    expect(persistence.listNotes().sort((a, b) => a.sortOrder - b.sortOrder)).toMatchObject([
+      { id: "before", parentId: null, sortOrder: 0 },
+      { id: "child-a", parentId: null, sortOrder: 1, revision: 2 },
+      { id: "child-b", parentId: null, sortOrder: 2, revision: 2 },
+      { id: "after", parentId: null, sortOrder: 3 },
+    ]);
+    expect(persistence.listArchivedNotes()).toMatchObject([{ id: "parent", revision: 2 }]);
+  });
+
+  it("trashes and restores a subtree atomically, while lift leaves children active", () => {
+    const persistence = createStore();
+    persistence.createNote(organizedNote({ id: "parent", sortOrder: 0 }));
+    persistence.createNote(organizedNote({ id: "child", parentId: "parent", sortOrder: 0 }));
+
+    expect(persistence.deleteNote({
+      id: "parent",
+      expectedRevision: 1,
+      childStrategy: "subtree",
+      deletedAt: 200,
+      purgeAfter: 2_592_000_200,
+    })).toMatchObject([
+      { id: "parent", deletedAt: 200, revision: 2 },
+      { id: "child", deletedAt: 200, revision: 2, parentId: "parent" },
+    ]);
+    expect(persistence.restoreNote("parent", 2, 300)).toMatchObject([
+      { id: "parent", revision: 3 },
+      { id: "child", revision: 3, parentId: "parent" },
+    ]);
+
+    persistence.deleteNote({
+      id: "parent",
+      expectedRevision: 3,
+      childStrategy: "lift",
+      deletedAt: 400,
+      purgeAfter: 2_592_000_400,
+    });
+    expect(persistence.listNotes()).toMatchObject([{ id: "child", parentId: null }]);
+    expect(persistence.listTrash()).toMatchObject([{ id: "parent" }]);
   });
 
   it("keeps note organization atomic when a stale revision tries to move it", () => {
@@ -474,7 +557,7 @@ describe("capture persistence", () => {
     persistence.createNote(note());
     persistence.addNoteAttachment("note-1", attachment, 1, 110);
 
-    const trashed = persistence.deleteNote("note-1", 2, 200, 2_592_000_200);
+    const [trashed] = persistence.deleteNote({ id: "note-1", expectedRevision: 2, childStrategy: "subtree", deletedAt: 200, purgeAfter: 2_592_000_200 });
 
     expect(persistence.getNote("note-1")).toBeUndefined();
     expect(persistence.listNotes()).toEqual([]);
@@ -490,14 +573,14 @@ describe("capture persistence", () => {
       deletedAt: 200,
       attachments: [attachment],
     }]);
-    expect(reopened.restoreNote("note-1", 3, 300)).toMatchObject({
+    expect(reopened.restoreNote("note-1", 3, 300)[0]).toMatchObject({
       revision: 4,
       updatedAt: 300,
       attachments: [attachment],
     });
     expect(reopened.getNote("note-1")).toMatchObject({ id: "note-1", attachments: [attachment] });
 
-    reopened.deleteNote("note-1", 4, 400, 500);
+    reopened.deleteNote({ id: "note-1", expectedRevision: 4, childStrategy: "subtree", deletedAt: 400, purgeAfter: 500 });
     expect(reopened.purgeExpired(500)).toEqual([]);
     expect(reopened.purgeExpired(501)).toMatchObject([{ id: "note-1", deletedAt: 400 }]);
     expect(reopened.listTrash()).toEqual([]);

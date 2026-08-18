@@ -24,7 +24,7 @@ function note(id: string, overrides: Partial<Note> = {}): Note {
   };
 }
 
-function captureClient(notes: Note[]) {
+function captureClient(notes: Note[], archivedNotes: Note[] = []) {
   const updateNote = vi.fn(async (input) => ({
     ...notes.find((note) => note.id === input.id)!,
     title: input.title,
@@ -32,20 +32,26 @@ function captureClient(notes: Note[]) {
     revision: input.expectedRevision + 1,
     updatedAt: 200,
   }));
+  const archiveNote = vi.fn(async ({ id }: { id: string }) => [{ ...notes.find((note) => note.id === id)!, archivedAt: 200 }]);
+  const deleteNote = vi.fn(async ({ id }: { id: string }) => [{ ...notes.find((note) => note.id === id)!, deletedAt: 200 }]);
   const client: CaptureClient = {
     getQuickDraft: vi.fn(),
     saveQuickDraft: vi.fn(),
     commitQuickDraft: vi.fn(),
     listNotes: vi.fn(async () => notes),
-    listArchivedNotes: vi.fn(async () => []),
+    listArchivedNotes: vi.fn(async () => archivedNotes),
     createNote: vi.fn(async ({ title, markdown }) => note("new", { title, markdown })),
     updateNote,
     moveNote: vi.fn(async () => notes),
     setNotePinned: vi.fn(async () => notes[0]!),
     markNoteOrganized: vi.fn(async () => notes[0]!),
-    archiveNote: vi.fn(async () => ({ ...notes[0]!, archivedAt: 200 })),
-    unarchiveNote: vi.fn(async () => notes[0]!),
-    deleteNote: vi.fn(async () => undefined),
+    archiveNote,
+    unarchiveNote: vi.fn(async ({ id }) => {
+      const archived = archivedNotes.find((note) => note.id === id)!;
+      const { archivedAt: _archivedAt, ...restored } = archived;
+      return [restored];
+    }),
+    deleteNote,
     attachImageBytes: vi.fn(),
     attachExternalFile: vi.fn(),
     attachFileCopy: vi.fn(),
@@ -53,7 +59,7 @@ function captureClient(notes: Note[]) {
     migrateStorageRoot: vi.fn(),
     onChanged: vi.fn(() => vi.fn()),
   };
-  return { client, updateNote };
+  return { client, updateNote, archiveNote, deleteNote };
 }
 
 function taskClient() {
@@ -146,5 +152,42 @@ describe("StartDocumentsView", () => {
     }));
     expect(screen.getByText("已创建 2 条待办 · 便签原文保留")).toBeInTheDocument();
     expect(captures.updateNote).not.toHaveBeenCalled();
+  });
+
+  it("requires an explicit subtree choice for a parent and can lift children when archiving", async () => {
+    const parent = note("parent", { title: "求职准备" });
+    const child = note("child", { title: "简历", parentId: parent.id });
+    const captures = captureClient([parent, child]);
+    render(<BridgeProvider capture={captures.client}><StartDocumentsView selectedNoteId={parent.id} /></BridgeProvider>);
+
+    await userEvent.click(await screen.findByRole("button", { name: "归档文档" }));
+    const dialog = screen.getByRole("dialog", { name: "归档父便签" });
+    expect(within(dialog).getByText(/将影响 1 条子便签/)).toBeInTheDocument();
+    await userEvent.click(within(dialog).getByRole("button", { name: "只处理这条，子便签上移" }));
+
+    await waitFor(() => expect(captures.archiveNote).toHaveBeenCalledWith({
+      id: parent.id,
+      expectedRevision: parent.revision,
+      childStrategy: "lift",
+    }));
+  });
+
+  it("opens archived documents in the same editor surface and restores their subtree", async () => {
+    const archived = note("archived", { title: "旧方案", archivedAt: 200, revision: 2 });
+    const captures = captureClient([], [archived]);
+    const onRestored = vi.fn();
+    render(
+      <BridgeProvider capture={captures.client}>
+        <StartDocumentsView libraryMode="archive" selectedNoteId={archived.id} onRestored={onRestored} />
+      </BridgeProvider>,
+    );
+
+    expect(await screen.findByDisplayValue("旧方案")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "恢复文档" }));
+    await waitFor(() => expect(captures.client.unarchiveNote).toHaveBeenCalledWith({
+      id: archived.id,
+      expectedRevision: archived.revision,
+    }));
+    expect(onRestored).toHaveBeenCalledWith(archived.id);
   });
 });

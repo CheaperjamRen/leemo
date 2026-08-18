@@ -27,7 +27,7 @@ describe("trash IPC dispatcher", () => {
     const { captures, tasks, trash } = createHarness();
     const note = captures.createNote({ title: "临时便签", markdown: "正文" });
     const task = tasks.createTask({ title: "临时待办", details: "详情", noteId: note.id });
-    captures.deleteNote({ id: note.id, expectedRevision: 1 });
+    captures.deleteNote({ id: note.id, expectedRevision: 1, childStrategy: "subtree" });
     tasks.deleteTask({ id: task.id, expectedRevision: 1 });
 
     expect(await trash.handle("quick", { op: "list" })).toMatchObject({ ok: false });
@@ -42,7 +42,7 @@ describe("trash IPC dispatcher", () => {
     expect(await trash.handle("main", {
       op: "restore",
       payload: { kind: "note", id: note.id, expectedRevision: 2 },
-    })).toMatchObject({ ok: true, response: { id: note.id, revision: 3 } });
+    })).toMatchObject({ ok: true, response: [{ id: note.id, revision: 3 }] });
     expect(captures.getNote(note.id)).toMatchObject({ title: "临时便签" });
 
     expect(await trash.handle("main", {

@@ -19,6 +19,7 @@ import StartHome from "./StartHome";
 import StartTasksView from "./StartTasksView";
 import StartNotesView from "./StartNotesView";
 import StartDocumentsView from "./StartDocumentsView";
+import StartTrashView from "./StartTrashView";
 import GlobalPendingOverviewPage from "./GlobalPendingOverviewPage";
 import { openOverviewSource, overviewTargetFromSourceId, type OverviewOpenTarget } from "./open-overview-source";
 import type { StartDestination } from "./start-navigation";
@@ -86,12 +87,13 @@ export default function StartShell() {
 
   useEffect(() => {
     if (narrow) return;
-    if (destination === "documents" && !documentNavigationState.current.active) {
+    const documentSurface = destination === "documents" || destination === "archive";
+    if (documentSurface && !documentNavigationState.current.active) {
       documentNavigationState.current = { active: true, previousCollapsed: sidebarCollapsed };
       setSidebarCollapsed(true);
       return;
     }
-    if (destination !== "documents" && documentNavigationState.current.active) {
+    if (!documentSurface && documentNavigationState.current.active) {
       const previousCollapsed = documentNavigationState.current.previousCollapsed;
       documentNavigationState.current = { active: false, previousCollapsed: false };
       setSidebarCollapsed(previousCollapsed);
@@ -198,8 +200,10 @@ export default function StartShell() {
           )}
           {destination === "tasks" && <StartTasksView selectedTaskId={selectedTaskId} onOpenNote={(noteId) => startStore.getState().open("documents", { noteId })} />}
           {destination === "documents" && <StartDocumentsView selectedNoteId={selectedNoteId} onOpenTask={(taskId) => startStore.getState().open("tasks", { taskId })} />}
-          {destination !== "home" && destination !== "overview" && destination !== "tasks" && destination !== "documents" && (
-            <StartNotesView destination={destination} selectedNoteId={selectedNoteId} />
+          {destination === "archive" && <StartDocumentsView libraryMode="archive" selectedNoteId={selectedNoteId} onRestored={(noteId) => startStore.getState().open("documents", { noteId })} />}
+          {destination === "trash" && <StartTrashView />}
+          {destination !== "home" && destination !== "overview" && destination !== "tasks" && destination !== "documents" && destination !== "archive" && destination !== "trash" && (
+            <StartNotesView destination={destination} selectedNoteId={selectedNoteId} onOpenNote={(noteId) => startStore.getState().open("documents", { noteId })} />
           )}
         </main>
       </div>

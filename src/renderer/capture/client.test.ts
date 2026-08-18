@@ -82,14 +82,14 @@ describe("capture clients", () => {
 
   it("keeps create and delete operations on the main-window client", async () => {
     const createInput: CreateNoteInput = { title: "新便签", markdown: "正文" };
-    const deleteInput: DeleteNoteInput = { id: note.id, expectedRevision: 1 };
+    const deleteInput: DeleteNoteInput = { id: note.id, expectedRevision: 1, childStrategy: "subtree" };
     const invoke = vi.fn()
       .mockResolvedValueOnce({ ok: true, response: note })
-      .mockResolvedValueOnce({ ok: true });
+      .mockResolvedValueOnce({ ok: true, response: [note] });
     const client = new IpcCaptureClient({ invoke, onChanged: vi.fn(() => vi.fn()) });
 
     await expect(client.createNote(createInput)).resolves.toEqual(note);
-    await expect(client.deleteNote(deleteInput)).resolves.toBeUndefined();
+    await expect(client.deleteNote(deleteInput)).resolves.toEqual([note]);
     expect(invoke).toHaveBeenNthCalledWith(1, "createNote", createInput);
     expect(invoke).toHaveBeenNthCalledWith(2, "deleteNote", deleteInput);
   });

@@ -41,9 +41,9 @@ function captureClient(overrides: Partial<CaptureClient> = {}): CaptureClient {
     moveNote: vi.fn(async () => [first]),
     setNotePinned: vi.fn(async () => first),
     markNoteOrganized: vi.fn(async () => first),
-    archiveNote: vi.fn(async () => ({ ...first, archivedAt: 20, revision: 2 })),
-    unarchiveNote: vi.fn(async () => first),
-    deleteNote: vi.fn(async () => undefined),
+    archiveNote: vi.fn(async () => [{ ...first, archivedAt: 20, revision: 2 }]),
+    unarchiveNote: vi.fn(async () => [first]),
+    deleteNote: vi.fn(async () => [{ ...first, deletedAt: 20, revision: 2 }]),
     onChanged: vi.fn(() => vi.fn()),
     ...overrides,
   } as CaptureClient;
@@ -177,5 +177,30 @@ describe("captures store", () => {
       saving: false,
       error: "内容已在别处更新，请刷新后重试。",
     });
+  });
+
+  it("applies subtree archive and lift-delete snapshots without a full refresh", async () => {
+    const parent = { ...first, id: "parent", title: "求职", sortOrder: 0 };
+    const child = { ...second, id: "child", title: "简历", parentId: parent.id, sortOrder: 0 };
+    const archivedParent = { ...parent, archivedAt: 30, revision: 2, updatedAt: 30 };
+    const archivedChild = { ...child, archivedAt: 30, revision: 2, updatedAt: 30 };
+    const liftedChild = { ...archivedChild, parentId: null, sortOrder: 0, revision: 3, updatedAt: 40 };
+    const trashedParent = { ...archivedParent, deletedAt: 40, purgeAfter: 50, revision: 3, updatedAt: 40 };
+    const archiveNote = vi.fn(async () => [archivedParent, archivedChild]);
+    const deleteNote = vi.fn(async () => [trashedParent, liftedChild]);
+    const store = createCapturesStore(captureClient({
+      listNotes: vi.fn(async () => [parent, child]),
+      archiveNote,
+      deleteNote,
+    }));
+    await store.getState().refresh();
+
+    await store.getState().archiveNote({ id: parent.id, expectedRevision: 1, childStrategy: "subtree" });
+    expect(store.getState().notes).toEqual([]);
+    expect(store.getState().archivedNotes).toEqual(expect.arrayContaining([archivedParent, archivedChild]));
+
+    await store.getState().deleteNote({ id: parent.id, expectedRevision: 2, childStrategy: "lift" });
+    expect(store.getState().archivedNotes).toEqual([liftedChild]);
+    expect(store.getState().notes).toEqual([]);
   });
 });

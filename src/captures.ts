@@ -110,15 +110,17 @@ export interface MarkNoteOrganizedInput {
   organized: boolean;
 }
 
-export interface DeleteNoteInput {
+export type NoteChildStrategy = "subtree" | "lift";
+
+export interface MutateNoteTreeInput {
   id: string;
   expectedRevision: number;
+  childStrategy: NoteChildStrategy;
 }
 
-export interface ArchiveNoteInput {
-  id: string;
-  expectedRevision: number;
-}
+export type DeleteNoteInput = MutateNoteTreeInput;
+
+export type ArchiveNoteInput = MutateNoteTreeInput;
 
 export interface UnarchiveNoteInput {
   id: string;

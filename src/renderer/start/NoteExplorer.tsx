@@ -23,6 +23,7 @@ function TreeRows({
   onToggle,
   onSelect,
   onMove,
+  readOnly,
 }: {
   nodes: readonly NoteTreeNode[];
   depth: number;
@@ -31,6 +32,7 @@ function TreeRows({
   onToggle(id: string): void;
   onSelect(note: Note): void;
   onMove(noteId: string, parentId: string | null, index: number): void;
+  readOnly: boolean;
 }) {
   return nodes.map((node) => {
     const hasChildren = node.children.length > 0;
@@ -45,15 +47,18 @@ function TreeRows({
           data-depth={depth}
           className="leemo-note-tree__row"
           style={{ "--note-depth": depth } as CSSProperties}
-          draggable
+          draggable={!readOnly}
           onDragStart={(event) => {
+            if (readOnly) return;
             event.dataTransfer.effectAllowed = "move";
             event.dataTransfer.setData(NOTE_DRAG_MIME, JSON.stringify({ noteId: node.note.id }));
           }}
           onDragOver={(event) => {
+            if (readOnly) return;
             if (Array.from(event.dataTransfer.types).includes(NOTE_DRAG_MIME)) event.preventDefault();
           }}
           onDrop={(event) => {
+            if (readOnly) return;
             const noteId = noteIdFromDragPayload(event.dataTransfer);
             if (!noteId || noteId === node.note.id) return;
             event.preventDefault();
@@ -88,6 +93,7 @@ function TreeRows({
             onToggle={onToggle}
             onSelect={onSelect}
             onMove={onMove}
+            readOnly={readOnly}
           />
         ) : null}
       </div>
@@ -101,12 +107,16 @@ export default function NoteExplorer({
   onSelect,
   onCreate,
   onMove,
+  readOnly = false,
+  title = "我的文档",
 }: {
   notes: readonly Note[];
   selectedId: string | null;
   onSelect(note: Note): void;
   onCreate(): void;
   onMove(noteId: string, parentId: string | null, index: number): void;
+  readOnly?: boolean;
+  title?: string;
 }) {
   const [query, setQuery] = useState("");
   const [lens, setLens] = useState<ExplorerLens>("documents");
@@ -145,8 +155,8 @@ export default function NoteExplorer({
   return (
     <aside className="leemo-note-explorer" aria-label="文档 Explorer">
       <header className="leemo-note-explorer__header">
-        <div><strong>我的文档</strong><span>{notes.length}</span></div>
-        <button type="button" aria-label="新建文档" title="新建文档" onClick={onCreate}><Plus aria-hidden /></button>
+        <div><strong>{title}</strong><span>{notes.length}</span></div>
+        {!readOnly ? <button type="button" aria-label="新建文档" title="新建文档" onClick={onCreate}><Plus aria-hidden /></button> : null}
       </header>
       <label className="leemo-note-explorer__search">
         <Search aria-hidden />
@@ -158,7 +168,7 @@ export default function NoteExplorer({
           onChange={(event) => setQuery(event.currentTarget.value)}
         />
       </label>
-      <nav className="leemo-note-explorer__lenses" aria-label="文档视图">
+      {!readOnly ? <nav className="leemo-note-explorer__lenses" aria-label="文档视图">
         {lenses.map((item) => {
           const Icon = item.icon;
           return (
@@ -167,7 +177,7 @@ export default function NoteExplorer({
             </button>
           );
         })}
-      </nav>
+      </nav> : null}
       <div className="leemo-note-explorer__tree-heading">
         <button type="button" aria-current={lens === "documents" ? "page" : undefined} onClick={() => setLens("documents")}>
           <FileText aria-hidden /><span>文档树</span>
@@ -179,9 +189,11 @@ export default function NoteExplorer({
         aria-label="我的文档"
         data-testid="note-tree-root-drop"
         onDragOver={(event) => {
+          if (readOnly) return;
           if (Array.from(event.dataTransfer.types).includes(NOTE_DRAG_MIME)) event.preventDefault();
         }}
         onDrop={(event) => {
+          if (readOnly) return;
           if ((event.target as HTMLElement).closest("[role='treeitem']")) return;
           const noteId = noteIdFromDragPayload(event.dataTransfer);
           if (!noteId) return;
@@ -202,6 +214,7 @@ export default function NoteExplorer({
             })}
             onSelect={onSelect}
             onMove={onMove}
+            readOnly={readOnly}
           />
         ) : <p>{query ? "没有匹配的文档" : "还没有文档"}</p>}
       </div>

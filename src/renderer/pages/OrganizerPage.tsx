@@ -598,10 +598,11 @@ export default function OrganizerPage() {
   const changeArchiveState = async () => {
     if (!draft?.noteId || draft.revision === null) return;
     try {
-      const saved = noteLibraryView === "active"
-        ? await archiveNote({ id: draft.noteId, expectedRevision: draft.revision })
+      const affected = noteLibraryView === "active"
+        ? await archiveNote({ id: draft.noteId, expectedRevision: draft.revision, childStrategy: "subtree" })
         : await unarchiveNote({ id: draft.noteId, expectedRevision: draft.revision });
-      setDraft(noteDraft(saved));
+      const saved = affected.find((note) => note.id === draft.noteId);
+      if (saved) setDraft(noteDraft(saved));
       setNoteLibraryView(noteLibraryView === "active" ? "archived" : "active");
     } catch {
       // The shared store exposes the user-facing error beside the editor.
@@ -611,7 +612,7 @@ export default function OrganizerPage() {
   const moveNoteToTrash = async () => {
     if (!draft?.noteId || draft.revision === null) return;
     try {
-      await deleteNote({ id: draft.noteId, expectedRevision: draft.revision });
+      await deleteNote({ id: draft.noteId, expectedRevision: draft.revision, childStrategy: "subtree" });
       setDraft(null);
       setNoteTaskDrafts(null);
     } catch {

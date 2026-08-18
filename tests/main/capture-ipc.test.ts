@@ -109,8 +109,8 @@ describe("capture IPC dispatcher", () => {
     })).toMatchObject({ ok: true, response: { revision: 2, title: "已更新" } });
     expect(await ipc.handle("main", {
       op: "archiveNote",
-      payload: { id: "note-1", expectedRevision: 2 },
-    })).toMatchObject({ ok: true, response: { revision: 3, archivedAt: expect.any(Number) } });
+      payload: { id: "note-1", expectedRevision: 2, childStrategy: "subtree" },
+    })).toMatchObject({ ok: true, response: [{ revision: 3, archivedAt: expect.any(Number) }] });
     expect(await ipc.handle("main", { op: "listNotes" })).toEqual({ ok: true, response: [] });
     expect(await ipc.handle("main", { op: "listArchivedNotes" })).toMatchObject({
       ok: true, response: [{ id: "note-1" }],
@@ -118,11 +118,11 @@ describe("capture IPC dispatcher", () => {
     expect(await ipc.handle("main", {
       op: "unarchiveNote",
       payload: { id: "note-1", expectedRevision: 3 },
-    })).toMatchObject({ ok: true, response: { revision: 4 } });
+    })).toMatchObject({ ok: true, response: [{ revision: 4 }] });
     expect(await ipc.handle("main", {
       op: "deleteNote",
-      payload: { id: "note-1", expectedRevision: 4 },
-    })).toEqual({ ok: true, response: undefined });
+      payload: { id: "note-1", expectedRevision: 4, childStrategy: "subtree" },
+    })).toMatchObject({ ok: true, response: [{ id: "note-1", deletedAt: expect.any(Number) }] });
     expect(await ipc.handle("main", { op: "listNotes" })).toEqual({ ok: true, response: [] });
   });
 

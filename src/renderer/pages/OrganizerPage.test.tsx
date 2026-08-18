@@ -100,15 +100,15 @@ function captureClient(notes: Note[] = [], archivedNotes: Note[] = []): CaptureC
       revision: expectedRevision + 1,
       updatedAt: 50,
     })),
-    archiveNote: vi.fn(async ({ id, expectedRevision }) => ({
+    archiveNote: vi.fn(async ({ id, expectedRevision }) => [{
       ...(notes.find((note) => note.id === id)!), archivedAt: 50, revision: expectedRevision + 1, updatedAt: 50,
-    })),
+    }]),
     unarchiveNote: vi.fn(async ({ id, expectedRevision }) => {
       const note = archivedNotes.find((candidate) => candidate.id === id)!;
       const { archivedAt: _archivedAt, ...restored } = note;
-      return { ...restored, revision: expectedRevision + 1, updatedAt: 50 };
+      return [{ ...restored, revision: expectedRevision + 1, updatedAt: 50 }];
     }),
-    deleteNote: vi.fn(async () => undefined),
+    deleteNote: vi.fn(async ({ id }) => [{ ...(notes.find((note) => note.id === id)!), deletedAt: 50 }]),
     attachImageBytes: vi.fn(),
     attachExternalFile: vi.fn(),
     attachFileCopy: vi.fn(),
@@ -369,6 +369,7 @@ describe("OrganizerPage", () => {
     await waitFor(() => expect(capture.deleteNote).toHaveBeenCalledWith({
       id: titled.id,
       expectedRevision: titled.revision,
+      childStrategy: "subtree",
     }));
 
     await user.click(screen.getByRole("tab", { name: "待办" }));

@@ -53,9 +53,9 @@ export interface CaptureClient {
   moveNote(input: MoveNoteInput): Promise<Note[]>;
   setNotePinned(input: SetNotePinnedInput): Promise<Note>;
   markNoteOrganized(input: MarkNoteOrganizedInput): Promise<Note>;
-  archiveNote(input: ArchiveNoteInput): Promise<Note>;
-  unarchiveNote(input: UnarchiveNoteInput): Promise<Note>;
-  deleteNote(input: DeleteNoteInput): Promise<void>;
+  archiveNote(input: ArchiveNoteInput): Promise<Note[]>;
+  unarchiveNote(input: UnarchiveNoteInput): Promise<Note[]>;
+  deleteNote(input: DeleteNoteInput): Promise<Note[]>;
   attachImageBytes(input: AttachImageBytesInput): Promise<Note>;
   attachExternalFile(input: AttachFileInput): Promise<Note>;
   attachFileCopy(input: AttachFileInput): Promise<Note>;
@@ -130,15 +130,15 @@ export class IpcCaptureClient implements CaptureClient {
     return this.call("markNoteOrganized", input);
   }
 
-  archiveNote(input: ArchiveNoteInput): Promise<Note> {
+  archiveNote(input: ArchiveNoteInput): Promise<Note[]> {
     return this.call("archiveNote", input);
   }
 
-  unarchiveNote(input: UnarchiveNoteInput): Promise<Note> {
+  unarchiveNote(input: UnarchiveNoteInput): Promise<Note[]> {
     return this.call("unarchiveNote", input);
   }
 
-  deleteNote(input: DeleteNoteInput): Promise<void> {
+  deleteNote(input: DeleteNoteInput): Promise<Note[]> {
     return this.call("deleteNote", input);
   }
 
