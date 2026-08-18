@@ -22,8 +22,7 @@ import {
 type PreviewTab = { path: string; title: string; kind: "markdown" | "pdf" | "html" | "other" };
 
 export interface UiState {
-  view: "chat" | "skills" | "artifacts" | "scheduled" | "learning" | "organizer";
-  organizerTab: OrganizerTab;
+  view: "chat" | "skills" | "artifacts" | "scheduled" | "learning";
   settingsOpen: boolean;
   settingsSection: "models" | "momo" | "web" | "permissions" | "usage" | "extensions" | "general";
   searchOpen: boolean;
@@ -56,7 +55,6 @@ export interface UiState {
   contextHint: { at: number; count: number } | null;
 
   setView(view: UiState["view"]): void;
-  openOrganizer(tab?: OrganizerTab): void;
   openSettings(section?: UiState["settingsSection"]): void;
   closeSettings(): void;
   toggleSearch(): void;
@@ -104,8 +102,6 @@ export const WORKBENCH_SIDEBAR_WIDTH = {
 } as const;
 
 export type WorkbenchTool = "files" | "overview" | "search";
-export type OrganizerTab = "today" | "notes" | "tasks" | "trash";
-
 export type WorkbenchToolWidths = Record<WorkbenchTool, number>;
 
 export const WORKBENCH_TOOL_WIDTH = {
@@ -147,7 +143,7 @@ export function pickPersistedWorkbenchUi(state: UiState): PersistedWorkbenchUi {
   };
 }
 
-const isView = (value: unknown): value is UiState["view"] => value === "chat" || value === "skills" || value === "artifacts" || value === "scheduled" || value === "learning" || value === "organizer";
+const isView = (value: unknown): value is UiState["view"] => value === "chat" || value === "skills" || value === "artifacts" || value === "scheduled" || value === "learning";
 const isSection = (value: unknown): value is UiState["settingsSection"] =>
   value === "models" || value === "momo" || value === "web" || value === "permissions" || value === "usage" || value === "extensions" || value === "general";
 
@@ -238,7 +234,6 @@ const withActiveScopeSession = (state: UiState, session: ScopeSession): Pick<UiS
 export function createUiStore(): StoreApi<UiState> {
   return createStore<UiState>((set) => ({
     view: "chat",
-    organizerTab: "today",
     settingsOpen: false,
     settingsSection: "general",
     searchOpen: false,
@@ -261,11 +256,6 @@ export function createUiStore(): StoreApi<UiState> {
     contextHint: null,
 
     setView: (view) => { if (isView(view)) set({ view }); },
-    openOrganizer: (organizerTab = "today") => {
-      if (organizerTab === "today" || organizerTab === "notes" || organizerTab === "tasks" || organizerTab === "trash") {
-        set({ view: "organizer", organizerTab });
-      }
-    },
     openSettings: (settingsSection = "general") => {
       if (isSection(settingsSection)) {
         set({ settingsOpen: true, settingsSection, searchOpen: false, notifPanelOpen: false });

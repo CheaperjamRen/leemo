@@ -9,6 +9,7 @@ import { useUi } from "../bridge/context";
 import { FixtureBridgeClient } from "../bridge/fixture-client";
 import type { AskUserPayload } from "../../bridge/contract";
 import { HOME_WORKSPACE_ID } from "../stores/workspaces";
+import { startStore } from "../stores/start";
 
 describe("WorkbenchShell", () => {
   it("renders complete layout (topbar + sidebar + main)", () => {
@@ -107,27 +108,6 @@ describe("WorkbenchShell", () => {
     act(() => stores.ui.getState().setView("learning"));
     expect(await screen.findByRole("heading", { name: "英语学习" })).toBeInTheDocument();
     expect(screen.queryByTestId("workbench-context-title")).not.toBeInTheDocument();
-  });
-
-  it("renders the organizer as the full central work surface", async () => {
-    let stores!: BridgeStores;
-    function CaptureStores() {
-      stores = useContext(BridgeContext) as BridgeStores;
-      return null;
-    }
-    render(
-      <BridgeProvider>
-        <CaptureStores />
-        <WorkbenchShell />
-      </BridgeProvider>,
-    );
-
-    act(() => stores.ui.getState().setView("organizer"));
-
-    expect(screen.getByRole("status", { name: "正在打开工作看板" })).toBeInTheDocument();
-    expect(await screen.findByRole("tabpanel", { name: "今天" })).toBeInTheDocument();
-    expect(screen.queryByTestId("conversation-column")).not.toBeInTheDocument();
-    expect(screen.getByLabelText("工作工具")).toBeInTheDocument();
   });
 
   it("renders conversation list", async () => {
@@ -334,15 +314,13 @@ describe("WorkbenchShell", () => {
     );
 
     const skills = screen.getByRole("button", { name: "技能" });
-    const organizer = screen.getByRole("button", { name: "看板" });
+    const start = screen.getByRole("button", { name: "开始" });
     await user.click(skills);
     expect(skills).toHaveAttribute("aria-current", "page");
     expect(screen.queryByTestId("workbench-context-title")).not.toBeInTheDocument();
 
-    await user.click(organizer);
-    expect(organizer).toHaveAttribute("aria-current", "page");
-    expect(skills).not.toHaveAttribute("aria-current");
-    expect(screen.queryByTestId("workbench-context-title")).not.toBeInTheDocument();
+    await user.click(start);
+    expect(startStore.getState().destination).toBe("home");
   });
 
   it("truncates a chat title in the header while preserving its full tooltip", async () => {

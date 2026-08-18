@@ -35,3 +35,6 @@ export function createStartStore(): StoreApi<StartState> {
     closeSidebar: () => set({ sidebarOpen: false }),
   }));
 }
+
+/** Shared navigation target for routes that enter Start from another product surface. */
+export const startStore = createStartStore();

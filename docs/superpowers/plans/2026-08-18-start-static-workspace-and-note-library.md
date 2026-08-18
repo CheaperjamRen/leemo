@@ -484,21 +484,21 @@ git commit -m "feat: preserve note trees through archive and trash"
 - Consumes: completed Start views from Tasks 4–8.
 - Produces: one user-visible source of truth for 首页 / Todo / notes / trash.
 
-- [ ] **Step 1: Write parity and navigation tests**
+- [x] **Step 1: Write parity and navigation tests**
 
 Assert the Workbench `看板` shortcut changes to the Start surface and opens the intended Start destination; no second Organizer shell renders. Preserve every previously tested task/note/trash action through the Start components.
 
-- [ ] **Step 2: Run RED**
+- [x] **Step 2: Run RED**
 
 ```powershell
 npx vitest run src/renderer/components/WorkbenchSidebar.test.tsx src/renderer/components/WorkbenchShell.test.tsx src/renderer/stores/ui.test.ts src/renderer/pages/OrganizerPage.test.tsx src/renderer/start
 ```
 
-- [ ] **Step 3: Remove only the duplicate route**
+- [x] **Step 3: Remove only the duplicate route**
 
 Delete `view === "organizer"` from Workbench routing and make the shortcut call `openStart("home")` followed by `setSurface("start")`. Delete the legacy page only after the extracted Start tests cover its behavior; keep shared domain functions in their new focused files.
 
-- [ ] **Step 4: Verify and commit**
+- [x] **Step 4: Verify and commit**
 
 ```powershell
 npx vitest run src/renderer/components/WorkbenchSidebar.test.tsx src/renderer/components/WorkbenchShell.test.tsx src/renderer/stores/ui.test.ts src/renderer/pages/OrganizerPage.test.tsx src/renderer/start
@@ -511,7 +511,6 @@ git commit -m "refactor: route organizer work through start"
 
 **Files:**
 - Modify: `src/renderer/app/App.test.tsx`
-- Modify: `src/renderer/pages/OrganizerPage.test.tsx`
 - Modify: `tests/main/capture-persistence.test.ts`
 - Create: `scripts/verify-start-workspace.mjs`
 - Create: `docs/verification/2026-08-18-start-workspace.md`

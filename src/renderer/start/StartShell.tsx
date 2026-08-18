@@ -11,7 +11,7 @@ import {
   useUi,
   useWorkspaces,
 } from "../bridge/context";
-import { createStartStore } from "../stores/start";
+import { startStore } from "../stores/start";
 import { buildGlobalOverviewFactPack } from "../global-overview/facts";
 import { deriveGlobalOverviewDisplayItems } from "../stores/global-pending-overview";
 import StartSidebar from "./StartSidebar";
@@ -33,7 +33,6 @@ function previewKind(path: string, kind: "file" | "visualization") {
 }
 
 export default function StartShell() {
-  const startStore = useMemo(() => createStartStore(), []);
   const destination = useStore(startStore, (state) => state.destination);
   const selectedTaskId = useStore(startStore, (state) => state.selectedTaskId);
   const selectedNoteId = useStore(startStore, (state) => state.selectedNoteId);

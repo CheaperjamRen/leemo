@@ -13,11 +13,13 @@ import {
   useApprovals,
   useArtifacts,
   useConversations,
+  useSettings,
   useUi,
   useWorkspaces,
 } from "../bridge/context";
 import type { ScopeKey } from "../stores/workbench-scope";
 import { HOME_WORKSPACE_ID } from "../stores/workspaces";
+import { startStore } from "../stores/start";
 import {
   WORKBENCH_COMPACT_SIDEBAR_WIDTH,
   WORKBENCH_TOOL_RAIL_WIDTH,
@@ -176,7 +178,7 @@ export default function WorkbenchActivityRail({ shellWidth }: WorkbenchActivityR
   const sidebarWidth = useUi((s) => s.workbenchSidebarWidth);
   const previewOpen = useUi((s) => s.previewOpen);
   const openPreview = useUi((s) => s.openPreview);
-  const openOrganizer = useUi((s) => s.openOrganizer);
+  const setSurface = useSettings((s) => s.setSurface);
   const openScopeConversation = useUi((s) => s.openScopeConversation);
   const toggleTool = useUi((s) => s.toggleWorkbenchTool);
   const closeTool = useUi((s) => s.closeWorkbenchTool);
@@ -331,7 +333,8 @@ export default function WorkbenchActivityRail({ shellWidth }: WorkbenchActivityR
             }}
             onOpenBoard={() => {
               closeTool();
-              openOrganizer("today");
+              startStore.getState().open("home");
+              setSurface("start");
             }}
           />
         )}

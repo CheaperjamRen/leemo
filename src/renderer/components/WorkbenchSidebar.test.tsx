@@ -361,7 +361,7 @@ describe("WorkbenchSidebar", () => {
     expect(within(sidebar).queryByRole("navigation", { name: "模式切换" })).not.toBeInTheDocument();
   });
 
-  it("uses the approved 看板 / 技能 / 定时 / 设置 shortcut row", () => {
+  it("uses the approved 开始 / 技能 / 定时 / 设置 shortcut row", () => {
     render(
       <BridgeProvider>
         <WorkbenchSidebar onNewConversation={() => {}} />
@@ -371,13 +371,13 @@ describe("WorkbenchSidebar", () => {
     const shortcuts = screen.getByRole("navigation", { name: "工作台快捷入口" });
     expect(shortcuts).toHaveClass("grid", "grid-cols-4");
     expect(within(shortcuts).queryByRole("button", { name: "英语学习" })).not.toBeInTheDocument();
-    expect(within(shortcuts).getByRole("button", { name: "看板" })).toHaveTextContent("看板");
+    expect(within(shortcuts).getByRole("button", { name: "开始" })).toHaveTextContent("开始");
     expect(within(shortcuts).getByRole("button", { name: "技能" })).toHaveTextContent("技能");
     expect(within(shortcuts).getByRole("button", { name: "定时任务" })).toHaveTextContent("定时");
     expect(within(shortcuts).queryByRole("button", { name: "成果" })).not.toBeInTheDocument();
     expect(within(shortcuts).getByRole("button", { name: "设置" })).toHaveTextContent("设置");
     expect(within(shortcuts).getAllByRole("button").map((button) => button.getAttribute("aria-label"))).toEqual([
-      "看板",
+      "开始",
       "技能",
       "定时任务",
       "设置",

@@ -9,6 +9,7 @@ import type { WorkspaceClient } from "../workspace/client";
 import { conversationComposerScope, workspaceComposerScope } from "../stores/composer-drafts";
 import type { CaptureClient } from "../capture/client";
 import type { CaptureChange, Note } from "../../captures";
+import { startStore } from "../stores/start";
 
 const providers: ProviderSpec[] = [
   {
@@ -153,7 +154,8 @@ describe("BridgeProvider desktop notification navigation", () => {
     expect(stores.ui.getState().view).toBe("chat");
 
     act(() => navigate?.({ kind: "task", taskId: "task-1" }));
-    expect(stores.ui.getState()).toMatchObject({ view: "organizer", organizerTab: "tasks" });
+    expect(startStore.getState()).toMatchObject({ destination: "tasks", selectedTaskId: "task-1" });
+    expect(stores.settings.getState().surface).toBe("start");
 
     delete (window as Window & { leemoDesktop?: unknown }).leemoDesktop;
   });

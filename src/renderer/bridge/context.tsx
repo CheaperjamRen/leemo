@@ -41,6 +41,7 @@ import type { CaptureClient } from "../capture/client";
 import { createCapturesStore, type CapturesState } from "../stores/captures";
 import type { TaskClient } from "../tasks/client";
 import { createTasksStore, type TasksState } from "../stores/tasks";
+import { startStore } from "../stores/start";
 import {
   createGlobalPendingOverviewStore,
   type GlobalPendingOverviewState,
@@ -361,7 +362,8 @@ export function BridgeProvider({ client, live, persist, workspace, scheduler, le
         return;
       }
       if (target.kind === "task" && typeof target.taskId === "string") {
-        stores.ui.getState().openOrganizer("tasks");
+        startStore.getState().open("tasks", { taskId: target.taskId });
+        stores.settings.getState().setSurface("start");
       }
     });
   }, [stores]);
