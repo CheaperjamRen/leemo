@@ -57,7 +57,7 @@ export default function TextBubble({
         data-testid={isBuddy ? "buddy-momo-bubble" : undefined}
         className={isBuddy
           ? "leemo-buddy-momo-bubble max-w-[620px] rounded-[13px] px-4 py-2.5 text-[15.5px] leading-[1.7] text-[var(--leemo-ink)]"
-          : "max-w-[620px] pt-[1px] text-[14.5px] leading-[1.7] text-[var(--leemo-ink)]"}
+          : "max-w-[700px] pt-[1px] text-[15px] leading-[1.72] text-[var(--leemo-ink)]"}
       >
         <MarkdownContent text={item.text} variant="answer" />
         {item.streaming && (

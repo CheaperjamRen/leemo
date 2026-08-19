@@ -47,7 +47,9 @@ async function surfaceFacts(page, targetSelector, requireComposer) {
   return page.evaluate(({ selector, composerRequired }) => {
     const target = document.querySelector(selector);
     const composer = document.querySelector('textarea[aria-label="输入消息"]')?.closest(".leemo-input-shadow");
-    const visible = (element) => element instanceof HTMLElement && element.offsetParent !== null;
+    const visible = (element) => element instanceof HTMLElement
+      && element.offsetParent !== null
+      && !element.closest("[inert], [aria-hidden='true']");
     const rect = (element) => {
       if (!element) return null;
       const value = element.getBoundingClientRect();
@@ -159,6 +161,10 @@ async function run() {
     facts.startupMs = app.startupMs;
     await configureLoopbackProvider(app.page, harness.baseUrl);
 
+    await chooseMode(app.page, "开始");
+    await app.page.getByRole("heading", { name: "开始", exact: true }).waitFor({ state: "visible" });
+    await captureSurface(app.page, facts, "start", ".leemo-start-main", { maxGradients: 0 });
+
     await chooseMode(app.page, "搭子");
     await captureSurface(app.page, facts, "buddy", "main", { composer: true, maxGradients: 1 });
 
@@ -195,7 +201,7 @@ async function run() {
 
     facts.rendererErrors = [...new Set(app.rendererErrors)];
     insist(facts.rendererErrors.length === 0, `renderer 报错：${facts.rendererErrors.join(" | ")}`);
-    facts.checks.nineCoreStates = Object.keys(facts.layouts).length === 9;
+    facts.checks.tenCoreStates = Object.keys(facts.layouts).length === 10;
     facts.checks.fourViewports = Object.values(facts.layouts).every((entry) => Object.keys(entry).length === 4);
     facts.checks.noHorizontalOverflow = true;
     facts.checks.composersVisible = true;

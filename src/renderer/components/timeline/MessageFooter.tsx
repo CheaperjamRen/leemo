@@ -147,8 +147,10 @@ export default function MessageFooter({
   const visibleMemoryLabel = truncateReceiptLabel(fullMemoryLabel);
   const memoryUndone = memory?.undone === true || memoryUndoState === "undone";
   const deliveryFiles = files?.changes.slice(0, 3) ?? [];
+  const primaryDelivery = deliveryFiles[0];
   const deliveryTotal = files ? files.changes.length + files.omitted : 0;
   const hiddenDeliveryCount = Math.max(0, deliveryTotal - deliveryFiles.length);
+  const collapsedDeliveryCount = Math.max(0, deliveryTotal - (primaryDelivery ? 1 : 0));
   const deliveryVerb = files?.changes.some((change) => change.change !== "deleted") ? "交付" : "处理";
   const visibleChangeSummary = files?.changes.every((change) => change.change === "modified")
     ? `修改了 ${deliveryTotal} 个文件`
@@ -189,86 +191,76 @@ export default function MessageFooter({
         <section
           data-file-delivery-receipt
           aria-label={`本轮${deliveryVerb}文件`}
-          className="mt-2 basis-full overflow-hidden rounded-[10px] border border-[var(--leemo-line)] bg-[var(--leemo-card)] text-[var(--leemo-ink)] shadow-[0_5px_18px_rgba(15,23,42,0.055)]"
+          className="mt-1.5 basis-full overflow-hidden rounded-[8px] border border-[var(--leemo-line-soft)] bg-[var(--leemo-panel)]/42 text-[var(--leemo-ink)] shadow-none"
         >
-          <header className="flex h-10 items-center justify-between border-b border-[var(--leemo-line-2)] px-3">
-            <span className="inline-flex items-center gap-1.5 text-[12.5px] font-semibold">
-              <CheckCircle2 className="h-3.5 w-3.5 text-[var(--leemo-success)]" aria-hidden />
-              本轮{deliveryVerb} {deliveryTotal} 个文件
-            </span>
-            <span className="text-[11px] text-[var(--leemo-ink-3)]">已完成</span>
-          </header>
-          <button
-            type="button"
-            aria-label="查看文件变化"
-            aria-expanded={fileChangesOpen}
-            data-file-change-receipt
-            onClick={() => setFileChangesOpen((open) => !open)}
-            className="flex h-9 w-full items-center gap-2 border-b border-[var(--leemo-line-2)] px-3 text-left text-[12px] text-[var(--leemo-ink-2)] transition-colors hover:bg-[var(--leemo-side-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--leemo-amber-line)]"
-          >
-            <FileDiff className="h-3.5 w-3.5 shrink-0 text-[var(--leemo-ink-3)]" aria-hidden />
-            <span className="min-w-0 flex-1 truncate">{visibleChangeSummary}</span>
-            <ChevronDown
-              className={`h-3.5 w-3.5 shrink-0 text-[var(--leemo-ink-3)] transition-transform ${fileChangesOpen ? "rotate-180" : ""}`}
-              aria-hidden
-            />
-          </button>
+          <div className="flex min-h-12 min-w-0 items-center gap-2 px-3 py-1.5">
+            <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-[var(--leemo-success)]" aria-hidden />
+            <span className="shrink-0 text-[11px] font-medium text-[var(--leemo-ink-3)]">本轮{deliveryVerb} {deliveryTotal} 个文件</span>
+            <span className="h-3 w-px shrink-0 bg-[var(--leemo-line-2)]" aria-hidden />
+            {primaryDelivery && (
+              <>
+                <FileText className="h-3.5 w-3.5 shrink-0 text-[var(--leemo-ink-3)]" aria-hidden />
+                <span className="shrink-0 text-[10.5px] text-[var(--leemo-ink-3)]">{fileChangeLabel[primaryDelivery.change]}</span>
+                {onOpenFile && primaryDelivery.change !== "deleted" ? (
+                  <button
+                    type="button"
+                    aria-label={`预览 ${primaryDelivery.path}`}
+                    title={primaryDelivery.path}
+                    onClick={() => onOpenFile(primaryDelivery)}
+                    className="min-w-0 flex-1 truncate text-left text-[12.5px] font-medium text-[var(--leemo-ink-2)] transition-colors hover:text-[var(--leemo-ink)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--leemo-amber-line)]"
+                  >
+                    {primaryDelivery.path}
+                  </button>
+                ) : (
+                  <span className="min-w-0 flex-1 truncate text-[12.5px] text-[var(--leemo-ink-2)]" title={primaryDelivery.path}>{primaryDelivery.path}</span>
+                )}
+              </>
+            )}
+            {collapsedDeliveryCount > 0 && <span className="shrink-0 text-[10.5px] text-[var(--leemo-ink-3)]">另 {collapsedDeliveryCount} 个</span>}
+            {primaryDelivery && onRevealFile && primaryDelivery.change !== "deleted" && (
+              <button
+                type="button"
+                aria-label={`在文件夹中显示 ${primaryDelivery.path}`}
+                title="在文件夹中显示"
+                onClick={() => onRevealFile(primaryDelivery)}
+                className="grid h-7 w-7 shrink-0 place-items-center rounded-[6px] text-[var(--leemo-ink-3)] transition-colors hover:bg-[var(--leemo-side-hover)] hover:text-[var(--leemo-ink-2)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--leemo-amber-line)]"
+              >
+                <FolderOpen className="h-3.5 w-3.5" aria-hidden />
+              </button>
+            )}
+            {deliveryTotal > 1 && (
+              <button
+                type="button"
+                aria-label="查看文件变化"
+                aria-expanded={fileChangesOpen}
+                data-file-change-receipt
+                title={visibleChangeSummary}
+                onClick={() => setFileChangesOpen((open) => !open)}
+                className="grid h-7 w-7 shrink-0 place-items-center rounded-[6px] text-[var(--leemo-ink-3)] transition-colors hover:bg-[var(--leemo-side-hover)] hover:text-[var(--leemo-ink-2)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--leemo-amber-line)]"
+              >
+                <FileDiff className="sr-only" aria-hidden />
+                <ChevronDown
+                  className={`h-3.5 w-3.5 shrink-0 text-[var(--leemo-ink-3)] transition-transform ${fileChangesOpen ? "rotate-180" : ""}`}
+                  aria-hidden
+                />
+              </button>
+            )}
+          </div>
           {fileChangesOpen && (
             <div
               data-file-change-card
-              className="max-h-[116px] overflow-y-auto border-b border-[var(--leemo-line-2)] bg-[var(--leemo-panel-soft)] px-3 py-1.5"
+              className="max-h-[132px] overflow-y-auto border-t border-[var(--leemo-line-2)] bg-[var(--leemo-card)]/70 px-3 py-1.5"
             >
-              {deliveryFiles.map((change) => (
-                <div key={`${change.path}-${change.change}`} className="flex h-7 min-w-0 items-center gap-2 text-[11.5px]">
+              {deliveryFiles.slice(1).map((change) => (
+                <div key={`${change.path}-${change.change}`} data-delivery-file-row className="flex h-8 min-w-0 items-center gap-2 text-[11.5px]">
                   <span className="w-7 shrink-0 text-[var(--leemo-ink-3)]">{fileChangeLabel[change.change]}</span>
-                  <span className="min-w-0 flex-1 truncate text-[var(--leemo-ink-2)]" title={change.path}>{change.path}</span>
+                  {onOpenFile && change.change !== "deleted" ? <button type="button" aria-label={`预览 ${change.path}`} title={change.path} onClick={() => onOpenFile(change)} className="min-w-0 flex-1 truncate text-left text-[var(--leemo-ink-2)] hover:text-[var(--leemo-ink)]">{change.path}</button> : <span className="min-w-0 flex-1 truncate text-[var(--leemo-ink-2)]" title={change.path}>{change.path}</span>}
+                  {onRevealFile && change.change !== "deleted" && <button type="button" aria-label={`在文件夹中显示 ${change.path}`} title="在文件夹中显示" onClick={() => onRevealFile(change)} className="grid h-6 w-6 shrink-0 place-items-center text-[var(--leemo-ink-3)] hover:text-[var(--leemo-ink-2)]"><FolderOpen className="h-3.5 w-3.5" aria-hidden /></button>}
                 </div>
               ))}
               {hiddenDeliveryCount > 0 && (
-                <div className="flex h-7 items-center text-[11.5px] text-[var(--leemo-ink-3)]">另有 {hiddenDeliveryCount} 处变化，可在成果页查看</div>
+                <div className="flex h-7 items-center text-[11.5px] text-[var(--leemo-ink-3)]">另有 {hiddenDeliveryCount} 个文件，可在成果页查看</div>
               )}
-            </div>
-          )}
-          <ul>
-            {deliveryFiles.map((change) => (
-              <li
-                key={change.path}
-                data-delivery-file-row
-                className="flex h-10 min-w-0 items-center gap-2.5 border-b border-[var(--leemo-line-2)] px-3 last:border-b-0"
-              >
-                <FileText className="h-3.5 w-3.5 shrink-0 text-[var(--leemo-ink-3)]" aria-hidden />
-                <span className="w-7 shrink-0 text-[11px] text-[var(--leemo-ink-3)]">{fileChangeLabel[change.change]}</span>
-                {onOpenFile && change.change !== "deleted" ? (
-                  <button
-                    type="button"
-                    aria-label={`预览 ${change.path}`}
-                    title={change.path}
-                    onClick={() => onOpenFile(change)}
-                    className="min-w-0 flex-1 truncate text-left text-[12.5px] font-medium text-[var(--leemo-ink-2)] transition-colors hover:text-[var(--leemo-ink)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--leemo-amber-line)]"
-                  >
-                    {change.path}
-                  </button>
-                ) : (
-                  <span className="min-w-0 flex-1 truncate text-[12.5px] text-[var(--leemo-ink-2)]" title={change.path}>{change.path}</span>
-                )}
-                {onRevealFile && change.change !== "deleted" && (
-                  <button
-                    type="button"
-                    aria-label={`在文件夹中显示 ${change.path}`}
-                    title="在文件夹中显示"
-                    onClick={() => onRevealFile(change)}
-                    className="grid h-7 w-7 shrink-0 place-items-center rounded-[6px] text-[var(--leemo-ink-3)] transition-colors hover:bg-[var(--leemo-side-hover)] hover:text-[var(--leemo-ink-2)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--leemo-amber-line)]"
-                  >
-                    <FolderOpen className="h-3.5 w-3.5" aria-hidden />
-                  </button>
-                )}
-              </li>
-            ))}
-          </ul>
-          {hiddenDeliveryCount > 0 && (
-            <div className="flex h-9 items-center justify-between border-t border-[var(--leemo-line-2)] px-3 text-[11.5px] text-[var(--leemo-ink-3)]">
-              <span>另有 {hiddenDeliveryCount} 个文件</span>
-              <span>可在成果页查看</span>
             </div>
           )}
         </section>

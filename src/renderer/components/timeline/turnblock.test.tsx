@@ -299,8 +299,8 @@ describe("TurnBlock strict-chronological rendering", () => {
 
   it("folds file changes into the same quiet result footer", () => {
     const { container } = renderTurnBlock([user, finalT, files, result], false);
-    expect(screen.getByRole("button", { name: "查看文件变化" })).toHaveTextContent("修改了 1 个文件");
-    expect(container.querySelectorAll("[data-file-change-receipt]")).toHaveLength(1);
+    expect(screen.getByRole("button", { name: "预览 报告.md" })).toBeInTheDocument();
+    expect(container.querySelectorAll("[data-file-change-receipt]")).toHaveLength(0);
     expect(container.querySelector("[data-file-change-card]")).toBeNull();
   });
 
@@ -316,7 +316,6 @@ describe("TurnBlock strict-chronological rendering", () => {
       workspace,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "查看文件变化" }));
     fireEvent.click(screen.getByRole("button", { name: "预览 报告.md" }));
 
     expect(getStores().settings.getState().mode).toBe("workbench");

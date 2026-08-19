@@ -83,12 +83,12 @@
 }
 
 [data-surface="buddy"] .leemo-composer-surface {
-  border-color: color-mix(in srgb, var(--leemo-amber-line) 38%, var(--leemo-line));
-  background: color-mix(in srgb, var(--leemo-card) 82%, white);
+  border-color: color-mix(in srgb, var(--leemo-amber-line) 30%, var(--leemo-line-soft));
+  background: color-mix(in srgb, var(--leemo-card) 86%, white);
   box-shadow:
-    0 1px 2px rgba(96, 74, 38, 0.045),
-    0 16px 38px -22px rgba(96, 74, 38, 0.3),
-    0 30px 64px -44px rgba(96, 74, 38, 0.3);
+    inset 0 1px 0 rgba(255, 255, 255, 0.7),
+    0 1px 2px rgba(96, 74, 38, 0.035),
+    0 18px 42px -30px rgba(96, 74, 38, 0.30);
   backdrop-filter: blur(18px);
 }
 
@@ -114,10 +114,12 @@
   min-height: 70px;
   margin: 0 auto 2px;
   padding: 11px 12px 11px 14px;
-  border: 1px solid color-mix(in srgb, var(--leemo-line) 78%, transparent);
+  border: 1px solid color-mix(in srgb, var(--leemo-line) 64%, transparent);
   border-radius: 18px;
-  background: color-mix(in srgb, var(--leemo-card) 84%, transparent);
-  box-shadow: 0 14px 34px -28px color-mix(in srgb, var(--leemo-ink) 32%, transparent);
+  background: color-mix(in srgb, var(--leemo-card) 88%, transparent);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.64),
+    0 14px 34px -30px color-mix(in srgb, var(--leemo-ink) 28%, transparent);
   backdrop-filter: blur(18px);
 }
 
@@ -175,6 +177,11 @@
 
 .leemo-buddy-scene-hints > div {
   padding-block: 10px 8px;
+}
+
+.leemo-buddy-scene-hints button {
+  border-color: color-mix(in srgb, var(--leemo-line) 62%, transparent);
+  background: color-mix(in srgb, var(--leemo-card) 54%, transparent);
 }
 
 .leemo-buddy-starter-row {

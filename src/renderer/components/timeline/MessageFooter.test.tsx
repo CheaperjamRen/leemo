@@ -254,16 +254,21 @@ describe("MessageFooter", () => {
 
     expect(screen.getByText("本轮交付 2 个文件")).toBeInTheDocument();
     expect(screen.getByText("课程笔记/第一章.md")).toBeInTheDocument();
-    expect(screen.getByText("复习计划.md")).toBeInTheDocument();
-    expect(screen.getByText("新建")).toBeInTheDocument();
+    expect(screen.getByText("另 1 个")).toBeInTheDocument();
+    expect(screen.queryByText("复习计划.md")).not.toBeInTheDocument();
+    expect(screen.getByText("修改")).toBeInTheDocument();
     expect(container.querySelectorAll("[data-file-delivery-receipt]")).toHaveLength(1);
     expect(screen.getByLabelText("本轮交付文件").parentElement).toHaveClass("text-[12px]");
+    expect(container.querySelector("[data-file-delivery-receipt]")).toHaveClass("shadow-none");
     expect(screen.getByRole("button", { name: "预览 课程笔记/第一章.md" })).toHaveClass("text-[12.5px]");
 
     await user.click(screen.getByRole("button", { name: "预览 课程笔记/第一章.md" }));
     expect(onOpenFile).toHaveBeenCalledWith(files.changes[0]);
     await user.click(screen.getByRole("button", { name: "在文件夹中显示 课程笔记/第一章.md" }));
     expect(onRevealFile).toHaveBeenCalledWith(files.changes[0]);
+
+    await user.click(screen.getByRole("button", { name: "查看文件变化" }));
+    expect(screen.getByText("复习计划.md")).toBeInTheDocument();
   });
 
   it("does not offer stale actions for a deleted file", async () => {
@@ -282,7 +287,8 @@ describe("MessageFooter", () => {
     expect(screen.queryByRole("button", { name: "在文件夹中显示 旧稿.md" })).not.toBeInTheDocument();
   });
 
-  it("states the real total while keeping oversized receipts to three visible file rows", () => {
+  it("keeps oversized receipts to one quiet summary row until the user expands details", async () => {
+    const user = userEvent.setup();
     const manyFiles: Files = {
       ...files,
       changes: [
@@ -296,7 +302,10 @@ describe("MessageFooter", () => {
     const { container } = render(<MessageFooter result={ok} files={manyFiles} />);
 
     expect(screen.getByText("本轮交付 7 个文件")).toBeInTheDocument();
-    expect(container.querySelectorAll("[data-delivery-file-row]")).toHaveLength(3);
-    expect(screen.getByText("另有 4 个文件")).toBeInTheDocument();
+    expect(container.querySelectorAll("[data-delivery-file-row]")).toHaveLength(0);
+    expect(screen.getByText("另 6 个")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "查看文件变化" }));
+    expect(container.querySelectorAll("[data-delivery-file-row]")).toHaveLength(2);
+    expect(screen.getByText("另有 4 个文件，可在成果页查看")).toBeInTheDocument();
   });
 });

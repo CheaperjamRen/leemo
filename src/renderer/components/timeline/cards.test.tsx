@@ -55,7 +55,9 @@ describe("timeline cards render their data", () => {
     expect(details).toHaveTextContent("参数");
     expect(details).toHaveTextContent("返回结果");
     expect(details).toHaveTextContent("读取了 38 页");
-    expect(details).toHaveClass("max-h-72", "overflow-auto", "select-text");
+    expect(details).toHaveClass("max-h-44", "overflow-auto", "select-text");
+    expect(screen.getByText("参数").closest("section")?.parentElement)
+      .toHaveClass("grid", "lg:grid-cols-2");
     expect(screen.getByRole("button", { name: "复制参数" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "复制返回结果" })).toBeInTheDocument();
     expect(details).not.toHaveTextContent(/完整输出|stdout|stderr|工作目录|退出代码|耗时/);
@@ -292,7 +294,8 @@ describe("timeline cards render their data", () => {
     const item: Of<"text"> = { kind: "text", id: "1", runId: "r", role: "momo", text: "hi", streaming: true };
     const { container } = render(<TextBubble item={item} />);
     expect(screen.getByText("hi")).toBeInTheDocument();
-    expect(container.querySelector(".text-\\[14\\.5px\\]")).not.toBeNull();
+    expect(container.querySelector(".text-\\[15px\\]")).not.toBeNull();
+    expect(container.querySelector(".max-w-\\[700px\\]")).not.toBeNull();
   });
 
   it("TextBubble gives momo a warm conversation bubble only in buddy mode", () => {
@@ -414,9 +417,10 @@ describe("timeline cards render their data", () => {
     );
     expect(screen.getByText("工具与命令 · 1 次")).toBeInTheDocument();
     expect(screen.getByText("助手协作 · 1")).toBeInTheDocument();
-    expect(screen.getByTestId("process-fold-toggle")).toHaveClass("h-11");
+    expect(screen.getByTestId("process-fold-toggle")).toHaveClass("h-9");
     expect(screen.getByTestId("process-fold-progress")).toHaveTextContent("1 / 2");
-    expect(screen.getByRole("img", { name: "momo 的头像" })).toHaveAttribute("width", "26");
+    expect(screen.getByRole("img", { name: "momo 的头像" })).toHaveAttribute("width", "22");
+    expect(screen.getByTestId("process-fold-details")).toHaveClass("max-h-[220px]", "overflow-y-auto");
     expect(screen.queryByText(/%/)).not.toBeInTheDocument();
   });
 

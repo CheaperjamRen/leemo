@@ -595,7 +595,7 @@ export default function ProviderConfigForm({
 
   if (loading) {
     return (
-      <div data-testid="provider-config-form" className="grid h-full min-h-0 flex-1 place-items-center bg-white text-xs text-[var(--leemo-ink-3)]">
+      <div data-testid="provider-config-form" className="settings-provider-config-surface grid h-full min-h-0 flex-1 place-items-center bg-white text-xs text-[var(--leemo-ink-3)]">
         正在读取配置…
       </div>
     );
@@ -611,7 +611,7 @@ export default function ProviderConfigForm({
   const showingAdvanced = advancedOpen || Boolean(revealAdvanced);
 
   return (
-    <div data-testid="provider-config-form" aria-busy={saving || deleting || loginPending} className="flex h-full min-h-0 min-w-0 flex-1 flex-col bg-white">
+    <div data-testid="provider-config-form" aria-busy={saving || deleting || loginPending} className="settings-provider-config-surface flex h-full min-h-0 min-w-0 flex-1 flex-col bg-white">
       <fieldset disabled={saving || deleting || loginPending} className="contents">
         <header className="provider-config-header flex min-h-12 shrink-0 flex-wrap items-center justify-between gap-2 border-b border-[var(--leemo-line)] px-4 py-2 sm:px-5">
           <div className="min-w-0">

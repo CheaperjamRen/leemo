@@ -54,7 +54,12 @@ function validateAuditRoot(candidate, prefix) {
 }
 
 function removeAuditRoot(candidate, prefix) {
-  fs.rmSync(validateAuditRoot(candidate, prefix), { recursive: true, force: true });
+  fs.rmSync(validateAuditRoot(candidate, prefix), {
+    recursive: true,
+    force: true,
+    maxRetries: 5,
+    retryDelay: 180,
+  });
 }
 
 async function freePort() {
@@ -700,7 +705,13 @@ export async function createMemoryAcceptanceHarness({
     async close() {
       await stopApp(current).catch(() => {});
       await closeServer(mock.server).catch(() => {});
-      if (process.env.LEEMO_KEEP_AUDIT !== "1") removeAuditRoot(auditRoot, prefix);
+      if (process.env.LEEMO_KEEP_AUDIT !== "1") {
+        try {
+          removeAuditRoot(auditRoot, prefix);
+        } catch (error) {
+          console.warn(`[acceptance] 隔离目录仍被 Windows 占用，已保留待系统释放：${auditRoot}`, error);
+        }
+      }
     },
   };
 }

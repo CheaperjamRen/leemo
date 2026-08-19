@@ -2,7 +2,7 @@
   --settings-sidebar-width: 240px;
   --settings-content-pad-x: 32px;
   color: var(--leemo-ink);
-  background: #fbfaf7;
+  background: #f7f3e9;
   font-size: 14px;
 }
 
@@ -10,7 +10,7 @@
   height: 56px;
   padding-inline: 32px 64px;
   border-bottom-color: transparent;
-  background: #fbfaf7;
+  background: #f7f3e9;
 }
 
 .settings-page .settings-header h1 {
@@ -20,14 +20,14 @@
 }
 
 .settings-page .settings-body {
-  background: #fbfaf7;
+  background: #f7f3e9;
 }
 
 .settings-page .settings-sidebar {
   width: var(--settings-sidebar-width);
   padding: 16px 20px 24px 32px;
   border-color: color-mix(in srgb, var(--leemo-line) 72%, transparent);
-  background: #fbfaf7;
+  background: #f1ecdf;
 }
 
 .settings-page .settings-sidebar > input[type="search"] {
@@ -36,7 +36,7 @@
   border-radius: 9px;
   padding-inline: 13px;
   border-color: color-mix(in srgb, var(--leemo-line) 82%, transparent);
-  background: rgba(255, 255, 255, 0.86);
+  background: rgba(255, 253, 248, 0.88);
   font-size: 13px;
   box-shadow: 0 1px 2px rgba(24, 34, 47, 0.025);
 }
@@ -63,9 +63,10 @@
 }
 
 .settings-page .settings-tab[aria-selected="true"] {
-  background: #f0eeea;
+  background: rgba(255, 255, 255, 0.9);
   color: var(--leemo-ink);
   font-weight: 600;
+  box-shadow: 0 6px 18px -16px rgba(27, 38, 31, 0.55), inset 0 0 0 1px rgba(255, 255, 255, 0.8);
 }
 
 .settings-page .settings-tab[aria-selected="true"]::before {
@@ -86,7 +87,7 @@
 
 .settings-page .settings-content {
   padding: 8px var(--settings-content-pad-x) 28px;
-  background: #fff;
+  background: #fbf8f0;
   scrollbar-gutter: stable;
 }
 
@@ -281,25 +282,35 @@
   letter-spacing: -0.025em;
 }
 
-.settings-page [data-testid="provider-workbench"] {
-  border-radius: 10px;
-  border-color: color-mix(in srgb, var(--leemo-line) 86%, transparent);
-  box-shadow: 0 1px 2px rgba(24, 34, 47, 0.025);
+.settings-page .settings-provider-workbench {
+  border-radius: 16px;
+  border-color: color-mix(in srgb, #b9b39f 36%, transparent);
+  background: #f3eee2;
+  box-shadow: 0 18px 44px -38px rgba(31, 41, 34, 0.44);
 }
 
 .settings-page .provider-list {
-  background: #faf9f6;
+  border-color: color-mix(in srgb, #b9b39f 30%, transparent);
+  background: #f1ecdf;
 }
 
 @media (min-width: 1024px) {
   .settings-page .provider-list {
-    width: 220px !important;
+    width: 236px !important;
+  }
+
+  .settings-page [data-testid="provider-list-row"] {
+    width: calc(100% - 12px) !important;
+    margin: 2px 6px;
+    border: 0;
+    border-radius: 11px;
   }
 }
 
 .settings-page .provider-list-header {
-  height: 52px;
+  height: 48px;
   padding-inline: 14px;
+  border-color: color-mix(in srgb, #b9b39f 24%, transparent);
 }
 
 .settings-page .provider-list-header > span {
@@ -308,7 +319,13 @@
 }
 
 .settings-page [data-testid="provider-list-row"] {
-  height: 72px;
+  height: 62px;
+  transition: background-color 160ms ease, box-shadow 160ms ease;
+}
+
+.settings-page [data-testid="provider-list-row"]:has(button[aria-pressed="true"]) {
+  background: rgba(255, 255, 255, 0.88);
+  box-shadow: 0 8px 18px -17px rgba(22, 33, 26, 0.58), inset 0 0 0 1px rgba(255, 255, 255, 0.92);
 }
 
 .settings-page [data-testid="provider-list-row"] button[aria-label^="选择 "] {
@@ -327,8 +344,10 @@
 }
 
 .settings-page .provider-config-header {
-  min-height: 58px;
-  padding: 10px 20px;
+  min-height: 54px;
+  padding: 9px 20px;
+  border-color: color-mix(in srgb, #b9b39f 24%, transparent);
+  background: #fffdfa;
 }
 
 .settings-page .provider-config-header h3 {
@@ -342,12 +361,14 @@
 }
 
 .settings-page .provider-config-tabs {
-  height: 44px;
+  height: 42px;
+  border-color: color-mix(in srgb, #b9b39f 24%, transparent);
+  background: #fffdfa;
 }
 
 .settings-page .provider-config-tabs button {
   position: relative;
-  height: 44px;
+  height: 42px;
   padding: 0 2px;
   color: var(--leemo-ink-3);
   font-size: 13px;
@@ -370,11 +391,16 @@
 }
 
 .settings-page .provider-config-scroll {
-  padding: 18px 20px 20px;
+  padding: 16px 20px 18px;
+  background: #fffdfa;
 }
 
 .settings-page .provider-config-content {
   max-width: none;
+}
+
+.settings-page .settings-provider-config-surface {
+  background: #fffdfa;
 }
 
 .settings-page .provider-config-content > section > h4,
@@ -393,16 +419,31 @@
 .settings-page .provider-config-content input:not([type="checkbox"]),
 .settings-page .provider-config-content select {
   min-height: 38px;
+  border-color: color-mix(in srgb, #a9adab 48%, transparent);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.9);
+  box-shadow: 0 1px 2px rgba(25, 35, 30, 0.025);
 }
 
 .settings-page .provider-config-content ul[aria-label="已启用模型列表"] > li {
-  min-height: 62px;
+  min-height: 54px;
   font-size: 12.5px;
 }
 
+.settings-page .provider-config-content ul[aria-label="已启用模型列表"] {
+  overflow: hidden;
+  border: 0;
+  border-radius: 14px;
+  padding: 5px 12px;
+  background: #f3f3ee;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, #b9b39f 20%, transparent);
+}
+
 .settings-page .provider-config-footer {
-  min-height: 58px;
-  padding: 10px 20px;
+  min-height: 54px;
+  padding: 8px 20px;
+  border-color: color-mix(in srgb, #b9b39f 24%, transparent);
+  background: #fffdfa;
 }
 
 .settings-page .provider-config-footer button {
@@ -776,11 +817,12 @@
 @media (max-width: 760px) {
   .settings-page {
     --settings-sidebar-width: 100%;
-    --settings-content-pad-x: 20px;
+    --settings-content-pad-x: 14px;
   }
 
   .settings-page .settings-header {
-    padding-inline: 20px 56px;
+    height: 50px;
+    padding-inline: 18px 52px;
   }
 
   .settings-page .settings-body {
@@ -790,36 +832,34 @@
   .settings-page .settings-sidebar {
     width: 100%;
     flex: 0 0 auto;
-    padding: 10px 16px 11px;
+    padding: 8px 14px 9px;
     border-right: 0;
-    border-bottom: 1px solid var(--leemo-line-soft);
+    border-bottom: 1px solid color-mix(in srgb, #b9b39f 24%, transparent);
   }
 
   .settings-page .settings-sidebar > input[type="search"] {
-    height: 34px;
-    margin-bottom: 8px;
+    height: 32px;
+    margin-bottom: 6px;
   }
 
   .settings-page .settings-tabs {
     display: grid;
     grid-template-columns: repeat(5, minmax(0, 1fr));
-    gap: 3px;
+    gap: 4px;
+    overflow: visible;
   }
 
   .settings-page .settings-tab {
     min-width: 0;
-    min-height: 36px;
+    min-height: 34px;
     justify-content: center;
-    gap: 6px;
-    padding-inline: 8px;
+    gap: 5px;
+    padding-inline: 7px;
     font-size: 12px;
   }
 
   .settings-page .settings-tab[aria-selected="true"]::before {
-    inset: auto 10px -2px;
-    width: auto;
-    height: 2px;
-    border-radius: 2px 2px 0 0;
+    display: none;
   }
 
   .settings-page .settings-row-select {
@@ -841,57 +881,12 @@
   }
 
   .settings-page .settings-models-heading {
-    margin-bottom: 8px;
+    min-height: 32px;
+    margin-bottom: 6px;
   }
 
   .settings-page .provider-list {
-    height: 94px;
-  }
-
-  .settings-page .provider-list-header {
-    height: 34px;
-  }
-
-  .settings-page [data-testid="provider-list-row"] {
-    height: 54px;
-  }
-
-  .settings-page .provider-config-header {
-    min-height: 40px;
-    padding-block: 5px;
-  }
-
-  .settings-page .provider-config-tabs {
-    height: 36px;
-    gap: 18px;
-    padding-inline: 16px;
-  }
-
-  .settings-page .provider-config-scroll {
-    overflow-x: hidden;
-    padding: 12px 16px;
-  }
-
-  .settings-page .provider-config-content {
-    min-width: 0;
-    row-gap: 20px;
-  }
-
-  .settings-page .provider-config-footer {
-    min-height: 48px;
-    padding-block: 6px;
-  }
-}
-
-@media (max-width: 520px) {
-  .settings-page .settings-tabs {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
-}
-
-@media (max-width: 760px) and (max-height: 680px) {
-  .settings-page .provider-list {
-    height: 58px;
+    height: 56px;
   }
 
   .settings-page .provider-list-header {
@@ -899,19 +894,77 @@
   }
 
   .settings-page .provider-list-scroll {
-    padding-block: 0;
+    padding-block: 1px;
   }
 
   .settings-page [data-testid="provider-list-row"] {
-    height: 58px;
+    height: 54px;
+    border-color: color-mix(in srgb, #b9b39f 22%, transparent);
   }
 
   .settings-page .provider-config-header {
-    min-height: 36px;
+    min-height: 38px;
     padding-block: 4px;
   }
 
   .settings-page .provider-config-tabs {
     height: 34px;
+    gap: 16px;
+    padding-inline: 16px;
   }
+
+  .settings-page .provider-config-tabs button { height: 34px; }
+
+  .settings-page .provider-config-scroll {
+    overflow-x: hidden;
+    padding: 11px 16px 13px;
+  }
+
+  .settings-page .provider-config-content {
+    min-width: 0;
+    row-gap: 16px;
+  }
+
+  .settings-page .provider-config-footer {
+    min-height: 46px;
+    padding-block: 5px;
+  }
+}
+
+@media (max-width: 760px) and (max-height: 680px) {
+  .settings-page .settings-sidebar {
+    padding-block: 7px;
+  }
+
+  .settings-page .settings-sidebar > input[type="search"] {
+    height: 30px;
+    margin-bottom: 4px;
+  }
+
+  .settings-page .settings-tab {
+    min-height: 31px;
+  }
+
+  .settings-page .provider-list {
+    height: 54px;
+  }
+
+  .settings-page .provider-list-scroll {
+    padding-block: 0;
+  }
+
+  .settings-page [data-testid="provider-list-row"] {
+    height: 52px;
+  }
+
+  .settings-page .provider-config-header {
+    min-height: 36px;
+    padding-block: 3px;
+  }
+
+  .settings-page .provider-config-tabs {
+    height: 32px;
+  }
+
+  .settings-page .provider-config-tabs button { height: 32px; }
 }

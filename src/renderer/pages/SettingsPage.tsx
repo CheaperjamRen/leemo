@@ -241,7 +241,7 @@ function ProviderWorkbenchSection({
         <h2 className="text-xl font-medium text-[var(--leemo-ink)]">模型供应商</h2>
         <span className="text-[11px] tabular-nums text-[var(--leemo-ink-3)]">{configured.length} 个已配置</span>
       </div>
-      <div data-testid="provider-workbench" className="relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-md border border-[var(--leemo-line)] bg-white lg:flex-row">
+      <div data-testid="provider-workbench" data-layout="list-detail" className="settings-provider-workbench relative flex min-h-0 flex-1 flex-col overflow-hidden border border-[var(--leemo-line)] bg-white lg:flex-row">
         {addedProviders.length > 0 && (
           <ProviderList
             providers={addedProviders}

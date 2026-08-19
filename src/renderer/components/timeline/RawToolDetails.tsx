@@ -60,7 +60,7 @@ export default function RawToolDetails({ item }: { item: Extract<TimelineItem, {
   return (
     <div
       data-testid="raw-tool-details"
-      className="leemo-raw-tool-details max-h-72 select-text overflow-auto border-t border-[var(--leemo-line-soft)] bg-[var(--leemo-card)] px-3 py-2.5 text-[11.5px] text-[var(--leemo-ink-2)]"
+      className="leemo-raw-tool-details max-h-44 select-text overflow-auto border-t border-[var(--leemo-line-soft)] bg-[var(--leemo-card)]/72 px-3 py-2 text-[11.5px] text-[var(--leemo-ink-2)]"
     >
       <header className="mb-2 flex items-center gap-1.5">
         <span className="text-[12px] font-medium text-[var(--leemo-ink)]" title={item.name}>{actionLabel}</span>
@@ -90,12 +90,12 @@ export default function RawToolDetails({ item }: { item: Extract<TimelineItem, {
           </section>
         </div>
       ) : (
-        <div className="space-y-2.5">
-          <section>
+        <div className="grid gap-2.5 lg:grid-cols-2 lg:items-start">
+          <section className="min-w-0">
             <div className="mb-1 flex items-center justify-between gap-2"><h5 className="text-[10.5px] font-medium text-[var(--leemo-ink-3)]">参数</h5><RawCopyButton value={serializedInput} label="参数" /></div>
             <pre className="whitespace-pre-wrap break-words rounded-[6px] bg-[var(--leemo-panel)] px-2.5 py-2 font-mono leading-5 text-[var(--leemo-ink)]">{serializedInput}</pre>
           </section>
-          <section>
+          <section className="min-w-0">
             <div className="mb-1 flex items-center justify-between gap-2"><h5 className="text-[10.5px] font-medium text-[var(--leemo-ink-3)]">返回结果</h5><RawCopyButton value={result} label="返回结果" /></div>
             <pre data-testid="raw-tool-output" className="whitespace-pre-wrap break-words rounded-[6px] bg-[var(--leemo-panel)] px-2.5 py-2 font-mono leading-5 text-[var(--leemo-ink-2)]">{result}</pre>
           </section>

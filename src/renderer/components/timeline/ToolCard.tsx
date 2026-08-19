@@ -82,13 +82,13 @@ export default function ToolCard({
     toolResultLabel(item.name, item.status, compactFallback(item)),
   );
   return (
-    <div className="w-full overflow-hidden rounded-[8px] border border-[var(--leemo-line-2)] bg-[var(--leemo-panel)] transition-colors hover:border-[var(--leemo-line)] hover:bg-[var(--leemo-card)]">
+    <div className="w-full overflow-hidden rounded-[7px] border border-[var(--leemo-line-soft)] bg-[var(--leemo-card)]/58 transition-colors hover:border-[var(--leemo-line-2)] hover:bg-[var(--leemo-card)]/82">
       <button
         type="button"
         aria-label={expanded ? "收起工具详情" : "展开工具详情"}
         aria-expanded={expanded}
         onClick={() => setExpanded((value) => !value)}
-        className="flex w-full items-center gap-2.5 px-3 py-[6px] text-left"
+        className="flex h-8 w-full items-center gap-2 px-2.5 text-left"
       >
         {paused ? (
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round"

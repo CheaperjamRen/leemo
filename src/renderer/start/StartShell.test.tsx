@@ -30,8 +30,14 @@ describe("StartShell", () => {
     vi.stubGlobal("matchMedia", matchMedia);
     render(<BridgeProvider><StartShell /></BridgeProvider>);
 
+    const sidebar = screen.getByRole("navigation", { name: "开始导航", hidden: true }).closest("aside");
+    expect(sidebar).toHaveAttribute("inert");
+    expect(sidebar).toHaveAttribute("aria-hidden", "true");
+
     await userEvent.click(screen.getByRole("button", { name: "展开侧栏" }));
     expect(screen.getByRole("navigation", { name: "开始导航" }).closest("aside")).toHaveClass("is-mobile-open");
+    expect(sidebar).not.toHaveAttribute("inert");
+    expect(sidebar).not.toHaveAttribute("aria-hidden");
     expect(screen.getByRole("button", { name: "关闭开始导航" })).toBeInTheDocument();
   });
 

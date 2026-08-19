@@ -200,7 +200,8 @@ describe("SettingsPage", () => {
     await user.click(screen.getByRole("tab", { name: "模型" }));
     expect(screen.getByText("模型供应商")).toBeInTheDocument();
     expect(screen.getByRole("tabpanel")).toHaveClass("overflow-hidden");
-    expect(screen.getByTestId("provider-workbench")).toHaveClass("min-h-0", "flex-1");
+    expect(screen.getByTestId("provider-workbench")).toHaveClass("settings-provider-workbench", "min-h-0", "flex-1");
+    expect(screen.getByTestId("provider-workbench")).toHaveAttribute("data-layout", "list-detail");
     expect(screen.queryByRole("heading", { name: "默认模型" })).not.toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "用量与费用" })).not.toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "通用" })).not.toBeInTheDocument();

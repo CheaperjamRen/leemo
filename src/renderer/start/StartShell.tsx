@@ -174,6 +174,7 @@ export default function StartShell() {
         <StartSidebar
           destination={destination}
           collapsed={sidebarCollapsed}
+          mobile={narrow}
           mobileOpen={mobileSidebarOpen}
           onOpen={openDestination}
         />

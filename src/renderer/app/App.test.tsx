@@ -110,8 +110,10 @@ describe("App", () => {
     render(<App />);
 
     fireEvent.click(screen.getByRole("button", { name: "设置" }));
-    expect(screen.getByTestId("settings-overlay")).toHaveClass("z-[80]");
-    expect(screen.getByTestId("settings-window")).toBeInTheDocument();
+    expect(screen.getByTestId("settings-overlay")).toHaveClass("z-[80]", "settings-overlay-scrim");
+    expect(screen.getByTestId("settings-overlay")).toHaveAttribute("data-context-visible", "true");
+    expect(screen.getByTestId("settings-overlay")).not.toHaveAttribute("data-shell");
+    expect(screen.getByTestId("settings-window")).toHaveClass("settings-window-surface");
     expect(screen.getByRole("status", { name: "正在打开设置" })).toBeInTheDocument();
     expect(await screen.findByRole("tablist", { name: "设置分类" })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: "通用" })).toHaveAttribute("aria-selected", "true");
@@ -124,7 +126,7 @@ describe("App", () => {
     render(<App />);
 
     fireEvent.click(screen.getByRole("button", { name: "设置" }));
-    fireEvent.click(screen.getByRole("tab", { name: "模型" }));
+    fireEvent.click(await screen.findByRole("tab", { name: "模型" }));
     const nameInput = await screen.findByLabelText("名称");
     fireEvent.change(nameInput, { target: { value: "未保存的服务商名称" } });
     await waitFor(() => expect(nameInput).toHaveValue("未保存的服务商名称"));

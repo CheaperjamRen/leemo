@@ -9,16 +9,22 @@ const SECTION_LABELS = {
 export default function StartSidebar({
   destination,
   collapsed,
+  mobile,
   mobileOpen,
   onOpen,
 }: {
   destination: StartDestination;
   collapsed: boolean;
+  mobile: boolean;
   mobileOpen: boolean;
   onOpen(destination: StartDestination): void;
 }) {
   return (
-    <aside className={`leemo-start-sidebar${collapsed ? " is-collapsed" : ""}${mobileOpen ? " is-mobile-open" : ""}`}>
+    <aside
+      className={`leemo-start-sidebar${collapsed ? " is-collapsed" : ""}${mobileOpen ? " is-mobile-open" : ""}`}
+      aria-hidden={mobile && !mobileOpen ? true : undefined}
+      inert={mobile && !mobileOpen ? true : undefined}
+    >
       <nav aria-label="开始导航">
         {(Object.keys(SECTION_LABELS) as Array<keyof typeof SECTION_LABELS>).map((section) => (
           <section key={section}>

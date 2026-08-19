@@ -72,16 +72,16 @@ export default function AppOverlays() {
     <>
       {settingsOpen && (
         <div
-          className="fixed inset-0 z-[80] flex items-center justify-center bg-[#17191c]/30 p-4 backdrop-blur-[1px] sm:p-6"
+          className="settings-overlay-scrim fixed inset-0 z-[80] flex items-center justify-center bg-[#30342d]/24 p-9 backdrop-blur-[0.75px] sm:p-12"
           data-testid="settings-overlay"
-          data-shell="workbench"
+          data-context-visible="true"
           role="dialog"
           aria-modal="true"
           aria-label="设置"
           onClick={requestSettingsClose}
         >
           <div
-            className="relative flex h-[min(720px,calc(100vh-32px))] w-[min(1040px,calc(100vw-32px))] flex-col overflow-hidden rounded-[8px] border border-[var(--leemo-line)] bg-white shadow-[0_24px_70px_-26px_rgba(24,31,38,0.48)] sm:h-[min(720px,calc(100vh-48px))] sm:w-[min(1040px,calc(100vw-48px))]"
+            className="settings-window-surface relative flex h-[min(720px,calc(100vh-72px))] w-[min(1120px,calc(100vw-72px))] flex-col overflow-hidden rounded-[18px] border border-white/55 bg-[#f7f3e9] shadow-[0_30px_90px_-34px_rgba(20,29,24,0.62)] sm:h-[min(720px,calc(100vh-96px))] sm:w-[min(1120px,calc(100vw-96px))]"
             data-testid="settings-window"
             onClick={(event) => event.stopPropagation()}
           >
