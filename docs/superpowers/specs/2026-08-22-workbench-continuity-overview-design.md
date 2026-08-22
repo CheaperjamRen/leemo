@@ -2,7 +2,7 @@
 
 > 日期：2026-08-22
 >
-> 状态：产品方案已确认，书面规格待用户复核
+> 状态：产品方案与书面规格已确认，等待按实施计划执行
 >
 > 上游：`docs/superpowers/specs/2026-08-04-workbench-global-map-design.md`、`docs/specs/02-已定决策清单.md`
 >
