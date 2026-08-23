@@ -94,6 +94,60 @@ describe("applyMarkdownFormat", () => {
     expect(onSave).toHaveBeenCalledTimes(1);
   });
 
+  it("uses standard GFM for strikethrough and explicit Feishu-compatible HTML for underline", async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+    const { unmount } = render(
+      <MarkdownEditor
+        title="formats.md"
+        draft={{ originalText: "原文", text: "原文", status: "dirty" }}
+        onChange={onChange}
+        onSave={vi.fn()}
+      />,
+    );
+
+    let editor = screen.getByRole("textbox", { name: "编辑 formats.md" });
+    selectEditorContents(editor);
+    await user.click(screen.getByRole("button", { name: "删除线" }));
+    await waitFor(() => expect(onChange).toHaveBeenLastCalledWith("~~原文~~"));
+
+    unmount();
+    onChange.mockClear();
+    render(
+      <MarkdownEditor
+        title="underline.md"
+        draft={{ originalText: "原文", text: "原文", status: "dirty" }}
+        onChange={onChange}
+        onSave={vi.fn()}
+      />,
+    );
+    editor = screen.getByRole("textbox", { name: "编辑 underline.md" });
+    selectEditorContents(editor);
+    await user.click(screen.getByRole("button", { name: "下划线（飞书兼容）" }));
+    await waitFor(() => expect(onChange).toHaveBeenLastCalledWith("<u>原文</u>"));
+  });
+
+  it("restores Feishu-compatible underline, uses semantic callout icons, and disables noisy spellcheck", () => {
+    render(
+      <MarkdownEditor
+        title="portable.md"
+        draft={{
+          originalText: "",
+          text: "<u>Leemo</u>\n\n> [!TIP]\n> 保留判断",
+          status: "dirty",
+        }}
+        onChange={vi.fn()}
+        onSave={vi.fn()}
+      />,
+    );
+
+    const editor = screen.getByRole("textbox", { name: "编辑 portable.md" });
+    expect(editor).toHaveAttribute("spellcheck", "false");
+    expect(editor.querySelector(".markdown-editor__underline")).toHaveTextContent("Leemo");
+    expect(screen.getByRole("combobox", { name: "高亮块类型" })).toHaveDisplayValue("提示");
+    expect(screen.getByRole("button", { name: "删除高亮块" })).toBeInTheDocument();
+  });
+
   it("shows a truthful compact document status below the editor", () => {
     render(
       <MarkdownEditor

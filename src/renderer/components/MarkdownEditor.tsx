@@ -2,12 +2,18 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import katex from "katex";
 import {
   $createParagraphNode,
+  $createTextNode,
   $getNodeByKey,
   $getRoot,
   $getSelection,
+  $isNodeSelection,
   $isRangeSelection,
+  $isTextNode,
+  COMMAND_PRIORITY_HIGH,
   DecoratorNode,
   FORMAT_TEXT_COMMAND,
+  KEY_BACKSPACE_COMMAND,
+  KEY_DELETE_COMMAND,
   REDO_COMMAND,
   UNDO_COMMAND,
   type EditorConfig,
@@ -46,6 +52,7 @@ import { LexicalComposer, type InitialConfigType } from "@lexical/react/LexicalC
 import { ContentEditable } from "@lexical/react/LexicalContentEditable";
 import { LexicalErrorBoundary } from "@lexical/react/LexicalErrorBoundary";
 import { useLexicalComposerContext } from "@lexical/react/LexicalComposerContext";
+import { useLexicalNodeSelection } from "@lexical/react/useLexicalNodeSelection";
 import { HistoryPlugin } from "@lexical/react/LexicalHistoryPlugin";
 import { LinkPlugin } from "@lexical/react/LexicalLinkPlugin";
 import { ListPlugin } from "@lexical/react/LexicalListPlugin";
@@ -60,7 +67,9 @@ import {
   Code2,
   Copy,
   Highlighter,
+  Info,
   Italic,
+  Lightbulb,
   Link2,
   List as ListIcon,
   ListChecks,
@@ -69,13 +78,22 @@ import {
   Redo2,
   Save,
   Sigma,
+  SquarePen,
   Strikethrough,
   Table2,
   PanelTop,
+  OctagonAlert,
+  Trash2,
+  TriangleAlert,
   Underline,
   Undo2,
 } from "lucide-react";
 import MarkdownContent from "./MarkdownContent";
+import {
+  $createGfmTableNode,
+  GFM_TABLE_TRANSFORMER,
+  GfmTableNode,
+} from "./GfmTableEditor";
 import type { PreviewDraft } from "../stores/preview-content";
 import "katex/dist/katex.min.css";
 import "./MarkdownEditor.css";
@@ -127,6 +145,28 @@ type SerializedMathNode = Spread<{
   version: 1;
 }, SerializedLexicalNode>;
 
+function MathEditor({ nodeKey, formula, inline }: { nodeKey: NodeKey; formula: string; inline: boolean }) {
+  const [editor] = useLexicalComposerContext();
+  const [editing, setEditing] = useState(false);
+  let html: string;
+  try {
+    html = katex.renderToString(formula, { displayMode: !inline, throwOnError: false, strict: "ignore" });
+  } catch {
+    html = formula;
+  }
+  const update = (value: string) => editor.update(() => {
+    const node = $getNodeByKey(nodeKey);
+    if ($isMathNode(node)) node.setFormula(value);
+  });
+  return (
+    <span className={inline ? "markdown-editor__math-inline" : "markdown-editor__math-block"} data-editing={editing || undefined} contentEditable={false}>
+      <span className="markdown-editor__math-preview" aria-hidden dangerouslySetInnerHTML={{ __html: html }} />
+      <button type="button" className="markdown-editor__math-edit" aria-label="编辑公式" aria-expanded={editing} onClick={() => setEditing((open) => !open)}><SquarePen aria-hidden /></button>
+      {editing ? <input autoFocus aria-label="公式内容" value={formula} size={Math.max(3, Math.min(24, formula.length + 1))} onChange={(event) => update(event.currentTarget.value)} /> : null}
+    </span>
+  );
+}
+
 class MathNode extends DecoratorNode<ReactNode> {
   __formula: string;
   __inline: boolean;
@@ -152,21 +192,13 @@ class MathNode extends DecoratorNode<ReactNode> {
     return { ...super.exportJSON(), formula: this.__formula, inline: this.__inline, type: "workbench-math", version: 1 };
   }
 
-  decorate(): ReactNode {
-    let html: string;
-    try {
-      html = katex.renderToString(this.__formula, { displayMode: !this.__inline, throwOnError: false, strict: "ignore" });
-    } catch {
-      html = this.__formula;
-    }
-    const className = this.__inline ? "markdown-editor__math-inline" : "markdown-editor__math-block";
-    return <span className={className} data-testid="markdown-editor-math" dangerouslySetInnerHTML={{ __html: html }} />;
-  }
+  decorate(): ReactNode { return <MathEditor nodeKey={this.getKey()} formula={this.getFormula()} inline={this.isInline()} />; }
 
   getFormula(): string { return this.getLatest().__formula; }
+  setFormula(formula: string): void { this.getWritable().__formula = formula; }
 }
 
-function $createMathNode(formula: string, inline: boolean): MathNode {
+export function $createMathNode(formula: string, inline: boolean): MathNode {
   return new MathNode(formula, inline);
 }
 function $isMathNode(node: LexicalNode | null | undefined): node is MathNode { return node instanceof MathNode; }
@@ -176,6 +208,22 @@ type SerializedMermaidNode = Spread<{
   type: "workbench-mermaid";
   version: 1;
 }, SerializedLexicalNode>;
+
+function MermaidEditor({ nodeKey, source }: { nodeKey: NodeKey; source: string }) {
+  const [editor] = useLexicalComposerContext();
+  const [editing, setEditing] = useState(false);
+  const update = (value: string) => editor.update(() => {
+    const node = $getNodeByKey(nodeKey);
+    if ($isMermaidNode(node)) node.setSource(value);
+  });
+  return (
+    <div className="markdown-editor__mermaid" contentEditable={false}>
+      <MarkdownContent text={`\`\`\`mermaid\n${source}\n\`\`\``} variant="preview" />
+      <button type="button" aria-label="编辑 Mermaid 图表" aria-expanded={editing} title="编辑图表源码" onClick={() => setEditing((open) => !open)}><SquarePen aria-hidden /></button>
+      {editing ? <textarea aria-label="Mermaid 图表源码" value={source} rows={Math.max(3, source.split("\n").length)} onChange={(event) => update(event.currentTarget.value)} /> : null}
+    </div>
+  );
+}
 
 class MermaidNode extends DecoratorNode<ReactNode> {
   __source: string;
@@ -194,19 +242,14 @@ class MermaidNode extends DecoratorNode<ReactNode> {
   isInline(): false { return false; }
   getTextContent(): string { return `\`\`\`mermaid\n${this.__source}\n\`\`\``; }
   getSource(): string { return this.getLatest().__source; }
+  setSource(source: string): void { this.getWritable().__source = source; }
   exportJSON(): SerializedMermaidNode {
     return { ...super.exportJSON(), source: this.__source, type: "workbench-mermaid", version: 1 };
   }
-  decorate(): ReactNode {
-    return (
-      <div className="markdown-editor__mermaid" contentEditable={false}>
-        <MarkdownContent text={`\`\`\`mermaid\n${this.__source}\n\`\`\``} variant="preview" />
-      </div>
-    );
-  }
+  decorate(): ReactNode { return <MermaidEditor nodeKey={this.getKey()} source={this.getSource()} />; }
 }
 
-function $createMermaidNode(source: string): MermaidNode { return new MermaidNode(source); }
+export function $createMermaidNode(source: string): MermaidNode { return new MermaidNode(source); }
 function $isMermaidNode(node: LexicalNode | null | undefined): node is MermaidNode { return node instanceof MermaidNode; }
 
 type CalloutType = "note" | "tip" | "important" | "warning" | "caution";
@@ -226,17 +269,82 @@ const CALLOUT_LABELS: Record<CalloutType, string> = {
   caution: "警告",
 };
 
+function CalloutIcon({ calloutType }: { calloutType: CalloutType }) {
+  const Icon = calloutType === "note"
+    ? Info
+    : calloutType === "tip"
+      ? Lightbulb
+      : calloutType === "important"
+        ? OctagonAlert
+        : TriangleAlert;
+  return <Icon aria-hidden size={15} strokeWidth={1.9} />;
+}
+
+function removeCalloutNode(nodeKey: NodeKey): void {
+  const node = $getNodeByKey(nodeKey);
+  if (!$isCalloutNode(node)) return;
+  const next = node.getNextSibling();
+  const previous = node.getPreviousSibling();
+  node.remove();
+  if (next) {
+    next.selectStart();
+  } else if (previous) {
+    previous.selectEnd();
+  } else {
+    const paragraph = $createParagraphNode();
+    $getRoot().append(paragraph);
+    paragraph.selectStart();
+  }
+}
+
+export function insertCalloutWithParagraph(selection: { insertNodes(nodes: LexicalNode[]): void }): void {
+  const callout = $createCalloutNode();
+  selection.insertNodes([callout]);
+  const next = callout.getNextSibling();
+  if (next) {
+    next.selectStart();
+    return;
+  }
+  const paragraph = $createParagraphNode();
+  callout.insertAfter(paragraph, false);
+  paragraph.selectStart();
+}
+
 function CalloutEditor({ nodeKey, calloutType, source }: { nodeKey: NodeKey; calloutType: CalloutType; source: string }) {
   const [editor] = useLexicalComposerContext();
+  const [isSelected, setSelected] = useLexicalNodeSelection(nodeKey);
   const update = (nextType: CalloutType, nextSource: string) => editor.update(() => {
     const node = $getNodeByKey(nodeKey);
     if ($isCalloutNode(node)) node.setCallout(nextType, nextSource);
   });
   return (
-    <aside className="markdown-editor__callout" data-callout={calloutType} data-testid="markdown-editor-callout" contentEditable={false}>
-      <select aria-label="高亮块类型" value={calloutType} onChange={(event) => update(event.currentTarget.value as CalloutType, source)}>
-        {Object.entries(CALLOUT_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-      </select>
+    <aside
+      className="markdown-editor__callout"
+      data-callout={calloutType}
+      data-selected={isSelected || undefined}
+      data-testid="markdown-editor-callout"
+      contentEditable={false}
+      tabIndex={0}
+      onClick={(event) => {
+        if (event.target === event.currentTarget) {
+          setSelected(true);
+          (event.currentTarget as HTMLElement).focus();
+        }
+      }}
+      onKeyDown={(event) => {
+        if ((event.key === "Backspace" || event.key === "Delete") && event.target === event.currentTarget) {
+          event.preventDefault();
+          editor.update(() => removeCalloutNode(nodeKey));
+        }
+      }}
+    >
+      <div className="markdown-editor__callout-heading">
+        <CalloutIcon calloutType={calloutType} />
+        <select aria-label="高亮块类型" value={calloutType} onChange={(event) => update(event.currentTarget.value as CalloutType, source)}>
+          {Object.entries(CALLOUT_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+        </select>
+        <button type="button" className="markdown-editor__callout-delete" aria-label="删除高亮块" title="删除高亮块" onMouseDown={(event) => event.preventDefault()} onClick={() => editor.update(() => removeCalloutNode(nodeKey))}><Trash2 aria-hidden size={14} strokeWidth={1.8} /></button>
+      </div>
       <textarea aria-label="高亮块内容" value={source} rows={Math.max(1, source.split("\n").length)} onChange={(event) => update(calloutType, event.currentTarget.value)} />
     </aside>
   );
@@ -280,98 +388,43 @@ export function $createCalloutNode(calloutType: CalloutType = "important", sourc
 }
 function $isCalloutNode(node: LexicalNode | null | undefined): node is CalloutNode { return node instanceof CalloutNode; }
 
-type SerializedGfmTableNode = Spread<{
-  source: string;
-  type: "workbench-gfm-table";
-  version: 1;
-}, SerializedLexicalNode>;
-
-class GfmTableNode extends DecoratorNode<ReactNode> {
-  __source: string;
-
-  static getType(): string { return "workbench-gfm-table"; }
-  static clone(node: GfmTableNode): GfmTableNode { return new GfmTableNode(node.__source, node.__key); }
-  static importJSON(node: SerializedGfmTableNode): GfmTableNode { return new GfmTableNode(node.source); }
-
-  constructor(source: string, key?: NodeKey) {
-    super(key);
-    this.__source = source;
-  }
-
-  createDOM(): HTMLElement { return document.createElement("div"); }
-  updateDOM(): false { return false; }
-  isInline(): false { return false; }
-  getTextContent(): string { return this.__source; }
-  getSource(): string { return this.getLatest().__source; }
-  setSource(source: string): void { this.getWritable().__source = source; }
-  exportJSON(): SerializedGfmTableNode {
-    return { ...super.exportJSON(), source: this.__source, type: "workbench-gfm-table", version: 1 };
-  }
-  decorate(): ReactNode {
-    return <GfmTableEditor nodeKey={this.getKey()} source={this.getSource()} />;
-  }
-}
-
-type TableAlignment = "left" | "center" | "right";
-interface ParsedGfmTable { headers: string[]; rows: string[][]; alignments: TableAlignment[]; }
-
-function parseTableRow(line: string): string[] {
-  return line.trim().replace(/^\|/u, "").replace(/\|$/u, "").split("|").map((cell) => cell.trim());
-}
-
-function parseGfmTable(source: string): ParsedGfmTable {
-  const lines = source.trim().split(/\r?\n/u);
-  const headers = parseTableRow(lines[0] ?? "| 列 1 | 列 2 |");
-  const divider = parseTableRow(lines[1] ?? "| --- | --- |");
-  const alignments = headers.map((_, index): TableAlignment => {
-    const token = divider[index] ?? "---";
-    return token.startsWith(":") && token.endsWith(":") ? "center" : token.endsWith(":") ? "right" : "left";
-  });
-  const rows = lines.slice(2).map(parseTableRow).map((row) => headers.map((_, index) => row[index] ?? ""));
-  return { headers, alignments, rows: rows.length > 0 ? rows : [headers.map(() => "")] };
-}
-
-function serializeGfmTable(table: ParsedGfmTable): string {
-  const row = (cells: string[]) => `| ${cells.map((cell) => cell.replace(/\|/gu, "\\|")).join(" | ")} |`;
-  const divider = table.alignments.map((alignment) => alignment === "center" ? ":---:" : alignment === "right" ? "---:" : "---");
-  return [row(table.headers), row(divider), ...table.rows.map(row)].join("\n");
-}
-
-function GfmTableEditor({ nodeKey, source }: { nodeKey: NodeKey; source: string }) {
+export function CalloutInteractionPlugin() {
   const [editor] = useLexicalComposerContext();
-  const table = parseGfmTable(source);
-  const update = (next: ParsedGfmTable) => editor.update(() => {
-    const node = $getNodeByKey(nodeKey);
-    if ($isGfmTableNode(node)) node.setSource(serializeGfmTable(next));
-  });
-  const updateHeader = (index: number, value: string) => update({ ...table, headers: table.headers.map((cell, cellIndex) => cellIndex === index ? value : cell) });
-  const updateCell = (rowIndex: number, columnIndex: number, value: string) => update({
-    ...table,
-    rows: table.rows.map((row, currentRow) => currentRow === rowIndex ? row.map((cell, currentColumn) => currentColumn === columnIndex ? value : cell) : row),
-  });
-  const nextAlignment: Record<TableAlignment, TableAlignment> = { left: "center", center: "right", right: "left" };
-  return (
-    <div className="markdown-editor__gfm-table" contentEditable={false}>
-      <div className="markdown-editor__table-tools">
-        <button type="button" aria-label="添加表格行" onClick={() => update({ ...table, rows: [...table.rows, table.headers.map(() => "")] })}>+ 行</button>
-        <button type="button" aria-label="添加表格列" onClick={() => update({ headers: [...table.headers, `列 ${table.headers.length + 1}`], alignments: [...table.alignments, "left"], rows: table.rows.map((row) => [...row, ""]) })}>+ 列</button>
-        <button type="button" aria-label="删除表格行" disabled={table.rows.length <= 1} onClick={() => update({ ...table, rows: table.rows.slice(0, -1) })}>− 行</button>
-        <button type="button" aria-label="删除表格列" disabled={table.headers.length <= 1} onClick={() => update({ headers: table.headers.slice(0, -1), alignments: table.alignments.slice(0, -1), rows: table.rows.map((row) => row.slice(0, -1)) })}>− 列</button>
-        <button type="button" aria-label="切换表格对齐" title="全表左对齐 / 居中 / 右对齐" onClick={() => update({ ...table, alignments: table.alignments.map((alignment) => nextAlignment[alignment]) })}>对齐</button>
-      </div>
-      <div className="markdown-editor__table-scroll">
-        <table>
-          <thead><tr>{table.headers.map((header, index) => <th key={index}><input aria-label={`表头 ${index + 1}`} value={header} onChange={(event) => updateHeader(index, event.currentTarget.value)} /></th>)}</tr></thead>
-          <tbody>{table.rows.map((row, rowIndex) => <tr key={rowIndex}>{row.map((cell, columnIndex) => <td key={columnIndex}><input aria-label={`第 ${rowIndex + 1} 行第 ${columnIndex + 1} 列`} value={cell} onChange={(event) => updateCell(rowIndex, columnIndex, event.currentTarget.value)} /></td>)}</tr>)}</tbody>
-        </table>
-      </div>
-    </div>
-  );
+  useEffect(() => {
+    const removeSelected = () => {
+      const selection = $getSelection();
+      if (!$isNodeSelection(selection)) return false;
+      const callouts = selection.getNodes().filter($isCalloutNode);
+      if (callouts.length === 0) return false;
+      callouts.forEach((node) => removeCalloutNode(node.getKey()));
+      return true;
+    };
+    const unregisterBackspace = editor.registerCommand(KEY_BACKSPACE_COMMAND, removeSelected, COMMAND_PRIORITY_HIGH);
+    const unregisterDelete = editor.registerCommand(KEY_DELETE_COMMAND, removeSelected, COMMAND_PRIORITY_HIGH);
+    return () => {
+      unregisterBackspace();
+      unregisterDelete();
+    };
+  }, [editor]);
+  return null;
 }
 
-export const DEFAULT_GFM_TABLE = "| 列 1 | 列 2 |\n| --- | --- |\n|  |  |\n|  |  |";
-export function $createGfmTableNode(source = DEFAULT_GFM_TABLE): GfmTableNode { return new GfmTableNode(source); }
-function $isGfmTableNode(node: LexicalNode | null | undefined): node is GfmTableNode { return node instanceof GfmTableNode; }
+export function CalloutNormalizationPlugin() {
+  const [editor] = useLexicalComposerContext();
+  useEffect(() => {
+    editor.update(() => {
+      const root = $getRoot();
+      const last = root.getLastChild();
+      if ($isCalloutNode(last)) {
+        const paragraph = $createParagraphNode();
+        last.insertAfter(paragraph, false);
+      }
+    }, { tag: CALLOUT_NORMALIZATION_TAG });
+  }, [editor]);
+  return null;
+}
+
+export const CALLOUT_NORMALIZATION_TAG = "leemo:callout-normalization";
 
 const INLINE_MATH_TRANSFORMER: TextMatchTransformer = {
   dependencies: [MathNode],
@@ -420,24 +473,6 @@ const MERMAID_TRANSFORMER: MultilineElementTransformer = {
   type: "multiline-element",
 };
 
-const GFM_TABLE_DIVIDER = /^\s*\|?\s*:?-{3,}:?\s*(?:\|\s*:?-{3,}:?\s*)+\|?\s*$/;
-const GFM_TABLE_TRANSFORMER: MultilineElementTransformer = {
-  dependencies: [GfmTableNode],
-  export: (node) => $isGfmTableNode(node) ? node.getSource() : null,
-  regExpStart: /^\s*\|?.+\|.+\|?\s*$/,
-  handleImportAfterStartMatch: ({ lines, rootNode, startLineIndex }) => {
-    if (!GFM_TABLE_DIVIDER.test(lines[startLineIndex + 1] ?? "")) return null;
-    let endLineIndex = startLineIndex + 1;
-    while (endLineIndex + 1 < lines.length && /\|/.test(lines[endLineIndex + 1]) && lines[endLineIndex + 1].trim()) {
-      endLineIndex += 1;
-    }
-    rootNode.append($createGfmTableNode(lines.slice(startLineIndex, endLineIndex + 1).join("\n")));
-    return [true, endLineIndex];
-  },
-  replace: () => false,
-  type: "multiline-element",
-};
-
 const CALLOUT_TRANSFORMER: MultilineElementTransformer = {
   dependencies: [CalloutNode],
   export: (node) => {
@@ -465,6 +500,30 @@ const CALLOUT_TRANSFORMER: MultilineElementTransformer = {
   type: "multiline-element",
 };
 
+/**
+ * Underline is not CommonMark/GFM. Keep the real file portable by using the
+ * explicit `<u>…</u>` form that the official lark-cli Markdown path accepts,
+ * instead of inventing a Leemo-only delimiter.
+ */
+const FEISHU_UNDERLINE_TRANSFORMER: TextMatchTransformer = {
+  dependencies: [],
+  export: (node, _exportChildren, exportFormat) => {
+    if (!$isTextNode(node) || !node.hasFormat("underline")) return null;
+    return `<u>${exportFormat(node, node.getTextContent())}</u>`;
+  },
+  importRegExp: /<u>([^<>\n]+)<\/u>/iu,
+  regExp: /<u>([^<>\n]+)<\/u>$/iu,
+  replace: (textNode, match) => {
+    const replacement = $createTextNode(match[1] ?? "");
+    replacement.setFormat(textNode.getFormat());
+    replacement.toggleFormat("underline");
+    textNode.replace(replacement);
+    return replacement;
+  },
+  trigger: ">",
+  type: "text-match",
+};
+
 export const WORKBENCH_TRANSFORMERS = [
   CALLOUT_TRANSFORMER,
   GFM_TABLE_TRANSFORMER,
@@ -473,6 +532,7 @@ export const WORKBENCH_TRANSFORMERS = [
   SINGLE_LINE_BLOCK_MATH_TRANSFORMER,
   CHECK_LIST,
   ...TRANSFORMERS,
+  FEISHU_UNDERLINE_TRANSFORMER,
   INLINE_MATH_TRANSFORMER,
 ];
 
@@ -577,7 +637,7 @@ function EditorToolbar({ disabled }: { disabled: boolean }) {
       <span className="markdown-editor__divider" aria-hidden />
       <ToolButton label="加粗" disabled={disabled} onClick={() => format("bold")}><Bold aria-hidden /></ToolButton>
       <ToolButton label="斜体" disabled={disabled} onClick={() => format("italic")}><Italic aria-hidden /></ToolButton>
-      <ToolButton label="下划线" disabled={disabled} onClick={() => format("underline")}><Underline aria-hidden /></ToolButton>
+      <ToolButton label="下划线（飞书兼容）" disabled={disabled} onClick={() => format("underline")}><Underline aria-hidden /></ToolButton>
       <ToolButton label="删除线" disabled={disabled} onClick={() => format("strikethrough")}><Strikethrough aria-hidden /></ToolButton>
       <ToolButton label="链接" disabled={disabled} onClick={() => focus(() => {
         const url = window.prompt("链接地址");
@@ -598,7 +658,7 @@ function EditorToolbar({ disabled }: { disabled: boolean }) {
       }))}><Code2 aria-hidden /></ToolButton>
       <ToolButton label="高亮块" disabled={disabled} onClick={() => focus(() => editor.update(() => {
         const selection = $getSelection();
-        if ($isRangeSelection(selection)) selection.insertNodes([$createCalloutNode()]);
+        if ($isRangeSelection(selection)) insertCalloutWithParagraph(selection);
       }))}><PanelTop aria-hidden /></ToolButton>
       <ToolButton label="插入表格" disabled={disabled} onClick={() => focus(() => editor.update(() => {
         const selection = $getSelection();
@@ -700,7 +760,7 @@ export default function MarkdownEditor({
                 className="markdown-editor__content"
                 aria-label={`编辑 ${title}`}
                 aria-disabled={saving}
-                spellCheck
+                spellCheck={false}
                 onKeyDown={(event) => {
                   if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s") {
                     event.preventDefault();
@@ -713,13 +773,18 @@ export default function MarkdownEditor({
             ErrorBoundary={LexicalErrorBoundary}
           />
         </div>
+        <CalloutInteractionPlugin />
+        <CalloutNormalizationPlugin />
         <OnChangePlugin
           ignoreSelectionChange
-          onChange={(editorState) => editorState.read(() => {
+          onChange={(editorState, _editor, tags) => {
+            if (tags.has(CALLOUT_NORMALIZATION_TAG)) return;
+            editorState.read(() => {
             const markdown = $convertToMarkdownString(WORKBENCH_TRANSFORMERS, undefined, true);
             lastEmitted.current = markdown;
             onChange(markdown);
-          })}
+            });
+          }}
         />
         <MarkdownSyncPlugin markdown={draft.text} lastEmitted={lastEmitted} />
         <HistoryPlugin />

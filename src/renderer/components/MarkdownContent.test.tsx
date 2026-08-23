@@ -60,6 +60,31 @@ describe("MarkdownContent", () => {
     expect(container.textContent).not.toContain("| --- | --- |");
   });
 
+  it("keeps Leemo table width metadata invisible while preserving the rendered table", () => {
+    const markdown = [
+      "| 事项 | 进度 |",
+      "| --- | --- |",
+      "| 甲 | 乙 |",
+      "<!-- leemo-table: widths=419,251 -->",
+    ].join("\n");
+
+    const { container } = render(<MarkdownContent text={markdown} variant="preview" />);
+
+    expect(screen.getByRole("table")).toBeInTheDocument();
+    expect(container).toHaveTextContent("甲");
+    expect(container.textContent).not.toContain("leemo-table");
+    expect(container.textContent).not.toContain("widths=419,251");
+  });
+
+  it("renders task-list checkboxes without a second disc marker", () => {
+    render(<MarkdownContent text={"- [ ] 保留自己的判断\n- [x] 再调用 momo"} variant="preview" />);
+
+    expect(screen.getByRole("list")).toHaveClass("[&.contains-task-list]:list-none", "[&.contains-task-list]:pl-0");
+    for (const item of screen.getAllByRole("listitem")) {
+      expect(item).toHaveClass("[&.task-list-item]:list-none");
+    }
+  });
+
   it("opens external links safely and keeps long content inside its parent", () => {
     const { container } = render(<MarkdownContent text={COMPLETE_MARKDOWN} variant="preview" />);
     const link = screen.getByRole("link", { name: /参考资料/ });
@@ -121,6 +146,20 @@ describe("MarkdownContent", () => {
     expect(screen.getByTestId("markdown-callout")).toHaveAttribute("data-callout", "note");
     expect(document.querySelectorAll(".katex").length).toBeGreaterThan(0);
     expect(document.querySelector("section[data-footnotes]")).toHaveTextContent("示例论文");
+  });
+
+  it("does not turn an empty callout marker into a blank colored block", () => {
+    const { container } = render(<MarkdownContent text={"> [!CAUTION] >"} variant="preview" />);
+
+    expect(container.querySelector('[data-testid="markdown-callout"]')).not.toBeInTheDocument();
+    expect(container).toHaveTextContent("[!CAUTION]");
+  });
+
+  it("renders only the explicit Feishu-compatible underline tag without enabling arbitrary raw HTML", () => {
+    render(<MarkdownContent text={'<u>飞书兼容</u> <script>alert("x")</script>'} variant="preview" />);
+    const underlined = screen.getByText("飞书兼容");
+    expect(underlined.tagName).toBe("U");
+    expect(document.querySelector("script")).not.toBeInTheDocument();
   });
 
   it("keeps frontmatter available without presenting it as body copy", () => {

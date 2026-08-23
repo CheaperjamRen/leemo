@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type CSSProperties } from "react";
-import { ChevronDown, ChevronRight, Clock3, FileText, Inbox, Pin, Plus, Search } from "lucide-react";
+import { ChevronDown, ChevronRight, Clock3, FileText, Inbox, Pin, Plus, Search, X } from "lucide-react";
 import type { Note } from "../../captures";
 import { NOTE_DRAG_MIME, noteIdFromDragPayload } from "../notes/note-references";
 import { buildNoteTree, noteSystemViews, type NoteTreeNode } from "../notes/note-tree";
@@ -108,7 +108,9 @@ export default function NoteExplorer({
   onCreate,
   onMove,
   readOnly = false,
-  title = "我的文档",
+  title = "文档库",
+  onRequestClose,
+  collapsed = false,
 }: {
   notes: readonly Note[];
   selectedId: string | null;
@@ -117,6 +119,8 @@ export default function NoteExplorer({
   onMove(noteId: string, parentId: string | null, index: number): void;
   readOnly?: boolean;
   title?: string;
+  onRequestClose?(): void;
+  collapsed?: boolean;
 }) {
   const [query, setQuery] = useState("");
   const [lens, setLens] = useState<ExplorerLens>("documents");
@@ -153,10 +157,13 @@ export default function NoteExplorer({
   ];
 
   return (
-    <aside className="leemo-note-explorer" aria-label="文档 Explorer">
+    <aside className="leemo-note-explorer" aria-label="文档 Explorer" aria-hidden={collapsed || undefined}>
       <header className="leemo-note-explorer__header">
         <div><strong>{title}</strong><span>{notes.length}</span></div>
-        {!readOnly ? <button type="button" aria-label="新建文档" title="新建文档" onClick={onCreate}><Plus aria-hidden /></button> : null}
+        <div className="leemo-note-explorer__header-actions">
+          {!readOnly ? <button type="button" aria-label="新建文档" title="新建文档" onClick={onCreate}><Plus aria-hidden /></button> : null}
+          {onRequestClose ? <button type="button" className="leemo-note-explorer__close" aria-label="关闭文档列表" title="关闭文档列表" onClick={onRequestClose}><X aria-hidden /></button> : null}
+        </div>
       </header>
       <label className="leemo-note-explorer__search">
         <Search aria-hidden />
@@ -186,7 +193,7 @@ export default function NoteExplorer({
       <div
         className="leemo-note-tree"
         role="tree"
-        aria-label="我的文档"
+        aria-label="文档库"
         data-testid="note-tree-root-drop"
         onDragOver={(event) => {
           if (readOnly) return;

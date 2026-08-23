@@ -39,7 +39,7 @@ describe("NoteExplorer", () => {
     const child = note("child", { title: "产品故事", parentId: parent.id });
     render(<NoteExplorer notes={[child, parent]} selectedId={child.id} onSelect={vi.fn()} onCreate={vi.fn()} onMove={vi.fn()} />);
 
-    expect(screen.getByRole("tree", { name: "我的文档" })).toBeInTheDocument();
+    expect(screen.getByRole("tree", { name: "文档库" })).toBeInTheDocument();
     expect(screen.getByRole("treeitem", { name: /求职准备/ })).toHaveAttribute("aria-expanded", "true");
     expect(screen.getByRole("treeitem", { name: /产品故事/ })).toHaveAttribute("aria-selected", "true");
     expect(screen.getByRole("treeitem", { name: /产品故事/ })).toHaveAttribute("data-depth", "1");
@@ -51,7 +51,7 @@ describe("NoteExplorer", () => {
     render(<NoteExplorer notes={[parent, child, note("other", { title: "读书" })]} selectedId={null} onSelect={vi.fn()} onCreate={vi.fn()} onMove={vi.fn()} />);
 
     await userEvent.type(screen.getByRole("searchbox", { name: "搜索文档" }), "简历");
-    const tree = screen.getByRole("tree", { name: "我的文档" });
+    const tree = screen.getByRole("tree", { name: "文档库" });
     expect(within(tree).getByText("求职准备")).toBeInTheDocument();
     expect(within(tree).getByText("简历优化")).toBeInTheDocument();
     expect(within(tree).queryByText("读书")).not.toBeInTheDocument();

@@ -245,31 +245,160 @@
   white-space: pre-wrap;
 }
 
-.markdown-editor__math-inline { display: inline-flex; margin: 0 2px; vertical-align: -0.12em; }
+.markdown-editor__math-inline {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin: 0 2px;
+  border-radius: 5px;
+  padding: 1px 3px;
+  vertical-align: -0.12em;
+  transition: background-color 120ms ease;
+}
 .markdown-editor__math-block {
+  position: relative;
   display: block;
   margin: 1em auto;
   overflow-x: auto;
-  padding: 8px 12px;
+  border: 1px solid var(--leemo-line-2, #eceff2);
+  border-radius: 9px;
+  padding: 12px 14px 9px;
+  background: color-mix(in srgb, var(--leemo-bg-deep, #f5f6f7) 65%, transparent);
   text-align: center;
 }
+.markdown-editor__math-inline:hover,
+.markdown-editor__math-inline:focus-within { background: var(--leemo-bg-deep, #f5f6f7); }
+.markdown-editor__math-preview { min-width: 0; }
+.markdown-editor__math-edit {
+  display: grid;
+  width: 20px;
+  height: 20px;
+  flex: 0 0 20px;
+  place-items: center;
+  border: 1px solid var(--leemo-line, #e1e5e8);
+  border-radius: 5px;
+  color: var(--leemo-ink-3, #7d8791);
+  background: color-mix(in srgb, var(--leemo-card, #fff) 92%, transparent);
+  opacity: 0;
+  transition: opacity 120ms ease, color 120ms ease, background-color 120ms ease;
+}
+.markdown-editor__math-edit svg { width: 12px; height: 12px; stroke-width: 1.8; }
+.markdown-editor__math-inline:hover .markdown-editor__math-edit,
+.markdown-editor__math-inline:focus-within .markdown-editor__math-edit,
+.markdown-editor__math-inline[data-editing] .markdown-editor__math-edit,
+.markdown-editor__math-block:hover .markdown-editor__math-edit,
+.markdown-editor__math-block:focus-within .markdown-editor__math-edit,
+.markdown-editor__math-block[data-editing] .markdown-editor__math-edit { opacity: 1; }
+.markdown-editor__math-block .markdown-editor__math-edit { position: absolute; top: 8px; right: 8px; }
+.markdown-editor__math-edit:hover,
+.markdown-editor__math-edit:focus-visible { color: var(--leemo-ink-2, #4b5968); background: var(--leemo-card, #fff); outline: none; }
+.markdown-editor__math-inline .markdown-editor__math-edit {
+  position: absolute;
+  top: 50%;
+  left: calc(100% + 2px);
+  z-index: 2;
+  transform: translateY(-50%);
+}
+.markdown-editor__math-inline input,
+.markdown-editor__math-block input {
+  min-width: 44px;
+  max-width: min(280px, 60vw);
+  border: 1px solid transparent;
+  border-radius: 5px;
+  outline: 0;
+  padding: 2px 5px;
+  color: var(--leemo-ink-3, #7d8791);
+  background: transparent;
+  font-family: "Cascadia Code", Consolas, monospace;
+  font-size: 11px;
+  line-height: 18px;
+  transition: border-color 120ms ease, color 120ms ease, background-color 120ms ease;
+}
+.markdown-editor__math-block input { display: block; margin: 8px auto 0; text-align: center; }
+.markdown-editor__math-inline input:hover,
+.markdown-editor__math-inline input:focus,
+.markdown-editor__math-block input:hover,
+.markdown-editor__math-block input:focus {
+  border-color: var(--leemo-line, #e1e5e8);
+  color: var(--leemo-ink-2, #4b5968);
+  background: var(--leemo-card, #fff);
+}
 .markdown-editor__mermaid {
+  position: relative;
   margin: 0.9em 0;
+  overflow: hidden;
+  border: 1px solid var(--leemo-line-2, #eceff2);
   border-radius: 8px;
+  background: var(--leemo-bg-deep, #f5f6f7);
 }
 .markdown-editor__mermaid [data-testid="mermaid-diagram"] { margin: 0; background: var(--leemo-bg-deep, #f5f6f7); }
+.markdown-editor__mermaid > button {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 2;
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border: 1px solid var(--leemo-line, #e1e5e8);
+  border-radius: 6px;
+  padding: 0;
+  color: var(--leemo-ink-3, #7d8791);
+  background: color-mix(in srgb, var(--leemo-card, #fff) 92%, transparent);
+  font-size: 11px;
+  opacity: 0;
+  transition: opacity 120ms ease, color 120ms ease;
+}
+.markdown-editor__mermaid > button svg { width: 14px; height: 14px; stroke-width: 1.8; }
+.markdown-editor__mermaid:hover > button,
+.markdown-editor__mermaid > button:focus-visible,
+.markdown-editor__mermaid > button[aria-expanded="true"] { opacity: 1; color: var(--leemo-ink-2, #4b5968); }
+.markdown-editor__mermaid > textarea {
+  display: block;
+  width: calc(100% - 20px);
+  min-height: 78px;
+  margin: 0 10px 10px;
+  resize: vertical;
+  border: 1px solid var(--leemo-line, #e1e5e8);
+  border-radius: 6px;
+  outline: 0;
+  padding: 8px 10px;
+  color: var(--leemo-ink-2, #4b5968);
+  background: var(--leemo-card, #fff);
+  font-family: "Cascadia Code", Consolas, monospace;
+  font-size: 11.5px;
+  line-height: 1.55;
+}
+.markdown-editor__mermaid > textarea:focus { border-color: color-mix(in srgb, var(--leemo-amber, #e8770b) 50%, var(--leemo-line, #e1e5e8)); box-shadow: 0 0 0 2px color-mix(in srgb, var(--leemo-amber, #e8770b) 10%, transparent); }
 
 .markdown-editor__callout {
   display: grid;
-  grid-template-columns: 74px minmax(0, 1fr);
-  gap: 10px;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 6px;
   margin: 0.85em 0;
   border: 1px solid var(--leemo-amber-line, #f1b979);
   border-left-width: 3px;
-  border-radius: 7px;
-  padding: 10px 12px;
+  border-radius: 12px;
+  padding: 9px 12px 10px;
   background: var(--leemo-amber-soft, #fff4e8);
 }
+
+.markdown-editor__callout[data-selected="true"] {
+  outline: 2px solid color-mix(in srgb, var(--leemo-action-accent, #b86116) 38%, transparent);
+  outline-offset: 2px;
+}
+
+.markdown-editor__callout-heading {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+  color: var(--leemo-amber-ink, #a74f0b);
+}
+
+.markdown-editor__callout-heading > svg { flex: 0 0 auto; }
 
 .markdown-editor__callout select,
 .markdown-editor__callout textarea {
@@ -282,13 +411,36 @@
 }
 
 .markdown-editor__callout select {
-  align-self: start;
+  min-width: 0;
+  align-self: center;
+  flex: 1 1 auto;
   color: var(--leemo-amber-ink, #a74f0b);
   font-size: 11px;
   font-weight: 650;
 }
 
+.markdown-editor__callout-delete {
+  display: grid;
+  width: 26px;
+  height: 26px;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 0;
+  border-radius: 999px;
+  color: color-mix(in srgb, var(--leemo-amber-ink, #a74f0b) 72%, transparent);
+  background: transparent;
+  cursor: pointer;
+}
+
+.markdown-editor__callout-delete:hover,
+.markdown-editor__callout-delete:focus-visible {
+  color: var(--leemo-danger, #b23a35);
+  background: color-mix(in srgb, var(--leemo-danger, #b23a35) 10%, transparent);
+  outline: none;
+}
+
 .markdown-editor__callout textarea {
+  grid-column: 1;
   resize: none;
   overflow: hidden;
   font-size: 13.5px;
@@ -301,34 +453,51 @@
 }
 
 .markdown-editor__gfm-table {
+  position: relative;
   margin: 0.85em 0;
-  border: 1px solid var(--leemo-line, #e1e5e8);
-  border-radius: 8px;
-  background: var(--leemo-card, #fff);
-  overflow: hidden;
+  border-radius: 9px;
+  background: transparent;
 }
 
 .markdown-editor__table-tools {
+  position: absolute;
+  z-index: 8;
+  top: var(--table-tools-top, -36px);
+  left: var(--table-tools-left, 6px);
   display: flex;
-  min-height: 34px;
+  box-sizing: border-box;
+  width: max-content;
+  max-width: calc(100% - 12px);
+  min-height: 32px;
   align-items: center;
-  gap: 2px;
-  border-bottom: 1px solid var(--leemo-line-2, #eceff2);
-  padding: 0 7px;
-  background: var(--leemo-bg-deep, #f5f6f7);
+  gap: 3px;
+  margin: 0;
+  overflow-x: auto;
+  border: 1px solid var(--leemo-line, #e1e5e8);
+  border-radius: 7px;
+  padding: 2px 5px;
+  background: color-mix(in srgb, var(--leemo-card, #fff) 94%, var(--leemo-amber-soft, #fff4e8));
+  box-shadow: 0 4px 14px rgb(21 32 45 / 5%);
+  scrollbar-width: none;
 }
+.markdown-editor__table-tools::-webkit-scrollbar { display: none; }
 
 .markdown-editor__table-tools button {
+  display: inline-flex;
   height: 25px;
+  align-items: center;
+  gap: 4px;
   border: 0;
   border-radius: 5px;
-  padding: 0 7px;
+  padding: 0 6px;
   background: transparent;
   color: var(--leemo-ink-3, #7d8791);
   font: inherit;
   font-size: 10.5px;
+  white-space: nowrap;
   cursor: pointer;
 }
+.markdown-editor__table-tools button svg { width: 13px; height: 13px; stroke-width: 1.75; }
 
 .markdown-editor__table-tools button:hover:not(:disabled),
 .markdown-editor__table-tools button:focus-visible {
@@ -337,15 +506,152 @@
   outline: none;
 }
 
+.markdown-editor__table-tools button.is-danger:hover:not(:disabled),
+.markdown-editor__table-tools button.is-danger:focus-visible {
+  background: color-mix(in srgb, var(--leemo-danger, #c53b2f) 8%, transparent);
+  color: var(--leemo-danger, #c53b2f);
+}
+
 .markdown-editor__table-tools button:disabled { cursor: default; opacity: 0.35; }
-.markdown-editor__table-scroll { max-width: 100%; overflow-x: auto; }
-.markdown-editor__gfm-table table { width: 100%; min-width: 420px; border-collapse: collapse; table-layout: fixed; font-size: 0.94em; }
+.markdown-editor__table-selection-label {
+  min-width: 54px;
+  padding: 0 4px;
+  color: var(--leemo-ink-2, #4b5968);
+  font-size: 10.5px;
+  font-weight: 650;
+  white-space: nowrap;
+}
+.markdown-editor__table-tool-spacer {
+  width: 1px;
+  height: 16px;
+  min-width: 1px;
+  flex: none;
+  margin: 0 2px;
+  background: var(--leemo-line, #e1e5e8);
+}
+.markdown-editor__table-scroll {
+  max-width: 100%;
+  overflow-x: hidden;
+  overflow-y: hidden;
+  border: 1px solid var(--leemo-line, #e1e5e8);
+  border-radius: 8px;
+  background: var(--leemo-card, #fff);
+  scrollbar-width: thin;
+}
+.markdown-editor__table-scroll.is-overflowing { overflow-x: auto; }
+.markdown-editor__gfm-table table {
+  width: 100%;
+  min-width: 420px;
+  border-collapse: collapse;
+  table-layout: fixed;
+  font-size: 0.94em;
+}
+.markdown-editor__table-selector-column { width: 20px; }
+.markdown-editor__table-column-handles { height: 16px; }
+.markdown-editor__table-column-handles th {
+  position: relative;
+  height: 16px;
+  border-right: 1px solid transparent;
+  border-bottom: 1px solid transparent;
+  padding: 0;
+  background: transparent;
+  transition: background 100ms ease, border-color 100ms ease;
+}
+.markdown-editor__table-corner,
+.markdown-editor__table-row-handle {
+  width: 20px;
+  min-width: 20px;
+  border-right: 1px solid transparent !important;
+  background: transparent !important;
+  transition: background 100ms ease, border-color 100ms ease;
+}
+.markdown-editor__table-column-handle button,
+.markdown-editor__table-row-handle button,
+.markdown-editor__table-corner button {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--leemo-ink-4, #a4adb6);
+  cursor: pointer;
+  opacity: 0;
+  transition: color 100ms ease, background 100ms ease, opacity 100ms ease;
+}
+.markdown-editor__table-column-handle button svg { width: 11px; height: 11px; }
+.markdown-editor__table-row-handle button svg { width: 10px; height: 10px; }
+.markdown-editor__gfm-table:hover .markdown-editor__table-column-handles th,
+.markdown-editor__gfm-table:focus-within .markdown-editor__table-column-handles th,
+.markdown-editor__gfm-table[data-selection-kind]:not([data-selection-kind="none"]) .markdown-editor__table-column-handles th {
+  border-bottom-color: var(--leemo-line-2, #eceff2);
+  background: color-mix(in srgb, var(--leemo-bg-deep, #f5f6f7) 58%, white);
+}
+.markdown-editor__gfm-table:hover :is(.markdown-editor__table-corner, .markdown-editor__table-row-handle),
+.markdown-editor__gfm-table:focus-within :is(.markdown-editor__table-corner, .markdown-editor__table-row-handle),
+.markdown-editor__gfm-table[data-selection-kind]:not([data-selection-kind="none"]) :is(.markdown-editor__table-corner, .markdown-editor__table-row-handle) {
+  border-right-color: var(--leemo-line-2, #eceff2) !important;
+  background: color-mix(in srgb, var(--leemo-bg-deep, #f5f6f7) 58%, white) !important;
+}
+.markdown-editor__gfm-table:hover :is(.markdown-editor__table-column-handle, .markdown-editor__table-row-handle, .markdown-editor__table-corner) button,
+.markdown-editor__gfm-table:focus-within :is(.markdown-editor__table-column-handle, .markdown-editor__table-row-handle, .markdown-editor__table-corner) button,
+.markdown-editor__gfm-table[data-selection-kind]:not([data-selection-kind="none"]) :is(.markdown-editor__table-column-handle, .markdown-editor__table-row-handle, .markdown-editor__table-corner) button {
+  opacity: 0.48;
+}
+.markdown-editor__table-column-handle button:hover,
+.markdown-editor__table-column-handle button:focus-visible,
+.markdown-editor__table-column-handle button[aria-pressed="true"],
+.markdown-editor__table-row-handle button:hover,
+.markdown-editor__table-row-handle button:focus-visible,
+.markdown-editor__table-row-handle button[aria-pressed="true"],
+.markdown-editor__table-corner button:hover,
+.markdown-editor__table-corner button:focus-visible,
+.markdown-editor__table-corner button[aria-pressed="true"] {
+  outline: none;
+  background: var(--leemo-amber-soft, #fff4e8);
+  color: var(--leemo-amber-strong, #c65f00);
+  opacity: 1;
+}
+.markdown-editor__table-row-handle--header { height: 36px; }
+.markdown-editor__table-corner-icon {
+  display: grid;
+  width: 9px;
+  height: 9px;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 1px;
+}
+.markdown-editor__table-corner-icon i { border: 1px solid currentColor; border-radius: 1px; }
+.markdown-editor__table-resizer {
+  position: absolute;
+  z-index: 2;
+  top: 0;
+  right: -4px;
+  width: 8px;
+  height: 16px;
+  cursor: col-resize;
+  touch-action: none;
+}
+.markdown-editor__table-resizer::after {
+  position: absolute;
+  top: 3px;
+  bottom: 3px;
+  left: 3px;
+  width: 1px;
+  border-radius: 1px;
+  background: transparent;
+  content: "";
+}
+.markdown-editor__table-resizer:hover::after { background: var(--leemo-amber, #e8770b); }
 .markdown-editor__gfm-table th,
 .markdown-editor__gfm-table td { border-right: 1px solid var(--leemo-line-2, #eceff2); border-bottom: 1px solid var(--leemo-line-2, #eceff2); padding: 0; }
 .markdown-editor__gfm-table th:last-child,
 .markdown-editor__gfm-table td:last-child { border-right: 0; }
 .markdown-editor__gfm-table tbody tr:last-child td { border-bottom: 0; }
-.markdown-editor__gfm-table th { background: color-mix(in srgb, var(--leemo-bg-deep, #f5f6f7) 72%, white); }
+.markdown-editor__gfm-table th.markdown-editor__table-data-header { background: color-mix(in srgb, var(--leemo-bg-deep, #f5f6f7) 72%, white); }
+.markdown-editor__gfm-table th.is-selected,
+.markdown-editor__gfm-table td.is-selected { background: color-mix(in srgb, var(--leemo-amber-soft, #fff4e8) 74%, white); }
 .markdown-editor__gfm-table input {
   box-sizing: border-box;
   width: 100%;
@@ -358,7 +664,23 @@
   font: inherit;
 }
 .markdown-editor__gfm-table th input { font-weight: 650; }
-.markdown-editor__gfm-table input:focus { background: var(--leemo-amber-soft, #fff4e8); box-shadow: inset 0 0 0 1px var(--leemo-amber-line, #f1b979); }
+.markdown-editor__gfm-table input:focus { position: relative; z-index: 1; background: var(--leemo-card, #fff); box-shadow: inset 0 0 0 1px var(--leemo-amber-line, #f1b979), 0 0 0 2px color-mix(in srgb, var(--leemo-amber-soft, #fff4e8) 72%, transparent); }
+
+@container (max-width: 620px) {
+  .markdown-editor__gfm-table[data-compact-fit="true"] table {
+    width: 100% !important;
+    min-width: 100%;
+  }
+  .markdown-editor__gfm-table[data-compact-fit="true"] col:not(.markdown-editor__table-selector-column) {
+    width: auto !important;
+  }
+  .markdown-editor__table-tools {
+    max-width: calc(100% - 12px);
+  }
+  .markdown-editor__table-tools button span { display: none; }
+  .markdown-editor__table-tools button { width: 26px; justify-content: center; padding: 0; }
+  .markdown-editor__table-selection-label { min-width: 44px; }
+}
 
 .markdown-editor__status {
   display: flex;

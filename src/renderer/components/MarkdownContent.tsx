@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, useState, type MouseEvent, type ReactNode } from "react";
-import { Check, Copy } from "lucide-react";
+import { Check, CircleAlert, Copy, Info, Lightbulb, OctagonAlert, TriangleAlert } from "lucide-react";
 import { Highlight, themes, type Language } from "prism-react-renderer";
 import ReactMarkdown, { defaultUrlTransform } from "react-markdown";
 import rehypeKatex from "rehype-katex";
@@ -7,6 +7,7 @@ import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
 import "katex/dist/katex.min.css";
 import { noteIdFromReferenceHref } from "../notes/note-references";
+import { normalizeLegacyMarkdown } from "./markdown-normalization";
 
 export type MarkdownVariant = "answer" | "process" | "preview";
 
@@ -23,6 +24,53 @@ const HEADING_CLASSES: Record<MarkdownVariant, [string, string, string]> = {
 };
 
 const CALLOUTS = new Set(["note", "tip", "important", "warning", "caution"]);
+const LEEMO_TABLE_METADATA = /^<!--\s*leemo-table:\s*widths=[\d.,\s]+\s*-->$/iu;
+
+interface MarkdownAstNode {
+  type?: string;
+  value?: string;
+  data?: Record<string, unknown>;
+  children?: MarkdownAstNode[];
+}
+
+/** Keep Leemo's table sizing contract in Markdown without exposing it as document prose. */
+function remarkLeemoMetadata() {
+  return (tree: MarkdownAstNode) => {
+    const strip = (node: MarkdownAstNode): void => {
+      if (!node.children) return;
+      node.children = node.children.filter((child) => !(
+        child.type === "html" && LEEMO_TABLE_METADATA.test(child.value?.trim() ?? "")
+      ));
+      node.children.forEach(strip);
+    };
+    strip(tree);
+  };
+}
+
+/** Render the one explicitly supported HTML extension without enabling raw HTML. */
+function remarkFeishuUnderline() {
+  return (tree: MarkdownAstNode) => {
+    const transform = (node: MarkdownAstNode): void => {
+      const children = node.children;
+      if (!children) return;
+      for (let index = 0; index < children.length; index += 1) {
+        if (children[index]?.type !== "html" || children[index]?.value?.trim().toLowerCase() !== "<u>") continue;
+        const closeIndex = children.findIndex((child, candidate) => candidate > index
+          && child.type === "html"
+          && child.value?.trim().toLowerCase() === "</u>");
+        if (closeIndex < 0) continue;
+        const inner = children.slice(index + 1, closeIndex);
+        children.splice(index, closeIndex - index + 1, {
+          type: "emphasis",
+          data: { hName: "u" },
+          children: inner,
+        });
+      }
+      children.forEach(transform);
+    };
+    transform(tree);
+  };
+}
 
 /** Turn GitHub-style callout blockquotes into semantic asides without enabling raw HTML. */
 function remarkCallouts() {
@@ -39,6 +87,14 @@ function remarkCallouts() {
       const text = first?.type === "paragraph" ? first.children?.[0] : undefined;
       const match = text?.type === "text" ? /^\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\]\s*/i.exec(text.value ?? "") : null;
       if (!match || !text?.value) continue;
+      const remaining = (node.children ?? [])
+        .flatMap((child) => child.children ?? [])
+        .map((child) => child.value ?? "")
+        .join("")
+        .replace(match[0], "")
+        .replace(/^>\s*$/u, "")
+        .trim();
+      if (!remaining) continue;
       const type = match[1].toLowerCase();
       text.value = text.value.slice(match[0].length);
       node.data = {
@@ -161,14 +217,22 @@ function Callout({ type, children }: { type: string; children: ReactNode }) {
     warning: "注意",
     caution: "警告",
   };
+  const icons: Record<string, typeof Info> = {
+    note: Info,
+    tip: Lightbulb,
+    important: CircleAlert,
+    warning: TriangleAlert,
+    caution: OctagonAlert,
+  };
+  const Icon = icons[safeType] ?? Info;
   return (
     <aside
       data-testid="markdown-callout"
       data-callout={safeType}
-      className="mb-[0.75em] rounded-[7px] border border-[var(--leemo-amber-line)] bg-[var(--leemo-amber-soft)] px-3 py-2 text-[var(--leemo-ink-2)] last:mb-0"
+      className="mb-[0.75em] flex items-start gap-3 rounded-[7px] border border-[var(--leemo-amber-line)] bg-[var(--leemo-amber-soft)] px-3 py-2 text-[var(--leemo-ink-2)] last:mb-0"
     >
-      <p className="mb-1 text-[10.5px] font-semibold uppercase tracking-[0.08em] text-[var(--leemo-amber-ink)]">{labels[safeType]}</p>
-      {children}
+      <Icon className="mt-0.5 h-4 w-4 shrink-0" aria-label={labels[safeType]} />
+      <div className="min-w-0 flex-1 [&>p:first-child]:mt-0 [&>p:last-child]:mb-0">{children}</div>
     </aside>
   );
 }
@@ -189,7 +253,7 @@ export default function MarkdownContent({
   onOpenNoteReference?: (noteId: string) => void;
 }) {
   const headings = HEADING_CLASSES[variant];
-  const { frontmatter, body } = splitFrontmatter(text);
+  const { frontmatter, body } = splitFrontmatter(normalizeLegacyMarkdown(text));
 
   return (
     <div
@@ -204,7 +268,7 @@ export default function MarkdownContent({
         </details>
       )}
       <ReactMarkdown
-        remarkPlugins={[remarkGfm, remarkMath, remarkCallouts]}
+        remarkPlugins={[remarkGfm, remarkMath, remarkLeemoMetadata, remarkFeishuUnderline, remarkCallouts]}
         rehypePlugins={[rehypeKatex]}
         urlTransform={(url) => url.startsWith("leemo-note://") ? url : defaultUrlTransform(url)}
         components={{
@@ -213,11 +277,11 @@ export default function MarkdownContent({
           h2: ({ children }) => <h2 className={`mb-[0.5em] mt-[0.9em] first:mt-0 font-semibold leading-[1.5] text-[var(--leemo-ink)] ${headings[1]}`}>{children}</h2>,
           h3: ({ children }) => <h3 className={`mb-[0.45em] mt-[0.8em] first:mt-0 font-semibold leading-[1.55] text-[var(--leemo-ink)] ${headings[2]}`}>{children}</h3>,
           ul: ({ children, className: listClassName }) => (
-            <ul className={`mb-[0.65em] list-disc space-y-[0.2em] pl-5 last:mb-0 ${listClassName ?? ""}`}>{children}</ul>
+            <ul className={`mb-[0.65em] list-disc space-y-[0.2em] pl-5 last:mb-0 [&.contains-task-list]:list-none [&.contains-task-list]:pl-0 ${listClassName ?? ""}`}>{children}</ul>
           ),
           ol: ({ children }) => <ol className="mb-[0.65em] list-decimal space-y-[0.2em] pl-5 last:mb-0">{children}</ol>,
           li: ({ children, className: itemClassName }) => (
-            <li className={`pl-0.5 marker:text-[var(--leemo-ink-3)] ${itemClassName ?? ""}`}>{children}</li>
+            <li className={`pl-0.5 marker:text-[var(--leemo-ink-3)] [&.task-list-item]:list-none ${itemClassName ?? ""}`}>{children}</li>
           ),
           blockquote: ({ children }) => (
             <blockquote className="mb-[0.7em] border-l-2 border-[var(--leemo-amber-line)] pl-3 text-[var(--leemo-ink-2)] last:mb-0">{children}</blockquote>
@@ -226,6 +290,7 @@ export default function MarkdownContent({
             const calloutProps = props as Record<string, unknown>;
             return <Callout type={String(calloutProps["data-callout"] ?? "note")}>{children}</Callout>;
           },
+          u: ({ children }) => <u className="decoration-[var(--leemo-amber-line)] decoration-1 underline-offset-[3px]">{children}</u>,
           code: ({ children, className: codeClassName }) => {
             const code = String(children);
             const language = /language-([^\s]+)/.exec(codeClassName ?? "")?.[1] ?? "";
