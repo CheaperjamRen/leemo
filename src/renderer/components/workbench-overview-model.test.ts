@@ -276,6 +276,129 @@ describe("deriveConversationContinuity", () => {
     expect(snapshot.artifacts).toEqual([]);
     expect(snapshot.updatedAt).toBe(100);
   });
+
+  it("ignores a stale pending interaction when another run is actively owned", () => {
+    const snapshot = deriveConversationContinuity({
+      conversationId: "conversation-current-run",
+      title: "当前运行",
+      timeline: [
+        { kind: "plan", id: "plan-stale", runId: "run-stale", toolUseId: "plan-stale-tool", todos: [
+          { text: "旧轮等待", status: "active", taskId: "task-stale" },
+        ] },
+        { kind: "text", id: "current-user", runId: "run-current", role: "user", text: "开始新的运行。", streaming: false, createdAt: 200 },
+        { kind: "plan", id: "plan-current", runId: "run-current", toolUseId: "plan-current-tool", todos: [
+          { text: "执行新一轮", status: "active", taskId: "task-current" },
+        ] },
+      ],
+      activeRunId: "run-current",
+      pending: {
+        interaction: question({
+          conversationId: "conversation-current-run",
+          runId: "run-stale",
+          receivedAt: 999,
+        }),
+        summary: "旧轮问题不应覆盖新运行",
+      },
+      artifacts: [],
+    });
+
+    expect(snapshot.state).toBe("running");
+    expect(snapshot.currentPlan?.runId).toBe("run-current");
+    expect(snapshot.blockers).not.toContainEqual({ text: "旧轮问题不应覆盖新运行", kind: "waiting" });
+    expect(snapshot.updatedAt).toBe(200);
+  });
+
+  it.each(["failed", "timeout", "permission-denied"] as const)(
+    "treats the explicit %s terminal outcome as failure even when isError is false",
+    (outcome) => {
+      const snapshot = deriveConversationContinuity({
+        conversationId: `conversation-${outcome}`,
+        title: outcome,
+        timeline: [{
+          kind: "result",
+          id: `result-${outcome}`,
+          runId: `run-${outcome}`,
+          isError: false,
+          interrupted: false,
+          outcome,
+          finalText: "陈旧的成功文案",
+          pathAudit: { claimed: [] },
+          createdAt: 100,
+        }],
+        activeRunId: null,
+        artifacts: [],
+      });
+
+      expect(snapshot.state).toBe("blocked");
+      expect(snapshot.blockers).toContainEqual({ text: "上次运行失败", kind: "failure" });
+    },
+  );
+
+  it("keeps cancellation separate from terminal failure", () => {
+    const snapshot = deriveConversationContinuity({
+      conversationId: "conversation-cancelled",
+      title: "已取消",
+      timeline: [{
+        kind: "result",
+        id: "result-cancelled",
+        runId: "run-cancelled",
+        isError: true,
+        interrupted: true,
+        outcome: "cancelled",
+        finalText: "",
+        pathAudit: { claimed: [] },
+        createdAt: 100,
+      }],
+      activeRunId: null,
+      artifacts: [],
+    });
+
+    expect(snapshot.state).toBe("recent");
+    expect(snapshot.blockers).toEqual([]);
+  });
+
+  it("excludes foreign scoped overview runs from evidence and recency", () => {
+    const snapshot = deriveConversationContinuity({
+      conversationId: "conversation-evidence-local",
+      title: "证据边界",
+      timeline: [
+        {
+          kind: "overview",
+          id: "overview-local",
+          runId: "run-local",
+          toolUseId: "overview-local-tool",
+          createdAt: 100,
+          overview: semanticOverview("conversation-evidence-local", "run-local", 100, {
+            completedHighlights: [{
+              evidenceId: "foreign-confirmation-claim",
+              text: "外来确认不能验证本地完成",
+              basisEventIds: ["confirmation-foreign"],
+            }],
+          }),
+        },
+        {
+          kind: "overview",
+          id: "overview-foreign",
+          runId: "run-foreign",
+          toolUseId: "overview-foreign-tool",
+          createdAt: 1_000,
+          overview: semanticOverview("conversation-foreign", "run-foreign", 1_000),
+        },
+      ],
+      activeRunId: null,
+      resolvedInteractions: [{
+        kind: "question",
+        id: "confirmation-foreign",
+        runId: "run-foreign",
+        questions: [{ question: "确认？", options: [{ label: "确认" }] }],
+        items: [{ selected: ["确认"] }],
+      }],
+      artifacts: [],
+    });
+
+    expect(snapshot.completed).not.toContainEqual(expect.objectContaining({ evidenceId: "foreign-confirmation-claim" }));
+    expect(snapshot.updatedAt).toBe(100);
+  });
 });
 
 describe("deriveNotebookContinuity", () => {
@@ -390,5 +513,54 @@ describe("deriveNotebookContinuity", () => {
       expect.objectContaining({ id: "artifact-own", sourceConversationId: "conversation-artifact" }),
     ]);
     expect(notebook.conversations.some((row) => row.conversationId === "conversation-old")).toBe(false);
+  });
+
+  it("does not let a foreign-only overview displace the fifth truthful row", () => {
+    const recentConversation = (conversationId: string, updatedAt: number) => ({
+      conversationId,
+      title: conversationId,
+      timeline: [{
+        kind: "text" as const,
+        id: `user-${conversationId}`,
+        runId: `run-${conversationId}`,
+        role: "user" as const,
+        text: conversationId,
+        streaming: false,
+        createdAt: updatedAt,
+      }],
+      activeRunId: null,
+      artifacts: [],
+    });
+    const notebook = deriveNotebookContinuity({
+      conversations: [
+        recentConversation("local-1", 500),
+        recentConversation("local-2", 400),
+        recentConversation("local-3", 300),
+        recentConversation("local-4", 200),
+        recentConversation("local-5", 100),
+        {
+          conversationId: "foreign-only",
+          title: "不应出现",
+          timeline: [{
+            kind: "overview",
+            id: "foreign-only-overview",
+            runId: "run-foreign-only",
+            toolUseId: "foreign-only-tool",
+            createdAt: 1_000,
+            overview: semanticOverview("actual-owner", "run-foreign-only", 1_000),
+          }],
+          activeRunId: null,
+          artifacts: [],
+        },
+      ],
+    });
+
+    expect(notebook.conversations.map((row) => row.conversationId)).toEqual([
+      "local-1",
+      "local-2",
+      "local-3",
+      "local-4",
+      "local-5",
+    ]);
   });
 });

@@ -57,6 +57,12 @@ export interface NotebookContinuityInput {
 type OverviewItem = Extract<TimelineItem, { kind: "overview" }>;
 type PlanItem = Extract<TimelineItem, { kind: "plan" }>;
 
+function scopedTimeline(input: ConversationContinuityInput): readonly TimelineItem[] {
+  return input.timeline.filter((item) => item.kind !== "overview"
+    || item.overview.scopeConversationId === undefined
+    || item.overview.scopeConversationId === input.conversationId);
+}
+
 function nonEmpty(value: string | undefined): string | undefined {
   const text = value?.trim();
   return text || undefined;
@@ -107,10 +113,18 @@ function isSuccessfulTool(
     && tool.outcome !== "interrupted";
 }
 
+function isCancelledResult(item: Extract<TimelineItem, { kind: "result" }>): boolean {
+  return item.interrupted || item.outcome === "cancelled";
+}
+
+function isFailedResult(item: Extract<TimelineItem, { kind: "result" }>): boolean {
+  if (isCancelledResult(item)) return false;
+  if (item.outcome !== undefined) return item.outcome !== "completed";
+  return item.isError;
+}
+
 function isSuccessfulResult(item: Extract<TimelineItem, { kind: "result" }>): boolean {
-  return !item.isError
-    && !item.interrupted
-    && (item.outcome === undefined || item.outcome === "completed");
+  return !isCancelledResult(item) && !isFailedResult(item);
 }
 
 function finalTaskStates(timeline: readonly TimelineItem[]): Map<string, { text: string; status: PlanStepStatus }> {
@@ -133,13 +147,14 @@ function isUserConfirmedResolution(interaction: ResolvedInteraction): boolean {
 
 function realEvidenceIds(
   input: ConversationContinuityInput,
+  timeline: readonly TimelineItem[],
   artifacts: readonly ArtifactEntry[],
   taskStates: ReadonlyMap<string, { text: string; status: PlanStepStatus }>,
 ): Set<string> {
   const ids = new Set<string>();
   const conversationRunIds = new Set<string>();
 
-  for (const item of input.timeline) {
+  for (const item of timeline) {
     if (item.kind !== "compact") conversationRunIds.add(item.runId);
     if (item.kind === "tool" && isSuccessfulTool(item)) ids.add(item.toolUseId);
     if (item.kind === "activity") {
@@ -201,7 +216,7 @@ function failureBlocker(timeline: readonly TimelineItem[], runId: string | undef
   for (let index = timeline.length - 1; index >= 0; index -= 1) {
     const item = timeline[index];
     if (item.kind === "compact" || item.runId !== runId) continue;
-    if (item.kind === "result") return item.isError ? "上次运行失败" : undefined;
+    if (item.kind === "result") return isFailedResult(item) ? "上次运行失败" : undefined;
     if (item.kind === "error") return nonEmpty(item.message) ?? "上次运行失败";
     if (item.kind === "retry" && item.state === "failed") return nonEmpty(item.summary) ?? "重试失败";
   }
@@ -260,23 +275,31 @@ function objectiveFrom(
   return legacyTitle ? { text: legacyTitle, source: "legacy-title" } : undefined;
 }
 
-function scopedPending(input: ConversationContinuityInput): PendingContinuitySummary | undefined {
-  return input.pending?.interaction.conversationId === input.conversationId ? input.pending : undefined;
+function scopedPending(
+  input: ConversationContinuityInput,
+  currentRunId: string | undefined,
+): PendingContinuitySummary | undefined {
+  return input.pending?.interaction.conversationId === input.conversationId
+    && input.pending.interaction.runId === currentRunId
+    ? input.pending
+    : undefined;
 }
 
 export function deriveConversationContinuity(
   input: ConversationContinuityInput,
 ): ConversationContinuitySnapshot {
-  const overview = latestOverview(input.conversationId, input.timeline);
+  const timeline = scopedTimeline(input);
+  const overview = latestOverview(input.conversationId, timeline);
   const semantic = overview?.overview;
-  const pending = scopedPending(input);
+  const selectedRunId = input.activeRunId ?? lastRunId(timeline) ?? input.pending?.interaction.runId;
+  const pending = scopedPending(input, selectedRunId);
+  const currentRunId = input.activeRunId ?? pending?.interaction.runId;
   const artifacts = input.artifacts
     .filter((entry) => entry.sourceConversationId === input.conversationId)
     .sort((left, right) => right.createdAt - left.createdAt || left.id.localeCompare(right.id));
-  const taskStates = finalTaskStates(input.timeline);
-  const evidenceIds = realEvidenceIds(input, artifacts, taskStates);
-  const currentRunId = pending?.interaction.runId ?? input.activeRunId ?? undefined;
-  const currentPlan = planView(latestPlanForRun(input.timeline, currentRunId));
+  const taskStates = finalTaskStates(timeline);
+  const evidenceIds = realEvidenceIds(input, timeline, artifacts, taskStates);
+  const currentPlan = planView(latestPlanForRun(timeline, currentRunId));
   const semanticNext = semantic?.nextKnown?.map(nonEmpty).filter((text): text is string => text !== undefined) ?? [];
   const planNext = currentPlan?.steps
     .filter((step) => step.status !== "done")
@@ -285,7 +308,7 @@ export function deriveConversationContinuity(
   const nextKnown = (semanticNext.length > 0 ? semanticNext : planNext)
     .map((text) => ({ text, certainty: "known" as const }));
   const semanticBlockers = semantic?.blockers?.map(nonEmpty).filter((text): text is string => text !== undefined) ?? [];
-  const failure = failureBlocker(input.timeline, currentRunId ?? lastRunId(input.timeline));
+  const failure = failureBlocker(timeline, currentRunId ?? lastRunId(timeline));
   const blockers: ConversationContinuitySnapshot["blockers"] = semanticBlockers
     .map((text) => ({ text, kind: "semantic" as const }));
   const pendingSummary = nonEmpty(pending?.summary);
@@ -294,7 +317,7 @@ export function deriveConversationContinuity(
   const objective = objectiveFrom(overview, input.title);
   const currentPhase = nonEmpty(semantic?.currentPhase ?? semantic?.currentPosition ?? semantic?.summary);
   const currentFocus = nonEmpty(semantic?.currentFocus ?? semantic?.focus);
-  const updatedAt = latestMeaningfulTimestamp(input.timeline, pending, artifacts);
+  const updatedAt = latestMeaningfulTimestamp(timeline, pending, artifacts);
 
   return {
     conversationId: input.conversationId,
@@ -314,9 +337,11 @@ export function deriveConversationContinuity(
 }
 
 function hasMeaningfulContinuity(input: ConversationContinuityInput): boolean {
-  if (scopedPending(input)) return true;
+  const timeline = scopedTimeline(input);
+  const currentRunId = input.activeRunId ?? lastRunId(timeline) ?? input.pending?.interaction.runId;
+  if (scopedPending(input, currentRunId)) return true;
   if (input.artifacts.some((entry) => entry.sourceConversationId === input.conversationId)) return true;
-  return input.timeline.some((item) =>
+  return timeline.some((item) =>
     item.kind === "overview"
     || item.kind === "plan"
     || item.kind === "tool"
