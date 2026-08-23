@@ -1605,6 +1605,20 @@ describe("conversations store", () => {
       wikiEntries: wikiEntriesStore,
     });
     const conversationId = await store.getState().createConversation({ source: "workbench" });
+    store.setState((state) => ({
+      byId: {
+        ...state.byId,
+        [conversationId]: {
+          ...state.byId[conversationId],
+          goal: {
+            text: "持续完成整个项目",
+            status: "active",
+            createdAt: 1,
+            updatedAt: 1,
+          },
+        },
+      },
+    }));
 
     await store.getState().refreshWorkOverview(conversationId);
 
@@ -1615,6 +1629,7 @@ describe("conversations store", () => {
       sourceMessageId: "u0",
       allowSubagents: false,
     });
+    expect(sends[0].request).not.toHaveProperty("goalText");
     const prompt = (sends[0].request as { prompt: string }).prompt;
     expect(prompt.length).toBeLessThanOrEqual(800);
     expect(prompt).toMatch(/manual-refresh/);
@@ -1660,6 +1675,7 @@ describe("conversations store", () => {
       prompt,
       allowSubagents: false,
     });
+    expect(retriedSends[1].request).not.toHaveProperty("goalText");
     expect(store.getState().timelines[conversationId].filter((item) => item.kind === "text" && item.role === "user").at(-1))
       .toMatchObject({ text: "更新工作概览" });
   });

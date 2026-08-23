@@ -66,6 +66,10 @@ export interface PendingSendDraft {
   modelId: string;
   allowSubagents?: boolean;
   permissionMode?: PermissionMode;
+  /** Internal maintenance turns such as overview refreshes must not inherit an
+   * active durable goal. Preserve this flag across retry so a failed metadata
+   * refresh cannot turn into goal-driven work on the second attempt. */
+  suppressGoal?: boolean;
   /** Optional display-safe text for app-generated turns. The full prompt still
    * reaches the host and remains available for retry, while the timeline keeps
    * the user's mental model concise. */
@@ -78,6 +82,7 @@ export interface ConversationTurnOptions {
   displayText?: string;
   noteReferences?: string[];
   permissionMode?: PermissionMode;
+  suppressGoal?: boolean;
 }
 
 /** A complete next-round turn waiting behind the current run. This queue is
@@ -795,6 +800,9 @@ export function createConversationsStore(
           ...(turnOptions?.permissionMode !== undefined
             ? { permissionMode: turnOptions.permissionMode }
             : {}),
+          ...(turnOptions?.suppressGoal !== undefined
+            ? { suppressGoal: turnOptions.suppressGoal }
+            : {}),
           ...(turnOptions?.displayText !== undefined
             ? { displayText: turnOptions.displayText }
             : {}),
@@ -811,7 +819,9 @@ export function createConversationsStore(
           pendingSends: { ...current.pendingSends, [conversationId]: pendingDraft },
         }));
         try {
-          const goalText = meta.goal?.status === "active" ? meta.goal.text.trim() : "";
+          const goalText = !turnOptions?.suppressGoal && meta.goal?.status === "active"
+            ? meta.goal.text.trim()
+            : "";
           await client.invoke("bridge:send", {
             conversationId,
             prompt: text,
@@ -869,6 +879,7 @@ export function createConversationsStore(
       return get().send(conversationId, WORK_OVERVIEW_MANUAL_REFRESH_PROMPT, [], [], {
         displayText: "更新工作概览",
         allowSubagents: false,
+        suppressGoal: true,
       });
     },
 
@@ -1080,13 +1091,18 @@ export function createConversationsStore(
           draft.text,
           draft.attachments,
           draft.workspaceFiles,
-          draft.allowSubagents === undefined && draft.displayText === undefined && draft.noteReferences === undefined && draft.permissionMode === undefined
+          draft.allowSubagents === undefined
+            && draft.displayText === undefined
+            && draft.noteReferences === undefined
+            && draft.permissionMode === undefined
+            && draft.suppressGoal === undefined
             ? undefined
             : {
                 ...(draft.allowSubagents !== undefined ? { allowSubagents: draft.allowSubagents } : {}),
                 ...(draft.displayText !== undefined ? { displayText: draft.displayText } : {}),
                 ...(draft.noteReferences !== undefined ? { noteReferences: draft.noteReferences } : {}),
                 ...(draft.permissionMode !== undefined ? { permissionMode: draft.permissionMode } : {}),
+                ...(draft.suppressGoal !== undefined ? { suppressGoal: draft.suppressGoal } : {}),
               },
         );
       } catch (error) {

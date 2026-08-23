@@ -58,7 +58,12 @@ interface WorkbenchOverviewProps {
   activeRunInProgress?: boolean;
 }
 
-type RefreshState = { kind: "idle" | "pending" | "success" | "error"; message: string };
+type RefreshState = {
+  kind: "idle" | "pending" | "success" | "error";
+  message: string;
+  baselineRevision?: number;
+  sawRun?: boolean;
+};
 
 function updatedTime(value: number | undefined): string {
   if (!value || !Number.isFinite(value)) return "";
@@ -324,8 +329,9 @@ export function WorkbenchOverview({
   const [userFixed, setUserFixed] = useState(false);
   const [refreshState, setRefreshState] = useState<RefreshState>({ kind: "idle", message: "" });
   const sourceOpener = onOpenConversation ?? onOpenAttention;
+  const refreshRunInProgress = activeRunInProgress ?? activeConversation?.state === "running";
   const refreshDisabled = !activeConversation
-    || (activeRunInProgress ?? activeConversation.state === "running")
+    || refreshRunInProgress
     || refreshState.kind === "pending"
     || !onRequestRefresh;
 
@@ -346,6 +352,22 @@ export function WorkbenchOverview({
       refreshRequestRef.current += 1;
     };
   }, [activeConversationId]);
+
+  useEffect(() => {
+    setRefreshState((current) => {
+      if (current.kind !== "pending") return current;
+      const revision = activeConversation?.overviewRevision;
+      const hasNewSnapshot = revision !== undefined && revision !== current.baselineRevision;
+      if (hasNewSnapshot) return { kind: "success", message: "概览已更新" };
+      if (refreshRunInProgress && !current.sawRun) {
+        return { ...current, message: "正在更新概览…", sawRun: true };
+      }
+      if (!refreshRunInProgress && current.sawRun) {
+        return { kind: "error", message: "本次未生成新概览" };
+      }
+      return current;
+    });
+  }, [activeConversation?.overviewRevision, refreshRunInProgress]);
 
   const beginEdit = () => {
     if (!activeConversation || !onSaveCorrection) return;
@@ -393,12 +415,19 @@ export function WorkbenchOverview({
     const requestId = ++refreshRequestRef.current;
     const requestIsCurrent = () => activeConversationIdRef.current === requestConversationId
       && refreshRequestRef.current === requestId;
-    setRefreshState({ kind: "pending", message: "正在更新概览…" });
+    setRefreshState({
+      kind: "pending",
+      message: "正在更新概览…",
+      baselineRevision: activeConversation?.overviewRevision,
+      sawRun: refreshRunInProgress,
+    });
     setMenuOpen(false);
     try {
       await onRequestRefresh();
       if (!requestIsCurrent()) return;
-      setRefreshState({ kind: "success", message: "概览已更新" });
+      setRefreshState((current) => current.kind === "pending"
+        ? { ...current, message: current.sawRun ? "正在更新概览…" : "已开始更新" }
+        : current);
     } catch (error) {
       if (!requestIsCurrent()) return;
       setRefreshState({ kind: "error", message: error instanceof Error ? error.message : "概览暂时无法更新" });

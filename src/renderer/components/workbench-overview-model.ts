@@ -28,6 +28,10 @@ export interface ConversationContinuitySnapshot {
   blockers: Array<{ text: string; kind: "semantic" | "waiting" | "failure" }>;
   completed: WorkOverviewEvidence[];
   artifacts: ArtifactEntry[];
+  /** Exact semantic overview revision. Unlike `updatedAt`, this changes only
+   * after the overview tool writes a new snapshot, so UI must use it to confirm
+   * a manual refresh really completed. */
+  overviewRevision?: number;
   updatedAt?: number;
 }
 
@@ -332,6 +336,7 @@ export function deriveConversationContinuity(
     blockers,
     completed: verifiedCompleted(overview, evidenceIds, taskStates),
     artifacts,
+    ...(semantic?.revision !== undefined ? { overviewRevision: semantic.revision } : {}),
     ...(updatedAt !== undefined ? { updatedAt } : {}),
   };
 }

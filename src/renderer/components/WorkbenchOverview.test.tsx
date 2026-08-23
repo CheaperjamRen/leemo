@@ -37,6 +37,13 @@ function notebook(rows: ConversationContinuitySnapshot[] = []): NotebookContinui
   return { conversations: rows };
 }
 
+function withOverviewRevision(
+  snapshot: ConversationContinuitySnapshot,
+  overviewRevision: number,
+): ConversationContinuitySnapshot {
+  return { ...snapshot, overviewRevision } as ConversationContinuitySnapshot;
+}
+
 function deferred<T = void>() {
   let resolve!: (value: T | PromiseLike<T>) => void;
   let reject!: (reason?: unknown) => void;
@@ -118,12 +125,50 @@ describe("WorkbenchOverview", () => {
     expect(screen.queryByRole("button", { name: "更新概览" })).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "概览操作" }));
     expect(screen.getByRole("button", { name: "更新概览" })).toBeDisabled();
-    const idle = conversation({ state: "recent", currentPlan: undefined });
+    const idle = withOverviewRevision(conversation({ state: "recent", currentPlan: undefined }), 4);
     rerender(<WorkbenchOverview model={notebook([idle])} conversationModel={notebook([idle])} onRequestRefresh={refresh} />);
     await user.click(screen.getByRole("button", { name: "更新概览" }));
     expect(refresh).toHaveBeenCalledTimes(1);
+    expect(await screen.findByRole("status")).toHaveTextContent("已开始更新");
+    expect(screen.getByRole("status")).not.toHaveTextContent("概览已更新");
+    const refreshed = withOverviewRevision({ ...idle, updatedAt: idle.updatedAt! + 1 }, 5);
+    rerender(<WorkbenchOverview model={notebook([refreshed])} conversationModel={notebook([refreshed])} onRequestRefresh={refresh} />);
     expect(await screen.findByRole("status")).toHaveTextContent("概览已更新");
     expect(screen.getByRole("status")).toHaveClass("text-xs");
+  });
+
+  it("reports a refresh that finishes without a new overview snapshot as incomplete", async () => {
+    const user = userEvent.setup();
+    const refresh = vi.fn().mockResolvedValue(undefined);
+    const idle = withOverviewRevision(conversation({ state: "recent", currentPlan: undefined }), 7);
+    const { rerender } = render(
+      <WorkbenchOverview model={notebook([idle])} conversationModel={notebook([idle])} onRequestRefresh={refresh} />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "概览操作" }));
+    await user.click(screen.getByRole("button", { name: "更新概览" }));
+    expect(await screen.findByRole("status")).toHaveTextContent("已开始更新");
+
+    const running = withOverviewRevision({ ...idle, state: "running" }, 7);
+    rerender(
+      <WorkbenchOverview
+        model={notebook([running])}
+        conversationModel={notebook([running])}
+        onRequestRefresh={refresh}
+        activeRunInProgress
+      />,
+    );
+    expect(screen.getByRole("status")).toHaveTextContent("正在更新概览…");
+
+    rerender(
+      <WorkbenchOverview
+        model={notebook([idle])}
+        conversationModel={notebook([idle])}
+        onRequestRefresh={refresh}
+        activeRunInProgress={false}
+      />,
+    );
+    expect(await screen.findByRole("status")).toHaveTextContent("本次未生成新概览");
   });
 
   it("shows refresh errors as the same quiet status line rather than a card", async () => {
@@ -282,8 +327,8 @@ describe("WorkbenchOverview", () => {
     const user = userEvent.setup();
     const refreshA = deferred();
     const refreshB = deferred();
-    const a = conversation({ conversationId: "conversation-a", state: "recent", currentPlan: undefined });
-    const b = conversation({ conversationId: "conversation-b", state: "recent", currentPlan: undefined });
+    const a = withOverviewRevision(conversation({ conversationId: "conversation-a", state: "recent", currentPlan: undefined }), 1);
+    const b = withOverviewRevision(conversation({ conversationId: "conversation-b", state: "recent", currentPlan: undefined }), 8);
     const { rerender } = render(<WorkbenchOverview model={notebook([a, b])} conversationModel={notebook([a])} onRequestRefresh={() => refreshA.promise} />);
 
     await user.click(screen.getByRole("button", { name: "概览操作" }));
@@ -295,6 +340,9 @@ describe("WorkbenchOverview", () => {
     await act(async () => refreshA.resolve());
     expect(screen.getByRole("status")).toHaveTextContent("正在更新概览…");
     await act(async () => refreshB.resolve());
+    expect(screen.getByRole("status")).toHaveTextContent("已开始更新");
+    const refreshedB = withOverviewRevision({ ...b, updatedAt: b.updatedAt! + 1 }, 9);
+    rerender(<WorkbenchOverview model={notebook([a, refreshedB])} conversationModel={notebook([refreshedB])} onRequestRefresh={() => refreshB.promise} />);
     expect(screen.getByRole("status")).toHaveTextContent("概览已更新");
   });
 });
