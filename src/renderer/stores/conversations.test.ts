@@ -1790,7 +1790,7 @@ describe("conversations store", () => {
     });
   });
 
-  it("rejects active local corrections and keeps a deferred persistence failure out of visible state", async () => {
+  it("rejects active or conflicted local corrections and repairs persistence without ghost revisions", async () => {
     const bridge = makeClient(["correct-clear"]);
     const persistence = {
       saveConversation: vi.fn(async (
@@ -1875,17 +1875,65 @@ describe("conversations store", () => {
     expect((store.getState().timelines[conversationId].at(-1) as Extract<TimelineItem, { kind: "overview" }>).overview.objective)
       .toBeUndefined();
 
+    let resolveCandidateSave!: () => void;
+    persistence.saveConversation.mockImplementationOnce(() => new Promise<void>((resolve) => {
+      resolveCandidateSave = resolve;
+    }));
+    const conflictedCorrection = store.getState().correctWorkOverview(conversationId, {
+      objective: "不应出现的冲突修正",
+    });
+    await vi.waitFor(() => expect(persistence.saveConversation).toHaveBeenCalledTimes(2));
+    const candidateTimeline = persistence.saveConversation.mock.calls[1][1];
+    expect(candidateTimeline.at(-1)).toMatchObject({
+      kind: "overview",
+      overview: { objective: "不应出现的冲突修正", updateReason: "user-correction" },
+    });
+
+    store.setState((state) => foldConversationEnvelope(state, {
+      conversationId,
+      event: { type: "text.delta", text: "延迟到达的真实事件" },
+    }, 701));
+    const delayedMeta = store.getState().byId[conversationId];
+    const delayedTimeline = store.getState().timelines[conversationId];
+    const overviewCountBeforeConflict = delayedTimeline.filter((item) => item.kind === "overview").length;
+    resolveCandidateSave();
+
+    await expect(conflictedCorrection).rejects.toThrow("对话刚刚发生变化，请重试编辑工作概览。");
+    expect(persistence.saveConversation).toHaveBeenCalledTimes(3);
+    const [repairMeta, repairTimeline] = persistence.saveConversation.mock.calls[2];
+    expect(repairMeta).toBe(delayedMeta);
+    expect(repairTimeline).toBe(delayedTimeline);
+    expect(store.getState().timelines[conversationId]).toBe(delayedTimeline);
+    expect(delayedTimeline).toEqual(expect.arrayContaining([
+      expect.objectContaining({ kind: "text", role: "momo", text: "延迟到达的真实事件" }),
+    ]));
+    expect(delayedTimeline.filter((item) => item.kind === "overview")).toHaveLength(overviewCountBeforeConflict);
+    expect(delayedTimeline.some((item) => item.kind === "overview" && item.overview.objective === "不应出现的冲突修正"))
+      .toBe(false);
+
+    const restored = createConversationsStore(makeClient().client, {
+      resolveConversationDefaults: () => DEFAULTS,
+    });
+    restored.getState().hydrate([{ meta: repairMeta, timeline: repairTimeline }]);
+    const restoredTimeline = restored.getState().timelines[conversationId];
+    expect(restoredTimeline).toEqual(expect.arrayContaining([
+      expect.objectContaining({ kind: "text", role: "momo", text: "延迟到达的真实事件" }),
+    ]));
+    expect(restoredTimeline.some((item) => item.kind === "overview" && item.overview.objective === "不应出现的冲突修正"))
+      .toBe(false);
+
     const beforeFailedCorrection = store.getState().timelines[conversationId];
+    const savesBeforeFailure = persistence.saveConversation.mock.calls.length;
     let rejectSave!: (error: Error) => void;
     persistence.saveConversation.mockImplementationOnce(() => new Promise<void>((_resolve, reject) => {
       rejectSave = reject;
     }));
     const failedCorrection = store.getState().correctWorkOverview(conversationId, { objective: "不应显示" });
-    await vi.waitFor(() => expect(persistence.saveConversation).toHaveBeenCalledTimes(2));
+    await vi.waitFor(() => expect(persistence.saveConversation).toHaveBeenCalledTimes(savesBeforeFailure + 1));
     expect(store.getState().timelines[conversationId]).toBe(beforeFailedCorrection);
     rejectSave(new Error("磁盘不可写"));
     await expect(failedCorrection).rejects.toThrow("磁盘不可写");
-    expect(persistence.saveConversation).toHaveBeenCalledTimes(2);
+    expect(persistence.saveConversation).toHaveBeenCalledTimes(savesBeforeFailure + 1);
     expect(store.getState().timelines[conversationId]).toBe(beforeFailedCorrection);
   });
 

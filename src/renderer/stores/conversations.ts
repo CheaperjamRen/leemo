@@ -907,9 +907,20 @@ export function createConversationsStore(
         }];
 
         await deps.persistence?.saveConversation(meta, nextTimeline);
-        set((latest) => latest.byId[conversationId]
-          ? { timelines: { ...latest.timelines, [conversationId]: nextTimeline } }
-          : {});
+        const latest = get();
+        const latestMeta = latest.byId[conversationId];
+        if (!latestMeta) throw unknownConversation(conversationId);
+        const latestTimeline = latest.timelines[conversationId] ?? [];
+        const latestRunId = latest.runIds[conversationId];
+        if (
+          (latestRunId !== null && latestRunId !== undefined)
+          || latestMeta !== meta
+          || latestTimeline !== timeline
+        ) {
+          await deps.persistence?.saveConversation(latestMeta, latestTimeline);
+          throw new Error("对话刚刚发生变化，请重试编辑工作概览。");
+        }
+        set({ timelines: { ...latest.timelines, [conversationId]: nextTimeline } });
       } finally {
         conversationLocks.delete(conversationId);
       }
