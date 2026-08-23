@@ -23,6 +23,7 @@
 
 import type {
   ModelCapabilities,
+  ModelContextPolicy,
   ModelCapabilityEvidence,
   ProviderAuthMode,
   ProviderApiFormat,
@@ -52,6 +53,7 @@ export interface StoredProvider {
   apiKey?: string;
   models?: string[];
   modelCapabilities?: Record<string, ModelCapabilities>;
+  modelContextPolicies?: Record<string, ModelContextPolicy>;
   modelCapabilityEvidence?: Record<string, ModelCapabilityEvidence>;
   taskModelRouting?: TaskModelRouting;
   headers?: Record<string, string>;
@@ -246,12 +248,47 @@ function cloneModelCapabilities(
   );
 }
 
+const MIN_CONTEXT_WINDOW_TOKENS = 8_000;
+const MAX_CONTEXT_WINDOW_TOKENS = 2_000_000;
+const MIN_AUTO_COMPACT_WINDOW_TOKENS = 100_000;
+const MAX_AUTO_COMPACT_WINDOW_TOKENS = 1_000_000;
+
+function validIntegerInRange(value: unknown, min: number, max: number): value is number {
+  return typeof value === "number" && Number.isInteger(value) && value >= min && value <= max;
+}
+
+function sanitizeModelContextPolicies(
+  raw: unknown,
+  allowedModels?: readonly string[],
+): Record<string, ModelContextPolicy> | undefined {
+  if (!isRecord(raw)) return undefined;
+  const allowed = allowedModels ? new Set(allowedModels) : undefined;
+  const out: Record<string, ModelContextPolicy> = {};
+  for (const [modelId, value] of Object.entries(raw)) {
+    if (!modelId || UNSAFE_RECORD_KEYS.has(modelId) || (allowed && !allowed.has(modelId)) || !isRecord(value)) continue;
+    const policy: ModelContextPolicy = {};
+    if (validIntegerInRange(value.contextWindowTokens, MIN_CONTEXT_WINDOW_TOKENS, MAX_CONTEXT_WINDOW_TOKENS)) {
+      policy.contextWindowTokens = value.contextWindowTokens;
+    }
+    if (validIntegerInRange(value.autoCompactWindowTokens, MIN_AUTO_COMPACT_WINDOW_TOKENS, MAX_AUTO_COMPACT_WINDOW_TOKENS)) {
+      policy.autoCompactWindowTokens = policy.contextWindowTokens
+        ? Math.min(value.autoCompactWindowTokens, policy.contextWindowTokens)
+        : value.autoCompactWindowTokens;
+    }
+    if (Object.keys(policy).length > 0) out[modelId] = policy;
+  }
+  return Object.keys(out).length > 0 ? out : undefined;
+}
+
 function cloneStoredProvider(provider: StoredProvider): StoredProvider {
   return {
     ...provider,
     ...(provider.models ? { models: [...provider.models] } : {}),
     ...(provider.modelCapabilities
       ? { modelCapabilities: cloneModelCapabilities(provider.modelCapabilities) }
+      : {}),
+    ...(provider.modelContextPolicies
+      ? { modelContextPolicies: sanitizeModelContextPolicies(provider.modelContextPolicies, provider.models) }
       : {}),
     ...(provider.modelCapabilityEvidence
       ? {
@@ -331,6 +368,12 @@ export function upsertProvider(
     merged.modelCapabilities = cloneModelCapabilities(draft.modelCapabilities);
   } else if (prev?.modelCapabilities) {
     merged.modelCapabilities = cloneModelCapabilities(prev.modelCapabilities);
+  }
+
+  if (draft.modelContextPolicies !== undefined) {
+    merged.modelContextPolicies = sanitizeModelContextPolicies(draft.modelContextPolicies, merged.models);
+  } else if (prev?.modelContextPolicies) {
+    merged.modelContextPolicies = sanitizeModelContextPolicies(prev.modelContextPolicies, merged.models);
   }
 
   if (draft.modelCapabilityEvidence !== undefined) {
@@ -462,6 +505,9 @@ function sanitizeStored(raw: unknown): StoredProvider | undefined {
   if (Array.isArray(raw.models)) out.models = raw.models.filter((m): m is string => typeof m === "string");
   if (isRecord(raw.modelCapabilities)) {
     out.modelCapabilities = cloneModelCapabilities(raw.modelCapabilities as Record<string, ModelCapabilities>);
+  }
+  if (isRecord(raw.modelContextPolicies)) {
+    out.modelContextPolicies = sanitizeModelContextPolicies(raw.modelContextPolicies, out.models);
   }
   if (isRecord(raw.modelCapabilityEvidence)) {
     out.modelCapabilityEvidence = sanitizeModelCapabilityEvidence(raw.modelCapabilityEvidence, out.models);

@@ -103,6 +103,21 @@ describe("SettingsPage", () => {
     expect(vi.mocked(mockClient.invoke).mock.calls.some(([channel]) => channel === "bridge:generateGlobalPendingOverview")).toBe(false);
   });
 
+  it("exposes theme choices as a compact personalization control", async () => {
+    const user = userEvent.setup();
+    render(
+      <BridgeProvider client={mockClient}>
+        <SettingsPage />
+      </BridgeProvider>,
+    );
+
+    await user.click(screen.getByRole("tab", { name: "个性化" }));
+    expect(screen.getByRole("radiogroup", { name: "界面主题" })).toBeInTheDocument();
+    expect(screen.getByRole("radio", { name: "白底铜橙" })).toBeChecked();
+    await user.click(screen.getByRole("radio", { name: "暖纸铜橙" }));
+    expect(screen.getByRole("radio", { name: "暖纸铜橙" })).toBeChecked();
+  });
+
   it("keeps the fixed nine user-facing categories and moves real storage and shortcut controls to their own pages", async () => {
     const user = userEvent.setup();
     render(
@@ -202,6 +217,9 @@ describe("SettingsPage", () => {
     expect(screen.getByRole("tabpanel")).toHaveClass("overflow-hidden");
     expect(screen.getByTestId("provider-workbench")).toHaveClass("settings-provider-workbench", "min-h-0", "flex-1");
     expect(screen.getByTestId("provider-workbench")).toHaveAttribute("data-layout", "list-detail");
+    expect(screen.getByTestId("provider-workbench")).toHaveAttribute("data-layout-density", "compact");
+    expect(screen.getByTestId("provider-workbench")).toHaveAttribute("data-detail-priority", "dominant");
+    expect(screen.getByTestId("provider-workbench")).toHaveAttribute("data-provider-rail-width", "216");
     expect(screen.queryByRole("heading", { name: "默认模型" })).not.toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "用量与费用" })).not.toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "通用" })).not.toBeInTheDocument();
@@ -648,7 +666,8 @@ describe("SettingsPage", () => {
 
     await user.click(screen.getByRole("tab", { name: "模型" }));
     const firstProvider = (await screen.findAllByTestId("provider-list-row"))[0];
-    expect(firstProvider).toHaveTextContent("默认");
+    expect(firstProvider).not.toHaveTextContent("默认");
+    expect(screen.getByRole("button", { name: /^当前默认 / })).toBeInTheDocument();
     expect(screen.queryByLabelText("默认模型")).not.toBeInTheDocument();
   });
 
@@ -1148,7 +1167,7 @@ describe("SettingsPage — Provider section (轮 3 卡 F3)", () => {
 
     await user.click(screen.getByRole("tab", { name: "模型" }));
     expect(await screen.findByRole("button", { name: "选择 DeepSeek" })).toBeInTheDocument();
-    expect(screen.getByText("1 个已配置")).toBeInTheDocument();
+    expect(screen.queryByText(/个已配置$/)).not.toBeInTheDocument();
     expect(screen.getAllByTestId("provider-list-row")).toHaveLength(1);
     expect(screen.queryByText("GLM（智谱）")).not.toBeInTheDocument();
 
@@ -1242,7 +1261,8 @@ describe("SettingsPage — Provider section (轮 3 卡 F3)", () => {
     await waitFor(() => expect(screen.getByTestId("default-model-probe")).toHaveTextContent("glm:glm-5.2"));
     const rows = screen.getAllByTestId("provider-list-row");
     expect(rows[0]).toHaveTextContent("GLM（智谱）");
-    expect(rows[0]).toHaveTextContent("默认");
+    expect(rows[0]).not.toHaveTextContent("默认");
+    expect(screen.getByRole("button", { name: "当前默认 GLM（智谱）" })).toBeInTheDocument();
   });
 
   it("guards dirty drafts when switching providers or leaving the model section", async () => {
@@ -1289,7 +1309,7 @@ describe("SettingsPage — Provider section (轮 3 卡 F3)", () => {
     );
 
     await user.click(screen.getByRole("tab", { name: "模型" }));
-    await screen.findByLabelText("名称");
+    await user.type(await screen.findByLabelText("名称"), " 2");
     await user.click(screen.getByRole("button", { name: "保存设置" }));
     await waitFor(() => expect(client.invoke).toHaveBeenCalledWith("bridge:saveProvider", expect.anything()));
     expect(screen.getByRole("button", { name: "添加模型服务商" })).toBeDisabled();

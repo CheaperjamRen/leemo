@@ -13,6 +13,8 @@ import type { PreviewContentState } from "../stores/preview-content";
 import { previewDraftKey } from "../stores/preview-content";
 import type { FileTreeState } from "../stores/file-tree";
 import type { NotificationsState } from "../stores/notifications";
+import type { ContextUsageState } from "../stores/context-usage";
+import { foldContextUsage } from "../stores/context-usage";
 import type { BridgeEventEnvelope, ApprovalExpired, ApprovalRequest, AskUserPayload } from "../../bridge/contract";
 
 export interface BridgeStores {
@@ -35,6 +37,9 @@ export interface BridgeStores {
   /** Shared history + toast sink for work that finishes outside the visible
    * conversation. Optional for isolated bridge tests and lightweight embeds. */
   notifications?: StoreApi<NotificationsState>;
+  /** Real current prompt size for the composer meter. Optional for legacy
+   * isolated tests; BridgeProvider always supplies it. */
+  contextUsage?: StoreApi<ContextUsageState>;
 }
 
 /**
@@ -62,6 +67,7 @@ export function wireBridgeSubscriptions(
     previewContent,
     fileTree,
     notifications,
+    contextUsage,
   } = stores;
 
   function conversationLabel(conversationId: string): string {
@@ -169,6 +175,9 @@ export function wireBridgeSubscriptions(
       conversations.setState((state) =>
         foldConversationEnvelope(state, envelope, Date.now())
       );
+      if (event.type === "usage.final" || event.type === "compact.boundary") {
+        contextUsage?.setState((state) => foldContextUsage(state, event, conversationId));
+      }
 
       // 成果登记只对主对话做。小 wiki 是独立轻 session（02 §九「不进主对话历史」），
       // 它那一轮里万一有工具写文件，也不该出现在成果架上。

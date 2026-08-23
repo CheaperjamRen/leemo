@@ -16,6 +16,7 @@ import type { NotebooksState } from "../stores/notebooks";
 import { createNotebooksStore } from "../stores/notebooks";
 import { previewDraftKey } from "../stores/preview-content";
 import { createNotificationsStore } from "../stores/notifications";
+import { createContextUsageStore } from "../stores/context-usage";
 import type { BridgeEventEnvelope, ApprovalExpired, ApprovalRequest, AskUserPayload } from "../../bridge/contract";
 
 describe("wireBridgeSubscriptions", () => {
@@ -107,6 +108,43 @@ describe("wireBridgeSubscriptions", () => {
     eventSubscriber!(envelope);
 
     expect(conversationsStore.setState).toHaveBeenCalledWith(expect.any(Function));
+  });
+
+  it("routes real usage and compaction events into the shared context meter", () => {
+    const contextUsage = createContextUsageStore();
+    wireBridgeSubscriptions(mockClient, {
+      conversations: conversationsStore,
+      approvals: approvalsStore,
+      wikiEntries: wikiEntriesStore,
+      contextUsage,
+    });
+
+    eventSubscriber!({
+      conversationId: "c1",
+      event: {
+        type: "usage.final",
+        usage: {
+          providerId: "deepseek",
+          modelId: "deepseek-v4-flash",
+          inputTokens: 10,
+          outputTokens: 99,
+          cacheReadTokens: 20,
+          cacheCreationTokens: 3,
+          contextInputTokens: 80,
+          contextCacheReadTokens: 20,
+          contextCacheCreationTokens: 5,
+          costSource: "unpriced",
+          tokensEstimated: false,
+        },
+      },
+    });
+    expect(contextUsage.getState().byConversation.c1.currentTokens).toBe(105);
+
+    eventSubscriber!({
+      conversationId: "c1",
+      event: { type: "compact.boundary", trigger: "auto", preTokens: 105, postTokens: 24 },
+    });
+    expect(contextUsage.getState().byConversation.c1).toEqual({ currentTokens: 24, justCompacted: true });
   });
 
   it("records one concise notification when a non-active conversation finishes", () => {

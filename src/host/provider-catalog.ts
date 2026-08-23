@@ -20,7 +20,7 @@
  * (a second DeepSeek account, three relays) coexist with their own ids.
  */
 
-import type { Provider, EnvTemplate, ModelCapabilities } from "../bridge/providers";
+import type { Provider, EnvTemplate, ModelCapabilities, ModelContextPolicy } from "../bridge/providers";
 import { cloneModelCapabilityEvidenceMap } from "../bridge/model-capabilities";
 import type {
   ModelCapabilityEvidence,
@@ -817,6 +817,7 @@ interface Resolved {
   apiKey: string;
   models: string[];
   modelCapabilities: Record<string, ModelCapabilities>;
+  modelContextPolicies?: Record<string, ModelContextPolicy>;
   modelCapabilityEvidence?: Record<string, ModelCapabilityEvidence>;
   taskModelRouting?: TaskModelRouting;
   capabilities: ProviderCapabilities;
@@ -848,6 +849,11 @@ function toEntry(r: Resolved): CatalogEntry {
     apiKey: r.apiKey,
     models: r.models,
     modelCapabilities: r.modelCapabilities,
+    ...(r.modelContextPolicies ? {
+      modelContextPolicies: Object.fromEntries(
+        Object.entries(r.modelContextPolicies).map(([modelId, policy]) => [modelId, { ...policy }]),
+      ),
+    } : {}),
     envTemplate: r.envTemplate,
   };
   const spec: ProviderSpec = {
@@ -863,6 +869,11 @@ function toEntry(r: Resolved): CatalogEntry {
     baseUrl: r.baseUrl,
     models: r.models,
     modelCapabilities: r.modelCapabilities,
+    ...(r.modelContextPolicies ? {
+      modelContextPolicies: Object.fromEntries(
+        Object.entries(r.modelContextPolicies).map(([modelId, policy]) => [modelId, { ...policy }]),
+      ),
+    } : {}),
     capabilities: r.capabilities,
     // Local services deliberately have no key; they become usable after the
     // user saves at least one concrete model. Cloud/API instances need both.
@@ -936,6 +947,7 @@ function resolvePreset(
     apiKey,
     models,
     modelCapabilities: { ...preset.modelCapabilities, ...(stored?.modelCapabilities ?? {}) },
+    modelContextPolicies: stored?.modelContextPolicies,
     modelCapabilityEvidence: stored?.modelCapabilityEvidence,
     taskModelRouting,
     capabilities: { ...preset.capabilities, ...(stored?.capabilities ?? {}) },
@@ -983,6 +995,7 @@ function resolveCustom(id: string, stored: StoredProvider): Resolved {
     apiKey: stored.apiKey || "",
     models: stored.models ? [...stored.models] : family ? [...family.models] : [],
     modelCapabilities: { ...(family?.modelCapabilities ?? {}), ...(stored.modelCapabilities ?? {}) },
+    modelContextPolicies: stored.modelContextPolicies,
     modelCapabilityEvidence: stored.modelCapabilityEvidence,
     taskModelRouting,
     capabilities: {

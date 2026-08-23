@@ -34,6 +34,7 @@ import {
 import type { AttachmentRef, GuideResponse, PermissionMode, ProviderSpec, SkillInfo } from "../../bridge/contract";
 import type { WorkspaceFileNode } from "../workspace/client";
 import type { ConversationGoal, ConversationTurnOptions, PendingSendDraft, QueuedTurn } from "../stores/conversations";
+import type { ConversationContextUsage } from "../stores/context-usage";
 import type { Note } from "../../captures";
 import {
   EMPTY_COMPOSER_DRAFT,
@@ -46,8 +47,12 @@ import {
   filterWorkspaceFiles,
   parseFileMention,
 } from "./file-mention";
+import ContextUsageIndicator from "./ContextUsageIndicator";
+import { WORKSPACE_FILE_DRAG_TYPE } from "./workspace-file-drag";
 
 export type Attachment = ComposerAttachment;
+
+export { WORKSPACE_FILE_DRAG_TYPE } from "./workspace-file-drag";
 
 function usedAttachmentSlots(draft: ComposerDraft): number {
   return draft.attachments.length
@@ -134,6 +139,8 @@ export interface InputAreaProps {
   /** The conversation's current pairing, for the trigger label + checkmark. */
   currentProviderId?: string | null;
   currentModelId?: string | null;
+  /** Real main-loop prompt size for this conversation. */
+  contextUsage?: ConversationContextUsage;
   /** The live permission policy applied to this and all active conversations. */
   permissionMode?: PermissionMode;
   /** Chosen provider instance + model → caller persists the pair. */
@@ -194,6 +201,7 @@ export default function InputArea({
   providers = [],
   currentProviderId = null,
   currentModelId = null,
+  contextUsage,
   permissionMode = "acceptEdits",
   onSelectModel,
   onOpenSettings,
@@ -299,6 +307,10 @@ export default function InputArea({
   const currentModel = modelGroups
     .flatMap((group) => group.options)
     .find((option) => isCurrentModel(option, currentProviderId, currentModelId));
+  const currentProvider = providers.find((provider) => provider.id === currentProviderId);
+  const currentContextPolicy = currentModelId
+    ? currentProvider?.modelContextPolicies?.[currentModelId]
+    : undefined;
   const hasImageAttachment = attachments.some((attachment) =>
     attachment.mimeType?.toLowerCase().startsWith("image/")
       || /\.(?:avif|bmp|gif|heic|heif|jpe?g|png|webp)$/i.test(attachment.name),
@@ -830,16 +842,51 @@ export default function InputArea({
     return true;
   };
 
+  const addWorkspaceFileReference = (file: { name: string; workspaceId: string; workspacePath: string }): boolean => {
+    if (submitPending || !file.name || !file.workspaceId || !file.workspacePath) return false;
+    const targetKey = conversationKey;
+    updateComposerDraft(targetKey, (current) => {
+      const existing = current.workspaceFiles ?? [];
+      const duplicate = existing.some((entry) =>
+        entry.workspaceId === file.workspaceId && entry.workspacePath === file.workspacePath,
+      );
+      const atLimit = usedAttachmentSlots(current) >= 20;
+      return {
+        ...current,
+        workspaceFiles: duplicate || atLimit
+          ? existing
+          : [...existing, { ...file, id: `${Date.now()}-${Math.random()}` }],
+        submitError: atLimit && !duplicate ? "一次最多添加 20 个附件。" : null,
+      };
+    });
+    return true;
+  };
+
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) addLocalFiles(e.target.files);
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
+  const workspaceFileFromTransfer = (transfer: DataTransfer): { name: string; workspaceId: string; workspacePath: string } | null => {
+    try {
+      const raw = transfer.getData(WORKSPACE_FILE_DRAG_TYPE);
+      if (!raw) return null;
+      const parsed = JSON.parse(raw) as Partial<{ name: string; workspaceId: string; workspacePath: string }>;
+      if (typeof parsed.name !== "string" || typeof parsed.workspaceId !== "string" || typeof parsed.workspacePath !== "string") return null;
+      return { name: parsed.name, workspaceId: parsed.workspaceId, workspacePath: parsed.workspacePath };
+    } catch {
+      return null;
+    }
+  };
+
   const isFileTransfer = (transfer: DataTransfer): boolean =>
     Array.from(transfer.types ?? []).includes("Files") || transfer.files.length > 0;
 
+  const isComposerTransfer = (transfer: DataTransfer): boolean =>
+    isFileTransfer(transfer) || Array.from(transfer.types ?? []).includes(WORKSPACE_FILE_DRAG_TYPE);
+
   const handleFileDrag = (e: React.DragEvent<HTMLDivElement>) => {
-    if (!resolveFilePath || !isFileTransfer(e.dataTransfer)) return;
+    if ((!resolveFilePath && !workspaceId) || !isComposerTransfer(e.dataTransfer)) return;
     e.preventDefault();
     e.stopPropagation();
     if (submitPending) {
@@ -851,19 +898,24 @@ export default function InputArea({
   };
 
   const handleFileDragLeave = (e: React.DragEvent<HTMLDivElement>) => {
-    if (!resolveFilePath || !isFileTransfer(e.dataTransfer)) return;
+    if ((!resolveFilePath && !workspaceId) || !isComposerTransfer(e.dataTransfer)) return;
     e.stopPropagation();
     const next = e.relatedTarget;
     if (!(next instanceof Node) || !e.currentTarget.contains(next)) setFileDragActive(false);
   };
 
   const handleFileDrop = (e: React.DragEvent<HTMLDivElement>) => {
-    if (!resolveFilePath || !isFileTransfer(e.dataTransfer)) return;
+    if ((!resolveFilePath && !workspaceId) || !isComposerTransfer(e.dataTransfer)) return;
     e.preventDefault();
     e.stopPropagation();
     setFileDragActive(false);
     if (submitPending) return;
-    addLocalFiles(e.dataTransfer.files);
+    const workspaceFile = workspaceFileFromTransfer(e.dataTransfer);
+    if (workspaceFile) {
+      addWorkspaceFileReference(workspaceFile);
+      return;
+    }
+    if (resolveFilePath) addLocalFiles(e.dataTransfer.files);
   };
 
   const handlePaste = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
@@ -1523,22 +1575,30 @@ export default function InputArea({
 
           <>
               <span className="leemo-composer-divider mx-1 h-4 w-px bg-[var(--leemo-line)]" aria-hidden />
-              <button
-                type="button"
-                className="leemo-composer-model flex min-h-8 min-w-0 max-w-[190px] items-center gap-1.5 rounded-md px-2 py-1 text-[12.5px] text-[var(--leemo-ink-2)] hover:bg-[var(--leemo-hover)]"
-                aria-label="切换模型"
-                title={`当前模型：${modelPickerLabel(currentModelId)}`}
-                onClick={() => {
-                  setPermissionMenuOpen(false);
-                  setPlusMenuOpen(false);
-                  dismissInlinePickers();
-                  setModelPickerOpen(!modelPickerOpen);
-                }}
-              >
-                <Brain className="h-[15px] w-[15px] shrink-0" aria-hidden />
-                <span data-testid="composer-model-label" className="leemo-composer-responsive-label truncate">{modelPickerLabel(currentModelId)}</span>
-                <ChevronDown className="leemo-composer-responsive-chevron h-3 w-3 shrink-0" aria-hidden />
-              </button>
+              <span className="leemo-composer-model-cluster flex min-w-0 items-center gap-0.5">
+                {(contextUsage || currentContextPolicy) && (
+                  <ContextUsageIndicator
+                    currentTokens={contextUsage?.currentTokens ?? 0}
+                    policy={currentContextPolicy}
+                  />
+                )}
+                <button
+                  type="button"
+                  className="leemo-composer-model flex min-h-8 min-w-0 max-w-[190px] items-center gap-1.5 rounded-md px-2 py-1 text-[12.5px] text-[var(--leemo-ink-2)] hover:bg-[var(--leemo-hover)]"
+                  aria-label="切换模型"
+                  title={`当前模型：${modelPickerLabel(currentModelId)}`}
+                  onClick={() => {
+                    setPermissionMenuOpen(false);
+                    setPlusMenuOpen(false);
+                    dismissInlinePickers();
+                    setModelPickerOpen(!modelPickerOpen);
+                  }}
+                >
+                  <Brain className="h-[15px] w-[15px] shrink-0" aria-hidden />
+                  <span data-testid="composer-model-label" className="leemo-composer-responsive-label truncate">{modelPickerLabel(currentModelId)}</span>
+                  <ChevronDown className="leemo-composer-responsive-chevron h-3 w-3 shrink-0" aria-hidden />
+                </button>
+              </span>
               <button
                 type="button"
                 aria-label={`权限模式：${permissionLabel[approvalPermissionMode]}`}

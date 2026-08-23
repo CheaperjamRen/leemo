@@ -17,7 +17,7 @@ const VIEWPORTS = [
   { id: "1024x768", width: 1024, height: 768 },
   { id: "720x640", width: 720, height: 640 },
 ];
-const REQUIRED_TABS = ["通用", "模型", "用量", "个性化", "连接器", "权限"];
+const REQUIRED_TABS = ["通用", "模型", "用量与费用", "个性化", "连接器", "权限"];
 
 fs.mkdirSync(outputDir, { recursive: true });
 
@@ -199,7 +199,10 @@ try {
         footerVisible: footerRect.top >= 0 && footerRect.bottom <= innerHeight + 1,
         longModelPresent: Boolean(longModel),
         longModelInsideRow: Boolean(longRect && rowRect && longRect.left >= rowRect.left - 1 && longRect.right <= rowRect.right + 1),
-        innerConfigurationTabs: [...form.querySelectorAll('[role="tab"]')].filter((item) => item.offsetParent !== null).map((item) => item.getAttribute('aria-label')),
+        innerConfigurationTabs: [...form.querySelectorAll('[role="tab"]')]
+          .filter((item) => item.offsetParent !== null)
+          .map((item) => item.textContent?.trim())
+          .filter(Boolean),
         horizontalOverflow: overflow,
       };
     })()`);
@@ -226,7 +229,7 @@ try {
     })()`);
     await capture(`${auditTag}-${viewport.id}-model-bottom.png`);
 
-    await clickTab("用量");
+    await clickTab("用量与费用");
     const usage = await evaluate(`(() => {
       const settings = document.querySelector('[data-testid="settings-window"]');
       const panel = document.querySelector('[role="tabpanel"]');
@@ -243,6 +246,14 @@ try {
     await capture(`${auditTag}-${viewport.id}-usage.png`);
 
     await closeSettings();
+    await evaluate(`(() => {
+      if (document.querySelector('[data-testid="workbench-shell"]')) return true;
+      const button = [...document.querySelectorAll('button')]
+        .find((item) => item.offsetParent !== null && item.getAttribute('aria-label') === '切换到工作台');
+      button?.click();
+      return Boolean(button);
+    })()`);
+    await waitFor(`Boolean(document.querySelector('[data-testid="workbench-shell"]'))`, `${viewport.id} 工作台`);
     const composer = await evaluate(`(() => {
       const textarea = document.querySelector('textarea[aria-label="输入消息"]');
       const sendButton = document.querySelector('button[aria-label="发送"]');
@@ -289,7 +300,9 @@ for (const [viewport, result] of Object.entries(facts.viewports)) {
   }
   if (model.footer.height > 64) failures.push(`${viewport} 模型操作区换行过高（${Math.round(model.footer.height)}px）`);
   if (!model.longModelPresent || !model.longModelInsideRow) failures.push(`${viewport} 长模型 ID 撑破布局`);
-  if (model.innerConfigurationTabs.length > 0) failures.push(`${viewport} 仍暴露旧的模型配置内层标签`);
+  if (JSON.stringify(model.innerConfigurationTabs) !== JSON.stringify(["连接与模型", "高级设置"])) {
+    failures.push(`${viewport} 模型配置页签不完整或顺序错误`);
+  }
   if (model.horizontalOverflow.length > 0 || model.form.scrollWidth > model.form.clientWidth + 1) {
     failures.push(`${viewport} 模型页存在横向溢出`);
   }

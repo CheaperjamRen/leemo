@@ -77,13 +77,48 @@ describe("ProviderList", () => {
     );
 
     expect(screen.getAllByTestId("provider-list-row")).toHaveLength(1);
-    expect(screen.getByText("默认")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "当前默认 服务商 A" })).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByText("已连接")).toBeInTheDocument();
     expect(screen.getByText("38 ms")).toBeInTheDocument();
     expect(screen.getByTitle("a-model-1")).toBeInTheDocument();
     expect(screen.queryByText("服务商 OFFER")).not.toBeInTheDocument();
     expect(screen.queryByText(/raw-kind-/)).not.toBeInTheDocument();
     expect(screen.queryByText(/example\.test/)).not.toBeInTheDocument();
+  });
+
+  it("does not repeat configured state or squeeze a default badge into the provider title", () => {
+    render(
+      <ProviderList
+        providers={[provider("a", true)]}
+        selectedId="a"
+        tests={{}}
+        onSelect={vi.fn()}
+        onOpenCatalog={vi.fn()}
+        onReorder={vi.fn()}
+      />,
+    );
+
+    const row = screen.getByTestId("provider-list-row");
+    expect(row).not.toHaveTextContent("已配置");
+    expect(row).not.toHaveTextContent("默认");
+    expect(screen.getByTitle("a-model-1")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "当前默认 服务商 A" })).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("does not add a redundant configured heading above an existing provider list", () => {
+    render(
+      <ProviderList
+        providers={[provider("a", true)]}
+        selectedId="a"
+        tests={{}}
+        onSelect={vi.fn()}
+        onOpenCatalog={vi.fn()}
+        onReorder={vi.fn()}
+      />,
+    );
+
+    expect(screen.queryByText("已接入")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "添加模型服务商" })).toBeInTheDocument();
   });
 
   it("supports keyboard-friendly move and set-default controls", async () => {
@@ -205,7 +240,7 @@ describe("ProviderList", () => {
 
     expect(screen.getByRole("button", { name: "选择 服务商 DRAFT" })).toBeInTheDocument();
     expect(screen.getByText("待补 Key")).toBeInTheDocument();
-    expect(screen.queryByText("默认")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "当前默认 服务商 DRAFT" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "设为默认 服务商 DRAFT" })).toBeDisabled();
   });
 

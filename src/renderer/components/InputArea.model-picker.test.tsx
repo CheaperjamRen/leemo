@@ -27,6 +27,9 @@ const CONFIGURED = spec({
     "deepseek-v4-flash": { thinking: true, vision: false },
     "deepseek-v4-pro": { thinking: true, vision: false },
   },
+  modelContextPolicies: {
+    "deepseek-v4-flash": { contextWindowTokens: 512_000, autoCompactWindowTokens: 486_000 },
+  },
 });
 const UNCONFIGURED = spec({
   id: "qwen",
@@ -48,6 +51,19 @@ function setup(props: Partial<React.ComponentProps<typeof InputArea>> = {}) {
 }
 
 describe("InputArea model picker — only configured providers appear", () => {
+  it("places the active conversation's context ring on the same model-control axis", () => {
+    setup({
+      providers: [CONFIGURED],
+      currentProviderId: "deepseek",
+      currentModelId: "deepseek-v4-flash",
+      contextUsage: { currentTokens: 406_000, justCompacted: false },
+    });
+
+    const ring = screen.getByRole("button", { name: "上下文已用 84%" });
+    expect(ring.closest(".leemo-composer-model-cluster"))
+      .toContainElement(screen.getByRole("button", { name: "切换模型" }));
+  });
+
   it("lists a configured provider's models and NOT an unconfigured one's", async () => {
     const user = userEvent.setup();
     setup({ providers: [CONFIGURED, UNCONFIGURED], currentModelId: "deepseek-v4-flash" });

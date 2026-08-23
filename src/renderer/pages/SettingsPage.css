@@ -2,7 +2,7 @@
   --settings-sidebar-width: 240px;
   --settings-content-pad-x: 32px;
   color: var(--leemo-ink);
-  background: #f7f3e9;
+  background: var(--leemo-surface-overlay);
   font-size: 14px;
 }
 
@@ -10,7 +10,7 @@
   height: 56px;
   padding-inline: 32px 64px;
   border-bottom-color: transparent;
-  background: #f7f3e9;
+  background: var(--leemo-surface-overlay);
 }
 
 .settings-page .settings-header h1 {
@@ -20,14 +20,14 @@
 }
 
 .settings-page .settings-body {
-  background: #f7f3e9;
+  background: var(--leemo-surface-overlay);
 }
 
 .settings-page .settings-sidebar {
   width: var(--settings-sidebar-width);
   padding: 16px 20px 24px 32px;
   border-color: color-mix(in srgb, var(--leemo-line) 72%, transparent);
-  background: #f1ecdf;
+  background: var(--leemo-surface-sunken);
 }
 
 .settings-page .settings-sidebar > input[type="search"] {
@@ -36,7 +36,7 @@
   border-radius: 9px;
   padding-inline: 13px;
   border-color: color-mix(in srgb, var(--leemo-line) 82%, transparent);
-  background: rgba(255, 253, 248, 0.88);
+  background: color-mix(in srgb, var(--leemo-surface-raised) 92%, transparent);
   font-size: 13px;
   box-shadow: 0 1px 2px rgba(24, 34, 47, 0.025);
 }
@@ -87,7 +87,7 @@
 
 .settings-page .settings-content {
   padding: 8px var(--settings-content-pad-x) 28px;
-  background: #fbf8f0;
+  background: var(--leemo-surface-default);
   scrollbar-gutter: stable;
 }
 
@@ -98,6 +98,103 @@
 
 .settings-page .settings-section {
   margin-bottom: 24px;
+}
+
+.settings-page .settings-theme-section {
+  margin-bottom: 26px;
+  padding-bottom: 22px;
+  border-bottom: 1px solid color-mix(in srgb, var(--leemo-line) 72%, transparent);
+}
+
+.settings-page .settings-theme-section .settings-section-heading {
+  margin-bottom: 13px;
+}
+
+.settings-page .settings-theme-options {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.settings-page .settings-theme-option {
+  position: relative;
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr);
+  align-items: center;
+  gap: 9px;
+  min-height: 64px;
+  cursor: pointer;
+  border: 1px solid var(--leemo-line);
+  border-radius: 14px;
+  background: var(--leemo-surface-raised);
+  padding: 9px 10px;
+  transition: border-color 150ms ease, background-color 150ms ease, transform 150ms ease;
+}
+
+.settings-page .settings-theme-option:hover {
+  border-color: color-mix(in srgb, var(--leemo-amber) 48%, var(--leemo-line));
+  background: var(--leemo-surface-hover);
+}
+
+.settings-page .settings-theme-option.is-selected {
+  border-color: color-mix(in srgb, var(--leemo-amber) 58%, var(--leemo-line));
+  background: var(--leemo-surface-accent-raised);
+}
+
+.settings-page .settings-theme-option input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.settings-page .settings-theme-option input:focus-visible + .settings-theme-swatch {
+  outline: 2px solid var(--leemo-focus-ring);
+  outline-offset: 2px;
+}
+
+.settings-page .settings-theme-swatch {
+  display: block;
+  width: 22px;
+  height: 22px;
+  border: 1px solid var(--leemo-line);
+  border-radius: 8px;
+  background: linear-gradient(145deg, #fff 0 53%, var(--leemo-amber) 54% 72%, var(--leemo-ink) 73%);
+}
+
+.settings-page .settings-theme-swatch[data-theme-preview="warm-copper"] {
+  background: linear-gradient(145deg, #fff8ed 0 53%, #bd682d 54% 72%, #1f2d2a 73%);
+}
+
+.settings-page .settings-theme-swatch[data-theme-preview="white-indigo"] {
+  background: linear-gradient(145deg, #fff 0 53%, #5d6fb0 54% 72%, #202b46 73%);
+}
+
+.settings-page .settings-theme-copy {
+  min-width: 0;
+}
+
+.settings-page .settings-theme-copy strong,
+.settings-page .settings-theme-copy small {
+  display: block;
+}
+
+.settings-page .settings-theme-copy strong {
+  color: var(--leemo-ink);
+  font-size: 12.5px;
+  font-weight: 600;
+  line-height: 1.25;
+}
+
+.settings-page .settings-theme-copy small {
+  margin-top: 3px;
+  overflow: hidden;
+  color: var(--leemo-ink-3);
+  font-size: 10.5px;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .settings-page .settings-section > div:first-child {
@@ -267,10 +364,6 @@
   font-family: inherit;
 }
 
-.settings-page button:not([role="tab"]):not([role="switch"]) {
-  border-radius: 8px;
-}
-
 .settings-page .settings-models-heading {
   min-height: 38px;
   margin-bottom: 12px;
@@ -283,20 +376,21 @@
 }
 
 .settings-page .settings-provider-workbench {
-  border-radius: 16px;
-  border-color: color-mix(in srgb, #b9b39f 36%, transparent);
-  background: #f3eee2;
-  box-shadow: 0 18px 44px -38px rgba(31, 41, 34, 0.44);
+  border-radius: 18px;
+  border-color: var(--leemo-border-key);
+  background: var(--leemo-surface-sunken);
+  box-shadow: var(--leemo-shadow-resting);
 }
 
 .settings-page .provider-list {
-  border-color: color-mix(in srgb, #b9b39f 30%, transparent);
-  background: #f1ecdf;
+  border-color: color-mix(in srgb, var(--leemo-line) 84%, transparent);
+  background: var(--leemo-surface-sunken);
 }
 
 @media (min-width: 1024px) {
   .settings-page .provider-list {
-    width: 236px !important;
+    width: 216px !important;
+    flex: 0 0 216px;
   }
 
   .settings-page [data-testid="provider-list-row"] {
@@ -308,24 +402,19 @@
 }
 
 .settings-page .provider-list-header {
-  height: 48px;
+  height: 36px;
   padding-inline: 14px;
-  border-color: color-mix(in srgb, #b9b39f 24%, transparent);
-}
-
-.settings-page .provider-list-header > span {
-  font-size: 13px;
-  font-weight: 600;
+  border-color: color-mix(in srgb, var(--leemo-line) 82%, transparent);
 }
 
 .settings-page [data-testid="provider-list-row"] {
-  height: 62px;
+  height: 54px;
   transition: background-color 160ms ease, box-shadow 160ms ease;
 }
 
 .settings-page [data-testid="provider-list-row"]:has(button[aria-pressed="true"]) {
-  background: rgba(255, 255, 255, 0.88);
-  box-shadow: 0 8px 18px -17px rgba(22, 33, 26, 0.58), inset 0 0 0 1px rgba(255, 255, 255, 0.92);
+  background: var(--leemo-surface-raised);
+  box-shadow: inset 0 0 0 1px var(--leemo-border-highlight), 0 5px 16px -15px rgba(20, 32, 51, 0.42);
 }
 
 .settings-page [data-testid="provider-list-row"] button[aria-label^="选择 "] {
@@ -334,9 +423,14 @@
 }
 
 .settings-page [data-testid="provider-list-row"] button[aria-label^="选择 "] > span:first-child {
-  width: 30px;
-  height: 30px;
+  width: 28px;
+  height: 28px;
   font-size: 11px;
+}
+
+.settings-page .settings-provider-workbench > .settings-provider-config-surface {
+  min-width: 0;
+  flex: 1 1 0;
 }
 
 .settings-page [data-testid="provider-list-row"] button[aria-label^="选择 "] > span:last-child > span:first-child > span:first-child {
@@ -346,8 +440,8 @@
 .settings-page .provider-config-header {
   min-height: 54px;
   padding: 9px 20px;
-  border-color: color-mix(in srgb, #b9b39f 24%, transparent);
-  background: #fffdfa;
+  border-color: color-mix(in srgb, var(--leemo-line) 82%, transparent);
+  background: var(--leemo-surface-overlay);
 }
 
 .settings-page .provider-config-header h3 {
@@ -362,8 +456,8 @@
 
 .settings-page .provider-config-tabs {
   height: 42px;
-  border-color: color-mix(in srgb, #b9b39f 24%, transparent);
-  background: #fffdfa;
+  border-color: color-mix(in srgb, var(--leemo-line) 82%, transparent);
+  background: var(--leemo-surface-overlay);
 }
 
 .settings-page .provider-config-tabs button {
@@ -392,7 +486,7 @@
 
 .settings-page .provider-config-scroll {
   padding: 16px 20px 18px;
-  background: #fffdfa;
+  background: var(--leemo-surface-overlay);
 }
 
 .settings-page .provider-config-content {
@@ -400,7 +494,7 @@
 }
 
 .settings-page .settings-provider-config-surface {
-  background: #fffdfa;
+  background: var(--leemo-surface-overlay);
 }
 
 .settings-page .provider-config-content > section > h4,
@@ -435,21 +529,18 @@
   border: 0;
   border-radius: 14px;
   padding: 5px 12px;
-  background: #f3f3ee;
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, #b9b39f 20%, transparent);
+  background: var(--leemo-surface-sunken);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--leemo-line) 78%, transparent);
 }
 
 .settings-page .provider-config-footer {
   min-height: 54px;
   padding: 8px 20px;
-  border-color: color-mix(in srgb, #b9b39f 24%, transparent);
-  background: #fffdfa;
+  border-color: color-mix(in srgb, var(--leemo-line) 82%, transparent);
+  background: var(--leemo-surface-overlay);
 }
 
-.settings-page .provider-config-footer button {
-  min-height: 34px;
-  font-size: 12.5px;
-}
+.settings-page .provider-config-footer button { min-height: 34px; font-size: 12.5px; }
 
 .settings-page .settings-permission-heading {
   margin-bottom: 18px;

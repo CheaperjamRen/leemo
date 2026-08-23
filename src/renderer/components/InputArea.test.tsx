@@ -543,6 +543,31 @@ describe("InputArea", () => {
     expect(screen.queryByText("松开作为本轮附件")).not.toBeInTheDocument();
   });
 
+  it("accepts a workspace Explorer drag as a guarded reference for this turn", () => {
+    const { container } = render(
+      <InputArea
+        {...defaultProps}
+        workspaceId="leemo-home"
+        workspaceFiles={[{ name: "课程讲义.pdf", path: "课程/课程讲义.pdf", kind: "file", bookId: "课程" }]}
+      />,
+    );
+    const composer = container.querySelector(".leemo-input-shadow") as HTMLElement;
+    const transfer = {
+      files: [],
+      types: ["application/x-leemo-workspace-file"],
+      getData: (type: string) => type === "application/x-leemo-workspace-file"
+        ? JSON.stringify({ name: "课程讲义.pdf", workspaceId: "leemo-home", workspacePath: "课程/课程讲义.pdf" })
+        : "",
+    };
+
+    fireEvent.dragEnter(composer, { dataTransfer: transfer });
+    expect(screen.getByText("松开作为本轮附件")).toBeInTheDocument();
+    fireEvent.drop(composer, { dataTransfer: transfer });
+
+    expect(screen.getByText("课程讲义.pdf")).toBeInTheDocument();
+    expect(screen.getByText("工作区")).toBeInTheDocument();
+  });
+
   it("claims a file drop inside the composer so the workspace does not import it too", () => {
     const parentDrop = vi.fn();
     const file = new File(["content"], "只发本轮.txt", { type: "text/plain" });

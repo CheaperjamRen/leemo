@@ -79,6 +79,11 @@ function cloneList(list: ProviderSpec[]): ProviderSpec[] {
           ]),
         )
       : undefined,
+    modelContextPolicies: provider.modelContextPolicies
+      ? Object.fromEntries(
+          Object.entries(provider.modelContextPolicies).map(([modelId, policy]) => [modelId, { ...policy }]),
+        )
+      : undefined,
     modelCapabilityEvidence: cloneModelCapabilityEvidenceMap(provider.modelCapabilityEvidence),
     capabilities: { ...provider.capabilities },
   }));

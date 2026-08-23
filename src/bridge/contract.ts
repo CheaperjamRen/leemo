@@ -84,7 +84,7 @@ export type { ConversationState } from "./pool";
 // never reach the renderer — the IPC-facing provider projection is
 // `ProviderSpec` below (no key). Only the pure, key-free `ModelCapabilities`
 // shape is re-exported, since ProviderSpec references it.
-export type { ModelCapabilities, TaskModelRouting } from "./providers";
+export type { ModelCapabilities, ModelContextPolicy, TaskModelRouting } from "./providers";
 export type {
   CapabilityEvidence,
   CapabilityProbeEvidence,
@@ -128,7 +128,7 @@ import type {
   RiskLevel,
 } from "./interact";
 import type { PermissionMode } from "./interact";
-import type { ModelCapabilities } from "./providers";
+import type { ModelCapabilities, ModelContextPolicy } from "./providers";
 
 // ===========================================================================
 // Provider serializable projection — the EXTENSIBILITY AXES live here
@@ -249,6 +249,8 @@ export interface ProviderSpec {
   models: string[];
   /** Per-model thinking/vision flags (06 §3.1); optional in the projection. */
   modelCapabilities?: Record<string, ModelCapabilities>;
+  /** Per-model real context ceiling and automatic compaction capacity. */
+  modelContextPolicies?: Record<string, ModelContextPolicy>;
   /** Measured evidence and explicit user corrections stay separate from the
    *  preset hints above. */
   modelCapabilityEvidence?: Record<string, import("./model-capabilities").ModelCapabilityEvidence>;
@@ -310,6 +312,7 @@ export interface ProviderDraft {
    *  longer asks users to declare these manually; measured and corrected truth
    *  lives in `modelCapabilityEvidence`. */
   modelCapabilities?: Record<string, ModelCapabilities>;
+  modelContextPolicies?: Record<string, ModelContextPolicy>;
   /** Probe evidence and user corrections keyed by the concrete model id. */
   modelCapabilityEvidence?: Record<string, import("./model-capabilities").ModelCapabilityEvidence>;
   /** Optional fast/background and subtask model choices. Missing values mean
@@ -350,6 +353,7 @@ export interface ProviderConfigView {
   category: "cn_official" | "official" | "custom";
   models: string[];
   modelCapabilities?: Record<string, ModelCapabilities>;
+  modelContextPolicies?: Record<string, ModelContextPolicy>;
   modelCapabilityEvidence?: Record<string, import("./model-capabilities").ModelCapabilityEvidence>;
   taskModelRouting?: import("./providers").TaskModelRouting;
   headers?: Record<string, string>;

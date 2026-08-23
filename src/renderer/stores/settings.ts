@@ -29,6 +29,35 @@ export interface PersonaCardDraft {
 
 export type RelationshipStyle = "companion" | "friend" | "senior" | "mentor";
 export type AppSurface = "start" | "buddy" | "workbench";
+export type ThemeId = "white-copper" | "warm-copper" | "white-indigo";
+
+/** The three palette contracts are deliberately named for user-visible
+ * qualities, not implementation tokens.  Keeping this list beside the
+ * persisted setting makes the future theme picker and hydration share one
+ * validation boundary. */
+export const THEME_OPTIONS: ReadonlyArray<{
+  id: ThemeId;
+  label: string;
+  description: string;
+}> = [
+  {
+    id: "white-copper",
+    label: "白底铜橙",
+    description: "纯白工作区，蓝墨文字与铜橙重点",
+  },
+  {
+    id: "warm-copper",
+    label: "暖纸铜橙",
+    description: "暖纸底色，适合长时间阅读",
+  },
+  {
+    id: "white-indigo",
+    label: "白底蓝墨",
+    description: "冷静白底与蓝墨重点",
+  },
+];
+
+const THEME_IDS = new Set<ThemeId>(THEME_OPTIONS.map((option) => option.id));
 
 export const RELATIONSHIP_STYLE_OPTIONS: ReadonlyArray<{
   id: RelationshipStyle;
@@ -80,6 +109,7 @@ export function resolveMomoPersonaText(
 export interface SettingsState {
   surface: AppSurface;
   mode: "buddy" | "workbench";
+  themeId: ThemeId;
   persona: string;
   personaCardId: string;
   personaCards: PersonaCard[];
@@ -138,6 +168,7 @@ export interface SettingsState {
 
   setMode(mode: SettingsState["mode"]): void;
   setSurface(surface: AppSurface): void;
+  setThemeId(themeId: ThemeId): void;
   setPersonaCard(id: string): void;
   setRelationshipStyle(style: RelationshipStyle): void;
   /** Create or edit a user-authored card. Returns its stable id, or null when
@@ -198,6 +229,7 @@ export interface SettingsState {
 export const PERSISTED_SETTING_KEYS = [
   "surface",
   "mode",
+  "themeId",
   "personaCardId",
   "relationshipStyle",
   "talkStyle",
@@ -268,6 +300,7 @@ export const webFetchActive = (s: WebCapabilityFlags): boolean =>
 export interface SettingsInitial {
   surface?: AppSurface;
   mode?: SettingsState["mode"];
+  themeId?: ThemeId;
   persona?: string;
   personaCardId?: string;
   personaCards?: PersonaCard[];
@@ -344,6 +377,9 @@ const BUILTIN_PERSONA_CARDS: PersonaCard[] = [
 const isTalkStyle = (value: unknown): value is 1 | 2 | 3 => value === 1 || value === 2 || value === 3;
 const isMode = (value: unknown): value is SettingsState["mode"] => value === "buddy" || value === "workbench";
 const isSurface = (value: unknown): value is AppSurface => value === "start" || isMode(value);
+const isThemeId = (value: unknown): value is ThemeId => (
+  typeof value === "string" && THEME_IDS.has(value as ThemeId)
+);
 const isRelationshipStyle = (value: unknown): value is RelationshipStyle => (
   typeof value === "string" && RELATIONSHIP_STYLE_IDS.has(value as RelationshipStyle)
 );
@@ -472,6 +508,7 @@ export function createSettingsStore(initial: SettingsInitial = {}): StoreApi<Set
   return createStore<SettingsState>((set, get) => ({
     surface: isSurface(initial.surface) ? initial.surface : initial.mode ?? "start",
     mode: initial.mode ?? "buddy",
+    themeId: isThemeId(initial.themeId) ? initial.themeId : "white-copper",
     persona: initial.persona ?? "momo",
     personaCardId,
     personaCards,
@@ -606,6 +643,9 @@ export function createSettingsStore(initial: SettingsInitial = {}): StoreApi<Set
     setTaskModelParsingEnabled: (taskModelParsingEnabled) => {
       if (typeof taskModelParsingEnabled === "boolean") set({ taskModelParsingEnabled });
     },
+    setThemeId: (themeId) => {
+      if (isThemeId(themeId)) set({ themeId });
+    },
     setGlobalOverviewAutoEnabled: (globalOverviewAutoEnabled) => {
       if (typeof globalOverviewAutoEnabled === "boolean") set({ globalOverviewAutoEnabled });
     },
@@ -671,6 +711,7 @@ export function createSettingsStore(initial: SettingsInitial = {}): StoreApi<Set
       if (isMode(persisted.mode)) patch.mode = persisted.mode;
       if (isSurface(persisted.surface)) patch.surface = persisted.surface;
       else if (isMode(persisted.mode)) patch.surface = persisted.mode;
+      if (isThemeId(persisted.themeId)) patch.themeId = persisted.themeId;
       if (isTalkStyle(persisted.talkStyle)) patch.talkStyle = persisted.talkStyle;
       if (isRelationshipStyle(persisted.relationshipStyle)) patch.relationshipStyle = persisted.relationshipStyle;
       if (isPermissionMode(persisted.permissionMode)) patch.permissionMode = persisted.permissionMode;

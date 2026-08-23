@@ -2864,6 +2864,11 @@ export function createBridgeHost(deps: HostDeps): BridgeHost {
         Object.entries(p.modelCapabilities).map(([modelId, capabilities]) => [modelId, { ...capabilities }]),
       );
     }
+    if (p.modelContextPolicies) {
+      view.modelContextPolicies = Object.fromEntries(
+        Object.entries(p.modelContextPolicies).map(([modelId, policy]) => [modelId, { ...policy }]),
+      );
+    }
     if (entry.spec.modelCapabilityEvidence) {
       view.modelCapabilityEvidence = cloneModelCapabilityEvidenceMap(entry.spec.modelCapabilityEvidence);
     }

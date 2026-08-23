@@ -28,6 +28,16 @@ export interface ModelCapabilities {
   vision: boolean;
 }
 
+/** Per-model context policy. These two numbers are deliberately separate:
+ * `contextWindowTokens` records the upstream model's real advertised/known
+ * ceiling, while `autoCompactWindowTokens` is the smaller working capacity at
+ * which the Harness should begin its native compaction calculation. Neither
+ * value may be presented as increasing a model's actual capability. */
+export interface ModelContextPolicy {
+  contextWindowTokens?: number;
+  autoCompactWindowTokens?: number;
+}
+
 /** Optional task-model choices expressed in product language. Missing values
  *  mean automatic behavior: fast work follows the Harness default and
  *  subtasks inherit the current conversation model natively. */
@@ -66,6 +76,7 @@ export interface Provider {
   apiKey: string;
   models: string[];
   modelCapabilities: Record<string, ModelCapabilities>;
+  modelContextPolicies?: Record<string, ModelContextPolicy>;
   envTemplate: EnvTemplate;
 }
 
@@ -233,6 +244,23 @@ export function buildConversationEnv(
   const subagentModel = provider.envTemplate.CLAUDE_CODE_SUBAGENT_MODEL?.trim();
   if (subagentModel) {
     env.CLAUDE_CODE_SUBAGENT_MODEL = gateway ? `claude-${subagentModel}` : subagentModel;
+  }
+
+  const contextPolicy = provider.modelContextPolicies?.[modelId];
+  const modelMaximum = contextPolicy?.contextWindowTokens;
+  const requestedCompactWindow = contextPolicy?.autoCompactWindowTokens ?? modelMaximum;
+  if (
+    Number.isInteger(requestedCompactWindow)
+    && requestedCompactWindow !== undefined
+    && requestedCompactWindow >= 100_000
+    && requestedCompactWindow <= 1_000_000
+  ) {
+    const effectiveWindow = Number.isInteger(modelMaximum) && modelMaximum !== undefined
+      ? Math.min(requestedCompactWindow, modelMaximum)
+      : requestedCompactWindow;
+    if (effectiveWindow >= 100_000) {
+      env.CLAUDE_CODE_AUTO_COMPACT_WINDOW = String(effectiveWindow);
+    }
   }
 
   return env;

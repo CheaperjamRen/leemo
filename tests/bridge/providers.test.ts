@@ -31,6 +31,46 @@ const ORDINARY_SLOTS = [
 ];
 
 describe("buildConversationEnv — DIRECT wiring (apiFormat=anthropic)", () => {
+  it("applies the selected model's context policy without leaking it across sibling models", () => {
+    const provider = {
+      ...deepseekDirect,
+      modelContextPolicies: {
+        "deepseek-v4pro": {
+          contextWindowTokens: 512_000,
+          autoCompactWindowTokens: 480_000,
+        },
+        "deepseek-v4flash": {
+          contextWindowTokens: 258_000,
+          autoCompactWindowTokens: 240_000,
+        },
+      },
+    };
+
+    expect(buildConversationEnv(provider, "deepseek-v4pro").CLAUDE_CODE_AUTO_COMPACT_WINDOW)
+      .toBe("480000");
+    expect(buildConversationEnv(provider, "deepseek-v4flash").CLAUDE_CODE_AUTO_COMPACT_WINDOW)
+      .toBe("240000");
+  });
+
+  it("caps the effective auto-compact capacity at the model's declared maximum", () => {
+    const env = buildConversationEnv({
+      ...deepseekDirect,
+      modelContextPolicies: {
+        "deepseek-v4pro": {
+          contextWindowTokens: 372_000,
+          autoCompactWindowTokens: 500_000,
+        },
+      },
+    }, "deepseek-v4pro");
+
+    expect(env.CLAUDE_CODE_AUTO_COMPACT_WINDOW).toBe("372000");
+  });
+
+  it("leaves native auto-detection untouched when the selected model has no policy", () => {
+    const env = buildConversationEnv(deepseekDirect, "deepseek-v4pro");
+    expect(env.CLAUDE_CODE_AUTO_COMPACT_WINDOW).toBeUndefined();
+  });
+
   it("points BASE_URL at the provider endpoint and AUTH_TOKEN at the real key", () => {
     const env = buildConversationEnv(deepseekDirect, "deepseek-v4pro");
     expect(env.ANTHROPIC_BASE_URL).toBe("https://api.deepseek.com/anthropic");

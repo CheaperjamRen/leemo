@@ -1,13 +1,13 @@
 import { describe, expect, it } from "vitest";
 import type { LeemoEvent } from "../../bridge/contract";
 import {
-  CONTEXT_COMPACT_THRESHOLD,
   createContextUsageStore,
+  deriveContextUsageFromTimelines,
   foldContextUsage,
   type ContextUsageState,
 } from "./context-usage";
 
-const usageEvent = (inputTokens: number, cacheReadTokens: number, cacheCreationTokens: number, outputTokens: number): LeemoEvent => ({
+const usageEvent = (inputTokens: number, cacheReadTokens: number, cacheCreationTokens: number, outputTokens: number): Extract<LeemoEvent, { type: "usage.final" }> => ({
   type: "usage.final",
   usage: {
     providerId: "provider-safe",
@@ -22,9 +22,8 @@ const usageEvent = (inputTokens: number, cacheReadTokens: number, cacheCreationT
 });
 
 describe("context usage store", () => {
-  it("starts empty and exports the measured threshold", () => {
+  it("starts empty without baking one global model threshold into the store", () => {
     expect(createContextUsageStore().getState()).toEqual({ byConversation: {} });
-    expect(CONTEXT_COMPACT_THRESHOLD).toBe(21_000);
   });
 
   it("folds usage.final as input plus cache fields, excluding output tokens", () => {
@@ -70,5 +69,20 @@ describe("context usage store", () => {
     const prev: ContextUsageState = { byConversation: { "conversation-a": { currentTokens: 200, justCompacted: true } } };
     const next = foldContextUsage(prev, usageEvent(1, 2, 3, 4), "conversation-a");
     expect(next.byConversation["conversation-a"]).toEqual({ currentTokens: 6, justCompacted: true });
+  });
+
+  it("restores the latest real context position from persisted timelines", () => {
+    const restored = deriveContextUsageFromTimelines({
+      "conversation-a": [
+        { kind: "usage", id: "u1", runId: "r1", usage: usageEvent(100, 20, 3, 9).usage },
+        { kind: "compact", id: "c1", trigger: "auto", preTokens: 123, postTokens: 40 },
+        { kind: "usage", id: "u2", runId: "r2", usage: usageEvent(70, 10, 5, 4).usage },
+      ],
+    });
+
+    expect(restored.byConversation["conversation-a"]).toEqual({
+      currentTokens: 85,
+      justCompacted: true,
+    });
   });
 });

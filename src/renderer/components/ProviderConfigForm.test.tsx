@@ -75,6 +75,17 @@ function renderForm(client: BridgeClient, props: Partial<React.ComponentProps<ty
 }
 
 describe("ProviderConfigForm — new instance", () => {
+  it("uses pill geometry for persistent text actions", async () => {
+    const client = stubClient();
+    renderForm(client, {
+      preset: { kind: "custom", name: "新", baseUrl: "https://x.test", apiFormat: "openai", models: ["m-1"] },
+    });
+
+    expect(await screen.findByRole("button", { name: "测试连接" })).toHaveClass("rounded-full");
+    expect(screen.getByRole("button", { name: "取消" })).toHaveClass("rounded-full");
+    expect(screen.getByRole("button", { name: "保存设置" })).toHaveClass("rounded-full");
+  });
+
   it("prefills from a preset offer", async () => {
     const client = stubClient();
     renderForm(client, {
@@ -238,6 +249,22 @@ describe("ProviderConfigForm — editing an existing instance (留空即不改)"
     hasApiKey: true, apiKeyMasked: "····a1b2", saved: true,
   };
 
+  it("shows one truthful clean save state and enables saving only after a change", async () => {
+    const user = userEvent.setup();
+    const client = stubClient({ "bridge:getProviderConfig": () => view });
+    renderForm(client, { providerId: "alpha" });
+
+    const clean = await screen.findByRole("button", { name: "已保存" });
+    expect(clean).toBeDisabled();
+    expect(clean).toHaveAttribute("data-save-state", "clean");
+    expect(screen.queryByRole("button", { name: "保存设置" })).not.toBeInTheDocument();
+
+    await user.type(screen.getByLabelText("名称"), " 2");
+    const dirty = screen.getByRole("button", { name: "保存设置" });
+    expect(dirty).toBeEnabled();
+    expect(dirty).toHaveAttribute("data-save-state", "dirty");
+  });
+
   it("loads the existing config and shows the masked key hint, not the real key", async () => {
     const client = stubClient({ "bridge:getProviderConfig": () => view });
     renderForm(client, { providerId: "alpha" });
@@ -275,7 +302,7 @@ describe("ProviderConfigForm — editing an existing instance (留空即不改)"
     });
     renderForm(client, { providerId: "alpha" });
 
-    await screen.findByLabelText("名称");
+    await user.type(await screen.findByLabelText("名称"), " 2");
     await user.click(screen.getByText("保存设置"));
 
     await waitFor(() => expect(savedPayload).toBeDefined());
@@ -319,6 +346,7 @@ describe("ProviderConfigForm — editing an existing instance (留空即不改)"
 
     await screen.findByLabelText("名称");
     expect(screen.getByText("m-2").closest("li")).toHaveAttribute("data-preferred", "true");
+    await user.type(screen.getByLabelText("名称"), " 2");
     await user.click(screen.getByText("保存设置"));
 
     await waitFor(() => expect(savedPayload).toBeDefined());
@@ -346,6 +374,7 @@ describe("ProviderConfigForm — editing an existing instance (留空即不改)"
 
     await screen.findByLabelText("名称");
     expect(screen.getByText("m-1").closest("li")).toHaveAttribute("data-preferred", "true");
+    await user.type(screen.getByLabelText("名称"), " 2");
     await user.click(screen.getByText("高级设置"));
     expect(screen.getByLabelText("快速与后台任务模型")).toHaveValue("m-2");
     expect(screen.getByLabelText("子任务使用模型")).toHaveValue("m-2");
@@ -381,6 +410,7 @@ describe("ProviderConfigForm — editing an existing instance (留空即不改)"
     renderForm(client, { providerId: "alpha" });
 
     await screen.findByLabelText("名称");
+    await user.type(screen.getByLabelText("名称"), " 2");
     await user.click(screen.getByText("高级设置"));
     expect(screen.getByLabelText("快速与后台任务方式")).toHaveValue("auto");
     expect(screen.getByLabelText("子任务使用方式")).toHaveValue("auto");
@@ -403,7 +433,7 @@ describe("ProviderConfigForm — editing an existing instance (留空即不改)"
     });
     renderForm(client, { providerId: "alpha" });
 
-    await screen.findByLabelText("名称");
+    await user.type(await screen.findByLabelText("名称"), " 2");
     await user.click(screen.getByText("保存设置"));
     expect(screen.getByLabelText("名称")).toBeDisabled();
     expect(screen.getByLabelText("Base URL")).toBeDisabled();
@@ -536,7 +566,7 @@ describe("ProviderConfigForm — editing an existing instance (留空即不改)"
     });
     const { onSaved, unmount } = renderForm(client, { providerId: "alpha" });
 
-    await screen.findByLabelText("名称");
+    await user.type(await screen.findByLabelText("名称"), " 2");
     await user.click(screen.getByText("保存设置"));
     await waitFor(() => expect(client.invoke).toHaveBeenCalledWith("bridge:saveProvider", expect.anything()));
     unmount();
@@ -556,6 +586,53 @@ describe("ProviderConfigForm — editing an existing instance (留空即不改)"
 });
 
 describe("ProviderConfigForm — progressive disclosure", () => {
+  it("edits a context ceiling and auto-compaction window on the concrete model", async () => {
+    const user = userEvent.setup();
+    let savedPayload: ProviderDraft | undefined;
+    const view: ProviderConfigView = {
+      id: "deepseek",
+      kind: "deepseek",
+      name: "DeepSeek",
+      baseUrl: "https://api.deepseek.com/anthropic",
+      apiFormat: "anthropic",
+      authMode: "api-key",
+      category: "cn_official",
+      models: ["deepseek-v4-flash"],
+      modelContextPolicies: {
+        "deepseek-v4-flash": { contextWindowTokens: 512_000, autoCompactWindowTokens: 480_000 },
+      },
+      capabilities: { balanceApi: true, modelDiscovery: true, subscriptionPlan: false },
+      hasApiKey: true,
+      saved: true,
+    };
+    const specWithContext: ProviderSpec = {
+      ...view,
+      configured: true,
+    };
+    const client = stubClient({
+      "bridge:getProviderConfig": () => view,
+      "bridge:saveProvider": (request) => {
+        savedPayload = request as ProviderDraft;
+        return specWithContext;
+      },
+      "bridge:listProviders": () => [specWithContext],
+    });
+
+    renderForm(client, { providerId: "deepseek" });
+    await user.click(await screen.findByRole("button", { name: "设置 deepseek-v4-flash 的上下文" }));
+    expect(screen.getByLabelText("deepseek-v4-flash 模型上限")).toHaveValue(512000);
+    expect(screen.getByLabelText("deepseek-v4-flash 自动整理窗口")).toHaveValue(480000);
+
+    await user.clear(screen.getByLabelText("deepseek-v4-flash 自动整理窗口"));
+    await user.type(screen.getByLabelText("deepseek-v4-flash 自动整理窗口"), "486000");
+    await user.click(screen.getByRole("button", { name: "保存设置" }));
+
+    await waitFor(() => expect(savedPayload).toBeDefined());
+    expect(savedPayload?.modelContextPolicies).toEqual({
+      "deepseek-v4-flash": { contextWindowTokens: 512_000, autoCompactWindowTokens: 486_000 },
+    });
+  });
+
   it("keeps the setup journey continuous and reveals technical fields only on demand", async () => {
     const user = userEvent.setup();
     const client = stubClient();

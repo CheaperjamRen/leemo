@@ -24,6 +24,11 @@ import { createSearchSourcesStore, type SearchSourcesState } from "../stores/sea
 import { createPreviewContentStore, type PreviewContentState } from "../stores/preview-content";
 import { createMcpServersStore, type McpServersState } from "../stores/mcp-servers";
 import { createUsageSummaryStore, type UsageSummaryState } from "../stores/usage-summary";
+import {
+  createContextUsageStore,
+  deriveContextUsageFromTimelines,
+  type ContextUsageState,
+} from "../stores/context-usage";
 import { createMemoryStore, type MemoryState } from "../stores/memory";
 import { createWorkspacesStore, HOME_WORKSPACE_ID, type WorkspacesState } from "../stores/workspaces";
 import { createScheduledTasksStore, type ScheduledTasksState } from "../stores/scheduled-tasks";
@@ -64,6 +69,8 @@ export interface BridgeStores {
   previewContent: ReturnType<typeof createPreviewContentStore>;
   mcpServers: ReturnType<typeof createMcpServersStore>;
   usageSummary: ReturnType<typeof createUsageSummaryStore>;
+  /** Optional only for old isolated component fixtures; BridgeProvider always supplies it. */
+  contextUsage?: ReturnType<typeof createContextUsageStore>;
   memory: ReturnType<typeof createMemoryStore>;
   /** Optional only for legacy component fixtures; BridgeProvider always supplies it. */
   scheduledTasks?: ReturnType<typeof createScheduledTasksStore>;
@@ -184,6 +191,7 @@ export function BridgeProvider({ client, live, persist, workspace, scheduler, le
     const searchSources = createSearchSourcesStore(c);
     const mcpServers = createMcpServersStore(c, live ? [] : FIXTURE_MCP_SERVERS);
     const usageSummary = createUsageSummaryStore(c);
+    const contextUsage = createContextUsageStore();
     const memory = createMemoryStore(c);
 
     // Resolved per create (like persona) so switching a skill off lands on the
@@ -225,6 +233,12 @@ export function BridgeProvider({ client, live, persist, workspace, scheduler, le
       },
       onConversationDeleted: (conversationId) => {
         composerDrafts.getState().detachConversation(conversationId);
+        contextUsage.setState((state) => {
+          if (!state.byConversation[conversationId]) return state;
+          const byConversation = { ...state.byConversation };
+          delete byConversation[conversationId];
+          return { byConversation };
+        });
       },
     });
     const approvals = createApprovalsStore(c, {});
@@ -314,6 +328,7 @@ export function BridgeProvider({ client, live, persist, workspace, scheduler, le
       searchSources,
       mcpServers,
       usageSummary,
+      contextUsage,
       memory,
       scheduledTasks,
       learning: learningStore,
@@ -330,6 +345,15 @@ export function BridgeProvider({ client, live, persist, workspace, scheduler, le
       }),
     };
   }, [activeClient, activeLearning, activeScheduler, capture, live, tasks, workspace]);
+
+  // The root owns the active palette so every surface (Start, Workbench,
+  // Buddy, overlays) switches together.  Hydration updates the same store,
+  // therefore the persisted theme is applied before the first meaningful
+  // interaction without making individual pages own theme state.
+  const themeId = useStore(stores.settings, (state) => state.themeId);
+  useEffect(() => {
+    document.documentElement.dataset.theme = themeId;
+  }, [themeId]);
 
   useEffect(() => {
     const captures = stores.captures;
@@ -425,6 +449,7 @@ export function BridgeProvider({ client, live, persist, workspace, scheduler, le
       previewContent: stores.previewContent,
       fileTree: stores.fileTree,
       notifications: stores.notifications,
+      contextUsage: stores.contextUsage,
     });
     return unsubscribe;
   }, [activeClient, stores]);
@@ -455,6 +480,9 @@ export function BridgeProvider({ client, live, persist, workspace, scheduler, le
         ]);
         if (stopped) return;
         stores.conversations.getState().hydrate(snap.conversations);
+        stores.contextUsage?.setState(
+          deriveContextUsageFromTimelines(stores.conversations.getState().timelines),
+        );
         stores.conversations.getState().activateWorkspace(
           stores.workspaces?.getState().activeId ?? HOME_WORKSPACE_ID,
         );
@@ -646,6 +674,9 @@ export const useMcpServers = <T,>(sel: (s: McpServersState) => T): T =>
   useStore(useStores().mcpServers, sel);
 export const useUsageSummary = <T,>(sel: (s: UsageSummaryState) => T): T =>
   useStore(useStores().usageSummary, sel);
+const FALLBACK_CONTEXT_USAGE = createContextUsageStore();
+export const useContextUsage = <T,>(sel: (s: ContextUsageState) => T): T =>
+  useStore(useStores().contextUsage ?? FALLBACK_CONTEXT_USAGE, sel);
 export const useMemory = <T,>(sel: (s: MemoryState) => T): T =>
   useStore(useStores().memory, sel);
 export const useScheduledTasks = <T,>(sel: (s: ScheduledTasksState) => T): T =>

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type DragEvent, type ReactNode } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState, type DragEvent, type ReactNode } from "react";
 import {
   ArrowDown,
   ArrowUp,
@@ -7,6 +7,7 @@ import {
   ExternalLink,
   Eye,
   EyeOff,
+  Gauge,
   GripVertical,
   LogIn,
   LogOut,
@@ -23,6 +24,7 @@ import type {
   ConnectionTestResult,
   ListRemoteModelsResult,
   ModelCapabilities,
+  ModelContextPolicy,
   ModelCapabilityEvidence,
   ProviderAuthMode,
   ProviderApiFormat,
@@ -52,6 +54,7 @@ export interface PresetOffer {
   modelsUrl?: string;
   models?: string[];
   modelCapabilities?: Record<string, ModelCapabilities>;
+  modelContextPolicies?: Record<string, ModelContextPolicy>;
 }
 
 export interface ProviderConfigFormProps {
@@ -120,6 +123,25 @@ function cloneCapabilities(value: Record<string, ModelCapabilities> | undefined)
   return value
     ? Object.fromEntries(Object.entries(value).map(([id, capabilities]) => [id, { ...capabilities }]))
     : {};
+}
+
+function cloneContextPolicies(value: Record<string, ModelContextPolicy> | undefined) {
+  return value
+    ? Object.fromEntries(Object.entries(value).map(([id, policy]) => [id, { ...policy }]))
+    : {};
+}
+
+function contextPoliciesForModels(
+  value: Record<string, ModelContextPolicy>,
+  models: ModelRow[],
+): Record<string, ModelContextPolicy> | undefined {
+  const active = new Set(models.map((model) => model.id));
+  const filtered = Object.fromEntries(
+    Object.entries(value)
+      .filter(([modelId]) => active.has(modelId))
+      .map(([modelId, policy]) => [modelId, { ...policy }]),
+  );
+  return Object.keys(filtered).length > 0 ? filtered : undefined;
 }
 
 function capabilitiesForModels(
@@ -222,6 +244,9 @@ export default function ProviderConfigForm({
   const [modelCapabilities, setModelCapabilities] = useState<Record<string, ModelCapabilities>>(
     () => cloneCapabilities(preset?.modelCapabilities),
   );
+  const [modelContextPolicies, setModelContextPolicies] = useState<Record<string, ModelContextPolicy>>(
+    () => cloneContextPolicies(preset?.modelContextPolicies),
+  );
   const [modelCapabilityEvidence, setModelCapabilityEvidence] = useState<Record<string, ModelCapabilityEvidence>>(
     () => cloneModelCapabilityEvidenceMap(undefined) ?? {},
   );
@@ -237,6 +262,7 @@ export default function ProviderConfigForm({
   const [deleting, setDeleting] = useState(false);
   const [advancedOpen, setAdvancedOpen] = useState(Boolean(revealAdvanced));
   const [expandedSnapshots, setExpandedSnapshots] = useState<Record<string, boolean>>({});
+  const [expandedContextModel, setExpandedContextModel] = useState<string | null>(null);
   const [baselineSnapshot, setBaselineSnapshot] = useState<string | null>(null);
   const [localTest, setLocalTest] = useState<ScopedState<TestState> | null>(null);
   const [localRemote, setLocalRemote] = useState<ScopedState<RemoteState> | null>(null);
@@ -284,6 +310,7 @@ export default function ProviderConfigForm({
         setProductKind(view.productKind ?? "self-hosted");
         setModelRows(toModelRows(orderedModels));
         setModelCapabilities(cloneCapabilities(view.modelCapabilities));
+        setModelContextPolicies(cloneContextPolicies(view.modelContextPolicies));
         setModelCapabilityEvidence(cloneModelCapabilityEvidenceMap(view.modelCapabilityEvidence) ?? {});
         setTaskModelRouting(view.taskModelRouting ? { ...view.taskModelRouting } : {});
         setHeaderRows(rows);
@@ -322,6 +349,7 @@ export default function ProviderConfigForm({
       models: modelRows.map((row) => row.id),
       modelCapabilities: capabilitiesForModels(modelCapabilities, modelRows),
       modelCapabilityEvidence: evidenceForModels(modelCapabilityEvidence, modelRows),
+      modelContextPolicies: contextPoliciesForModels(modelContextPolicies, modelRows),
       taskModelRouting: Object.keys(taskModelRouting).length > 0 ? { ...taskModelRouting } : {},
       modelsUrl: modelsUrl.trim(),
       apiKeyUrl: apiKeyUrl.trim(),
@@ -332,7 +360,7 @@ export default function ProviderConfigForm({
     if (removeHeaderKeys.length > 0) next.removeHeaderKeys = removeHeaderKeys;
     if (existing?.category) next.category = existing.category;
     return next;
-  }, [apiFormat, apiKey, apiKeyUrl, authMode, baseUrl, existing?.category, headerRows, kind, modelCapabilities, modelCapabilityEvidence, modelRows, modelsUrl, name, originalHeaderKeys, productKind, targetId, taskModelRouting]);
+  }, [apiFormat, apiKey, apiKeyUrl, authMode, baseUrl, existing?.category, headerRows, kind, modelCapabilities, modelCapabilityEvidence, modelContextPolicies, modelRows, modelsUrl, name, originalHeaderKeys, productKind, targetId, taskModelRouting]);
 
   const editorSnapshot = useMemo(() => JSON.stringify({
     kind,
@@ -345,11 +373,12 @@ export default function ProviderConfigForm({
     modelRows,
     modelCapabilities,
     modelCapabilityEvidence,
+    modelContextPolicies,
     taskModelRouting,
     headerRows,
     modelsUrl,
     apiKeyUrl,
-  }), [apiFormat, apiKey, apiKeyUrl, authMode, baseUrl, headerRows, kind, modelCapabilities, modelCapabilityEvidence, modelRows, modelsUrl, name, productKind, taskModelRouting]);
+  }), [apiFormat, apiKey, apiKeyUrl, authMode, baseUrl, headerRows, kind, modelCapabilities, modelCapabilityEvidence, modelContextPolicies, modelRows, modelsUrl, name, productKind, taskModelRouting]);
   const testIdentity = useMemo(() => JSON.stringify({
     kind,
     baseUrl,
@@ -530,7 +559,10 @@ export default function ProviderConfigForm({
     try {
       const result = await saveProviderAction(draft);
       if (!mountedRef.current || generation !== saveGenerationRef.current) return;
-      if (result.ok) onSaved(result.spec);
+      if (result.ok) {
+        setBaselineSnapshot(editorSnapshot);
+        onSaved(result.spec);
+      }
       else setSaveError(result.error);
     } finally {
       if (mountedRef.current && generation === saveGenerationRef.current) setSaving(false);
@@ -609,6 +641,14 @@ export default function ProviderConfigForm({
     : "未确认";
   const testImageDetail = testResult?.capabilityProbes?.image.detail;
   const showingAdvanced = advancedOpen || Boolean(revealAdvanced);
+  const cleanSaved = existing?.saved === true && !dirty;
+  const saveDisabled = saving
+    || deleting
+    || cleanSaved
+    || !name.trim()
+    || (!isSubscriptionProvider && !baseUrl.trim())
+    || (isSubscriptionProvider && !subscriptionConnected)
+    || modelRows.length === 0;
 
   return (
     <div data-testid="provider-config-form" aria-busy={saving || deleting || loginPending} className="settings-provider-config-surface flex h-full min-h-0 min-w-0 flex-1 flex-col bg-white">
@@ -763,11 +803,14 @@ export default function ProviderConfigForm({
                 <ul aria-label="已启用模型列表" className="mt-3 divide-y divide-[var(--leemo-line)] border-y border-[var(--leemo-line)]">
                   {modelRows.map((row, index) => {
                     const evidence = modelCapabilityEvidence[row.id];
+                    const contextPolicy = modelContextPolicies[row.id] ?? {};
+                    const contextExpanded = expandedContextModel === row.id;
                     const imageDisplay = resolveCapabilityDisplay(evidence?.image, modelCapabilities[row.id]?.vision);
                     const imageFailed = imageDisplay.status === "failed" && imageDisplay.source === "probe";
                     const imageOverridden = imageDisplay.source === "user";
                     return (
-                      <li key={row.id} draggable onDragStart={() => { draggedModelRef.current = row.id; }} onDragOver={(event) => event.preventDefault()} onDrop={(event) => handleDropModel(event, row.id)} data-preferred={index === 0 ? "true" : undefined} className="group flex min-h-[72px] items-center gap-2 py-2 text-[11px]">
+                      <Fragment key={row.id}>
+                      <li draggable onDragStart={() => { draggedModelRef.current = row.id; }} onDragOver={(event) => event.preventDefault()} onDrop={(event) => handleDropModel(event, row.id)} data-preferred={index === 0 ? "true" : undefined} className="group flex min-h-[72px] items-center gap-2 py-2 text-[11px]">
                         <GripVertical className="h-4 w-4 shrink-0 cursor-grab text-[var(--leemo-ink-3)]" aria-hidden />
                         <div className="min-w-0 flex-1">
                           <div className="flex min-w-0 items-center gap-2">
@@ -790,12 +833,86 @@ export default function ProviderConfigForm({
                           )}
                         </div>
                         <div className="flex shrink-0 items-center gap-0.5 opacity-70 group-hover:opacity-100">
+                          <button type="button" onClick={() => {
+                            const opening = expandedContextModel !== row.id;
+                            setExpandedContextModel(opening ? row.id : null);
+                            if (opening) {
+                              window.requestAnimationFrame(() => {
+                                const details = document.getElementById(`provider-model-context-${index}`);
+                                if (typeof details?.scrollIntoView === "function") {
+                                  details.scrollIntoView({ block: "nearest" });
+                                }
+                              });
+                            }
+                          }} aria-label={`设置 ${row.id} 的上下文`} aria-expanded={contextExpanded} title="上下文设置" className={`grid h-7 w-7 place-items-center rounded-full text-[var(--leemo-ink-3)] hover:bg-[var(--leemo-hover)] hover:text-[var(--leemo-ink)] ${contextExpanded ? "bg-[var(--leemo-hover)] text-[var(--leemo-ink)]" : ""}`}><Gauge className="h-3.5 w-3.5" aria-hidden /></button>
                           {index > 0 && <button type="button" onClick={() => makePreferredModel(row.id)} aria-label={`设为首选模型 ${row.id}`} title="设为首选" className="grid h-7 w-7 place-items-center text-[var(--leemo-ink-3)] hover:text-[var(--leemo-amber-strong)]"><Star className="h-3.5 w-3.5" aria-hidden /></button>}
                           <button type="button" onClick={() => reorderModel(row.id, -1)} disabled={index === 0} aria-label={`上移模型 ${row.id}`} title="上移" className="grid h-7 w-7 place-items-center text-[var(--leemo-ink-3)] hover:text-[var(--leemo-ink)] disabled:opacity-30"><ArrowUp className="h-3.5 w-3.5" aria-hidden /></button>
                           <button type="button" onClick={() => reorderModel(row.id, 1)} disabled={index === modelRows.length - 1} aria-label={`下移模型 ${row.id}`} title="下移" className="grid h-7 w-7 place-items-center text-[var(--leemo-ink-3)] hover:text-[var(--leemo-ink)] disabled:opacity-30"><ArrowDown className="h-3.5 w-3.5" aria-hidden /></button>
                           <button type="button" onClick={() => removeModel(row.id)} aria-label={`移除模型 ${row.id}`} title="移除模型" className="grid h-7 w-7 place-items-center text-[var(--leemo-ink-3)] hover:text-[var(--leemo-danger)]"><X className="h-3.5 w-3.5" aria-hidden /></button>
                         </div>
                       </li>
+                      {contextExpanded && (
+                        <li id={`provider-model-context-${index}`} className="border-t border-[var(--leemo-line)] bg-[var(--leemo-bg)] px-3 py-3">
+                          <div className="mb-2 flex items-center justify-between gap-3">
+                            <div>
+                              <p className="text-[11px] font-medium text-[var(--leemo-ink)]">上下文窗口</p>
+                              <p className="mt-0.5 text-[10px] text-[var(--leemo-ink-3)]">只影响自动整理时机，不会扩大服务商的真实上限。</p>
+                            </div>
+                            <button type="button" onClick={() => setModelContextPolicies((current) => { const next = { ...current }; delete next[row.id]; return next; })} className="text-[10px] text-[var(--leemo-ink-3)] hover:text-[var(--leemo-ink)]">恢复自动</button>
+                          </div>
+                          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                            <label className="block">
+                              <span className="mb-1 block text-[10px] text-[var(--leemo-ink-3)]">模型上限</span>
+                              <input
+                                aria-label={`${row.id} 模型上限`}
+                                type="number"
+                                min={8_000}
+                                max={2_000_000}
+                                step={1_000}
+                                value={contextPolicy.contextWindowTokens ?? ""}
+                                onChange={(event) => setModelContextPolicies((current) => ({
+                                  ...current,
+                                  [row.id]: {
+                                    ...current[row.id],
+                                    contextWindowTokens: event.target.value ? Number(event.target.value) : undefined,
+                                  },
+                                }))}
+                                placeholder="自动识别"
+                                className={inputClass}
+                              />
+                            </label>
+                            <label className="block">
+                              <span className="mb-1 block text-[10px] text-[var(--leemo-ink-3)]">自动整理窗口</span>
+                              <input
+                                aria-label={`${row.id} 自动整理窗口`}
+                                type="number"
+                                min={100_000}
+                                max={1_000_000}
+                                step={1_000}
+                                value={contextPolicy.autoCompactWindowTokens ?? ""}
+                                onChange={(event) => setModelContextPolicies((current) => ({
+                                  ...current,
+                                  [row.id]: {
+                                    ...current[row.id],
+                                    autoCompactWindowTokens: event.target.value ? Number(event.target.value) : undefined,
+                                  },
+                                }))}
+                                placeholder="跟随模型上限"
+                                className={inputClass}
+                              />
+                            </label>
+                          </div>
+                          <div className="mt-2 flex flex-wrap gap-1.5">
+                            {[200_000, 258_000, 372_000, 512_000, 1_000_000].map((value) => (
+                              <button key={value} type="button" onClick={() => setModelContextPolicies((current) => ({
+                                ...current,
+                                [row.id]: { ...current[row.id], contextWindowTokens: value, autoCompactWindowTokens: Math.round(value * 0.95) },
+                              }))} className="rounded-full border border-[var(--leemo-line)] px-2 py-1 text-[10px] text-[var(--leemo-ink-2)] hover:border-[var(--leemo-amber)]">{value >= 1_000_000 ? "1M" : `${Math.round(value / 1_000)}K`}</button>
+                            ))}
+                          </div>
+                        </li>
+                      )}
+                      </Fragment>
                     );
                   })}
                 </ul>
@@ -865,12 +982,21 @@ export default function ProviderConfigForm({
       <footer className="provider-config-footer flex min-h-[56px] shrink-0 flex-wrap items-center justify-between gap-2 border-t border-[var(--leemo-line)] px-4 py-2.5 sm:px-5">
         <div className="flex items-center gap-2">
           {existing?.saved && onDelete && !confirmingDelete && <button type="button" onClick={() => setConfirmingDelete(true)} disabled={saving || deleting} aria-label="删除服务商" title="删除服务商" className="grid h-8 w-8 place-items-center rounded-md text-[var(--leemo-ink-3)] hover:bg-red-50 hover:text-[var(--leemo-danger)] disabled:opacity-50"><Trash2 className="h-4 w-4" aria-hidden /></button>}
-          {confirmingDelete && <div className="flex items-center gap-2 text-[10.5px] text-[var(--leemo-danger)]"><span>确定删除？</span><button type="button" aria-label="确认删除服务商" onClick={() => void handleDelete()} disabled={deleting} className="rounded-md bg-[var(--leemo-danger)] px-2 py-1 text-white disabled:opacity-50">{deleting ? "删除中" : "确认"}</button><button type="button" aria-label="取消删除服务商" onClick={() => setConfirmingDelete(false)} className="px-1 py-1 text-[var(--leemo-ink-3)]">取消</button></div>}
+          {confirmingDelete && <div className="flex items-center gap-2 text-[10.5px] text-[var(--leemo-danger)]"><span>确定删除？</span><button type="button" aria-label="确认删除服务商" onClick={() => void handleDelete()} disabled={deleting} className="rounded-full bg-[var(--leemo-danger)] px-2.5 py-1 text-white disabled:opacity-50">{deleting ? "删除中" : "确认"}</button><button type="button" aria-label="取消删除服务商" onClick={() => setConfirmingDelete(false)} className="rounded-full px-2 py-1 text-[var(--leemo-ink-3)] hover:bg-[var(--leemo-bg)]">取消</button></div>}
         </div>
         <div className="ml-auto flex min-w-0 flex-wrap items-center justify-end gap-2">
-          <button type="button" onClick={onCancel} disabled={saving || deleting} className="h-8 rounded-md border border-[var(--leemo-line)] px-3 text-[11.5px] text-[var(--leemo-ink-2)] hover:bg-[var(--leemo-bg)] disabled:opacity-50">取消</button>
-          {!isSubscriptionProvider && <button type="button" onClick={() => void handleTestConnection()} disabled={saving || deleting || testPending || !name.trim() || !baseUrl.trim() || modelRows.length === 0} className="inline-flex h-8 items-center gap-1.5 rounded-md border border-[var(--leemo-line)] px-3 text-[11.5px] text-[var(--leemo-ink-2)] hover:border-[var(--leemo-amber)] disabled:opacity-50"><TestTube2 className="h-3.5 w-3.5" aria-hidden />{testPending ? "测试中" : "测试连接"}</button>}
-          <button type="button" onClick={() => void handleSave()} disabled={saving || deleting || !name.trim() || (!isSubscriptionProvider && !baseUrl.trim()) || (isSubscriptionProvider && !subscriptionConnected) || modelRows.length === 0} className="inline-flex h-8 items-center gap-1.5 rounded-md bg-[var(--leemo-ink)] px-3.5 text-[11.5px] font-medium text-white disabled:opacity-50"><Save className="h-3.5 w-3.5" aria-hidden />{saving ? "保存中" : "保存设置"}</button>
+          <button type="button" onClick={onCancel} disabled={saving || deleting} className="h-8 rounded-full border border-[var(--leemo-line)] px-3.5 text-[11.5px] text-[var(--leemo-ink-2)] hover:bg-[var(--leemo-bg)] disabled:opacity-50">取消</button>
+          {!isSubscriptionProvider && <button type="button" onClick={() => void handleTestConnection()} disabled={saving || deleting || testPending || !name.trim() || !baseUrl.trim() || modelRows.length === 0} className="inline-flex h-8 items-center gap-1.5 rounded-full border border-[var(--leemo-line)] px-3.5 text-[11.5px] text-[var(--leemo-ink-2)] hover:border-[var(--leemo-amber)] disabled:opacity-50"><TestTube2 className="h-3.5 w-3.5" aria-hidden />{testPending ? "测试中" : "测试连接"}</button>}
+          <button
+            type="button"
+            onClick={() => void handleSave()}
+            disabled={saveDisabled}
+            data-save-state={cleanSaved ? "clean" : "dirty"}
+            className={`inline-flex h-8 items-center gap-1.5 rounded-full border px-4 text-[11.5px] font-medium transition-colors disabled:cursor-default ${cleanSaved ? "border-[var(--leemo-line)] bg-[var(--leemo-panel)] text-[var(--leemo-ink-3)]" : "border-transparent bg-[var(--leemo-workbench-action,var(--leemo-ink))] text-white disabled:opacity-50"}`}
+          >
+            <Save className="h-3.5 w-3.5" aria-hidden />
+            {saving ? "保存中" : cleanSaved ? "已保存" : "保存设置"}
+          </button>
         </div>
       </footer>
     </div>

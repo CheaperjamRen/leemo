@@ -158,6 +158,9 @@ function sameMemoryScope(left: MemoryScopeView, right: MemoryScopeView): boolean
            modelCapabilities: provider.modelCapabilities
              ? Object.fromEntries(Object.entries(provider.modelCapabilities).map(([modelId, capabilities]) => [modelId, { ...capabilities }]))
              : undefined,
+           modelContextPolicies: provider.modelContextPolicies
+             ? Object.fromEntries(Object.entries(provider.modelContextPolicies).map(([modelId, policy]) => [modelId, { ...policy }]))
+             : undefined,
           })) as BridgeInvokeMap[K]["response"];
       case "bridge:resolveTaskTimes":
         return {
@@ -189,6 +192,9 @@ function sameMemoryScope(left: MemoryScopeView, right: MemoryScopeView): boolean
            models: [...provider.models],
            modelCapabilities: provider.modelCapabilities
              ? Object.fromEntries(Object.entries(provider.modelCapabilities).map(([modelId, capabilities]) => [modelId, { ...capabilities }]))
+             : undefined,
+           modelContextPolicies: provider.modelContextPolicies
+             ? Object.fromEntries(Object.entries(provider.modelContextPolicies).map(([modelId, policy]) => [modelId, { ...policy }]))
              : undefined,
            capabilities: { ...provider.capabilities },
            hasApiKey,

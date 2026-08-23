@@ -55,7 +55,12 @@ function validateAuditRoot(candidate) {
 
 function removeAuditRoot(candidate) {
   const resolved = validateAuditRoot(candidate);
-  fs.rmSync(resolved, { recursive: true, force: true });
+  fs.rmSync(resolved, {
+    recursive: true,
+    force: true,
+    maxRetries: 10,
+    retryDelay: 500,
+  });
 }
 
 async function freePort() {
@@ -330,7 +335,10 @@ async function launchApp(auditRoot, label) {
   const browser = await chromium.connectOverCDP(`http://127.0.0.1:${port}`);
   const page = browser.contexts().flatMap((context) => context.pages())[0];
   insist(page, `${label} 没有 renderer page`);
-  await page.locator('textarea[aria-label="输入消息"]').waitFor({ state: "attached", timeout: 60_000 });
+  // The packaged app now opens on the quiet Start surface, where a composer is
+  // intentionally absent. Wait for the shared shell instead; individual
+  // journeys switch to Workbench before they need the input field.
+  await page.getByTestId("topbar-product-identity").waitFor({ state: "visible", timeout: 60_000 });
   return { child, browser, page, logs, port, startupMs: Date.now() - startedAt };
 }
 
@@ -403,7 +411,7 @@ async function skipOnboarding(page) {
 
 async function openSettingsTab(page, label) {
   if (!await page.getByTestId("settings-window").isVisible().catch(() => false)) {
-    await page.getByRole("button", { name: "设置", exact: true }).click();
+    await page.getByTestId("topbar-primary-controls").getByRole("button", { name: "设置", exact: true }).click();
   }
   await page.getByTestId("settings-window").waitFor({ state: "visible" });
   const search = page.getByRole("searchbox", { name: "搜索设置" });
@@ -436,9 +444,10 @@ async function setUpProviderThroughUi(page, baseUrl) {
   await form.getByRole("button", { name: "OpenAI Chat", exact: true }).click();
   await form.getByLabel("Base URL").fill(baseUrl);
   await form.locator('input[aria-label="API Key"]').fill(TEST_KEY);
-  await form.locator("summary", { hasText: "高级设置" }).click();
+  await form.getByRole("tab", { name: "高级设置", exact: true }).click();
   await form.getByLabel("模型发现地址").fill(`${baseUrl}/models`);
   await screenshot(page, SCREENSHOTS[1]);
+  await form.getByRole("tab", { name: "连接与模型", exact: true }).click();
 
   await form.getByLabel("手敲模型名").fill(LONG_MODEL);
   await form.getByRole("button", { name: "添加模型", exact: true }).click();
@@ -466,12 +475,13 @@ async function setUpProviderThroughUi(page, baseUrl) {
   await screenshot(page, SCREENSHOTS[3]);
 
   await form.getByRole("button", { name: `设为首选模型 ${RETRY_MODEL}` }).click();
+  await form.getByRole("tab", { name: "高级设置", exact: true }).click();
   await form.getByLabel("子任务使用方式").selectOption("specific");
   await form.getByLabel("子任务使用模型").selectOption(DISPUTED_MODEL);
   await form.getByRole("button", { name: "保存设置", exact: true }).click();
   await page.getByText("凭据已安全保存", { exact: true }).waitFor({ state: "visible" });
 
-  await openSettingsTab(page, "用量");
+  await openSettingsTab(page, "用量与费用");
   await page.getByRole("heading", { name: "用量与费用" }).waitFor({ state: "visible" });
   await screenshot(page, SCREENSHOTS[4]);
   await page.getByRole("button", { name: "关闭设置" }).click();
@@ -502,7 +512,10 @@ async function runRetryJourney(page, state) {
   state.allowStreamSuccess = true;
   await page.getByRole("button", { name: "仍用当前模型重试", exact: true }).click();
   await page.getByText(SUCCESS_MARKER, { exact: false }).waitFor({ state: "visible", timeout: 60_000 });
-  await page.getByTestId("current-conversation-status").filter({ hasText: "已完成" }).waitFor({ state: "visible" });
+  // Completed conversations deliberately do not keep a persistent "已完成"
+  // badge in the title bar. The composer returning from Stop to Send is the
+  // current visible terminal-state contract.
+  await page.getByRole("button", { name: "发送", exact: true }).waitFor({ state: "visible" });
   insist(!await page.getByText("任务没有完成", { exact: true }).isVisible().catch(() => false), "重试成功后失败提示仍未清除");
   await screenshot(page, SCREENSHOTS[7]);
 }
@@ -843,8 +856,11 @@ async function main() {
       try {
         removeAuditRoot(auditRoot);
       } catch (error) {
-        if (attempt === 19) throw error;
-        await sleep(250);
+        if (attempt === 19) {
+          console.warn(`[settings-runtime] 隔离目录仍被 Windows 占用，延后清理：${auditRoot}`);
+          break;
+        }
+        await sleep(500);
       }
     }
   }

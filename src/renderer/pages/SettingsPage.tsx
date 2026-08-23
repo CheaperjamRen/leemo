@@ -19,6 +19,7 @@ import { orderConfiguredProviders } from "../components/model-picker";
 import {
   PERSONA_PROMPT_TEXT_MAX_LENGTH,
   RELATIONSHIP_STYLE_OPTIONS,
+  THEME_OPTIONS,
 } from "../stores/settings";
 import "./SettingsPage.css";
 
@@ -239,9 +240,15 @@ function ProviderWorkbenchSection({
     <section className="settings-models flex h-full min-h-0 flex-col">
       <div className="settings-models-heading mb-3 flex shrink-0 items-end justify-between gap-4">
         <h2 className="text-xl font-medium text-[var(--leemo-ink)]">模型供应商</h2>
-        <span className="text-[11px] tabular-nums text-[var(--leemo-ink-3)]">{configured.length} 个已配置</span>
       </div>
-      <div data-testid="provider-workbench" data-layout="list-detail" className="settings-provider-workbench relative flex min-h-0 flex-1 flex-col overflow-hidden border border-[var(--leemo-line)] bg-white lg:flex-row">
+      <div
+        data-testid="provider-workbench"
+        data-layout="list-detail"
+        data-layout-density="compact"
+        data-detail-priority="dominant"
+        data-provider-rail-width="216"
+        className="settings-provider-workbench relative flex min-h-0 flex-1 flex-col overflow-hidden border border-[var(--leemo-line)] bg-white lg:flex-row"
+      >
         {addedProviders.length > 0 && (
           <ProviderList
             providers={addedProviders}
@@ -324,6 +331,7 @@ export function SettingsPage({
   const { settings, providers, searchSources, mcpServers, approvals, usageSummary: usageStore, memory } = stores;
   const {
     surface,
+    themeId,
     personaCardId,
     personaCards,
     relationshipStyle,
@@ -346,6 +354,7 @@ export function SettingsPage({
     defaultWorkspaceId,
     captureFileDropMode,
     setSurface,
+    setThemeId,
     setPersonaCard,
     setRelationshipStyle,
     upsertPersonaCard,
@@ -1055,6 +1064,35 @@ export function SettingsPage({
                 onCheckedChange={setTaskModelParsingEnabled}
                 className="mt-0.5"
               />
+            </div>
+          </section>}
+
+          {activeTab === "personalization" && <section className="settings-theme-section" aria-labelledby="theme-heading">
+            <div className="settings-section-heading">
+              <h2 id="theme-heading">界面主题</h2>
+              <p>开始页、工作台、搭子和设置会一起使用这个主题。</p>
+            </div>
+            <div className="settings-theme-options" role="radiogroup" aria-label="界面主题">
+              {THEME_OPTIONS.map((option) => (
+                <label
+                  key={option.id}
+                  className={`settings-theme-option${themeId === option.id ? " is-selected" : ""}`}
+                >
+                  <input
+                    type="radio"
+                    name="themeId"
+                    aria-label={option.label}
+                    value={option.id}
+                    checked={themeId === option.id}
+                    onChange={() => setThemeId(option.id)}
+                  />
+                  <span className="settings-theme-swatch" aria-hidden="true" data-theme-preview={option.id} />
+                  <span className="settings-theme-copy">
+                    <strong>{option.label}</strong>
+                    <small>{option.description}</small>
+                  </span>
+                </label>
+              ))}
             </div>
           </section>}
 

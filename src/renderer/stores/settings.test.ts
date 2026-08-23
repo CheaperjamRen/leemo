@@ -27,6 +27,7 @@ describe("buildGreeting", () => {
 describe("settings store", () => {
   it("keeps legacy defaults and starts with safe, key-free foundation values", () => {
     const state = createSettingsStore().getState();
+    expect(state.themeId).toBe("white-copper");
     expect(state.surface).toBe("start");
     expect(state.mode).toBe("buddy");
     expect(state.persona).toBe("momo");
@@ -175,6 +176,19 @@ describe("settings store", () => {
     const restored = createSettingsStore();
     restored.getState().hydrate({ taskModelParsingEnabled: false });
     expect(restored.getState().taskModelParsingEnabled).toBe(false);
+  });
+
+  it("validates and persists the user-selected visual theme", () => {
+    const store = createSettingsStore();
+    store.getState().setThemeId("warm-copper");
+    expect(store.getState().themeId).toBe("warm-copper");
+    expect(pickPersistedSettings(store.getState()).themeId).toBe("warm-copper");
+
+    const restored = createSettingsStore();
+    restored.getState().hydrate({ themeId: "white-indigo" });
+    expect(restored.getState().themeId).toBe("white-indigo");
+    restored.getState().hydrate({ themeId: "not-a-theme" });
+    expect(restored.getState().themeId).toBe("white-indigo");
   });
 
   it("keeps daily global overview automation opt-in and validates its local time", () => {

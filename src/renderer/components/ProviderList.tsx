@@ -44,7 +44,7 @@ function statusFor(provider: ProviderSpec, test: TestState | undefined): {
   }
   if (test?.ok === false) return { label: "需修复", tone: "error" };
   return provider.configured === true
-    ? { label: "已配置", tone: "idle" }
+    ? { label: "", tone: "idle" }
     : provider.authMode === "oauth-subscription"
       ? { label: "待登录", tone: "error" }
     : provider.authMode === "none"
@@ -99,7 +99,7 @@ export function ProviderList({
   return (
     <div className="provider-list flex h-[142px] min-h-0 w-full shrink-0 flex-col border-b border-[var(--leemo-line)] bg-[var(--leemo-bg)] lg:h-full lg:w-[244px] lg:border-b-0 lg:border-r">
       <div className="provider-list-header flex h-10 shrink-0 items-center justify-between border-b border-[var(--leemo-line)] px-3 lg:h-12">
-        <span className="text-xs font-medium text-[var(--leemo-ink-2)]">已接入</span>
+        <span className="sr-only">已接入模型服务商</span>
         {addedProviders.length > 0 ? (
           <button
             type="button"
@@ -173,24 +173,19 @@ export function ProviderList({
               >
                 <ProviderBrandIcon kind={provider.kind} name={provider.name} compact />
                 <span className="min-w-0 flex-1">
-                  <span className="flex min-w-0 items-center gap-1.5">
-                    <span className="min-w-0 truncate text-[12.5px] font-medium text-[var(--leemo-ink)]">{provider.name}</span>
-                    {isDefault && (
-                      <span className="shrink-0 rounded border border-[var(--leemo-amber-line)] bg-[var(--leemo-amber-bg)] px-1 py-px text-[9px] text-[var(--leemo-amber-ink)]">
-                        默认
+                  <span className="block min-w-0 truncate text-[12.5px] font-medium text-[var(--leemo-ink)]">{provider.name}</span>
+                  <span className="mt-1 flex min-w-0 items-center gap-1.5 text-[10px] text-[var(--leemo-ink-3)]">
+                    {provider.models[0] && (
+                      <span className="min-w-0 truncate" title={provider.models[0]}>{provider.models[0]}</span>
+                    )}
+                    {status.label && (
+                      <span className="flex shrink-0 items-center gap-1">
+                        <StatusIcon tone={status.tone} />
+                        <span>{status.label}</span>
+                        {status.detail && <span className="tabular-nums">{status.detail}</span>}
                       </span>
                     )}
                   </span>
-                  <span className="mt-1 flex min-w-0 items-center gap-1 text-[10.5px] text-[var(--leemo-ink-3)]">
-                    <StatusIcon tone={status.tone} />
-                    <span className="shrink-0">{status.label}</span>
-                    {status.detail && <span className="tabular-nums">{status.detail}</span>}
-                  </span>
-                  {provider.models[0] && (
-                    <span className="mt-0.5 block truncate text-[10px] text-[var(--leemo-ink-3)]" title={provider.models[0]}>
-                      {provider.models[0]}
-                    </span>
-                  )}
                 </span>
               </button>
 
@@ -198,8 +193,18 @@ export function ProviderList({
                 <button type="button" disabled={disabled || !canPrioritize} aria-label={`拖动排序 ${provider.name}`} title="拖动排序" className={`${iconButtonClass} cursor-grab active:cursor-grabbing`}>
                   <GripVertical className="h-3.5 w-3.5" aria-hidden />
                 </button>
-                <button type="button" disabled={disabled || !canPrioritize || isDefault} onClick={() => onReorder([provider.id, ...ids.filter((id) => id !== provider.id)])} aria-label={`设为默认 ${provider.name}`} title="设为默认" className={iconButtonClass}>
-                  <Star className="h-3.5 w-3.5" aria-hidden />
+                <button
+                  type="button"
+                  disabled={disabled || !canPrioritize}
+                  onClick={() => {
+                    if (!isDefault) onReorder([provider.id, ...ids.filter((id) => id !== provider.id)]);
+                  }}
+                  aria-label={`${isDefault ? "当前默认" : "设为默认"} ${provider.name}`}
+                  aria-pressed={isDefault}
+                  title={isDefault ? "当前默认" : "设为默认"}
+                  className={`${iconButtonClass} ${isDefault ? "bg-[var(--leemo-amber-bg)] text-[var(--leemo-amber-ink)]" : ""}`}
+                >
+                  <Star className="h-3.5 w-3.5" fill={isDefault ? "currentColor" : "none"} aria-hidden />
                 </button>
                 <button type="button" disabled={disabled || !canPrioritize || priorityIndex === 0} onClick={() => reorderBy(provider.id, -1)} aria-label={`上移 ${provider.name}`} title="上移" className={iconButtonClass}>
                   <ArrowUp className="h-3.5 w-3.5" aria-hidden />

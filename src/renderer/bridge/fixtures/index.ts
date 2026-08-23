@@ -12,6 +12,9 @@ export const FIXTURE_PROVIDERS: ProviderSpec[] = [
     baseUrl: "https://api.deepseek.com",
     models: ["deepseek-chat"],
     modelCapabilities: { "deepseek-chat": { thinking: true, vision: false } },
+    modelContextPolicies: {
+      "deepseek-chat": { contextWindowTokens: 128_000, autoCompactWindowTokens: 120_000 },
+    },
     capabilities: { balanceApi: true, modelDiscovery: false, subscriptionPlan: false },
     // Fixture/browser-dev demo data represents an always-usable provider (轮 3
     // 卡 F3): without this the providers store's configured/unconfigured split
@@ -100,6 +103,7 @@ export const DEMO_TURN_EVENTS: LeemoEvent[] = [
   { type: "usage.final", usage: {
     providerId: "deepseek", modelId: "deepseek-chat", inputTokens: 2400, outputTokens: 600,
     cacheReadTokens: 0, cacheCreationTokens: 0, durationMs: 8_200,
+    contextInputTokens: 2_400, contextCacheReadTokens: 0, contextCacheCreationTokens: 0,
     costSource: "unpriced", tokensEstimated: false,
   } },
   { type: "file.changed", path: "数据结构/第五章笔记.md", workspacePath: "数据结构/第五章笔记.md", change: "added" },

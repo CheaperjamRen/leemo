@@ -38,6 +38,13 @@ const MODEL_EVIDENCE: Record<string, ModelCapabilityEvidence> = {
   },
 };
 
+const MODEL_CONTEXT_POLICIES = {
+  "gpt-x": {
+    contextWindowTokens: 512_000,
+    autoCompactWindowTokens: 480_000,
+  },
+};
+
 describe("emptyConfig", () => {
   it("is version 1 with no providers", () => {
     expect(emptyConfig()).toEqual({ version: 1, providers: {} });
@@ -57,6 +64,16 @@ describe("emptyConfig", () => {
 });
 
 describe("upsertProvider — create", () => {
+  it("persists model-specific context limits independently from capability flags", () => {
+    const { config, id } = upsertProvider(emptyConfig(), {
+      ...DRAFT,
+      modelContextPolicies: MODEL_CONTEXT_POLICIES,
+    }, mintSeq());
+
+    expect(config.providers[id].modelContextPolicies).toEqual(MODEL_CONTEXT_POLICIES);
+    expect(config.providers[id].modelContextPolicies).not.toBe(MODEL_CONTEXT_POLICIES);
+  });
+
   it("mints an id when the draft has none", () => {
     const { config, id } = upsertProvider(emptyConfig(), DRAFT, mintSeq());
     expect(id).toBe("minted-1");
