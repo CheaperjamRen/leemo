@@ -1670,7 +1670,7 @@ describe("conversations store", () => {
       saveConversation: vi.fn(async (
         _meta: import("./conversations").ConversationMeta,
         _timeline: TimelineItem[],
-      ) => undefined),
+      ): Promise<void> => undefined),
     };
     const store = createConversationsStore(bridge.client, {
       resolveConversationDefaults: () => DEFAULTS,
@@ -1790,18 +1790,28 @@ describe("conversations store", () => {
     });
   });
 
-  it("supports explicit local clears and keeps failed persistence out of visible state", async () => {
+  it("rejects active local corrections and keeps a deferred persistence failure out of visible state", async () => {
     const bridge = makeClient(["correct-clear"]);
     const persistence = {
       saveConversation: vi.fn(async (
         _meta: import("./conversations").ConversationMeta,
         _timeline: TimelineItem[],
-      ) => undefined),
+      ): Promise<void> => undefined),
     };
-    const store = createConversationsStore(bridge.client, {
+    let armPostLockRun = false;
+    let store: ReturnType<typeof createConversationsStore>;
+    store = createConversationsStore(bridge.client, {
       resolveConversationDefaults: () => DEFAULTS,
       persistence: persistence as never,
-      now: () => 700,
+      now: () => {
+        if (armPostLockRun) {
+          armPostLockRun = false;
+          store.setState((state) => ({
+            runIds: { ...state.runIds, "correct-clear": "run-raced" },
+          }));
+        }
+        return 700;
+      },
     });
     const conversationId = await store.getState().createConversation({ source: "workbench" });
     const original: WorkOverviewSnapshot = {
@@ -1832,6 +1842,20 @@ describe("conversations store", () => {
     }];
     store.setState((state) => ({ timelines: { ...state.timelines, [conversationId]: timeline } }));
 
+    store.setState((state) => ({ runIds: { ...state.runIds, [conversationId]: "run-active" } }));
+    await expect(store.getState().correctWorkOverview(conversationId, { objective: "不应写入" }))
+      .rejects.toThrow("任务进行中，完成后再编辑工作概览。");
+    expect(persistence.saveConversation).not.toHaveBeenCalled();
+    expect(store.getState().timelines[conversationId]).toBe(timeline);
+
+    store.setState((state) => ({ runIds: { ...state.runIds, [conversationId]: null } }));
+    armPostLockRun = true;
+    await expect(store.getState().correctWorkOverview(conversationId, { objective: "竞态也不应写入" }))
+      .rejects.toThrow("任务进行中，完成后再编辑工作概览。");
+    expect(persistence.saveConversation).not.toHaveBeenCalled();
+    expect(store.getState().timelines[conversationId]).toBe(timeline);
+
+    store.setState((state) => ({ runIds: { ...state.runIds, [conversationId]: null } }));
     await expect(store.getState().correctWorkOverview(conversationId, {
       currentPhase: "本地修正不拥有这个字段",
     } as never)).rejects.toThrow("本地修正只支持目标、完成标准和显式清除");
@@ -1852,9 +1876,16 @@ describe("conversations store", () => {
       .toBeUndefined();
 
     const beforeFailedCorrection = store.getState().timelines[conversationId];
-    persistence.saveConversation.mockRejectedValueOnce(new Error("磁盘不可写"));
-    await expect(store.getState().correctWorkOverview(conversationId, { objective: "不应显示" }))
-      .rejects.toThrow("磁盘不可写");
+    let rejectSave!: (error: Error) => void;
+    persistence.saveConversation.mockImplementationOnce(() => new Promise<void>((_resolve, reject) => {
+      rejectSave = reject;
+    }));
+    const failedCorrection = store.getState().correctWorkOverview(conversationId, { objective: "不应显示" });
+    await vi.waitFor(() => expect(persistence.saveConversation).toHaveBeenCalledTimes(2));
+    expect(store.getState().timelines[conversationId]).toBe(beforeFailedCorrection);
+    rejectSave(new Error("磁盘不可写"));
+    await expect(failedCorrection).rejects.toThrow("磁盘不可写");
+    expect(persistence.saveConversation).toHaveBeenCalledTimes(2);
     expect(store.getState().timelines[conversationId]).toBe(beforeFailedCorrection);
   });
 

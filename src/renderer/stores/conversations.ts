@@ -873,7 +873,11 @@ export function createConversationsStore(
     },
 
     correctWorkOverview: async (conversationId, correction) => {
-      if (!get().byId[conversationId]) throw unknownConversation(conversationId);
+      const initial = get();
+      if (!initial.byId[conversationId]) throw unknownConversation(conversationId);
+      if (initial.runIds[conversationId] !== null && initial.runIds[conversationId] !== undefined) {
+        throw new Error("任务进行中，完成后再编辑工作概览。");
+      }
       if (conversationLocks.has(conversationId)) {
         throw new Error("这个对话正在保存，请稍后再试。");
       }
@@ -881,43 +885,31 @@ export function createConversationsStore(
       const timestamp = now();
       const correctionId = `local-correction-${timestamp}-${++localCorrectionSeq}`;
       try {
-        for (;;) {
-          const state = get();
-          const meta = state.byId[conversationId];
-          if (!meta) throw unknownConversation(conversationId);
-          const timeline = state.timelines[conversationId] ?? [];
-          const overview = applyUserWorkOverviewCorrection(
-            latestWorkOverviewSnapshot(timeline, conversationId, timestamp),
-            correction,
-            { correctionId, scopeConversationId: conversationId, updatedAt: timestamp },
-          );
-          const nextTimeline: TimelineItem[] = [...timeline, {
-            kind: "overview",
-            id: correctionId,
-            runId: "",
-            toolUseId: "",
-            overview,
-            createdAt: timestamp,
-          }];
-
-          await deps.persistence?.saveConversation(meta, nextTimeline);
-
-          let committed = false;
-          let removed = false;
-          set((latest) => {
-            if (!latest.byId[conversationId]) {
-              removed = true;
-              return {};
-            }
-            if (latest.byId[conversationId] !== meta || latest.timelines[conversationId] !== timeline) return {};
-            committed = true;
-            return {
-              timelines: { ...latest.timelines, [conversationId]: nextTimeline },
-            };
-          });
-          if (removed) throw unknownConversation(conversationId);
-          if (committed) return;
+        const state = get();
+        const meta = state.byId[conversationId];
+        if (!meta) throw unknownConversation(conversationId);
+        if (state.runIds[conversationId] !== null && state.runIds[conversationId] !== undefined) {
+          throw new Error("任务进行中，完成后再编辑工作概览。");
         }
+        const timeline = state.timelines[conversationId] ?? [];
+        const overview = applyUserWorkOverviewCorrection(
+          latestWorkOverviewSnapshot(timeline, conversationId, timestamp),
+          correction,
+          { correctionId, scopeConversationId: conversationId, updatedAt: timestamp },
+        );
+        const nextTimeline: TimelineItem[] = [...timeline, {
+          kind: "overview",
+          id: correctionId,
+          runId: "",
+          toolUseId: "",
+          overview,
+          createdAt: timestamp,
+        }];
+
+        await deps.persistence?.saveConversation(meta, nextTimeline);
+        set((latest) => latest.byId[conversationId]
+          ? { timelines: { ...latest.timelines, [conversationId]: nextTimeline } }
+          : {});
       } finally {
         conversationLocks.delete(conversationId);
       }
