@@ -1,4 +1,4 @@
-import { render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import type { ArtifactEntry } from "../stores/artifacts";
@@ -153,5 +153,73 @@ describe("WorkbenchOverview", () => {
     await user.click(screen.getByRole("button", { name: "取消" }));
     expect(saveCorrection).not.toHaveBeenCalled();
     expect(screen.queryByRole("form", { name: "编辑工作目标" })).not.toBeInTheDocument();
+  });
+
+  it("resets scope and drafts when the active conversation changes or disappears", async () => {
+    const user = userEvent.setup();
+    const saveA = vi.fn();
+    const saveB = vi.fn().mockResolvedValue(undefined);
+    const a = conversation({ conversationId: "conversation-a", objective: { text: "目标 A", source: "semantic" }, successCriteria: ["标准 A"], state: "recent", currentPlan: undefined });
+    const b = conversation({ conversationId: "conversation-b", objective: { text: "目标 B", source: "semantic" }, successCriteria: ["标准 B"], state: "recent", currentPlan: undefined });
+    const { rerender } = render(<WorkbenchOverview model={notebook([a, b])} conversationModel={notebook([a])} onSaveCorrection={saveA} />);
+
+    await user.click(screen.getByRole("button", { name: "概览操作" }));
+    await user.click(screen.getByRole("button", { name: "编辑工作目标" }));
+    await user.clear(screen.getByLabelText("工作目标"));
+    await user.type(screen.getByLabelText("工作目标"), "A 的未保存草稿");
+
+    rerender(<WorkbenchOverview model={notebook([a, b])} conversationModel={notebook([b])} onSaveCorrection={saveB} />);
+    expect(screen.queryByRole("form", { name: "编辑工作目标" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "本次会话" })).toHaveAttribute("aria-pressed", "true");
+    await user.click(screen.getByRole("button", { name: "概览操作" }));
+    await user.click(screen.getByRole("button", { name: "编辑工作目标" }));
+    expect(screen.getByLabelText("工作目标")).toHaveValue("目标 B");
+    expect(screen.getByLabelText("完成标准")).toHaveValue("标准 B");
+    await user.click(screen.getByRole("button", { name: "保存" }));
+    expect(saveA).not.toHaveBeenCalled();
+    expect(saveB).toHaveBeenCalledWith({ objective: "目标 B", successCriteria: ["标准 B"] });
+
+    rerender(<WorkbenchOverview model={notebook([a, b])} onSaveCorrection={saveB} />);
+    expect(screen.getByRole("button", { name: "当前本子" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: "本次会话" })).toBeDisabled();
+  });
+
+  it("uses the explicit active-run truth to disable refresh even when the snapshot is waiting", async () => {
+    const user = userEvent.setup();
+    const waiting = conversation({ state: "waiting", currentPlan: undefined });
+    render(<WorkbenchOverview model={notebook([waiting])} conversationModel={notebook([waiting])} activeRunInProgress onRequestRefresh={vi.fn()} />);
+    await user.click(screen.getByRole("button", { name: "概览操作" }));
+    expect(screen.getByRole("button", { name: "更新概览" })).toBeDisabled();
+  });
+
+  it("keeps the correction draft visible and reports a quiet error when local persistence fails", async () => {
+    const user = userEvent.setup();
+    const active = conversation({ state: "recent", currentPlan: undefined });
+    render(<WorkbenchOverview model={notebook([active])} conversationModel={notebook([active])} onSaveCorrection={vi.fn().mockRejectedValue(new Error("保存冲突，请重试"))} />);
+    await user.click(screen.getByRole("button", { name: "概览操作" }));
+    await user.click(screen.getByRole("button", { name: "编辑工作目标" }));
+    await user.clear(screen.getByLabelText("工作目标"));
+    await user.type(screen.getByLabelText("工作目标"), "保留这份草稿");
+    await user.click(screen.getByRole("button", { name: "保存" }));
+    expect(await screen.findByRole("status")).toHaveTextContent("保存冲突，请重试");
+    expect(screen.getByRole("form", { name: "编辑工作目标" })).toBeInTheDocument();
+    expect(screen.getByLabelText("工作目标")).toHaveValue("保留这份草稿");
+  });
+
+  it("supports explicitly clearing the objective and bounds each submitted success criterion", async () => {
+    const user = userEvent.setup();
+    const saveCorrection = vi.fn().mockResolvedValue(undefined);
+    const active = conversation({ state: "recent", currentPlan: undefined });
+    render(<WorkbenchOverview model={notebook([active])} conversationModel={notebook([active])} onSaveCorrection={saveCorrection} />);
+    await user.click(screen.getByRole("button", { name: "概览操作" }));
+    await user.click(screen.getByRole("button", { name: "编辑工作目标" }));
+    await user.clear(screen.getByLabelText("工作目标"));
+    fireEvent.change(screen.getByLabelText("完成标准"), { target: { value: `${"甲".repeat(121)}\n${"乙".repeat(121)}\n三\n四\n五\n六` } });
+    const displayedLines = (screen.getByLabelText("完成标准") as HTMLTextAreaElement).value.split("\n");
+    expect(displayedLines).toHaveLength(5);
+    expect(displayedLines.every((line) => line.length <= 120)).toBe(true);
+    await user.clear(screen.getByLabelText("完成标准"));
+    await user.click(screen.getByRole("button", { name: "保存" }));
+    expect(saveCorrection).toHaveBeenCalledWith({ clearFields: ["objective", "successCriteria"] });
   });
 });

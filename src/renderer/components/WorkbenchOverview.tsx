@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   AlertCircle,
   Check,
@@ -55,6 +55,7 @@ interface WorkbenchOverviewProps {
   onOpenBoard?: () => void;
   onRequestRefresh?: () => Promise<void> | void;
   onSaveCorrection?: (correction: WorkOverviewUserCorrection) => Promise<void> | void;
+  activeRunInProgress?: boolean;
 }
 
 type RefreshState = { kind: "idle" | "pending" | "success" | "error"; message: string };
@@ -151,6 +152,7 @@ function ConversationOverview({
   onCancelEdit,
   onSaveEdit,
   saving,
+  editError,
   userFixed,
 }: {
   snapshot: ConversationContinuitySnapshot;
@@ -163,6 +165,7 @@ function ConversationOverview({
   onCancelEdit: () => void;
   onSaveEdit: () => void;
   saving: boolean;
+  editError: string;
   userFixed: boolean;
 }) {
   const currentPlan = snapshot.currentPlan?.current ? snapshot.currentPlan : undefined;
@@ -186,14 +189,16 @@ function ConversationOverview({
               <textarea
                 aria-label="完成标准"
                 rows={3}
+                maxLength={604}
                 value={criteria}
                 onChange={(event) => onCriteriaChange(event.target.value)}
                 className="mt-1.5 w-full resize-none rounded-[var(--leemo-radius-control)] border border-[var(--leemo-line)] bg-[var(--leemo-card)] px-3 py-2 text-xs leading-5 text-[var(--leemo-ink)] outline-none transition-shadow focus:border-[var(--leemo-border-highlight)] focus:ring-2 focus:ring-[var(--leemo-focus-ring)]"
               />
             </label>
+            {editError && <p role="status" className="text-xs leading-5 text-[var(--leemo-danger)]">{editError}</p>}
             <div className="flex justify-end gap-2">
               <button type="button" onClick={onCancelEdit} className="h-8 rounded-full px-3 text-xs text-[var(--leemo-ink-2)] hover:bg-[var(--leemo-hover)]">取消</button>
-              <button type="submit" disabled={saving || !objective.trim()} className="h-8 rounded-full bg-[var(--leemo-action-accent)] px-3.5 text-xs font-semibold text-[var(--leemo-action-accent-ink)] disabled:opacity-45">保存</button>
+              <button type="submit" disabled={saving} className="h-8 rounded-full bg-[var(--leemo-action-accent)] px-3.5 text-xs font-semibold text-[var(--leemo-action-accent-ink)] disabled:opacity-45">保存</button>
             </div>
           </form>
         ) : (
@@ -301,6 +306,7 @@ export function WorkbenchOverview({
   onOpenArtifact,
   onRequestRefresh,
   onSaveCorrection,
+  activeRunInProgress,
 }: WorkbenchOverviewProps) {
   const activeConversation = conversationModel?.conversations[0];
   const [scope, setScope] = useState<"notebook" | "conversation">(activeConversation ? "conversation" : "notebook");
@@ -309,29 +315,56 @@ export function WorkbenchOverview({
   const [objective, setObjective] = useState(activeConversation?.objective?.text ?? "");
   const [criteria, setCriteria] = useState((activeConversation?.successCriteria ?? []).join("\n"));
   const [saving, setSaving] = useState(false);
+  const [editError, setEditError] = useState("");
   const [userFixed, setUserFixed] = useState(false);
   const [refreshState, setRefreshState] = useState<RefreshState>({ kind: "idle", message: "" });
   const sourceOpener = onOpenConversation ?? onOpenAttention;
-  const refreshDisabled = !activeConversation || activeConversation.state === "running" || refreshState.kind === "pending" || !onRequestRefresh;
+  const refreshDisabled = !activeConversation
+    || (activeRunInProgress ?? activeConversation.state === "running")
+    || refreshState.kind === "pending"
+    || !onRequestRefresh;
+
+  useEffect(() => {
+    setScope(activeConversation ? "conversation" : "notebook");
+    setMenuOpen(false);
+    setEditing(false);
+    setObjective(activeConversation?.objective?.text ?? "");
+    setCriteria((activeConversation?.successCriteria ?? []).join("\n"));
+    setSaving(false);
+    setEditError("");
+    setUserFixed(false);
+    setRefreshState({ kind: "idle", message: "" });
+  }, [activeConversation?.conversationId]);
 
   const beginEdit = () => {
     if (!activeConversation || !onSaveCorrection) return;
     setObjective(activeConversation.objective?.text ?? "");
     setCriteria(activeConversation.successCriteria.join("\n"));
+    setEditError("");
     setEditing(true);
     setMenuOpen(false);
   };
 
   const saveEdit = async () => {
-    if (!onSaveCorrection || !objective.trim()) return;
+    if (!onSaveCorrection) return;
+    const objectiveText = objective.trim();
+    const successCriteria = criteria.split(/\r?\n/u).map((item) => item.trim()).filter(Boolean).slice(0, 5);
+    const clearFields: NonNullable<WorkOverviewUserCorrection["clearFields"]> = [];
+    if (!objectiveText) clearFields.push("objective");
+    if (successCriteria.length === 0) clearFields.push("successCriteria");
+    const correction: WorkOverviewUserCorrection = {
+      ...(objectiveText ? { objective: objectiveText } : {}),
+      ...(successCriteria.length > 0 ? { successCriteria } : {}),
+      ...(clearFields.length > 0 ? { clearFields } : {}),
+    };
     setSaving(true);
+    setEditError("");
     try {
-      await onSaveCorrection({
-        objective: objective.trim(),
-        successCriteria: criteria.split(/\r?\n/u).map((item) => item.trim()).filter(Boolean).slice(0, 5),
-      });
+      await onSaveCorrection(correction);
       setUserFixed(true);
       setEditing(false);
+    } catch (error) {
+      setEditError(error instanceof Error ? error.message : "工作目标暂时无法保存");
     } finally {
       setSaving(false);
     }
@@ -384,10 +417,11 @@ export function WorkbenchOverview({
           objective={objective}
           criteria={criteria}
           onObjectiveChange={setObjective}
-          onCriteriaChange={setCriteria}
+          onCriteriaChange={(value) => setCriteria(value.split(/\r?\n/u).slice(0, 5).map((line) => line.slice(0, 120)).join("\n"))}
           onCancelEdit={() => setEditing(false)}
           onSaveEdit={saveEdit}
           saving={saving}
+          editError={editError}
           userFixed={userFixed}
         />
       ) : (
