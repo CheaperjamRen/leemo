@@ -226,7 +226,9 @@ export default function ProcessFold({
   active = true,
   archivedContent,
   archivedCount = 0,
+  hidePlanDetails = false,
   summaryOverride,
+  showAvatar = true,
   outcome,
   stale: staleOverride,
 }: {
@@ -237,7 +239,11 @@ export default function ProcessFold({
   active?: boolean;
   archivedContent?: ReactNode;
   archivedCount?: number;
+  /** A live approval already explains the current step. Keep plan progress in
+   * the header without repeating a visually dominant four-row plan above it. */
+  hidePlanDetails?: boolean;
   summaryOverride?: string;
+  showAvatar?: boolean;
   /** Trust the turn terminal event over a tool card's last local status. */
   outcome?: ProcessOutcome;
   /** Explicit false lets a terminal result win even if a tool-finished event
@@ -273,18 +279,25 @@ export default function ProcessFold({
   return (
     <div
       data-testid="process-fold"
+      data-component-role={buddy ? "buddy-process" : "run-plan"}
+      data-surface-level={buddy || !active ? "default" : "sunken"}
+      data-active={active ? "true" : "false"}
+      data-state={active ? "active" : "terminal"}
+      data-expanded={collapsed ? "false" : "true"}
+      data-turn-identity-anchor={showAvatar ? "true" : "false"}
       className={buddy
         ? "my-1 overflow-hidden rounded-[8px]"
-        : "leemo-process-fold my-1 overflow-hidden rounded-[8px] border border-transparent bg-transparent"}
+        : "leemo-process-fold my-1 overflow-hidden rounded-[10px] border"}
     >
       <button
         data-testid="process-fold-toggle"
         type="button"
         aria-label={buddy ? undefined : `momo 的干活过程：${summary}，${totalSteps} 步`}
+        aria-expanded={!collapsed}
         onClick={() => setCollapsed((v) => !v)}
         className={buddy
           ? "flex w-full items-center gap-2 px-1.5 py-1.5 text-left text-[12px] text-[var(--leemo-ink-3)] transition-colors hover:text-[var(--leemo-ink-2)]"
-          : "flex h-9 w-full items-center gap-2 px-1.5 text-left transition-colors hover:bg-[var(--leemo-panel)]/55"}
+          : "leemo-process-fold__toggle flex h-9 w-full items-center gap-2 px-2 text-left transition-colors"}
       >
         {buddy ? (
           <>
@@ -293,7 +306,7 @@ export default function ProcessFold({
           </>
         ) : (
           <>
-            <MomoAvatar size={22} state={active ? "thinking" : "calm"} />
+            {showAvatar ? <MomoAvatar size={22} state={active ? "thinking" : "calm"} /> : null}
             <span className="min-w-0 truncate text-[12px] font-medium text-[var(--leemo-ink-2)]">{summary}</span>
             {showPlanProgress ? (
               <>
@@ -324,8 +337,8 @@ export default function ProcessFold({
         </span>
       </button>
       {!collapsed && (
-        <div data-testid="process-fold-details" className="leemo-process-fold__details max-h-[220px] space-y-1.5 overflow-y-auto border-t border-[var(--leemo-line-soft)] bg-[var(--leemo-panel)]/28 px-2 py-2">
-          {plans.map((item) => renderProcess(item, runId, density, stale))}
+        <div data-testid="process-fold-details" className="leemo-process-fold__details max-h-[220px] space-y-1.5 overflow-y-auto border-t px-2.5 py-2.5">
+          {!hidePlanDetails && plans.map((item) => renderProcess(item, runId, density, stale))}
           {retries.map((item) => renderProcess(item, runId, density, stale))}
           {tools.length > 0 && (
             <section className="space-y-1.5" aria-label={`工具与命令，${tools.length} 次`}>

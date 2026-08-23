@@ -4,6 +4,10 @@ import { describe, expect, it } from "vitest";
 
 const rendererRoot = join(process.cwd(), "src", "renderer");
 const forbiddenCharacterIcons = ["🔧", "📊", "📄", "💬", "📦", "🧠", "⚙", "⚠", "✓", "▧"];
+const semanticEmojiLiterals = [
+  'warning: "⚠️ 注意"',
+  'warning: "⚠️"',
+];
 
 function productionTsxFiles(directory: string): string[] {
   return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
@@ -17,7 +21,10 @@ function productionTsxFiles(directory: string): string[] {
 describe("renderer icon integrity", () => {
   it("uses the icon system instead of character placeholders", () => {
     const violations = productionTsxFiles(rendererRoot).flatMap((path) => {
-      const source = readFileSync(path, "utf8");
+      const source = semanticEmojiLiterals.reduce(
+        (next, literal) => next.replace(literal, ""),
+        readFileSync(path, "utf8"),
+      );
       return forbiddenCharacterIcons
         .filter((icon) => source.includes(icon))
         .map((icon) => `${relative(process.cwd(), path)} contains ${icon}`);

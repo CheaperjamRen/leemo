@@ -119,7 +119,13 @@ describe("AskUserCard — pending (interactive, amber)", () => {
     );
     await screen.findByText("选择部署环境？");
     const card = container.firstElementChild as HTMLElement;
-    expect(card.className).toContain("var(--leemo-amber-line)");
+    expect(card).toHaveClass("leemo-ask-card");
+    expect(card).toHaveAttribute("data-component-role", "ask-user");
+    expect(card).toHaveAttribute("data-surface-level", "raised");
+    expect(card).toHaveAttribute("data-tone", "question");
+    const submit = screen.getByRole("button", { name: "提交" });
+    expect(submit).toHaveClass("rounded-full");
+    expect(submit).toHaveAttribute("title", "请先选择或填写答案");
   });
 
   it("keeps the buddy question as a compact decision card with a clear interaction label", async () => {
@@ -171,11 +177,15 @@ describe("AskUserCard — pending (interactive, amber)", () => {
     for (const option of [shortOption, longOption]) {
       expect(option.className).toContain("w-full");
       expect(option.className).toContain("text-left");
-      expect(option.className).toContain("min-h-[54px]");
+      expect(option.className).toContain("min-h-[50px]");
       expect(option.className).toContain("text-[13px]");
       expect(option.className).not.toContain("rounded-full");
       expect(option.firstElementChild).toHaveAttribute("data-ask-option-marker");
+      expect(option).toHaveAttribute("data-option-state", "idle");
     }
+
+    await userEvent.click(shortOption);
+    expect(shortOption).toHaveAttribute("data-option-state", "selected");
   });
 
   it("single-select is exclusive (picking one deselects the other)", async () => {

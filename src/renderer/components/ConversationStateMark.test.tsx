@@ -11,9 +11,11 @@ describe("ConversationStateMark", () => {
     expect(mark.querySelector("svg")).toBeNull();
   });
 
-  it("renders a spinner or error icon, never a visible lifecycle label", () => {
+  it("renders a quiet running dot instead of a spinner while preserving error semantics", () => {
     const { rerender } = render(<ConversationStateMark marker="running" label="任务" />);
-    expect(screen.getByRole("img", { name: "任务：进行中" }).querySelector("svg")).toBeInTheDocument();
+    const running = screen.getByRole("img", { name: "任务：进行中" });
+    expect(running.querySelector("svg")).toBeNull();
+    expect(running.querySelector("[data-conversation-running-dot]")).toBeInTheDocument();
     expect(screen.queryByText("进行中")).not.toBeInTheDocument();
 
     rerender(<ConversationStateMark marker="error" label="任务" detail="模型请求失败" />);

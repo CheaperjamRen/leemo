@@ -4,7 +4,7 @@ import MarkdownContent from "../MarkdownContent";
 /** SDK 显式返回的过程说明，收在过程折叠卡里，与工具/计划卡按时序交织。 */
 export default function ThinkingCard({ item }: { item: Extract<TimelineItem, { kind: "thinking" }> }) {
   return (
-    <div className="flex gap-2.5 rounded-[8px] border border-dashed border-[var(--leemo-line-2)] bg-[var(--leemo-panel)]/50 px-3 py-2">
+    <div className="leemo-thinking-note flex gap-2.5 rounded-[8px] border px-3 py-2">
       <span className="mt-[1px] grid h-[18px] w-[18px] shrink-0 place-items-center rounded-[6px] bg-[var(--leemo-amber-bg)] text-[var(--leemo-amber)] ring-1 ring-[var(--leemo-amber-line)]">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round"
           className="h-[11px] w-[11px]" aria-hidden>

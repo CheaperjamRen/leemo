@@ -191,7 +191,7 @@ export default function MessageFooter({
         <section
           data-file-delivery-receipt
           aria-label={`本轮${deliveryVerb}文件`}
-          className="mt-1.5 basis-full overflow-hidden rounded-[8px] border border-[var(--leemo-line-soft)] bg-[var(--leemo-panel)]/42 text-[var(--leemo-ink)] shadow-none"
+          className="leemo-delivery-receipt mt-1.5 basis-full overflow-hidden rounded-[9px] border text-[var(--leemo-ink)] shadow-none"
         >
           <div className="flex min-h-12 min-w-0 items-center gap-2 px-3 py-1.5">
             <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-[var(--leemo-success)]" aria-hidden />

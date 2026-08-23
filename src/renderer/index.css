@@ -17,6 +17,12 @@ body {
   text-rendering: optimizeLegibility;
 }
 
+/* Mermaid appends an empty, absolutely-positioned tooltip to <body>.  Its
+   default 2px padding can create a second page scrollbar even at opacity 0. */
+body > .mermaidTooltip:empty {
+  display: none !important;
+}
+
 button,
 input,
 textarea,

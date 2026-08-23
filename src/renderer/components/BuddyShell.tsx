@@ -8,7 +8,7 @@ import Timeline from "./timeline/Timeline";
 import LiveStatusBar from "./timeline/LiveStatusBar";
 import DropClassifyBar from "./DropClassifyBar";
 import { isFileDataTransfer, useFileDrop } from "./useFileDrop";
-import { useArtifacts, useCaptures, useComposerDrafts, useConversations, useScheduledTasks, useSettings, useSkills, useProviders, useUi, useWorkspace, useFileTree, useWorkspaces } from "../bridge/context";
+import { useArtifacts, useCaptures, useComposerDrafts, useContextUsage, useConversations, useScheduledTasks, useSettings, useSkills, useProviders, useUi, useWorkspace, useFileTree, useWorkspaces } from "../bridge/context";
 import type { AttachmentRef, WorkspaceFileRef } from "../../bridge/contract";
 import { orderConfiguredProviders } from "./model-picker";
 import {
@@ -85,6 +85,7 @@ export default function BuddyShell() {
   const scheduledRuns = useScheduledTasks((s) => s.runs);
   // Model picker (轮 3 卡 F): the shell owns the subscription, InputArea renders.
   const activeMeta = useConversations((s) => (activeId ? s.byId[activeId] : undefined));
+  const activeContextUsage = useContextUsage((state) => activeId ? state.byConversation[activeId] : undefined);
   const permissionMode = useSettings((s) => s.permissionMode);
   const setPermissionMode = useSettings((s) => s.setPermissionMode);
   const providerOrder = useSettings((s) => s.providerOrder);
@@ -452,6 +453,7 @@ export default function BuddyShell() {
               providers={providerList}
               currentProviderId={activeMeta?.providerId ?? defaultProviderId}
               currentModelId={activeMeta?.modelId ?? defaultModelId}
+              contextUsage={activeContextUsage}
               permissionMode={permissionMode}
               onOpenSettings={() => openSettings("models")}
               onSelectPermissionMode={setPermissionMode}

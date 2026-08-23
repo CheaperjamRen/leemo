@@ -11,6 +11,16 @@ function Probe() {
 }
 
 describe("AppSurfaceSwitcher", () => {
+  it("keeps the product surfaces in start, workbench, buddy order", () => {
+    render(<BridgeProvider><AppSurfaceSwitcher /></BridgeProvider>);
+    const nav = screen.getByRole("navigation", { name: "工作区切换" });
+    expect(Array.from(nav.querySelectorAll("button")).map((button) => button.getAttribute("aria-label"))).toEqual([
+      "切换到开始",
+      "切换到工作台",
+      "切换到搭子",
+    ]);
+  });
+
   it("keeps Start separate from the two Agent modes", async () => {
     render(<BridgeProvider><AppSurfaceSwitcher /><Probe /></BridgeProvider>);
     const user = userEvent.setup();

@@ -169,7 +169,10 @@ function InteractiveQuestionCard({ id, questions, density, onAnswer }: Interacti
 
   return (
     <div
-      className={`w-full rounded-[13px] border border-[var(--leemo-amber-line)] bg-[var(--leemo-card)] px-4 py-3.5 shadow-[0_1px_2px_rgba(24,31,38,0.035),0_14px_30px_-26px_rgba(24,31,38,0.32)] ${density === "buddy" ? "mx-auto max-w-[520px]" : ""}`}
+      data-component-role="ask-user"
+      data-surface-level="raised"
+      data-tone="question"
+      className={`leemo-ask-card w-full rounded-[13px] border px-4 py-3.5 ${density === "buddy" ? "mx-auto max-w-[520px]" : ""}`}
     >
       <div className="mb-2.5 flex items-center gap-2 text-[12px] font-medium text-[var(--leemo-ink-2)]">
         <span className="grid h-5 w-5 place-items-center rounded-full bg-[var(--leemo-amber-soft)] text-[var(--leemo-amber-strong)]">
@@ -193,15 +196,11 @@ function InteractiveQuestionCard({ id, questions, density, onAnswer }: Interacti
                   key={opt.label}
                   type="button"
                   aria-pressed={isSelected}
+                  data-selected={isSelected ? "true" : "false"}
+                  data-option-state={isSelected ? "selected" : "idle"}
                   disabled={isSubmitting}
                   onClick={() => toggleOption(qi, opt.label, q.multiSelect === true)}
-                  className="group grid min-h-[54px] w-full grid-cols-[18px_minmax(0,1fr)] items-start gap-3 rounded-[9px] border px-3 py-2.5 text-left text-[13px] transition-[border-color,background-color,box-shadow,transform] duration-150 hover:border-[var(--leemo-amber-line)] hover:bg-[var(--leemo-amber-bg)] focus-visible:border-[var(--leemo-amber)] focus-visible:bg-[var(--leemo-amber-bg)] focus-visible:outline-none active:translate-y-px disabled:opacity-60 disabled:active:translate-y-0"
-                  style={{
-                    borderColor: isSelected ? "var(--leemo-amber)" : "var(--leemo-line)",
-                    background: isSelected ? "var(--leemo-amber-bg)" : "var(--leemo-card)",
-                    color: isSelected ? "var(--leemo-ink)" : "var(--leemo-ink-2)",
-                    outline: "none",
-                  }}
+                  className="leemo-ask-option group grid min-h-[50px] w-full grid-cols-[18px_minmax(0,1fr)] items-start gap-3 rounded-[9px] border px-3 py-2 text-left text-[13px] transition-[border-color,background-color,box-shadow,transform] duration-150 focus-visible:outline-none active:translate-y-px disabled:opacity-60 disabled:active:translate-y-0"
                 >
                   <span
                     data-ask-option-marker
@@ -231,16 +230,16 @@ function InteractiveQuestionCard({ id, questions, density, onAnswer }: Interacti
             value={questionStates[qi].otherText}
             disabled={isSubmitting}
             onChange={(e) => setOtherText(qi, e.target.value)}
-            className="w-full rounded-[9px] border border-[var(--leemo-line)] bg-[var(--leemo-panel)] px-3 py-2.5 text-[13px] outline-none transition-[border-color,background-color,box-shadow] duration-150 placeholder:text-[var(--leemo-ink-4)] focus:border-[var(--leemo-amber)] focus:bg-[var(--leemo-card)] focus:shadow-[0_0_0_3px_var(--leemo-focus)] disabled:opacity-60"
+            className="leemo-ask-other w-full rounded-[9px] border px-3 py-2 text-[13px] outline-none transition-[border-color,background-color,box-shadow] duration-150 placeholder:text-[var(--leemo-ink-4)] disabled:opacity-60"
           />
         </div>
       ))}
       <button
         type="button"
         disabled={!allAnswered || isSubmitting}
+        title={!allAnswered ? "请先选择或填写答案" : undefined}
         onClick={() => void handleSubmit()}
-        className="ml-auto block min-h-9 rounded-[9px] px-4 text-[13px] font-medium text-white transition-[opacity,transform,box-shadow] hover:shadow-sm active:translate-y-px disabled:opacity-40 disabled:active:translate-y-0"
-        style={{ background: "var(--leemo-ink)" }}
+        className="leemo-ask-submit ml-auto block min-h-9 rounded-full px-[18px] text-[13px] font-semibold text-white transition-[opacity,background-color,box-shadow] disabled:opacity-40"
       >
         提交
       </button>

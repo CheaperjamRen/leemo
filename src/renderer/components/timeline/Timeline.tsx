@@ -38,7 +38,7 @@ export default function Timeline() {
   return (
     <div className="leemo-workbench-timeline relative flex-1 min-h-0 overflow-hidden">
       <div ref={containerRef} onScroll={onScroll} className="leemo-timeline-scroll h-full overflow-y-auto">
-        <div data-testid="timeline-content" className="mx-auto w-full max-w-[820px] space-y-4 px-5 py-4 xl:max-w-[900px]">
+        <div data-testid="timeline-content" data-content-axis="primary" className="leemo-workbench-content-axis mx-auto w-full max-w-[900px] space-y-3 px-5 py-4 xl:max-w-[960px]">
           {groups.map((g) => (
             <TurnBlock
               key={g.runId}

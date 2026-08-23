@@ -1027,6 +1027,9 @@ describe("SkillsPage — empty and error states", () => {
   it("offers the real add flow when no skills are available", async () => {
     renderPage([]);
     const empty = await screen.findByTestId("skills-empty-state");
+    expect(empty).toHaveAttribute("data-layout", "compact-empty");
+    expect(empty).toHaveAttribute("data-surface-level", "content");
+    expect(empty).not.toHaveClass("border-dashed");
     expect(empty).toContainElement(screen.getByRole("button", { name: "添加技能" }));
     expect(screen.queryAllByRole("checkbox")).toHaveLength(0);
   });

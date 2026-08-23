@@ -69,7 +69,7 @@ describe("App", () => {
 
   it("opens the static document library without exposing an AI composer", async () => {
     render(<App />);
-    fireEvent.click(screen.getByRole("button", { name: "我的文档" }));
+    fireEvent.click(screen.getByRole("button", { name: "文档库" }));
     expect(await screen.findByTestId("start-documents-view")).toBeInTheDocument();
     fireEvent.click(screen.getAllByRole("button", { name: "新建文档" })[0]);
     expect(screen.getByRole("textbox", { name: "便签正文" })).toBeInTheDocument();
@@ -153,7 +153,7 @@ describe("App", () => {
         });
       }
       if (channel === "bridge:saveProvider") return savePending;
-      if (channel === "bridge:listProviders") return Promise.resolve([deepseekSpec]);
+      if (channel === "bridge:listProviders") return Promise.resolve([{ ...deepseekSpec, configured: true }]);
       if (channel === "bridge:listWhitelist") return Promise.resolve([]);
       if (channel === "bridge:usageSummary") {
         return Promise.resolve({ range: "all", inputTokens: 0, outputTokens: 0, costUsd: 0, byProvider: [] });
@@ -168,7 +168,8 @@ describe("App", () => {
       </BridgeProvider>,
     );
 
-    await screen.findByLabelText("名称");
+    const nameInput = await screen.findByLabelText("名称");
+    fireEvent.change(nameInput, { target: { value: "DeepSeek 更新" } });
     fireEvent.click(screen.getByRole("button", { name: "保存设置" }));
     await waitFor(() => expect(invoke).toHaveBeenCalledWith("bridge:saveProvider", expect.anything()));
 
@@ -179,7 +180,7 @@ describe("App", () => {
     expect(screen.queryByRole("alertdialog", { name: "关闭设置" })).not.toBeInTheDocument();
 
     await act(async () => {
-      resolveSave(deepseekSpec);
+      resolveSave({ ...deepseekSpec, name: "DeepSeek 更新" });
       await savePending;
     });
     await waitFor(() => expect(screen.getByRole("button", { name: "关闭设置" })).toBeEnabled());

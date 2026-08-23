@@ -1,4 +1,4 @@
-import { CircleAlert, LoaderCircle } from "lucide-react";
+import { CircleAlert } from "lucide-react";
 import type { ConversationMarker } from "../stores/conversation-status";
 
 export default function ConversationStateMark({
@@ -36,7 +36,11 @@ export default function ConversationStateMark({
       } ${className}`.trim()}
     >
       {marker === "running" ? (
-        <LoaderCircle className="h-3.5 w-3.5 animate-spin" aria-hidden />
+        <span
+          data-conversation-running-dot
+          className="h-1.5 w-1.5 rounded-full bg-current ring-2 ring-[var(--leemo-amber-soft)]"
+          aria-hidden
+        />
       ) : marker === "error" ? (
         <CircleAlert className="h-3.5 w-3.5" aria-hidden />
       ) : (

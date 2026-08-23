@@ -26,8 +26,8 @@ describe("TopBar", () => {
     expect(controls.slice(0, 6).map((control) => control.getAttribute("aria-label"))).toEqual([
       "历史对话",
       "切换到开始",
-      "切换到搭子",
       "切换到工作台",
+      "切换到搭子",
       "设置",
       expect.stringMatching(/^通知，\d+ 条未读$/),
     ]);
@@ -54,8 +54,8 @@ describe("TopBar", () => {
     ]);
     expect(within(primaryControls).getAllByRole("button").map((control) => control.getAttribute("aria-label"))).toEqual([
       "切换到开始",
-      "切换到搭子",
       "切换到工作台",
+      "切换到搭子",
       "设置",
       expect.stringMatching(/^通知，\d+ 条未读$/),
     ]);

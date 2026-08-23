@@ -192,9 +192,17 @@ export default function TurnBlock({
       ? "error" as const
       : undefined;
   const processItems = items.filter(isProcess);
+  const hasVisibleMomoEvent = items.some((item) => (
+    (item.kind === "text" && item.role === "momo")
+    || isProcess(item)
+    || (item.kind === "tool" && item.name === LEEMO_VISUALIZATION_TOOL_NAME)
+    || item.kind === "result"
+    || item.kind === "error"
+  )) || askUserPairing.byToolIndex.some(Boolean) || askUserPairing.overflow.length > 0
+    || pendingUnanchoredApprovals.length > 0 || resolvedUnanchoredApprovals.length > 0;
   const waitingForFirstMomoEvent = active
     && items.some((item) => item.kind === "text" && item.role === "user")
-    && !items.some((item) => !(item.kind === "text" && item.role === "user"));
+    && !hasVisibleMomoEvent;
   const firstProcessIndex = items.findIndex(isProcess);
   const hasPendingApproval = processItems.some(
     (item) => item.kind === "tool" && pendingToolUseIds.has(item.toolUseId),
@@ -217,6 +225,10 @@ export default function TurnBlock({
       : archivedContent
         ? archiveBeforeIndex >= 0 ? archiveBeforeIndex : items.length
         : -1;
+  const firstMomoTextIndex = items.findIndex((item) => item.kind === "text" && item.role === "momo");
+  const processOwnsIdentity = !showFailureRecovery
+    && receiptIndex >= 0
+    && (firstMomoTextIndex < 0 || receiptIndex < firstMomoTextIndex);
   const processReceipt = receiptIndex >= 0 ? (
     showFailureRecovery ? (
       <FailureRecoveryCard
@@ -245,7 +257,8 @@ export default function TurnBlock({
       <ProcessFold
         key={`process-${runId}`}
         items={processItems}
-        defaultCollapsed={hasPendingApproval ? false : density === "buddy" ? true : !active}
+        defaultCollapsed={!hasPendingApproval}
+        hidePlanDetails={hasPendingApproval}
         runId={runId}
         density={density}
         active={active}
@@ -253,6 +266,7 @@ export default function TurnBlock({
         stale={!active && !items.some((item) => item.kind === "result" || item.kind === "error")}
         archivedCount={archivedInteractionCount}
         archivedContent={archivedContent}
+        showAvatar={processOwnsIdentity}
         summaryOverride={processItems.length === 0
           ? density === "buddy" ? "momo 收好确认记录" : "确认记录已归档"
           : undefined}
@@ -261,6 +275,8 @@ export default function TurnBlock({
   ) : null;
 
   const nodes: React.ReactNode[] = [];
+  const deferCompletedVisualizations = !active && terminalResult?.isError === false;
+  const deferredVisualizations: React.ReactNode[] = [];
   let receiptPlaced = false;
   items.forEach((it, idx) => {
     if (processReceipt && idx === receiptIndex) {
@@ -271,9 +287,23 @@ export default function TurnBlock({
     if (it.kind === "usage") return; // no visual footprint; must not split a process fold
     if (it.kind === "files") return; // folded into MessageFooter; never a separate card/message
     if (it.kind === "memory") return; // folded into MessageFooter; never a separate card/message
-    if (it.kind === "text") nodes.push(<TextBubble key={it.id} item={it} density={density} />);
+    if (it.kind === "text") {
+      const hasLaterTurnContent = items.slice(idx + 1).some((candidate) => (
+        candidate.kind !== "usage" && candidate.kind !== "files" && candidate.kind !== "memory"
+      ));
+      nodes.push(
+        <TextBubble
+          key={it.id}
+          item={it}
+          density={density}
+          showCaret={it.streaming && !hasLaterTurnContent}
+          showAvatar={it.role !== "momo" || (!processOwnsIdentity && idx === firstMomoTextIndex)}
+        />,
+      );
+    }
     else if (it.kind === "result") {
       if (showFailureRecovery && !files && !memory) return;
+      if (deferredVisualizations.length > 0) nodes.push(...deferredVisualizations.splice(0));
       nodes.push(<MessageFooter
         key={it.id}
         result={it}
@@ -312,7 +342,9 @@ export default function TurnBlock({
     }
     // Render VisualizationCard for visualization tools
     else if (it.kind === "tool" && it.name === LEEMO_VISUALIZATION_TOOL_NAME) {
-      nodes.push(<VisualizationCard key={it.id} item={it} />);
+      const visualization = <VisualizationCard key={it.id} item={it} />;
+      if (deferCompletedVisualizations) deferredVisualizations.push(visualization);
+      else nodes.push(visualization);
     }
     // Render momo's question card in place of its ask_user tool-call item —
     // same slot in the flow, three states (pending/answered/cancelled) live
@@ -325,6 +357,7 @@ export default function TurnBlock({
       if (interaction) nodes.push(<AskUserCard key={it.id} interaction={interaction} density={density === "buddy" ? "buddy" : "default"} />);
     }
   });
+  if (deferredVisualizations.length > 0) nodes.push(...deferredVisualizations);
   if (processReceipt && !receiptPlaced) nodes.push(processReceipt);
   if (waitingForFirstMomoEvent) {
     nodes.push(
@@ -378,5 +411,14 @@ export default function TurnBlock({
     );
   }
 
-  return <div className="leemo-rise space-y-2.5">{nodes}</div>;
+  return (
+    <div
+      className="leemo-rise leemo-turn-block space-y-2.5"
+      data-density={density}
+      data-component-role="turn-flow"
+      data-has-momo-identity={firstMomoTextIndex >= 0 || processOwnsIdentity ? "true" : "false"}
+    >
+      {nodes}
+    </div>
+  );
 }

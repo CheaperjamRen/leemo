@@ -62,7 +62,7 @@ describe("Timeline — scroll-out-of-view hint (卡 D §6): pill and BackToBotto
       </BridgeProvider>
     );
     await screen.findByText("hi");
-    expect(screen.getByTestId("timeline-content")).toHaveClass("space-y-4", "max-w-[820px]", "xl:max-w-[900px]");
+    expect(screen.getByTestId("timeline-content")).toHaveClass("space-y-3", "max-w-[900px]", "xl:max-w-[960px]");
     mockScrolledUp(container);
 
     expect(await screen.findByLabelText("回到底部")).toBeInTheDocument();

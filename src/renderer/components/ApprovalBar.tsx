@@ -146,84 +146,80 @@ export default function ApprovalBar({
       {resolvedCards}
       <div
         data-testid="approval-card-pending"
+        data-component-role="approval"
+        data-surface-level="raised"
+        data-layout="compact"
+        data-tone={dangerLocked ? "danger" : "neutral"}
         data-approval-id={pending.id}
         data-run-id={pending.runId}
         data-conversation-id={pending.conversationId}
         data-tool-name={pending.toolName}
         data-input-summary={pending.inputSummary}
-        className="grid grid-cols-[30px_minmax(0,1fr)] items-start gap-x-3 gap-y-2 rounded-[10px] border px-4 py-3"
-        style={{
-          borderColor: dangerLocked ? "var(--leemo-danger-line)" : "var(--leemo-line)",
-          background: dangerLocked ? "var(--leemo-danger-soft)" : "var(--leemo-card)",
-        }}
+        className="leemo-approval-card flex w-full flex-col rounded-[14px] border px-3.5 py-3"
       >
-        <span
-          className="grid h-[30px] w-[30px] shrink-0 place-items-center rounded-[8px] border"
-          style={{
-            background: dangerLocked ? "rgba(255,255,255,.72)" : "var(--leemo-amber-bg)",
-            borderColor: dangerLocked ? "var(--leemo-danger-line)" : "var(--leemo-amber-line)",
-            color: dangerLocked ? "var(--leemo-danger)" : "var(--leemo-amber-ink)",
-          }}
-        >
-          <Shield className="h-4 w-4" aria-hidden />
-        </span>
-        <div className="min-w-0">
-          <p className="text-[13px] font-medium" style={{ color: "var(--leemo-ink)" }}>
-            momo 想{verbOf(pending.toolName)}
-          </p>
-          <p
-            data-testid="approval-input-summary"
-            className="mono mt-1 max-w-full truncate rounded-[6px] border border-[var(--leemo-line)] bg-[var(--leemo-panel)] px-2.5 py-1.5 text-[11.5px] text-[var(--leemo-ink-2)]"
+        <div className="flex min-w-0 items-start gap-2.5">
+          <span
+            data-testid="approval-risk-marker"
+            className="leemo-approval-card__icon mt-0.5 grid h-5 w-5 shrink-0 place-items-center rounded-full border"
+            style={{
+              background: dangerLocked ? "var(--leemo-danger-soft)" : "var(--leemo-amber-bg)",
+              borderColor: dangerLocked ? "var(--leemo-danger-line)" : "var(--leemo-amber-line)",
+              color: dangerLocked ? "var(--leemo-danger)" : "var(--leemo-amber-ink)",
+            }}
           >
-            {pending.inputSummary}
-          </p>
-          {dangerLocked && (
-            <p className="mt-1 text-[11px]" style={{ color: "var(--leemo-danger)" }}>
-              危险操作，每次都会问你（可在设置→权限里调整）
+            <Shield className="h-3 w-3" aria-hidden />
+          </span>
+          <div className="min-w-0 flex-1">
+            <div className="flex min-w-0 items-center gap-2">
+              <p className="min-w-0 truncate text-[13px] font-semibold" style={{ color: "var(--leemo-ink)" }}>
+                momo 想{verbOf(pending.toolName)}
+              </p>
+              <span className="leemo-approval-card__eyebrow shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium">需要确认</span>
+            </div>
+            <p
+              data-testid="approval-input-summary"
+              className="leemo-approval-card__summary mono mt-1.5 max-w-full truncate rounded-[8px] border px-2.5 py-1.5 text-[11.5px] text-[var(--leemo-ink-2)]"
+            >
+              {pending.inputSummary}
             </p>
-          )}
-          {computerScoped ? (
-            <p className="mt-1 text-[11px]" style={{ color: "var(--leemo-ink-3)" }}>
-              本次任务内，查看、切换、输入等普通电脑操作不再重复询问；启动程序和最终动作仍会单独确认
-            </p>
-          ) : shellScoped ? (
-            <p className="mt-1 text-[11px]" style={{ color: "var(--leemo-ink-3)" }}>
-              授权范围：仅这条命令；不会跨对话永久放行
-            </p>
-          ) : exactScoped ? (
-            <p className="mt-1 text-[11px]" style={{ color: "var(--leemo-ink-3)" }}>
-              授权范围：仅当前目标与参数；下个任务会重新确认
-            </p>
-          ) : !dangerLocked ? (
-            <p className="mt-1 text-[11px]" style={{ color: "var(--leemo-ink-3)" }}>
-              “本次任务 / 始终允许”会覆盖同风险的全部{verbOf(pending.toolName)}操作
-            </p>
-          ) : null}
+            {dangerLocked && (
+              <p className="mt-1 text-[11px]" style={{ color: "var(--leemo-danger)" }}>
+                危险操作，每次都会问你（可在设置→权限里调整）
+              </p>
+            )}
+            {computerScoped ? (
+              <p className="mt-1 text-[11px]" style={{ color: "var(--leemo-ink-3)" }}>
+                本次任务内，查看、切换、输入等普通电脑操作不再重复询问；启动程序和最终动作仍会单独确认
+              </p>
+            ) : shellScoped ? (
+              <p className="mt-1 text-[11px]" style={{ color: "var(--leemo-ink-3)" }}>
+                授权范围：仅这条命令；不会跨对话永久放行
+              </p>
+            ) : exactScoped ? (
+              <p className="mt-1 text-[11px]" style={{ color: "var(--leemo-ink-3)" }}>
+                授权范围：仅当前目标与参数；下个任务会重新确认
+              </p>
+            ) : !dangerLocked ? (
+              <p className="mt-1 text-[11px]" style={{ color: "var(--leemo-ink-3)" }}>
+                “本次任务 / 始终允许”会覆盖同风险的全部{verbOf(pending.toolName)}操作
+              </p>
+            ) : null}
+          </div>
         </div>
         <div
           data-testid="approval-actions"
-          className="col-span-full flex w-full flex-wrap items-center justify-end gap-2 border-t border-[var(--leemo-line-soft)] pt-2 max-[760px]:grid max-[760px]:grid-cols-2"
+          className="leemo-approval-card__actions mt-2 flex w-full flex-wrap items-center justify-end gap-1.5 border-t pt-2 max-[760px]:grid max-[760px]:grid-cols-2"
         >
             <button
               onClick={() => void handleDecide("deny")}
-              className="h-8 rounded-[7px] border px-3 text-[12px] font-medium transition-colors max-[760px]:w-full"
-              style={{
-                borderColor: "var(--leemo-line)",
-                color: "var(--leemo-ink-2)",
-                background: "white",
-              }}
+              className="leemo-approval-card__button h-8 rounded-full border px-3.5 text-[12px] font-medium transition-all max-[760px]:w-full"
             >
               拒绝
             </button>
             {canRememberConversation && (
               <button
                 onClick={() => void handleDecide("allow-conversation")}
-                className="h-8 rounded-[7px] border px-3 text-[12px] font-medium transition-colors max-[760px]:w-full"
-                style={{
-                  borderColor: "var(--leemo-line)",
-                  color: "var(--leemo-ink-2)",
-                  background: "white",
-                }}
+                className="leemo-approval-card__button h-8 rounded-full border px-3.5 text-[12px] font-medium transition-all max-[760px]:w-full"
               >
                 {shellScoped
                   ? "本次任务允许命令"
@@ -237,20 +233,15 @@ export default function ApprovalBar({
             {canPersist && (
               <button
                 onClick={() => void handleDecide("allow-permanent")}
-                className="h-8 rounded-[7px] border px-3 text-[12px] font-medium transition-colors max-[760px]:w-full"
-                style={{
-                  borderColor: "var(--leemo-line)",
-                  color: "var(--leemo-ink-2)",
-                  background: "white",
-                }}
+                className="leemo-approval-card__button h-8 rounded-full border px-3.5 text-[12px] font-medium transition-all max-[760px]:w-full"
               >
                 始终允许此类操作
               </button>
             )}
             <button
               onClick={() => void handleDecide("allow-once")}
-              className="h-8 rounded-[7px] px-4 text-[12px] font-medium text-white transition-colors max-[760px]:w-full"
-              style={{ background: "var(--leemo-ink)" }}
+              data-primary-action="true"
+              className="leemo-approval-card__primary h-8 rounded-full px-4 text-[12px] font-semibold text-white transition-all max-[760px]:w-full"
             >
               允许一次
             </button>

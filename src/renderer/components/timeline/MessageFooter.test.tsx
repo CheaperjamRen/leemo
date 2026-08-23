@@ -258,6 +258,7 @@ describe("MessageFooter", () => {
     expect(screen.queryByText("复习计划.md")).not.toBeInTheDocument();
     expect(screen.getByText("修改")).toBeInTheDocument();
     expect(container.querySelectorAll("[data-file-delivery-receipt]")).toHaveLength(1);
+    expect(container.querySelector("[data-file-delivery-receipt]")).toHaveClass("leemo-delivery-receipt");
     expect(screen.getByLabelText("本轮交付文件").parentElement).toHaveClass("text-[12px]");
     expect(container.querySelector("[data-file-delivery-receipt]")).toHaveClass("shadow-none");
     expect(screen.getByRole("button", { name: "预览 课程笔记/第一章.md" })).toHaveClass("text-[12.5px]");

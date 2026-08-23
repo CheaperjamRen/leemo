@@ -89,6 +89,45 @@
   background: var(--leemo-card);
 }
 
+.leemo-skills-empty {
+  width: min(480px, 100%);
+  min-height: 164px;
+  margin: 22px auto 0;
+  padding: 22px;
+  border: 1px solid color-mix(in srgb, var(--leemo-line-2) 76%, transparent);
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--leemo-card) 92%, var(--leemo-panel));
+  box-shadow: inset 0 1px 0 color-mix(in srgb, white 78%, transparent);
+}
+
+.leemo-skills-empty__icon {
+  display: grid;
+  width: 36px;
+  height: 36px;
+  place-items: center;
+  border: 1px solid color-mix(in srgb, var(--leemo-amber) 22%, var(--leemo-line));
+  border-radius: 50%;
+  color: var(--leemo-amber-strong);
+  background: color-mix(in srgb, var(--leemo-amber-soft) 68%, var(--leemo-card));
+}
+
+.leemo-skills-empty__action {
+  background: var(--leemo-ink);
+  box-shadow: 0 4px 10px color-mix(in srgb, var(--leemo-ink) 14%, transparent);
+  transition: transform 140ms ease, filter 140ms ease;
+}
+
+.leemo-skills-empty__action:hover {
+  filter: brightness(1.08);
+  transform: translateY(-1px);
+}
+
+.leemo-skills-section-empty {
+  margin-top: 12px;
+  border-top: 1px solid var(--leemo-line-soft);
+  border-bottom: 1px solid var(--leemo-line-soft);
+}
+
 .leemo-skill-card__icon[data-tone="amber"] {
   border-color: #c76b13;
   color: #fff;

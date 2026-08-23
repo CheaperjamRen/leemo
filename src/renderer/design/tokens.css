@@ -1,35 +1,71 @@
 /* Layer 1: stable palette primitives. Components and theme packages consume
  * semantic roles instead of overriding or reading these values directly. */
 :root {
-  --leemo-palette-ink-navy: #0F1B2E;
-  --leemo-palette-amber-copper: #D7822B;
-  --leemo-palette-warm-ivory: #F8F1E4;
-  --leemo-palette-warm-oat: #F5F1E8;
+  /* C is the approved default: white workspace, blue-green ink, copper
+   * action, and a restrained blue support scale.  A/B remain selectable
+   * contracts for the future theme switch; no component should read a hex
+   * value directly. */
+  --leemo-theme-default: "white-copper";
+  --leemo-palette-ink-navy: #193B4B;
+  --leemo-palette-amber-copper: #C65F2C;
+  --leemo-palette-warm-ivory: #FFF8F2;
+  --leemo-palette-warm-oat: #F8F3EC;
   --leemo-palette-white: #FFFFFF;
-  --leemo-palette-canvas: #F8F9FA;
-  --leemo-palette-canvas-deep: #ECEFF2;
-  --leemo-palette-panel: #F3F5F6;
-  --leemo-palette-side: #F0F2F4;
-  --leemo-palette-side-hover: #E5E9EC;
-  --leemo-palette-hover: #EBEFF2;
-  --leemo-palette-text-secondary: #58616A;
-  --leemo-palette-text-tertiary: #68727C;
-  --leemo-palette-text-quaternary: #858E97;
-  --leemo-palette-line: #DCE2E7;
-  --leemo-palette-line-soft: #E8ECEF;
-  --leemo-palette-accent-accessible: #B86116;
-  --leemo-palette-accent-strong: #8E460C;
-  --leemo-palette-accent-soft: #F9E5CE;
-  --leemo-palette-accent-glow: #EAC28F;
-  --leemo-palette-accent-bg: #FFF8F1;
-  --leemo-palette-accent-line: #E9CAA8;
-  --leemo-palette-accent-ink: #78410F;
-  --leemo-palette-danger: #C84B45;
-  --leemo-palette-ok: #31845A;
-  --leemo-palette-book-blue: #5D7FAE;
-  --leemo-palette-book-green: #5E8C70;
-  --leemo-palette-book-red: #B36F69;
-  --leemo-palette-user-avatar: #6E7D91;
+  --leemo-palette-canvas: #FBFCFD;
+  --leemo-palette-canvas-deep: #F3F6F8;
+  --leemo-palette-panel: #F5F7F8;
+  --leemo-palette-side: #F7F9FA;
+  --leemo-palette-side-hover: #EDF2F5;
+  --leemo-palette-hover: #EEF4F7;
+  --leemo-palette-text-secondary: #5D7180;
+  --leemo-palette-text-tertiary: #758895;
+  --leemo-palette-text-quaternary: #9AA8B1;
+  --leemo-palette-line: #D9E4EA;
+  --leemo-palette-line-soft: #E8EFF3;
+  --leemo-palette-accent-accessible: #B95124;
+  --leemo-palette-accent-strong: #913A1B;
+  --leemo-palette-accent-soft: #F7E5DB;
+  --leemo-palette-accent-glow: #E9B9A4;
+  --leemo-palette-accent-bg: #FFF5EF;
+  --leemo-palette-accent-line: #E7B8A1;
+  --leemo-palette-accent-ink: #8C3A1E;
+  --leemo-palette-focus-ring: rgba(185, 81, 36, 0.24);
+  --leemo-palette-danger: #B84D4A;
+  --leemo-palette-danger-soft: rgba(184, 77, 74, 0.10);
+  --leemo-palette-danger-line: rgba(184, 77, 74, 0.34);
+  --leemo-palette-ok: #4D8A6A;
+  --leemo-palette-book-blue: #6F8798;
+  --leemo-palette-book-green: #5C9275;
+  --leemo-palette-book-red: #B87570;
+  --leemo-palette-user-avatar: #71818C;
+  --leemo-palette-support-blue: #6C8799;
+  --leemo-palette-support-blue-soft: #EEF4F8;
+  --leemo-palette-support-blue-line: #CADAE4;
+
+  --leemo-palette-shell-canvas: #FBFCFD;
+  --leemo-palette-shell-card: #FFFFFF;
+  --leemo-palette-shell-panel: #F5F7F8;
+  --leemo-palette-shell-side: #F7F9FA;
+  --leemo-palette-shell-side-hover: #EDF2F5;
+  --leemo-palette-shell-hover: #EEF4F7;
+  --leemo-palette-workbench-active: #FFF0E8;
+  --leemo-palette-workbench-active-hover: #FDE2D5;
+  --leemo-palette-workbench-action: #193B4B;
+  --leemo-palette-workbench-action-hover: #244F62;
+  --leemo-palette-line-strong: #CFDDE4;
+  --leemo-palette-surface-default: #FCFDFD;
+  --leemo-palette-surface-sunken: #F3F6F8;
+  --leemo-palette-surface-raised: #FFFFFF;
+  --leemo-palette-surface-overlay: #FFFFFF;
+  --leemo-palette-surface-accent-raised: #FFF7F2;
+  --leemo-palette-border-key: rgba(25, 59, 75, 0.14);
+  --leemo-palette-border-highlight: rgba(255, 255, 255, 0.92);
+  --leemo-palette-shadow-resting: 0 1px 2px rgba(25, 59, 75, 0.045);
+  --leemo-palette-shadow-raised: 0 1px 2px rgba(25, 59, 75, 0.055), 0 8px 24px -20px rgba(25, 59, 75, 0.25);
+  --leemo-palette-shadow-overlay: 0 2px 8px rgba(25, 59, 75, 0.08), 0 28px 72px -30px rgba(25, 59, 75, 0.36);
+  --leemo-palette-radius-control: 999px;
+  --leemo-palette-radius-panel: 16px;
+
   --leemo-palette-momo-body: #FFF8EA;
   --leemo-palette-momo-outline: #E7D9BC;
   --leemo-palette-momo-face: #3B2F24;
@@ -41,9 +77,106 @@
   --leemo-palette-momo-sleep-line: #9FC5D5;
 }
 
+/* Theme contracts. These are intentionally palette-only: switching a theme
+ * changes semantic roles everywhere without duplicating component CSS. */
+[data-theme="white-copper"] {
+  --leemo-theme-id: "white-copper";
+}
+
+[data-theme="warm-copper"] {
+  --leemo-theme-id: "warm-copper";
+  --leemo-palette-ink-navy: #1F2D2A;
+  --leemo-palette-amber-copper: #BD682D;
+  --leemo-palette-canvas: #F7F4EE;
+  --leemo-palette-canvas-deep: #EEE9E0;
+  --leemo-palette-panel: #F1EEE7;
+  --leemo-palette-side: #F4F1EA;
+  --leemo-palette-side-hover: #ECE8DF;
+  --leemo-palette-hover: #F0EBE3;
+  --leemo-palette-text-secondary: #62706B;
+  --leemo-palette-text-tertiary: #7A8781;
+  --leemo-palette-text-quaternary: #9CA59F;
+  --leemo-palette-line: #E1DCD3;
+  --leemo-palette-line-soft: #ECE8E0;
+  --leemo-palette-accent-accessible: #A95122;
+  --leemo-palette-accent-strong: #823D1A;
+  --leemo-palette-accent-soft: #F6E6D9;
+  --leemo-palette-accent-bg: #FFF6ED;
+  --leemo-palette-accent-line: #E5BFA3;
+  --leemo-palette-accent-ink: #7C391B;
+  --leemo-palette-focus-ring: rgba(169, 81, 34, 0.22);
+  --leemo-palette-shell-canvas: #F7F4EE;
+  --leemo-palette-shell-card: #FBFAF7;
+  --leemo-palette-shell-panel: #F1EEE7;
+  --leemo-palette-shell-side: #F4F1EA;
+  --leemo-palette-shell-side-hover: #ECE8DF;
+  --leemo-palette-shell-hover: #F0EBE3;
+  --leemo-palette-workbench-active: #F8E9DC;
+  --leemo-palette-workbench-active-hover: #F4DCCB;
+  --leemo-palette-workbench-action: #1F2D2A;
+  --leemo-palette-workbench-action-hover: #2E413C;
+  --leemo-palette-line-strong: #D6CEC2;
+  --leemo-palette-surface-default: #FBFAF7;
+  --leemo-palette-surface-sunken: #EDF0EB;
+  --leemo-palette-surface-raised: #FFFEFA;
+  --leemo-palette-surface-overlay: #FFFEFA;
+  --leemo-palette-surface-accent-raised: #FFF4E9;
+  --leemo-palette-border-key: rgba(31, 45, 42, 0.13);
+  --leemo-palette-border-highlight: rgba(255, 255, 255, 0.88);
+  --leemo-palette-shadow-resting: 0 1px 2px rgba(31, 45, 42, 0.045);
+  --leemo-palette-shadow-raised: 0 1px 2px rgba(31, 45, 42, 0.055), 0 8px 24px -20px rgba(31, 45, 42, 0.24);
+  --leemo-palette-shadow-overlay: 0 2px 8px rgba(31, 45, 42, 0.08), 0 28px 72px -30px rgba(31, 45, 42, 0.34);
+}
+
+[data-theme="white-indigo"] {
+  --leemo-theme-id: "white-indigo";
+  --leemo-palette-ink-navy: #202B46;
+  --leemo-palette-amber-copper: #5D6FB0;
+  --leemo-palette-canvas: #FBFCFF;
+  --leemo-palette-canvas-deep: #F1F4FA;
+  --leemo-palette-panel: #F4F6FB;
+  --leemo-palette-side: #F7F8FC;
+  --leemo-palette-side-hover: #EEF1F8;
+  --leemo-palette-hover: #EFF2FA;
+  --leemo-palette-text-secondary: #63718B;
+  --leemo-palette-text-tertiary: #7D8AA0;
+  --leemo-palette-text-quaternary: #9BA6B8;
+  --leemo-palette-line: #DCE3EF;
+  --leemo-palette-line-soft: #E9EDF5;
+  --leemo-palette-accent-accessible: #4D5F9E;
+  --leemo-palette-accent-strong: #35477F;
+  --leemo-palette-accent-soft: #E9EDFA;
+  --leemo-palette-accent-bg: #F3F5FF;
+  --leemo-palette-accent-line: #C7D0EE;
+  --leemo-palette-accent-ink: #34477E;
+  --leemo-palette-focus-ring: rgba(77, 95, 158, 0.22);
+  --leemo-palette-shell-canvas: #FBFCFF;
+  --leemo-palette-shell-card: #FFFFFF;
+  --leemo-palette-shell-panel: #F4F6FB;
+  --leemo-palette-shell-side: #F7F8FC;
+  --leemo-palette-shell-side-hover: #EEF1F8;
+  --leemo-palette-shell-hover: #EFF2FA;
+  --leemo-palette-workbench-active: #EEF1FB;
+  --leemo-palette-workbench-active-hover: #E3E8F8;
+  --leemo-palette-workbench-action: #202B46;
+  --leemo-palette-workbench-action-hover: #2E3E61;
+  --leemo-palette-line-strong: #CED8E8;
+  --leemo-palette-surface-default: #FFFFFF;
+  --leemo-palette-surface-sunken: #F1F4FA;
+  --leemo-palette-surface-raised: #FFFFFF;
+  --leemo-palette-surface-overlay: #FFFFFF;
+  --leemo-palette-surface-accent-raised: #F5F7FF;
+  --leemo-palette-border-key: rgba(32, 43, 70, 0.13);
+  --leemo-palette-border-highlight: rgba(255, 255, 255, 0.92);
+  --leemo-palette-shadow-resting: 0 1px 2px rgba(32, 43, 70, 0.045);
+  --leemo-palette-shadow-raised: 0 1px 2px rgba(32, 43, 70, 0.055), 0 8px 24px -20px rgba(32, 43, 70, 0.24);
+  --leemo-palette-shadow-overlay: 0 2px 8px rgba(32, 43, 70, 0.08), 0 28px 72px -30px rgba(32, 43, 70, 0.34);
+}
+
 /* Layer 2: default semantic roles. A future theme package overrides this
  * contract under its own [data-theme="..."] selector. */
-:root {
+:root,
+[data-theme] {
   --leemo-surface-canvas: var(--leemo-palette-canvas);
   --leemo-surface-deep: var(--leemo-palette-canvas-deep);
   --leemo-surface-card: var(--leemo-palette-white);
@@ -68,12 +201,15 @@
   --leemo-action-accent-bg: var(--leemo-palette-accent-bg);
   --leemo-action-accent-line: var(--leemo-palette-accent-line);
   --leemo-action-accent-ink: var(--leemo-palette-accent-ink);
-  --leemo-focus-ring: rgba(184, 97, 22, 0.22);
+  --leemo-focus-ring: var(--leemo-palette-focus-ring);
 
   --leemo-status-danger: var(--leemo-palette-danger);
-  --leemo-status-danger-soft: rgba(222, 82, 76, 0.08);
-  --leemo-status-danger-line: rgba(222, 82, 76, 0.35);
+  --leemo-status-danger-soft: var(--leemo-palette-danger-soft);
+  --leemo-status-danger-line: var(--leemo-palette-danger-line);
   --leemo-status-ok: var(--leemo-palette-ok);
+  --leemo-support-blue: var(--leemo-palette-support-blue);
+  --leemo-support-blue-soft: var(--leemo-palette-support-blue-soft);
+  --leemo-support-blue-line: var(--leemo-palette-support-blue-line);
 
   --leemo-brand-mark: var(--leemo-palette-ink-navy);
   --leemo-brand-passage: var(--leemo-palette-warm-ivory);
@@ -89,7 +225,20 @@
   --leemo-momo-muted: var(--leemo-palette-momo-muted);
   --leemo-momo-sleep-bubble: var(--leemo-palette-momo-sleep);
   --leemo-momo-sleep-line: var(--leemo-palette-momo-sleep-line);
-  --leemo-momo-shadow: rgba(15, 27, 46, 0.10);
+  --leemo-momo-shadow: var(--leemo-palette-shadow-resting);
+
+  /* Surface levels. These are intentionally semantic: cards choose a level
+   * from their role instead of inventing another white rectangle. */
+  --leemo-surface-default: var(--leemo-palette-surface-default);
+  --leemo-surface-sunken: var(--leemo-palette-surface-sunken);
+  --leemo-surface-raised: var(--leemo-palette-surface-raised);
+  --leemo-surface-overlay: var(--leemo-palette-surface-overlay);
+  --leemo-surface-accent-raised: var(--leemo-palette-surface-accent-raised);
+  --leemo-border-key: var(--leemo-palette-border-key);
+  --leemo-border-highlight: var(--leemo-palette-border-highlight);
+  --leemo-shadow-resting: var(--leemo-palette-shadow-resting);
+  --leemo-shadow-raised: var(--leemo-palette-shadow-raised);
+  --leemo-shadow-overlay: var(--leemo-palette-shadow-overlay);
 
 }
 
@@ -105,19 +254,38 @@
   --leemo-shell-hover: var(--leemo-surface-hover);
 }
 
-[data-shell="workbench"] {
-  --leemo-shell-canvas: #F7F7F5;
-  --leemo-shell-card: var(--leemo-surface-card);
-  --leemo-shell-panel: #F4F5F5;
-  --leemo-shell-side: #F1F3F4;
-  --leemo-shell-side-hover: #E7EAED;
-  --leemo-shell-hover: var(--leemo-surface-hover);
-  --leemo-workbench-active: #E7ECF1;
-  --leemo-workbench-active-hover: #E1E7EC;
-  --leemo-workbench-shadow: 0 12px 32px -24px rgba(15, 27, 46, 0.34);
-  --leemo-line: #D8DEE3;
-  --leemo-line-soft: #E7EAED;
-  --leemo-line-2: #E7EAED;
+[data-shell="workbench"],
+[data-shell="start"] {
+  /* Shells only select semantic palette roles.  The active theme supplies the
+   * actual values, so Start/Workbench can switch together in one operation. */
+  --leemo-shell-canvas: var(--leemo-palette-shell-canvas);
+  --leemo-shell-card: var(--leemo-palette-shell-card);
+  --leemo-shell-panel: var(--leemo-palette-shell-panel);
+  --leemo-shell-side: var(--leemo-palette-shell-side);
+  --leemo-shell-side-hover: var(--leemo-palette-shell-side-hover);
+  --leemo-shell-hover: var(--leemo-palette-shell-hover);
+  --leemo-workbench-active: var(--leemo-palette-workbench-active);
+  --leemo-workbench-active-hover: var(--leemo-palette-workbench-active-hover);
+  --leemo-workbench-action: var(--leemo-palette-workbench-action);
+  --leemo-workbench-action-hover: var(--leemo-palette-workbench-action-hover);
+  --leemo-workbench-shadow: var(--leemo-palette-shadow-raised);
+  --leemo-line: var(--leemo-palette-line);
+  --leemo-line-soft: var(--leemo-palette-line-soft);
+  --leemo-line-2: var(--leemo-palette-line-strong);
+  --leemo-ink: var(--leemo-palette-ink-navy);
+  --leemo-ink-2: var(--leemo-palette-text-secondary);
+  --leemo-ink-3: var(--leemo-palette-text-tertiary);
+  --leemo-ink-4: var(--leemo-palette-text-quaternary);
+  --leemo-surface-default: var(--leemo-palette-surface-default);
+  --leemo-surface-sunken: var(--leemo-palette-surface-sunken);
+  --leemo-surface-raised: var(--leemo-palette-surface-raised);
+  --leemo-surface-overlay: var(--leemo-palette-surface-overlay);
+  --leemo-surface-accent-raised: var(--leemo-palette-surface-accent-raised);
+  --leemo-border-key: var(--leemo-palette-border-key);
+  --leemo-border-highlight: var(--leemo-palette-border-highlight);
+  --leemo-shadow-resting: var(--leemo-palette-shadow-resting);
+  --leemo-shadow-raised: var(--leemo-palette-shadow-raised);
+  --leemo-shadow-overlay: var(--leemo-palette-shadow-overlay);
   --leemo-amber: var(--leemo-palette-amber-copper);
   --leemo-accent: var(--leemo-palette-amber-copper);
 }
@@ -164,10 +332,10 @@
   --leemo-danger-line: var(--leemo-status-danger-line);
   --leemo-ok: var(--leemo-status-ok);
   --leemo-focus: var(--leemo-focus-ring);
-  --leemo-shadow-input: 0 1px 2px rgba(24, 31, 38, 0.06), 0 16px 36px -22px rgba(24, 31, 38, 0.32);
-  --leemo-shadow-popover: 0 18px 42px -20px rgba(24, 31, 38, 0.38);
-  --leemo-radius-control: 6px;
-  --leemo-radius-panel: 8px;
+  --leemo-shadow-input: var(--leemo-shadow-raised);
+  --leemo-shadow-popover: var(--leemo-shadow-overlay);
+  --leemo-radius-control: var(--leemo-palette-radius-control);
+  --leemo-radius-panel: var(--leemo-palette-radius-panel);
   --leemo-book-blue: var(--leemo-palette-book-blue);
   --leemo-book-green: var(--leemo-palette-book-green);
   --leemo-book-red: var(--leemo-palette-book-red);
@@ -180,6 +348,7 @@
 
 /* Shell surface aliases must also recompute where shell inputs change. */
 [data-shell="workbench"],
+[data-shell="start"],
 [data-shell="buddy"] {
   --leemo-bg: var(--leemo-shell-canvas);
   --leemo-card: var(--leemo-shell-card);

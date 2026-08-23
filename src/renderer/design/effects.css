@@ -136,6 +136,155 @@
 .leemo-card-shadow-hover {
   box-shadow: var(--leemo-shadow-popover);
 }
+
+/* Five surface levels used by the desktop shells. The small inset highlight
+ * is deliberate: on Windows a quiet stroke plus light conveys depth more
+ * reliably than a large web-style drop shadow. */
+.leemo-surface-default {
+  background: var(--leemo-surface-default);
+  border-color: var(--leemo-border-key);
+}
+
+.leemo-surface-sunken {
+  background: var(--leemo-surface-sunken);
+  border-color: color-mix(in srgb, var(--leemo-line) 74%, transparent);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--leemo-border-highlight) 68%, transparent);
+}
+
+.leemo-surface-raised {
+  background: var(--leemo-surface-raised);
+  border-color: var(--leemo-border-key);
+  box-shadow:
+    inset 0 1px 0 var(--leemo-border-highlight),
+    var(--leemo-shadow-raised);
+}
+
+.leemo-surface-overlay {
+  background: var(--leemo-surface-overlay);
+  border-color: var(--leemo-border-key);
+  box-shadow:
+    inset 0 1px 0 var(--leemo-border-highlight),
+    var(--leemo-shadow-overlay);
+}
+
+.leemo-ask-card {
+  border-color: color-mix(in srgb, var(--leemo-amber-line) 68%, var(--leemo-border-key));
+  background: var(--leemo-surface-raised);
+  box-shadow:
+    inset 0 1px 0 var(--leemo-border-highlight),
+    0 7px 20px -18px rgba(20, 32, 51, 0.30);
+}
+
+.leemo-ask-option {
+  border-color: color-mix(in srgb, var(--leemo-line) 86%, transparent);
+  color: var(--leemo-ink-2);
+  background: color-mix(in srgb, var(--leemo-surface-default) 96%, transparent);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.68);
+}
+
+.leemo-ask-option:hover {
+  border-color: color-mix(in srgb, var(--leemo-amber-line) 78%, var(--leemo-line));
+  color: var(--leemo-ink);
+  background: color-mix(in srgb, var(--leemo-amber-bg) 66%, var(--leemo-surface-raised));
+  box-shadow: inset 0 1px 0 white;
+}
+
+.leemo-ask-option[data-selected="true"] {
+  border-color: color-mix(in srgb, var(--leemo-amber) 82%, var(--leemo-line));
+  color: var(--leemo-ink);
+  background: color-mix(in srgb, var(--leemo-amber-bg) 92%, var(--leemo-surface-raised));
+  box-shadow:
+    inset 3px 0 0 var(--leemo-amber),
+    inset 0 1px 0 rgba(255, 255, 255, 0.74);
+}
+
+.leemo-ask-other {
+  border-color: color-mix(in srgb, var(--leemo-line) 82%, transparent);
+  background: color-mix(in srgb, var(--leemo-surface-sunken) 76%, white);
+  box-shadow: inset 0 1px 2px rgba(15, 27, 46, 0.035);
+}
+
+.leemo-ask-other:focus {
+  border-color: color-mix(in srgb, var(--leemo-amber) 72%, var(--leemo-line));
+  background: var(--leemo-surface-raised);
+  box-shadow: 0 0 0 3px var(--leemo-focus);
+}
+
+.leemo-ask-submit {
+  background: var(--leemo-workbench-action, var(--leemo-ink));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14);
+}
+
+.leemo-ask-submit:not(:disabled):hover {
+  background: var(--leemo-workbench-action-hover, var(--leemo-ink));
+}
+
+.leemo-approval-card {
+  width: 100%;
+  border-color: color-mix(in srgb, var(--leemo-amber-line) 54%, var(--leemo-border-key));
+  background: var(--leemo-surface-raised);
+  box-shadow: inset 0 1px 0 var(--leemo-border-highlight);
+}
+
+.leemo-approval-card[data-tone="danger"] {
+  border-color: var(--leemo-danger-line);
+  background: linear-gradient(155deg, color-mix(in srgb, var(--leemo-danger-soft) 72%, white), var(--leemo-surface-raised) 58%);
+}
+
+.leemo-approval-card__eyebrow {
+  color: var(--leemo-amber-ink);
+  background: color-mix(in srgb, var(--leemo-amber-soft) 64%, white);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--leemo-amber-line) 64%, transparent);
+}
+
+.leemo-approval-card[data-tone="danger"] .leemo-approval-card__eyebrow {
+  color: var(--leemo-danger);
+  background: color-mix(in srgb, var(--leemo-danger-soft) 72%, white);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--leemo-danger-line) 70%, transparent);
+}
+
+.leemo-approval-card__summary {
+  border-color: color-mix(in srgb, var(--leemo-line) 88%, transparent);
+  background: color-mix(in srgb, var(--leemo-panel) 74%, white);
+  box-shadow: inset 0 1px 1px rgba(20, 32, 51, 0.025);
+}
+
+.leemo-approval-card__actions {
+  border-color: color-mix(in srgb, var(--leemo-line-soft) 88%, transparent);
+}
+
+.leemo-approval-card__button {
+  border-color: color-mix(in srgb, var(--leemo-line) 90%, transparent);
+  color: var(--leemo-ink-2);
+  background: color-mix(in srgb, var(--leemo-surface-default) 92%, transparent);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.76);
+}
+
+.leemo-approval-card__button:hover {
+  border-color: color-mix(in srgb, var(--leemo-ink-3) 28%, var(--leemo-line));
+  color: var(--leemo-ink);
+  background: var(--leemo-surface-raised);
+  box-shadow: inset 0 1px 0 white;
+}
+
+.leemo-approval-card__button:active {
+  transform: translateY(0);
+  box-shadow: inset 0 1px 2px rgba(15, 27, 46, 0.06);
+}
+
+.leemo-approval-card__primary {
+  background: var(--leemo-workbench-action, var(--leemo-ink));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14);
+}
+
+.leemo-approval-card__primary:hover {
+  background: var(--leemo-workbench-action-hover, var(--leemo-ink));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.16);
+}
+
+.leemo-approval-card__primary:active {
+  transform: translateY(0);
+}
 .leemo-input-shadow {
   box-shadow:
     0 1px 2px rgba(24, 31, 38, 0.06),

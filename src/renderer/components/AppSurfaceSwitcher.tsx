@@ -10,13 +10,13 @@ export default function AppSurfaceSwitcher({ className = "" }: { className?: str
         <LayoutDashboard aria-hidden />
         <span>开始</span>
       </button>
-      <button type="button" aria-label="切换到搭子" title="搭子" aria-pressed={surface === "buddy"} onClick={() => setSurface("buddy")}>
-        <MessageCircle aria-hidden />
-        <span>搭子</span>
-      </button>
       <button type="button" aria-label="切换到工作台" title="工作台" aria-pressed={surface === "workbench"} onClick={() => setSurface("workbench")}>
         <PanelLeft aria-hidden />
         <span>工作台</span>
+      </button>
+      <button type="button" aria-label="切换到搭子" title="搭子" aria-pressed={surface === "buddy"} onClick={() => setSurface("buddy")}>
+        <MessageCircle aria-hidden />
+        <span>搭子</span>
       </button>
     </nav>
   );

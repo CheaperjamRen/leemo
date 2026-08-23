@@ -37,13 +37,13 @@ export default function ActivityCard({
         ? "未完成"
         : "进行中";
   return (
-    <div className="overflow-hidden rounded-[8px] border border-[var(--leemo-line)] bg-[var(--leemo-panel)]">
+    <div className="leemo-activity-card overflow-hidden rounded-[8px] border">
       <button
         type="button"
         aria-label={expanded ? "收起助手详情" : "展开助手详情"}
         aria-expanded={expanded}
         onClick={() => setExpanded((value) => !value)}
-        className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-[var(--leemo-side-hover)]"
+        className="leemo-activity-card__toggle flex w-full items-center gap-2 px-3 py-2 text-left"
       >
         <SubagentAvatar identity={item.role ?? "任务助手"} siblingIndex={siblingIndex} />
         <span className="shrink-0 text-[12.5px] font-medium text-[var(--leemo-ink-2)]">
@@ -65,7 +65,7 @@ export default function ActivityCard({
         />
       </button>
       {expanded && (
-        <div className="space-y-2 border-t border-[var(--leemo-line)] px-3 py-2.5" data-testid="subagent-details">
+        <div className="leemo-activity-card__details space-y-2 border-t px-3 py-2.5" data-testid="subagent-details">
           {resultEntries.map((entry, index) => (
             <div key={`text-${index}`} className="text-[var(--leemo-ink-2)]">
               <MarkdownContent text={entry.text} variant="process" />

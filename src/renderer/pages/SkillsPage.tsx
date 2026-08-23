@@ -775,14 +775,16 @@ function EmptyCatalog({ onAdd }: { onAdd: () => void }) {
   return (
     <div
       data-testid="skills-empty-state"
-      className="flex min-h-64 flex-col items-center justify-center gap-2 border-y border-dashed border-[var(--leemo-line)] text-center"
+      data-layout="compact-empty"
+      data-surface-level="content"
+      className="leemo-skills-empty flex flex-col items-center justify-center gap-2 text-center"
     >
-      <Blocks className="h-6 w-6 text-[var(--leemo-ink-3)]" aria-hidden />
+      <span className="leemo-skills-empty__icon"><Blocks className="h-5 w-5" aria-hidden /></span>
       <p className="text-sm font-medium text-[var(--leemo-ink-2)]">还没有技能</p>
       <button
         type="button"
         onClick={onAdd}
-        className="mt-2 inline-flex h-9 items-center gap-1.5 rounded-[6px] bg-[var(--leemo-ink)] px-3 text-sm font-medium text-white hover:bg-black"
+        className="leemo-skills-empty__action mt-2 inline-flex h-9 items-center gap-1.5 rounded-full px-4 text-sm font-medium text-white"
       >
         <Plus className="h-4 w-4" aria-hidden />
         添加技能
@@ -808,7 +810,7 @@ function SectionEmpty({
         ? "还没有我的技能"
         : "Leemo 精选暂不可用";
   return (
-    <div className="flex min-h-52 flex-col items-center justify-center border-y border-dashed border-[var(--leemo-line)] text-center">
+    <div className="leemo-skills-section-empty flex min-h-36 flex-col items-center justify-center text-center">
       <p className="text-sm text-[var(--leemo-ink-3)]">{label}</p>
       {!hasQuery && section !== "leemo" && (
         <button type="button" onClick={onAdd} className="mt-3 text-xs font-medium text-[var(--leemo-amber-strong)] hover:underline">

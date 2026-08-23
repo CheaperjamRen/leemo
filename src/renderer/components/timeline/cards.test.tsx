@@ -136,7 +136,7 @@ describe("timeline cards render their data", () => {
     expect(screen.queryByText(/Page URL/)).not.toBeInTheDocument();
   });
 
-  it("PlanCard is a flat todo region without its own nested card header", () => {
+  it("PlanCard stays inside the process well instead of becoming a second raised card", () => {
     const item: Of<"plan"> = { kind: "plan", id: "1", runId: "r", toolUseId: "p", todos: [
       { text: "a", status: "done" }, { text: "b", status: "active" }, { text: "c", status: "todo" },
     ] };
@@ -144,7 +144,27 @@ describe("timeline cards render their data", () => {
     expect(screen.getByText("a")).toBeInTheDocument();
     expect(screen.getByText("c")).toBeInTheDocument();
     expect(screen.getByTestId("plan-card")).not.toHaveClass("leemo-card-shadow");
+    expect(screen.getByTestId("plan-card")).toHaveClass("leemo-plan-region");
+    expect(screen.getByText("a").previousElementSibling).toHaveClass("text-[var(--leemo-amber)]");
     expect(screen.queryByText("计划")).not.toBeInTheDocument();
+  });
+
+  it("marks the run plan as a component inside the flow", () => {
+    const item: Of<"tool"> = {
+      kind: "tool", id: "process-role", runId: "r", toolUseId: "process-role", name: "Read", input: {}, status: "running",
+    };
+    render(<ProcessFold items={[item]} defaultCollapsed runId="r" />);
+    expect(screen.getByTestId("process-fold")).toHaveAttribute("data-component-role", "run-plan");
+  });
+
+  it("ToolCard uses the shared quiet process surface", () => {
+    const item: Of<"tool"> = {
+      kind: "tool", id: "visual-tool", runId: "r", toolUseId: "visual-tool",
+      name: "Read", input: { file_path: "chapter.md" }, status: "running",
+    };
+    render(<ToolCard item={item} />);
+    expect(screen.getByRole("button", { name: "展开工具详情" }).parentElement).toHaveClass("leemo-tool-card");
+    expect(screen.getByRole("button", { name: "展开工具详情" }).parentElement).toHaveAttribute("data-component-role", "tool");
   });
 
   it("ActivityCard expands to show the subagent transcript and tool results", () => {
@@ -157,7 +177,8 @@ describe("timeline cards render their data", () => {
       ],
       transcript: [{ kind: "text", text: "定位到了配置入口。" }],
     };
-    render(<ActivityCard item={item} />);
+    const { container } = render(<ActivityCard item={item} />);
+    expect(container.firstElementChild).toHaveClass("leemo-activity-card");
     expect(screen.getByText(/2/)).toBeInTheDocument();
     expect(screen.queryByText("定位到了配置入口。")).not.toBeInTheDocument();
 
@@ -311,6 +332,10 @@ describe("timeline cards render their data", () => {
     const item: Of<"text"> = { kind: "text", id: "1", runId: "r", role: "user", text: "继续整理", streaming: false };
     const { container } = render(<TextBubble item={item} />);
     expect(container.querySelector(".max-w-\\[min\\(520px\\,65\\%\\)\\]")).not.toBeNull();
+    const bubble = container.querySelector(".leemo-workbench-user-bubble");
+    expect(bubble).not.toBeNull();
+    expect(bubble).toHaveAttribute("data-message-role", "user");
+    expect(bubble).toHaveAttribute("data-surface-level", "content");
     expect(screen.queryByRole("img")).not.toBeInTheDocument();
   });
 
@@ -421,6 +446,8 @@ describe("timeline cards render their data", () => {
     expect(screen.getByTestId("process-fold-progress")).toHaveTextContent("1 / 2");
     expect(screen.getByRole("img", { name: "momo 的头像" })).toHaveAttribute("width", "22");
     expect(screen.getByTestId("process-fold-details")).toHaveClass("max-h-[220px]", "overflow-y-auto");
+    expect(screen.getByTestId("process-fold")).toHaveAttribute("data-surface-level", "sunken");
+    expect(screen.getByTestId("process-fold")).toHaveAttribute("data-state", "active");
     expect(screen.queryByText(/%/)).not.toBeInTheDocument();
   });
 
@@ -448,6 +475,8 @@ describe("timeline cards render their data", () => {
     expect(screen.getByText("上下文已整理")).toBeInTheDocument();
     expect(screen.queryByTestId("process-fold-progress")).not.toBeInTheDocument();
     expect(screen.getByText("补充说明")).toBeInTheDocument();
+    expect(screen.getByTestId("process-fold")).toHaveAttribute("data-state", "terminal");
+    expect(screen.getByTestId("process-fold")).toHaveAttribute("data-surface-level", "default");
   });
 
   it("summarizes a completed read-edit-read sequence as file processing", () => {
@@ -521,7 +550,8 @@ describe("timeline cards render their data", () => {
 
   it("ThinkingCard renders the model's thought text", () => {
     const item: Of<"thinking"> = { kind: "thinking", id: "1", runId: "r", text: "先看看 PPT", streaming: false };
-    render(<ThinkingCard item={item} />);
+    const { container } = render(<ThinkingCard item={item} />);
+    expect(container.firstElementChild).toHaveClass("leemo-thinking-note");
     expect(screen.getByText(/先看看 PPT/)).toBeInTheDocument();
   });
 

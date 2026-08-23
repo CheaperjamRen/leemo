@@ -82,7 +82,7 @@ export default function ToolCard({
     toolResultLabel(item.name, item.status, compactFallback(item)),
   );
   return (
-    <div className="w-full overflow-hidden rounded-[7px] border border-[var(--leemo-line-soft)] bg-[var(--leemo-card)]/58 transition-colors hover:border-[var(--leemo-line-2)] hover:bg-[var(--leemo-card)]/82">
+    <div data-component-role="tool" className="leemo-tool-card w-full overflow-hidden rounded-[8px] border transition-[border-color,background-color,box-shadow,transform]">
       <button
         type="button"
         aria-label={expanded ? "收起工具详情" : "展开工具详情"}

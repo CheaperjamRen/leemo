@@ -86,6 +86,39 @@ describe("TurnBlock — approval cards live inline in the conversation flow", ()
     expect(screen.getByRole("status", { name: "momo 已开始处理" })).toHaveTextContent("正在开始处理");
   });
 
+  it("keeps momo visibly present while hidden thinking arrives before the first visible tool or answer", () => {
+    const renderActive = (items: TimelineItem[]) => (
+      <BridgeProvider client={new FixtureBridgeClient()}>
+        <TurnBlock items={items} active runId={R} density="workbench" />
+      </BridgeProvider>
+    );
+    const view = render(renderActive([user]));
+    expect(screen.getByRole("status", { name: "momo 已开始处理" })).toBeInTheDocument();
+
+    const hiddenThinking: TimelineItem = {
+      kind: "thinking",
+      id: "thinking-1",
+      runId: R,
+      text: "先确认资料范围",
+      streaming: true,
+    };
+    view.rerender(renderActive([user, hiddenThinking]));
+    expect(screen.getByRole("status", { name: "momo 已开始处理" })).toBeInTheDocument();
+
+    const runningTool: TimelineItem = {
+      kind: "tool",
+      id: "tool-1",
+      runId: R,
+      toolUseId: "tool-1",
+      name: "WebSearch",
+      input: { query: "资料" },
+      status: "running",
+    };
+    view.rerender(renderActive([user, hiddenThinking, runningTool]));
+    expect(screen.queryByRole("status", { name: "momo 已开始处理" })).not.toBeInTheDocument();
+    expect(screen.getByTestId("process-fold")).toHaveTextContent("正在查询资料");
+  });
+
   it("renders no trailing approval node when nothing is pending", () => {
     // The old behaviour pushed <ApprovalBar> after every node, so the card
     // floated below the final text no matter which tool raised it — the user
@@ -94,6 +127,13 @@ describe("TurnBlock — approval cards live inline in the conversation flow", ()
     const running: TimelineItem = { ...tool, status: "running", summary: undefined };
     const { container } = renderTurnBlock([user, open, running, finalT], true);
     expect(container.innerHTML).not.toContain("momo 想");
+  });
+
+  it("does not invent a run plan for a normal run without plan events", () => {
+    renderTurnBlock([user, open, tool, finalT, usage, result], false);
+
+    expect(screen.queryByTestId("plan-card")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("process-fold-progress")).not.toBeInTheDocument();
   });
 
   it("anchors a pending approval to its own tool inside the process fold", () => {
@@ -118,7 +158,61 @@ describe("TurnBlock — approval cards live inline in the conversation flow", ()
     expect(fold.contains(card)).toBe(true);
   });
 
-  it("puts approval actions on their own responsive row instead of squeezing the explanation", () => {
+  it("keeps an active workbench process folded until the user asks for details", () => {
+    const plan: TimelineItem = {
+      kind: "plan",
+      id: "plan-running",
+      runId: R,
+      toolUseId: "plan-running",
+      todos: [
+        { text: "读取资料", status: "done" },
+        { text: "整理重点", status: "active" },
+        { text: "写入文档", status: "todo" },
+      ],
+    };
+    const running: TimelineItem = { ...tool, id: "running", toolUseId: "running", status: "running" };
+
+    renderTurnBlock([user, open, plan, running], true);
+
+    expect(screen.getByTestId("process-fold-toggle")).toHaveAttribute("aria-expanded", "false");
+    expect(screen.getByTestId("process-fold-progress")).toHaveTextContent("1 / 3");
+    expect(screen.queryByTestId("plan-card")).not.toBeInTheDocument();
+  });
+
+  it("shows a pending approval without repeating the full plan underneath the progress summary", () => {
+    const plan: TimelineItem = {
+      kind: "plan",
+      id: "plan-approval",
+      runId: R,
+      toolUseId: "plan-approval",
+      todos: [
+        { text: "读取资料", status: "done" },
+        { text: "核对笔记", status: "done" },
+        { text: "生成草稿", status: "active" },
+        { text: "写入文件", status: "todo" },
+      ],
+    };
+    const running: TimelineItem = { ...tool, id: "approval-tool", toolUseId: "approval-tool", status: "running" };
+
+    renderTurnBlock([user, open, plan, running], true, [{
+      kind: "approval",
+      id: "approval-with-plan",
+      conversationId: "conv-fixture",
+      runId: R,
+      toolUseId: "approval-tool",
+      toolName: "Bash",
+      inputSummary: "ls -la notebooks",
+      risk: "moderate",
+      receivedAt: 0,
+    }]);
+
+    expect(screen.getByTestId("process-fold-toggle")).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByTestId("process-fold-progress")).toHaveTextContent("2 / 4");
+    expect(screen.getByText("momo 想执行命令")).toBeInTheDocument();
+    expect(screen.queryByTestId("plan-card")).not.toBeInTheDocument();
+  });
+
+  it("keeps approval as one compact surface with a single primary action", () => {
     const running: TimelineItem = { ...tool, toolUseId: "tu-responsive", status: "running", summary: undefined };
     renderTurnBlock([user, open, running], true, [
       {
@@ -134,8 +228,17 @@ describe("TurnBlock — approval cards live inline in the conversation flow", ()
       },
     ]);
 
-    expect(screen.getByTestId("approval-card-pending")).toHaveClass("grid");
-    expect(screen.getByTestId("approval-actions")).toHaveClass("col-span-full", "w-full");
+    expect(screen.getByTestId("approval-card-pending")).toHaveClass("leemo-approval-card", "w-full");
+    expect(screen.getByTestId("approval-card-pending")).toHaveAttribute("data-surface-level", "raised");
+    expect(screen.getByTestId("approval-card-pending")).toHaveAttribute("data-layout", "compact");
+    expect(screen.getByTestId("approval-card-pending")).toHaveAttribute("data-component-role", "approval");
+    expect(screen.getByTestId("approval-card-pending")).not.toHaveClass("grid");
+    expect(screen.getByTestId("approval-risk-marker")).toHaveClass("h-5", "w-5");
+    expect(screen.getAllByTestId("approval-input-summary")).toHaveLength(1);
+    expect(screen.getByTestId("approval-actions")).toHaveClass("w-full");
+    expect(screen.getByTestId("approval-actions").querySelectorAll('[data-primary-action="true"]')).toHaveLength(1);
+    expect(screen.getByRole("button", { name: "拒绝" })).toHaveClass("rounded-full");
+    expect(screen.getByRole("button", { name: "允许一次" })).toHaveClass("rounded-full");
   });
 
   it("keeps ordinary approvals visually neutral instead of presenting a danger alert", () => {
@@ -154,13 +257,9 @@ describe("TurnBlock — approval cards live inline in the conversation flow", ()
       },
     ]);
 
-    expect(screen.getByTestId("approval-card-pending")).toHaveStyle({
-      background: "var(--leemo-card)",
-      borderColor: "var(--leemo-line)",
-    });
+    expect(screen.getByTestId("approval-card-pending")).toHaveAttribute("data-tone", "neutral");
     expect(screen.getByTestId("approval-input-summary")).toHaveClass(
-      "border-[var(--leemo-line)]",
-      "bg-[var(--leemo-panel)]",
+      "leemo-approval-card__summary",
     );
   });
 
@@ -265,6 +364,9 @@ describe("TurnBlock strict-chronological rendering", () => {
     expect(screen.getByText("好，我先看看。")).toBeInTheDocument();
     expect(screen.getByText("我继续核对一遍。")).toBeInTheDocument();
     expect(screen.getByText("草稿好了。")).toBeInTheDocument();
+    expect(screen.getAllByRole("img", { name: "momo 的头像" })).toHaveLength(1);
+    expect(screen.getByTestId("process-fold")).toHaveAttribute("data-turn-identity-anchor", "false");
+    expect(screen.getByTestId("process-fold").parentElement).toHaveAttribute("data-density", "workbench");
 
     fireEvent.click(screen.getByTestId("process-fold").querySelector("button")!);
     expect(screen.queryByText("先确认资料范围")).not.toBeInTheDocument();
@@ -388,9 +490,11 @@ describe("TurnBlock strict-chronological rendering", () => {
     expect(screen.queryByText(/^完成$/)).not.toBeInTheDocument();
   });
 
-  it("active turn shows the process fold expanded", () => {
+  it("active turn keeps process details available behind the compact fold", () => {
     const running: TimelineItem = { ...tool, status: "running", summary: undefined };
     renderTurnBlock([user, open, running], true);
+    expect(screen.queryByText("读取文件")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /momo 的干活过程/ }));
     expect(screen.getByText("读取文件")).toBeInTheDocument();
   });
 
@@ -410,6 +514,7 @@ describe("TurnBlock strict-chronological rendering", () => {
     expect(screen.getAllByText("正在重新连接 1/5").length).toBeGreaterThan(0);
     expect(screen.queryByText("socket hang up: ECONNRESET")).not.toBeInTheDocument();
 
+    fireEvent.click(screen.getByRole("button", { name: /momo 的干活过程/ }));
     fireEvent.click(screen.getByRole("button", { name: "查看重连错误详情" }));
     expect(screen.getByText("socket hang up: ECONNRESET")).toBeInTheDocument();
   });
@@ -423,9 +528,10 @@ describe("TurnBlock strict-chronological rendering", () => {
   it("a usage item between two process items does not split the process fold", () => {
     const tool2: TimelineItem = { kind: "tool", id: "t2", runId: R, toolUseId: "t2", name: "Write", input: {}, status: "running" };
     renderTurnBlock([user, open, tool, usage, tool2], true);
-    // active turn: fold is expanded by default, showing "N 步" — should say 2 steps, not two separate folds
+    // The compact header must still count both steps as one process fold.
     expect(screen.getByText(/^2 步$/)).toBeInTheDocument();
     expect(screen.getAllByText(/^\d 步$/)).toHaveLength(1);
+    fireEvent.click(screen.getByRole("button", { name: /momo 的干活过程/ }));
     expect(screen.getByText("读取文件")).toBeInTheDocument();
     expect(screen.getByText("写入文件")).toBeInTheDocument();
   });
@@ -438,6 +544,9 @@ describe("TurnBlock strict-chronological rendering", () => {
     expect(screen.getByText("chart.html")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "练习次数" })).toBeInTheDocument();
     expect(screen.queryByTitle("可视化: chart.html")).not.toBeInTheDocument();
+    const finalAnswer = screen.getByText("草稿好了。");
+    const visualization = screen.getByRole("heading", { name: "练习次数" });
+    expect(finalAnswer.compareDocumentPosition(visualization) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 });
 
@@ -474,7 +583,20 @@ describe("TurnBlock — ask_user question cards live inline, never folded (卡 D
     const { container } = renderTurnBlock([user, open, askTool("tu-1")], true, [pendingQuestion("q1")]);
     expect(screen.getByText("选择部署环境？")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /开发/ })).toBeInTheDocument();
-    expect(container.innerHTML).toContain("var(--leemo-amber-line)");
+    expect(container.querySelector(".leemo-ask-card")).toHaveAttribute("data-surface-level", "raised");
+  });
+
+  it("does not leave an orphan streaming caret once the turn has moved on to a question", () => {
+    const streamingOpen: TimelineItem = { ...open, streaming: true };
+    const { container } = renderTurnBlock(
+      [user, streamingOpen, askTool("tu-1")],
+      true,
+      [pendingQuestion("q1")],
+    );
+
+    expect(screen.getByText("好，我先看看。")).toBeInTheDocument();
+    expect(screen.getByText("选择部署环境？")).toBeInTheDocument();
+    expect(container.querySelector(".leemo-caret")).not.toBeInTheDocument();
   });
 
   it("renders an answered question in place — archived, no controls, still where its tool item is", () => {
