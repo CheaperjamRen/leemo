@@ -2,6 +2,8 @@ import type {
   AttachFileInput,
   AttachImageBytesInput,
   ArchiveNoteInput,
+  CaptureAttachmentActionInput,
+  CaptureAttachmentPreview,
   CaptureChange,
   CommitQuickDraftInput,
   CreateNoteInput,
@@ -59,6 +61,9 @@ export interface CaptureClient {
   attachImageBytes(input: AttachImageBytesInput): Promise<Note>;
   attachExternalFile(input: AttachFileInput): Promise<Note>;
   attachFileCopy(input: AttachFileInput): Promise<Note>;
+  previewAttachment(input: CaptureAttachmentActionInput): Promise<CaptureAttachmentPreview>;
+  openAttachment(input: CaptureAttachmentActionInput): Promise<void>;
+  revealAttachment(input: CaptureAttachmentActionInput): Promise<void>;
   removeAttachment(input: RemoveNoteAttachmentInput): Promise<Note>;
   migrateStorageRoot(input: MigrateCaptureStorageInput): Promise<string>;
   onChanged(listener: (change: CaptureChange) => void): () => void;
@@ -152,6 +157,18 @@ export class IpcCaptureClient implements CaptureClient {
 
   attachFileCopy(input: AttachFileInput): Promise<Note> {
     return this.call("attachFileCopy", input);
+  }
+
+  previewAttachment(input: CaptureAttachmentActionInput): Promise<CaptureAttachmentPreview> {
+    return this.call("previewAttachment", input);
+  }
+
+  openAttachment(input: CaptureAttachmentActionInput): Promise<void> {
+    return this.call("openAttachment", input);
+  }
+
+  revealAttachment(input: CaptureAttachmentActionInput): Promise<void> {
+    return this.call("revealAttachment", input);
   }
 
   removeAttachment(input: RemoveNoteAttachmentInput): Promise<Note> {

@@ -7,6 +7,7 @@ import type {
   PreviewPayload,
   MarkdownWriteResult,
   WorkspaceRootInfo,
+  HumanFolderInfo,
 } from "./client";
 
 /** The exact surface the preload exposes on `window.leemoWorkspace`
@@ -31,6 +32,22 @@ export class IpcWorkspaceClient implements WorkspaceClient {
     const res = await this.api.invoke(op, payload);
     if (!res.ok) throw new Error(res.error ?? `workspace ${op} failed`);
     return res.response as T;
+  }
+
+  listHumanFolders(): Promise<HumanFolderInfo[]> {
+    return this.call("listHumanFolders");
+  }
+
+  pickHumanFolder(): Promise<HumanFolderInfo | null> {
+    return this.call("pickHumanFolder");
+  }
+
+  openHumanFolder(id: string): Promise<HumanFolderInfo> {
+    return this.call("openHumanFolder", { id });
+  }
+
+  forgetHumanFolder(id: string): Promise<boolean> {
+    return this.call("forgetHumanFolder", { id });
   }
 
   listWorkspaces(): Promise<WorkspaceRootInfo[]> {

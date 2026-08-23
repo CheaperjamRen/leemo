@@ -274,6 +274,45 @@ describe("capture admin", () => {
     }
   });
 
+  it("previews, opens, and reveals only attachments that belong to the requested note", async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "leemo-attachment-actions-"));
+    const source = path.join(root, "资料.md");
+    fs.writeFileSync(source, "# 资料", "utf8");
+    const opened: string[] = [];
+    const revealed: string[] = [];
+    const admin = createCaptureAdmin({
+      persistence: createPersistence(new Database(":memory:")),
+      storage: createCaptureStorage({ randomId: () => "attachment-1", now: () => 200 }),
+      getStorageRoot: () => path.join(root, "storage"),
+      openPath: async (target) => { opened.push(target); return ""; },
+      showItemInFolder: (target) => { revealed.push(target); },
+      now: () => 200,
+      randomId: () => "note-1",
+    });
+
+    try {
+      const note = admin.createNote({ title: "资料", markdown: "" });
+      const attached = await admin.attachExternalFile({ noteId: note.id, expectedRevision: 1, path: source });
+      const attachmentId = attached.attachments![0].id;
+
+      await expect((admin as any).previewAttachment({ noteId: note.id, attachmentId })).resolves.toEqual({
+        kind: "markdown",
+        name: "资料.md",
+        text: "# 资料",
+      });
+      await expect((admin as any).openAttachment({ noteId: note.id, attachmentId })).resolves.toBeUndefined();
+      await expect((admin as any).revealAttachment({ noteId: note.id, attachmentId })).resolves.toBeUndefined();
+      expect(opened).toEqual([fs.realpathSync(source)]);
+      expect(revealed).toEqual([fs.realpathSync(source)]);
+
+      await expect((admin as any).openAttachment({ noteId: "other-note", attachmentId })).rejects.toThrow(/不存在|附件/);
+      fs.rmSync(source);
+      await expect((admin as any).openAttachment({ noteId: note.id, attachmentId })).rejects.toThrow(/移动|删除/);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it("removes only old managed directories after the migrated root is persisted", async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "leemo-storage-migration-"));
     const oldRoot = path.join(root, "old");

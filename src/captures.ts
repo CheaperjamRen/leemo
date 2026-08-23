@@ -26,6 +26,17 @@ export interface NoteAttachment {
   createdAt: number;
 }
 
+export interface CaptureAttachmentActionInput {
+  noteId: string;
+  attachmentId: string;
+}
+
+export type CaptureAttachmentPreview =
+  | { kind: "image"; name: string; mimeType: string; base64: string }
+  | { kind: "pdf"; name: string; base64: string }
+  | { kind: "markdown"; name: string; text: string }
+  | { kind: "text"; name: string; text: string };
+
 export interface Note {
   id: string;
   title: string;
@@ -175,6 +186,9 @@ export interface CaptureOperationInputs {
   attachImageBytes: AttachImageBytesInput;
   attachExternalFile: AttachFileInput;
   attachFileCopy: AttachFileInput;
+  previewAttachment: CaptureAttachmentActionInput;
+  openAttachment: CaptureAttachmentActionInput;
+  revealAttachment: CaptureAttachmentActionInput;
   removeAttachment: RemoveNoteAttachmentInput;
   migrateStorageRoot: MigrateCaptureStorageInput;
 }

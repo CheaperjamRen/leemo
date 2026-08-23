@@ -3,6 +3,8 @@
   min-height: 0;
   flex: 1;
   flex-direction: column;
+  container-name: capture-editor;
+  container-type: inline-size;
   background: #fff;
   color: var(--leemo-text-primary, #0f1b2e);
   font-family: "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
@@ -83,7 +85,159 @@
 }
 
 .capture-editor__paragraph {
-  margin: 0 0 0.64em;
+  margin: 0 0 0.52em;
+}
+
+.capture-editor__paragraph:has(> br:only-child) {
+  min-height: 0.62em;
+  margin: 0;
+  line-height: 0.62;
+}
+
+.capture-editor__toolbar--document {
+  gap: 1px;
+  overflow: visible;
+}
+
+.capture-editor__toolbar--document select {
+  width: 86px;
+  height: 30px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  outline: 0;
+  padding: 0 24px 0 8px;
+  color: var(--leemo-text-secondary, #58616a);
+  background: transparent;
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+
+.capture-editor__toolbar--document select:hover,
+.capture-editor__toolbar--document select:focus-visible {
+  border-color: var(--leemo-border-default, #dce2e7);
+  color: var(--leemo-text-primary, #0f1b2e);
+  background: var(--leemo-surface-hover, #ebeff2);
+}
+
+.capture-editor__tool-button[aria-pressed="true"] {
+  color: var(--leemo-action-accent-strong, #a74f0b);
+  background: color-mix(in srgb, var(--leemo-action-accent, #b86116) 10%, transparent);
+}
+
+.capture-editor__more-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.capture-editor__reference-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.capture-editor__more-trigger {
+  display: inline-flex;
+  height: 30px;
+  align-items: center;
+  gap: 2px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  padding: 0 7px 0 9px;
+  color: var(--leemo-text-secondary, #58616a);
+  background: transparent;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.capture-editor__more-trigger:hover,
+.capture-editor__more-trigger:focus-visible,
+.capture-editor__more-trigger[aria-expanded="true"] {
+  border-color: var(--leemo-border-default, #dce2e7);
+  color: var(--leemo-text-primary, #0f1b2e);
+  background: var(--leemo-surface-hover, #ebeff2);
+  outline: none;
+}
+
+.capture-editor__more-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 30;
+  display: grid;
+  width: 178px;
+  gap: 2px;
+  border: 1px solid var(--leemo-border-default, #dce2e7);
+  border-radius: 9px;
+  padding: 5px;
+  background: #fff;
+  box-shadow: 0 14px 34px -20px rgb(15 27 46 / 42%), 0 3px 10px rgb(15 27 46 / 7%);
+}
+
+.capture-editor__more-menu button {
+  display: grid;
+  min-height: 32px;
+  grid-template-columns: 18px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  border: 0;
+  border-radius: 6px;
+  padding: 0 9px;
+  color: var(--leemo-text-secondary, #58616a);
+  background: transparent;
+  font: inherit;
+  font-size: 12.5px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.capture-editor__more-menu button:hover,
+.capture-editor__more-menu button:focus-visible {
+  color: var(--leemo-text-primary, #0f1b2e);
+  background: var(--leemo-surface-hover, #ebeff2);
+  outline: none;
+}
+
+.capture-editor__more-menu svg {
+  width: 15px;
+  height: 15px;
+  stroke-width: 1.75;
+}
+
+.capture-editor__more-menu .capture-editor__menu-item--responsive-only {
+  display: none;
+}
+
+.capture-editor__toolbar-spacer {
+  min-width: 14px;
+  flex: 1 1 auto;
+}
+
+@container capture-editor (max-width: 720px) {
+  .capture-editor__tool-button--wide-priority,
+  .capture-editor__toolbar-divider--objects {
+    display: none;
+  }
+
+  .capture-editor__more-menu .capture-editor__menu-item--responsive-only {
+    display: grid;
+  }
+}
+
+@container capture-editor (max-width: 520px) {
+  .capture-editor__toolbar--document select {
+    width: 70px;
+  }
+
+  .capture-editor__toolbar--document {
+    gap: 0;
+  }
+
+  .capture-editor__toolbar-divider {
+    margin-inline: 3px;
+  }
 }
 
 .capture-editor__h1,

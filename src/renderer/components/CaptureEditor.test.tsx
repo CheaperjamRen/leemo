@@ -21,6 +21,101 @@ function selectEditorContents(editor: HTMLElement): void {
 }
 
 describe("CaptureEditor", () => {
+  const losslessDocumentFixture = [
+    "**斐波那契数列**（Fibonacci sequence）由以下递推关系定义：",
+    "",
+    "行内公式 $F_0 = 0, F_1 = 1$。",
+    "",
+    "$$",
+    "F_n = F_{n-1} + F_{n-2}",
+    "$$",
+    "",
+    "| 性质名称 | 数学表达 | 直观说明 |",
+    "| --- | --- | --- |",
+    "| 黄金分割 | $\\varphi^2 = \\varphi + 1$ | 相邻项比值收敛 |",
+    "",
+    "> [!NOTE]",
+    "> 初始说明",
+  ].join("\n");
+
+  it("does not rewrite a valid Markdown document merely because rich mode hydrated", async () => {
+    const onMarkdownChange = vi.fn();
+    render(
+      <CaptureEditor
+        variant="document"
+        markdown={losslessDocumentFixture}
+        onMarkdownChange={onMarkdownChange}
+        onSave={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByRole("textbox", { name: "便签正文" })).toHaveTextContent("斐波那契数列");
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(onMarkdownChange).not.toHaveBeenCalled();
+  });
+
+  it("imports copied Markdown as document objects instead of escaping it as plain text", async () => {
+    vi.stubGlobal("DragEvent", class DragEvent extends Event {});
+    vi.stubGlobal("ClipboardEvent", class ClipboardEvent extends Event {});
+    const onMarkdownChange = vi.fn();
+    render(
+      <CaptureEditor
+        variant="document"
+        markdown=""
+        onMarkdownChange={onMarkdownChange}
+        onSave={vi.fn()}
+      />,
+    );
+
+    const editor = screen.getByRole("textbox", { name: "便签正文" });
+    selectEditorContents(editor);
+    fireEvent.paste(editor, {
+      clipboardData: {
+        files: [],
+        items: [],
+        types: ["text/plain"],
+        getData: (type: string) => type === "text/plain" ? losslessDocumentFixture : "",
+      },
+    });
+
+    await waitFor(() => expect(onMarkdownChange).toHaveBeenCalled());
+    const latest = String(onMarkdownChange.mock.calls.at(-1)?.[0] ?? "");
+    expect(latest).toContain("**斐波那契数列**");
+    expect(latest).not.toContain("\\**斐波那契数列\\**");
+    expect(latest).toContain("$F_0 = 0, F_1 = 1$");
+    expect(latest).toContain("| 性质名称 | 数学表达 | 直观说明 |\n| --- | --- | --- |");
+    expect(within(editor).getByRole("textbox", { name: "表头 1" })).toHaveValue("性质名称");
+  });
+
+  it("preserves untouched bold, math, and adjacent GFM table rows after a real rich edit", async () => {
+    const onMarkdownChange = vi.fn();
+    render(
+      <CaptureEditor
+        variant="document"
+        markdown={losslessDocumentFixture}
+        onMarkdownChange={onMarkdownChange}
+        onSave={vi.fn()}
+      />,
+    );
+
+    const calloutInput = screen.getByRole("textbox", { name: "高亮块内容" });
+    await userEvent.clear(calloutInput);
+    await userEvent.type(calloutInput, "复核说明");
+
+    await waitFor(() => expect(onMarkdownChange).toHaveBeenCalled());
+    const latest = String(onMarkdownChange.mock.calls.at(-1)?.[0] ?? "");
+    expect(latest).toContain("**斐波那契数列**");
+    expect(latest).not.toContain("\\**斐波那契数列\\**");
+    expect(latest).toContain("$F_0 = 0, F_1 = 1$");
+    expect(latest).toContain("F_n = F_{n-1} + F_{n-2}");
+    expect(latest).toContain([
+      "| 性质名称 | 数学表达 | 直观说明 |",
+      "| --- | --- | --- |",
+      "| 黄金分割 | $\\varphi^2 = \\varphi + 1$ | 相邻项比值收敛 |",
+    ].join("\n"));
+    expect(latest).toContain("> [!NOTE]\n> 复核说明");
+  });
+
   it("keeps the compact formatting toolbar above the writing canvas", () => {
     const { container } = render(
       <CaptureEditor markdown="" onMarkdownChange={vi.fn()} onSave={vi.fn()} />,
@@ -110,6 +205,58 @@ describe("CaptureEditor", () => {
     expect(editor.querySelector(".markdown-editor__mermaid")).toBeInTheDocument();
   });
 
+  it("balances direct document tools with one complete more menu", async () => {
+    render(
+      <CaptureEditor
+        variant="document"
+        markdown="正文"
+        onMarkdownChange={vi.fn()}
+        onSave={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: "加粗" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "清单" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "插入链接" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "插入表格" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "插入公式" })).toBeVisible();
+    await userEvent.click(screen.getByRole("button", { name: "更多格式" }));
+    const menu = screen.getByRole("menu", { name: "更多格式" });
+    expect(within(menu).getByRole("menuitem", { name: "插入链接" })).toBeInTheDocument();
+    expect(within(menu).getByRole("menuitem", { name: "代码块" })).toBeInTheDocument();
+    expect(within(menu).getByRole("menuitem", { name: "高亮块" })).toBeInTheDocument();
+    expect(within(menu).getByRole("menuitem", { name: "插入公式" })).toBeInTheDocument();
+    expect(within(menu).getByRole("menuitem", { name: "插入 Mermaid 图表" })).toBeInTheDocument();
+    expect(within(menu).getByRole("menuitem", { name: "插入表格" })).toBeInTheDocument();
+  });
+
+  it("lets the user edit formula and Mermaid source inside rendered objects", async () => {
+    const onMarkdownChange = vi.fn();
+    render(
+      <CaptureEditor
+        variant="document"
+        markdown={"公式 $x$。\n\n```mermaid\nflowchart LR\nA --> B\n```"}
+        onMarkdownChange={onMarkdownChange}
+        onSave={vi.fn()}
+      />,
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: "编辑公式" }));
+    const formula = screen.getByLabelText("公式内容");
+    await userEvent.clear(formula);
+    await userEvent.type(formula, "x^2");
+    await userEvent.click(screen.getByRole("button", { name: "编辑 Mermaid 图表" }));
+    const mermaid = screen.getByLabelText("Mermaid 图表源码");
+    await userEvent.clear(mermaid);
+    await userEvent.type(mermaid, "flowchart TD{enter}A --> C");
+
+    await waitFor(() => {
+      const latest = String(onMarkdownChange.mock.calls.at(-1)?.[0] ?? "");
+      expect(latest).toContain("$x^2$");
+      expect(latest).toContain("flowchart TD\nA --> C");
+    });
+  });
+
   it("creates and edits a table as a visual document object", async () => {
     const user = userEvent.setup();
     const onMarkdownChange = vi.fn();
@@ -126,15 +273,57 @@ describe("CaptureEditor", () => {
     const firstHeader = await screen.findByRole("textbox", { name: "表头 1" });
     await user.clear(firstHeader);
     await user.type(firstHeader, "任务");
-    await user.click(screen.getByRole("button", { name: "添加表格行" }));
-    await user.click(screen.getByRole("button", { name: "切换表格对齐" }));
+    await user.click(screen.getByRole("button", { name: "选择第 1 行" }));
+    await user.click(screen.getByRole("button", { name: "在下方插入行" }));
+    await user.click(screen.getByRole("button", { name: "选择第 1 列" }));
+    await user.click(screen.getByRole("button", { name: "切换所选列对齐" }));
 
     await waitFor(() => {
       const markdown = String(onMarkdownChange.mock.calls.at(-1)?.[0] ?? "");
       expect(markdown).toContain("| 任务 | 列 2 |");
-      expect(markdown).toContain("| :---: | :---: |");
+      expect(markdown).toContain("| :---: | --- |");
       expect(markdown.split("\n")).toHaveLength(5);
     });
+  });
+
+  it("leaves a real paragraph after an inserted callout so the document can continue", async () => {
+    const user = userEvent.setup();
+    render(
+      <CaptureEditor
+        variant="document"
+        markdown="正文"
+        onMarkdownChange={vi.fn()}
+        onSave={vi.fn()}
+      />,
+    );
+
+    selectEditorContents(screen.getByRole("textbox", { name: "便签正文" }));
+    await user.click(screen.getByRole("button", { name: "更多格式" }));
+    await user.click(screen.getByRole("menuitem", { name: "高亮块" }));
+
+    const editor = screen.getByRole("textbox", { name: "便签正文" });
+    const callout = editor.querySelector("[data-testid=\"markdown-editor-callout\"]");
+    expect(callout).toBeInTheDocument();
+    expect(callout?.parentElement?.nextElementSibling).toMatchObject({ tagName: "P" });
+  });
+
+  it("allows deleting a callout from the document flow", async () => {
+    const user = userEvent.setup();
+    render(
+      <CaptureEditor
+        variant="document"
+        markdown={"> [!IMPORTANT]\n> 需要复核\n\n后续内容"}
+        onMarkdownChange={vi.fn()}
+        onSave={vi.fn()}
+      />,
+    );
+
+    const editor = screen.getByRole("textbox", { name: "便签正文" });
+    const callout = within(editor).getByTestId("markdown-editor-callout");
+    await user.click(callout);
+    await user.keyboard("{Backspace}");
+
+    expect(within(editor).queryByTestId("markdown-editor-callout")).not.toBeInTheDocument();
   });
 
   it("offers a source mode whose Ctrl+B shortcut toggles Markdown markers", async () => {

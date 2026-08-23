@@ -125,6 +125,7 @@ import {
   createWorkspaceRegistry,
   registerPickedWorkspace,
 } from "./workspace-registry";
+import { createHumanFolderRegistry } from "./human-folder-registry";
 import { createScheduledTaskScheduler, type ScheduledTaskScheduler } from "./scheduled-task-scheduler";
 import { createScheduledTaskAdmin } from "./scheduled-task-admin";
 import { createTaskWakeLock, keepAwakeSetting, type TaskWakeLock } from "./task-wake-lock";
@@ -765,6 +766,12 @@ function setupHost(): void {
     homeRoot: memoryDir(),
     registryFile: path.join(app.getPath("userData"), "workspaces.json"),
   });
+  // Human-only shortcuts are deliberately a separate registry. Registering a
+  // folder here never makes it an Agent workspace or changes its permission
+  // scope; it only gives the user a convenient native-folder entry point.
+  const humanFolderRegistry = createHumanFolderRegistry({
+    registryFile: path.join(app.getPath("userData"), "human-folders.json"),
+  });
   workspaceRegistryRef = workspaceRegistry;
 
   // One local database owns every durable renderer/host record. Create it
@@ -794,6 +801,8 @@ function setupHost(): void {
     storage: createCaptureStorage(),
     getStorageRoot: () => captureStorageRoot,
     setStorageRoot: persistCaptureStorageRoot,
+    openPath: (target) => shell.openPath(target),
+    showItemInFolder: (target) => shell.showItemInFolder(target),
   });
   captureIpc = createCaptureIpcDispatcher(captureAdmin, {
     getQuickCaptureFileDropMode: () => captureFileDropModeSetting(sqlitePersistence.loadAll().settings),
@@ -1424,6 +1433,32 @@ function setupHost(): void {
     async (_e, msg: { op: string; payload: unknown }) => {
       try {
         switch (msg.op) {
+          case "listHumanFolders":
+            return { ok: true, response: humanFolderRegistry.list() };
+          case "pickHumanFolder": {
+            const options: OpenDialogOptions = {
+              title: "添加常用文件夹",
+              buttonLabel: "添加文件夹",
+              properties: ["openDirectory"],
+            };
+            const result = win
+              ? await dialog.showOpenDialog(win, options)
+              : await dialog.showOpenDialog(options);
+            if (result.canceled || !result.filePaths[0]) return { ok: true, response: null };
+            return { ok: true, response: humanFolderRegistry.register(result.filePaths[0]) };
+          }
+          case "openHumanFolder": {
+            const { id } = msg.payload as { id: string };
+            const entry = humanFolderRegistry.touch(id);
+            const resolved = humanFolderRegistry.resolve(entry.id);
+            const error = await shell.openPath(resolved.root);
+            if (error) throw new Error(error || "无法打开这个文件夹。");
+            return { ok: true, response: entry };
+          }
+          case "forgetHumanFolder": {
+            const { id } = msg.payload as { id: string };
+            return { ok: true, response: humanFolderRegistry.forget(id) };
+          }
           case "listWorkspaces":
             return { ok: true, response: workspaceRegistry.list() };
           case "pickWorkspace": {

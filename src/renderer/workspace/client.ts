@@ -58,6 +58,19 @@ export interface WorkspaceRootInfo {
 }
 
 /**
+ * A human-only folder shortcut. This is intentionally not a WorkspaceRootInfo:
+ * saving it never grants Agent access, changes the active workspace, or adds a
+ * folder to the workspace registry.
+ */
+export interface HumanFolderInfo {
+  id: string;
+  name: string;
+  displayPath: string;
+  available: boolean;
+  lastOpenedAt: number;
+}
+
+/**
  * What the preview pane receives for one file (轮 4「预览区通电」).
  *
  * Structurally mirrors `PreviewPayload` in src/host/workspace.ts — declared here
@@ -73,6 +86,11 @@ export type PreviewPayload =
 export type MarkdownWriteResult = Extract<PreviewPayload, { kind: "text" }>;
 
 export interface WorkspaceClient {
+  /** Human-only folder shortcuts; they never widen Agent workspace scope. */
+  listHumanFolders?(): Promise<HumanFolderInfo[]>;
+  pickHumanFolder?(): Promise<HumanFolderInfo | null>;
+  openHumanFolder?(id: string): Promise<HumanFolderInfo>;
+  forgetHumanFolder?(id: string): Promise<boolean>;
   listWorkspaces?(): Promise<WorkspaceRootInfo[]>;
   /** Opens Electron's native directory picker. Renderer cannot supply a path. */
   pickWorkspace?(): Promise<WorkspaceRootInfo | null>;

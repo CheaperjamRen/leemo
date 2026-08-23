@@ -94,6 +94,23 @@ describe("capture clients", () => {
     expect(invoke).toHaveBeenNthCalledWith(2, "deleteNote", deleteInput);
   });
 
+  it("forwards guarded attachment preview and shell actions through the main-window client", async () => {
+    const input = { noteId: note.id, attachmentId: "attachment-1" };
+    const preview = { kind: "markdown" as const, name: "资料.md", text: "# 资料" };
+    const invoke = vi.fn()
+      .mockResolvedValueOnce({ ok: true, response: preview })
+      .mockResolvedValueOnce({ ok: true })
+      .mockResolvedValueOnce({ ok: true });
+    const client = new IpcCaptureClient({ invoke, onChanged: vi.fn(() => vi.fn()) });
+
+    await expect((client as any).previewAttachment(input)).resolves.toEqual(preview);
+    await expect((client as any).openAttachment(input)).resolves.toBeUndefined();
+    await expect((client as any).revealAttachment(input)).resolves.toBeUndefined();
+    expect(invoke).toHaveBeenNthCalledWith(1, "previewAttachment", input);
+    expect(invoke).toHaveBeenNthCalledWith(2, "openAttachment", input);
+    expect(invoke).toHaveBeenNthCalledWith(3, "revealAttachment", input);
+  });
+
   it("forwards note organization operations through the main-window client", async () => {
     const moveInput: MoveNoteInput = {
       id: note.id,

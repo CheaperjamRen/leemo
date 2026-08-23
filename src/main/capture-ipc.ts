@@ -1,6 +1,7 @@
 import type {
   AttachFileInput,
   AttachImageBytesInput,
+  CaptureAttachmentActionInput,
   ArchiveNoteInput,
   CommitQuickDraftInput,
   CreateNoteInput,
@@ -56,6 +57,9 @@ const MAIN_OPERATIONS = new Set([
   "attachImageBytes",
   "attachExternalFile",
   "attachFileCopy",
+  "previewAttachment",
+  "openAttachment",
+  "revealAttachment",
   "attachDroppedFile",
   "removeAttachment",
   "migrateStorageRoot",
@@ -155,6 +159,15 @@ export function createCaptureIpcDispatcher(
             break;
           case "attachFileCopy":
             response = await admin.attachFileCopy!(message.payload as AttachFileInput);
+            break;
+          case "previewAttachment":
+            response = await admin.previewAttachment!(message.payload as CaptureAttachmentActionInput);
+            break;
+          case "openAttachment":
+            response = await admin.openAttachment!(message.payload as CaptureAttachmentActionInput);
+            break;
+          case "revealAttachment":
+            response = await admin.revealAttachment!(message.payload as CaptureAttachmentActionInput);
             break;
           case "removeAttachment":
             response = await admin.removeAttachment!(message.payload as RemoveNoteAttachmentInput);

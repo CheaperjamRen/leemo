@@ -2,7 +2,7 @@ import fs from "node:fs";
 import { promises as fsp } from "node:fs";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
-import type { NoteAttachment } from "../captures";
+import type { CaptureAttachmentPreview, NoteAttachment } from "../captures";
 
 const MANAGED_DIRECTORIES = ["note-images", "inbox-attachments"] as const;
 
@@ -28,6 +28,14 @@ export interface CaptureStorageService {
     storageRoot: string | undefined,
     attachment: NoteAttachment,
   ): Promise<void>;
+  resolveAttachmentPath(
+    storageRoot: string | undefined,
+    attachment: NoteAttachment,
+  ): Promise<string>;
+  readAttachmentPreview(
+    storageRoot: string | undefined,
+    attachment: NoteAttachment,
+  ): Promise<CaptureAttachmentPreview>;
   migrateManagedStorage(
     currentRoot: string | undefined,
     newRoot: string,
@@ -95,6 +103,46 @@ async function requireExternalFile(sourcePath: string): Promise<{ absolute: stri
   }
   if (!stat.isFile()) throw new Error("请选择一个文件，而不是文件夹。");
   return { absolute, size: stat.size };
+}
+
+async function resolveExistingAttachment(
+  storageRoot: string | undefined,
+  attachment: NoteAttachment,
+): Promise<{ absolute: string; size: number }> {
+  const managedRoot = attachment.storage === "managed" ? requireStorageRoot(storageRoot) : null;
+  const target = managedRoot
+    ? managedAbsolutePath(managedRoot, attachment.path)
+    : path.resolve(attachment.path);
+  let absolute: string;
+  let stat: fs.Stats;
+  try {
+    absolute = await fsp.realpath(target);
+    stat = await fsp.stat(absolute);
+  } catch (error) {
+    const code = error && typeof error === "object" && "code" in error
+      ? String((error as { code?: unknown }).code)
+      : "";
+    if (code === "ENOENT") throw new Error("这个文件已经被移动或删除。");
+    throw friendlyStorageError(error);
+  }
+  if (!stat.isFile()) throw new Error("这个附件已经不是可打开的文件。");
+  if (managedRoot) {
+    const canonicalRoot = await fsp.realpath(managedRoot).catch(() => managedRoot);
+    const prefix = canonicalRoot.endsWith(path.sep) ? canonicalRoot : `${canonicalRoot}${path.sep}`;
+    if (absolute !== canonicalRoot && !absolute.startsWith(prefix)) {
+      throw new Error("附件路径超出 Leemo 文件存储位置。");
+    }
+  }
+  return { absolute, size: stat.size };
+}
+
+function attachmentPreviewKind(attachment: NoteAttachment): CaptureAttachmentPreview["kind"] | null {
+  const extension = path.extname(attachment.name || attachment.path).toLocaleLowerCase();
+  if (attachment.mimeType?.startsWith("image/") || [".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".svg"].includes(extension)) return "image";
+  if (attachment.mimeType === "application/pdf" || extension === ".pdf") return "pdf";
+  if ([".md", ".markdown", ".mdx"].includes(extension)) return "markdown";
+  if ([".txt", ".log", ".json", ".jsonl", ".yaml", ".yml", ".toml", ".ini", ".csv", ".tsv", ".xml", ".html", ".css", ".js", ".jsx", ".ts", ".tsx", ".py", ".sql", ".sh", ".ps1"].includes(extension)) return "text";
+  return null;
 }
 
 async function publishTemporaryFile(
@@ -187,6 +235,29 @@ export function createCaptureStorage(options: CaptureStorageOptions = {}): Captu
       await fsp.rm(target, { force: true }).catch((error) => {
         throw friendlyStorageError(error);
       });
+    },
+
+    async resolveAttachmentPath(storageRoot, attachment) {
+      return (await resolveExistingAttachment(storageRoot, attachment)).absolute;
+    },
+
+    async readAttachmentPreview(storageRoot, attachment) {
+      const kind = attachmentPreviewKind(attachment);
+      if (!kind) throw new Error("此文件类型请使用默认应用打开。");
+      const resolved = await resolveExistingAttachment(storageRoot, attachment);
+      const maxBytes = kind === "markdown" || kind === "text" ? 4 * 1024 * 1024 : 48 * 1024 * 1024;
+      if (resolved.size > maxBytes) throw new Error("文件较大，请使用默认应用打开。");
+      const content = await fsp.readFile(resolved.absolute);
+      if (kind === "markdown" || kind === "text") {
+        return { kind, name: attachment.name, text: content.toString("utf8") };
+      }
+      if (kind === "pdf") return { kind, name: attachment.name, base64: content.toString("base64") };
+      return {
+        kind,
+        name: attachment.name,
+        mimeType: attachment.mimeType || "image/*",
+        base64: content.toString("base64"),
+      };
     },
 
     async migrateManagedStorage(currentRoot, newRootValue) {

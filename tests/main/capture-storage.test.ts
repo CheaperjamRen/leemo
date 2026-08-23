@@ -76,6 +76,29 @@ describe("capture storage", () => {
     })).rejects.toThrow(/空间不足/);
   });
 
+  it("resolves only real attachment files and returns bounded preview payloads", async () => {
+    const root = temporaryRoot("attachment-preview");
+    const sourceRoot = temporaryRoot("attachment-preview-source");
+    const markdownPath = path.join(sourceRoot, "思考.md");
+    fs.writeFileSync(markdownPath, "# 自己先想\n\n再决定何时调用 momo。", "utf8");
+    const storage = createCaptureStorage({ randomId: () => "attachment-preview", now: () => 100 });
+    const external = await storage.referenceExternalFile(markdownPath);
+    const managed = await storage.copyExternalFile(root, "note-1", markdownPath);
+
+    await expect((storage as any).resolveAttachmentPath(root, external)).resolves.toBe(fs.realpathSync(markdownPath));
+    await expect((storage as any).resolveAttachmentPath(root, managed)).resolves.toBe(fs.realpathSync(path.join(root, managed.path)));
+    await expect((storage as any).readAttachmentPreview(root, external)).resolves.toEqual({
+      kind: "markdown",
+      name: "思考.md",
+      text: "# 自己先想\n\n再决定何时调用 momo。",
+    });
+
+    const escaped = { ...managed, path: "../思考.md" };
+    await expect((storage as any).resolveAttachmentPath(root, escaped)).rejects.toThrow(/超出|路径/);
+    fs.rmSync(markdownPath);
+    await expect((storage as any).resolveAttachmentPath(root, external)).rejects.toThrow(/移动|删除|不存在/);
+  });
+
   it("copies managed storage through a temporary directory and keeps the old root", async () => {
     const oldRoot = temporaryRoot("old-storage");
     const parent = temporaryRoot("new-storage-parent");

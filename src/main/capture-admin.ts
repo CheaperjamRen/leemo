@@ -4,6 +4,8 @@ import {
   QUICK_DRAFT_ID,
   type AttachFileInput,
   type AttachImageBytesInput,
+  type CaptureAttachmentActionInput,
+  type CaptureAttachmentPreview,
   type ArchiveNoteInput,
   type CaptureChange,
   type CommitQuickDraftInput,
@@ -52,6 +54,9 @@ export interface CaptureAdminService {
   attachImageBytes?(input: AttachImageBytesInput): Promise<Note>;
   attachExternalFile?(input: AttachFileInput): Promise<Note>;
   attachFileCopy?(input: AttachFileInput): Promise<Note>;
+  previewAttachment?(input: CaptureAttachmentActionInput): Promise<CaptureAttachmentPreview>;
+  openAttachment?(input: CaptureAttachmentActionInput): Promise<void>;
+  revealAttachment?(input: CaptureAttachmentActionInput): Promise<void>;
   removeAttachment?(input: RemoveNoteAttachmentInput): Promise<Note>;
   migrateStorageRoot?(input: MigrateCaptureStorageInput): Promise<string>;
   subscribe(listener: (change: CaptureChange) => void): () => void;
@@ -62,6 +67,9 @@ export type CaptureAdminWithAttachments = CaptureAdminService & Required<Pick<
   | "attachImageBytes"
   | "attachExternalFile"
   | "attachFileCopy"
+  | "previewAttachment"
+  | "openAttachment"
+  | "revealAttachment"
   | "removeAttachment"
   | "migrateStorageRoot"
 >>;
@@ -80,6 +88,8 @@ export interface CaptureAdminOptions {
   storage?: CaptureStorageService;
   getStorageRoot?: () => string | undefined;
   setStorageRoot?: (root: string) => void;
+  openPath?: (target: string) => Promise<string>;
+  showItemInFolder?: (target: string) => void;
 }
 
 function requireRecord(value: unknown): Record<string, unknown> {
@@ -226,6 +236,17 @@ export function createCaptureAdmin(options: CaptureAdminOptions): CaptureAdminWi
   };
 
   const getPersistedDraft = (): QuickDraft | undefined => options.persistence.getQuickDraft();
+
+  const requireAttachment = (value: unknown): { attachment: NoteAttachment; noteId: string } => {
+    const input = requireRecord(value);
+    const noteId = requireId(input.noteId);
+    const attachmentId = requireAttachmentId(input.attachmentId);
+    const note = options.persistence.getNote(noteId);
+    if (!note) throw new Error("这条便签不存在，可能已被删除。");
+    const attachment = note.attachments?.find((candidate) => candidate.id === attachmentId);
+    if (!attachment) throw new Error("这个便签附件不存在，可能已被移除。");
+    return { attachment, noteId };
+  };
 
   const service: CaptureAdminWithTrash = {
     getQuickDraft() {
@@ -519,6 +540,23 @@ export function createCaptureAdmin(options: CaptureAdminOptions): CaptureAdminWi
         await storage.removeAttachment(storageRoot, attachment).catch(() => undefined);
         throw error;
       }
+    },
+    async previewAttachment(value) {
+      const { attachment } = requireAttachment(value);
+      return requireStorage(options).readAttachmentPreview(options.getStorageRoot?.(), attachment);
+    },
+    async openAttachment(value) {
+      if (!options.openPath) throw new Error("当前环境无法使用默认应用打开文件。");
+      const { attachment } = requireAttachment(value);
+      const target = await requireStorage(options).resolveAttachmentPath(options.getStorageRoot?.(), attachment);
+      const error = await options.openPath(target);
+      if (error) throw new Error(`文件没有打开：${error}`);
+    },
+    async revealAttachment(value) {
+      if (!options.showItemInFolder) throw new Error("当前环境无法在资源管理器中定位文件。");
+      const { attachment } = requireAttachment(value);
+      const target = await requireStorage(options).resolveAttachmentPath(options.getStorageRoot?.(), attachment);
+      options.showItemInFolder(target);
     },
     async removeAttachment(value) {
       const input = requireRecord(value);

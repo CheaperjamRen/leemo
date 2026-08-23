@@ -8,6 +8,8 @@ import { createPersistence } from "../../src/main/persistence/schema";
 function createHarness(fileDropMode: "reference" | "copy" = "reference") {
   let nextId = 1;
   let nextAttachmentId = 1;
+  const opened: string[] = [];
+  const revealed: string[] = [];
   const storage: CaptureStorageService = {
     storeImageBytes: async (_root, _noteId, input) => ({
       id: `attachment-${nextAttachmentId++}`,
@@ -38,6 +40,8 @@ function createHarness(fileDropMode: "reference" | "copy" = "reference") {
       createdAt: 100,
     }),
     removeAttachment: async () => undefined,
+    resolveAttachmentPath: async (_root, attachment) => attachment.path,
+    readAttachmentPreview: async (_root, attachment) => ({ kind: "pdf", name: attachment.name, base64: "cGRm" }),
     migrateManagedStorage: async () => "E:/Leemo-files",
     cleanupManagedStorage: async () => undefined,
   };
@@ -48,8 +52,10 @@ function createHarness(fileDropMode: "reference" | "copy" = "reference") {
     storage,
     getStorageRoot: () => "E:/Leemo-files",
     setStorageRoot: () => undefined,
+    openPath: async (target) => { opened.push(target); return ""; },
+    showItemInFolder: (target) => { revealed.push(target); },
   });
-  return { admin, ipc: createCaptureIpcDispatcher(admin, { getQuickCaptureFileDropMode: () => fileDropMode }) };
+  return { admin, ipc: createCaptureIpcDispatcher(admin, { getQuickCaptureFileDropMode: () => fileDropMode }), opened, revealed };
 }
 
 describe("capture IPC dispatcher", () => {
@@ -74,7 +80,7 @@ describe("capture IPC dispatcher", () => {
       payload: { expectedRevision: 1 },
     })).toMatchObject({ ok: true, response: { id: "note-1", markdown: "正文" } });
 
-    for (const op of ["listNotes", "listArchivedNotes", "getNote", "createNote", "updateNote", "moveNote", "setNotePinned", "markNoteOrganized", "archiveNote", "unarchiveNote", "deleteNote", "attachExternalFile", "attachFileCopy", "removeAttachment", "migrateStorageRoot"]) {
+    for (const op of ["listNotes", "listArchivedNotes", "getNote", "createNote", "updateNote", "moveNote", "setNotePinned", "markNoteOrganized", "archiveNote", "unarchiveNote", "deleteNote", "attachExternalFile", "attachFileCopy", "previewAttachment", "openAttachment", "revealAttachment", "removeAttachment", "migrateStorageRoot"]) {
       expect(await ipc.handle("quick", { op, payload: {} })).toMatchObject({
         ok: false,
         error: expect.stringMatching(/无权|不能|不允许/),
@@ -124,6 +130,27 @@ describe("capture IPC dispatcher", () => {
       payload: { id: "note-1", expectedRevision: 4, childStrategy: "subtree" },
     })).toMatchObject({ ok: true, response: [{ id: "note-1", deletedAt: expect.any(Number) }] });
     expect(await ipc.handle("main", { op: "listNotes" })).toEqual({ ok: true, response: [] });
+  });
+
+  it("routes attachment preview, open, and reveal only for the main window", async () => {
+    const { ipc, opened, revealed } = createHarness();
+    const created = await ipc.handle("main", { op: "createNote", payload: { title: "资料", markdown: "" } });
+    const noteId = (created.response as { id: string }).id;
+    const attached = await ipc.handle("main", {
+      op: "attachExternalFile",
+      payload: { noteId, expectedRevision: 1, path: "E:/资料.pdf" },
+    });
+    const attachmentId = (attached.response as { attachments: Array<{ id: string }> }).attachments[0].id;
+    const payload = { noteId, attachmentId };
+
+    await expect(ipc.handle("main", { op: "previewAttachment", payload })).resolves.toMatchObject({
+      ok: true,
+      response: { kind: "pdf", name: "resume.pdf", base64: "cGRm" },
+    });
+    await expect(ipc.handle("main", { op: "openAttachment", payload })).resolves.toEqual({ ok: true, response: undefined });
+    await expect(ipc.handle("main", { op: "revealAttachment", payload })).resolves.toEqual({ ok: true, response: undefined });
+    expect(opened).toEqual(["E:/资料.pdf"]);
+    expect(revealed).toEqual(["E:/资料.pdf"]);
   });
 
   it("lets only the main sender organize notes through the typed operation path", async () => {
