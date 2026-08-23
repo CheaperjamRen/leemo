@@ -116,7 +116,7 @@ describe("CaptureEditor", () => {
     expect(latest).toContain("> [!NOTE]\n> 复核说明");
   });
 
-  it("keeps the compact formatting toolbar above the writing canvas", () => {
+  it("keeps the compact formatting toolbar below the writing canvas", () => {
     const { container } = render(
       <CaptureEditor markdown="" onMarkdownChange={vi.fn()} onSave={vi.fn()} />,
     );
@@ -124,8 +124,21 @@ describe("CaptureEditor", () => {
     const toolbar = screen.getByRole("toolbar", { name: "便签格式" });
     const canvas = container.querySelector(".capture-editor__canvas");
     expect(canvas).not.toBeNull();
-    expect(toolbar.compareDocumentPosition(canvas!)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+    expect(canvas!.compareDocumentPosition(toolbar)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
     expect(toolbar.querySelectorAll("button")).toHaveLength(7);
+  });
+
+  it("marks the quick-capture surface so its compact proportions stay isolated from documents", () => {
+    render(
+      <CaptureEditor
+        markdown=""
+        onMarkdownChange={() => undefined}
+        onSave={() => undefined}
+        variant="capture"
+      />,
+    );
+
+    expect(screen.getByTestId("capture-editor")).toHaveClass("capture-editor--capture");
   });
 
   it("restores persisted Markdown as an editable rich-text document", () => {

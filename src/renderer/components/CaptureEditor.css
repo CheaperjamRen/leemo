@@ -84,6 +84,33 @@
   line-height: 1.72;
 }
 
+/* The shortcut window is a writing-first micro surface. Keep these values
+ * scoped so the full document editor retains its roomier document rhythm. */
+.capture-editor--capture .capture-editor__toolbar {
+  height: var(--quick-capture-chrome-height);
+  min-height: var(--quick-capture-chrome-height);
+  border-bottom: 0;
+  padding: 0 16px;
+}
+
+.capture-editor--capture .capture-editor__tool-button {
+  width: 32px;
+  height: 32px;
+}
+
+.capture-editor--capture .capture-editor__content {
+  padding: 14px 24px 28px;
+  font-size: 16px;
+  line-height: 1.65;
+}
+
+.capture-editor--capture .capture-editor__placeholder {
+  top: 14px;
+  left: 24px;
+  font-size: 16px;
+  line-height: 1.65;
+}
+
 .capture-editor__paragraph {
   margin: 0 0 0.52em;
 }

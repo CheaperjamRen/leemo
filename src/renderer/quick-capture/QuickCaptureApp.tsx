@@ -365,7 +365,7 @@ export default function QuickCaptureApp({
     <main className="quick-capture">
       <header className="quick-capture__header">
         <div className="quick-capture__identity">
-          <LeemoMark size={24} label="Leemo 标志" />
+          <LeemoMark size={20} label="Leemo 标志" />
           <span className="quick-capture__brand">快速记录</span>
         </div>
         <button
@@ -374,7 +374,7 @@ export default function QuickCaptureApp({
           aria-label="关闭快捷便签"
           onClick={() => void client.hide()}
         >
-          <X size={19} strokeWidth={1.55} aria-hidden />
+          <X size={17} strokeWidth={1.55} aria-hidden />
         </button>
       </header>
 

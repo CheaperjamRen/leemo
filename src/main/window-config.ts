@@ -17,8 +17,8 @@ export const MAIN_WINDOW_OPTIONS = Object.freeze({
  * restrained formatting toolbar. It is created hidden and shown only after an
  * explicit shortcut or tray action. */
 export const QUICK_CAPTURE_WINDOW_OPTIONS = Object.freeze({
-  width: 600,
-  height: 500,
+  width: 520,
+  height: 420,
   minWidth: 440,
   minHeight: 360,
   show: false,

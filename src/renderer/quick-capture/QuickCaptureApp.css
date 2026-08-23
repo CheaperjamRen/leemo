@@ -28,10 +28,12 @@ select {
 }
 
 .quick-capture {
+  --quick-capture-chrome-height: 40px;
+
   display: grid;
   width: 100%;
   height: 100%;
-  grid-template-rows: 52px 44px minmax(0, 1fr) 50px;
+  grid-template-rows: var(--quick-capture-chrome-height) 36px minmax(0, 1fr) 44px;
   overflow: hidden;
   border: 1px solid #c8ccd0;
   border-radius: 9px;
@@ -56,14 +58,14 @@ select {
 
 .quick-capture__header {
   border-bottom: 1px solid var(--leemo-border-soft);
-  padding-left: 16px;
+  padding-left: 14px;
   -webkit-app-region: drag;
 }
 
 .quick-capture__identity {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
 }
 
 .quick-capture__brand {
@@ -75,8 +77,8 @@ select {
 
 .quick-capture__close {
   display: grid;
-  width: 48px;
-  height: 51px;
+  width: 40px;
+  height: var(--quick-capture-chrome-height);
   place-items: center;
   border: 0;
   background: transparent;
@@ -96,34 +98,34 @@ select {
   display: flex;
   align-items: stretch;
   border-bottom: 1px solid var(--leemo-border-default);
-  padding-left: 18px;
+  padding-left: 16px;
   background: #fff;
 }
 
 .quick-capture__modes {
   display: flex;
   align-items: stretch;
-  gap: 18px;
+  gap: 16px;
 }
 
 .quick-capture__mode {
   position: relative;
-  min-width: 42px;
+  min-width: 38px;
   border: 0;
   padding: 0 3px;
   background: transparent;
   color: var(--leemo-text-secondary);
   cursor: pointer;
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 520;
   -webkit-app-region: no-drag;
 }
 
 .quick-capture__mode + .quick-capture__mode::before {
   position: absolute;
-  top: 13px;
-  bottom: 13px;
-  left: -10px;
+  top: 10px;
+  bottom: 10px;
+  left: -9px;
   width: 1px;
   background: var(--leemo-border-soft);
   content: "";
@@ -154,16 +156,16 @@ select {
 
 .quick-capture__title {
   width: 100%;
-  height: 58px;
+  height: 42px;
   flex: none;
   border: 0;
-  padding: 7px 25px 0;
+  padding: 0 24px;
   background: #fff;
   color: var(--leemo-text-primary);
   outline: none;
-  font-size: 22px;
-  font-weight: 680;
-  letter-spacing: -0.025em;
+  font-size: 18px;
+  font-weight: 620;
+  letter-spacing: -0.015em;
 }
 
 .quick-capture__title::placeholder {
@@ -222,11 +224,11 @@ select {
   min-height: 0;
   resize: none;
   border: 0;
-  padding: 14px 25px;
+  padding: 14px 24px;
   color: var(--leemo-text-primary);
   outline: none;
-  font-size: 14px;
-  line-height: 1.68;
+  font-size: 16px;
+  line-height: 1.65;
 }
 
 .quick-capture__task-fields textarea::placeholder {
@@ -275,14 +277,14 @@ select {
   min-width: 0;
   gap: 12px;
   border-top: 1px solid var(--leemo-border-default);
-  padding: 0 11px 0 20px;
+  padding: 0 10px 0 18px;
 }
 
 .quick-capture__feedback {
   min-width: 74px;
   overflow: hidden;
   color: var(--leemo-text-tertiary);
-  font-size: 10.5px;
+  font-size: 11.5px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -296,12 +298,12 @@ select {
   min-width: 0;
   flex: none;
   align-items: center;
-  gap: 14px;
+  gap: 12px;
 }
 
 .quick-capture__shortcut {
   color: var(--leemo-text-tertiary);
-  font-size: 10.5px;
+  font-size: 11.5px;
   white-space: nowrap;
 }
 
@@ -324,7 +326,7 @@ select {
 
 .quick-capture__save {
   min-width: 72px;
-  height: 34px;
+  height: 32px;
   padding: 0 15px;
 }
 

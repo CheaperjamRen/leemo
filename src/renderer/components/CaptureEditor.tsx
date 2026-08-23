@@ -750,26 +750,37 @@ const CaptureEditor = forwardRef<CaptureEditorHandle, CaptureEditorProps>(functi
     );
   }
 
-  return (
-    <div className="capture-editor" data-testid="capture-editor">
-      <LexicalComposer initialConfig={initialConfig}>
-        <CaptureToolbar disabled={disabled} onOpenNoteReferenceMenu={onOpenNoteReferenceMenu} referenceMenu={referenceMenu} variant={variant} />
-        <div className="capture-editor__canvas">
-          <RichTextPlugin
-            contentEditable={
-              <CaptureContentEditable
-                onSave={onSave}
-                onPasteImage={onPasteImage}
-                onDropFiles={onDropFiles}
-                onOpenNoteReferenceMenu={onOpenNoteReferenceMenu}
-                onOpenNoteReference={onOpenNoteReference}
-                onDropNoteReference={onDropNoteReference}
-              />
-            }
-            placeholder={<p className="capture-editor__placeholder">写下此刻想到的事…</p>}
-            ErrorBoundary={LexicalErrorBoundary}
+  const toolbar = (
+    <CaptureToolbar
+      disabled={disabled}
+      onOpenNoteReferenceMenu={onOpenNoteReferenceMenu}
+      referenceMenu={referenceMenu}
+      variant={variant}
+    />
+  );
+  const canvas = (
+    <div className="capture-editor__canvas">
+      <RichTextPlugin
+        contentEditable={
+          <CaptureContentEditable
+            onSave={onSave}
+            onPasteImage={onPasteImage}
+            onDropFiles={onDropFiles}
+            onOpenNoteReferenceMenu={onOpenNoteReferenceMenu}
+            onOpenNoteReference={onOpenNoteReference}
+            onDropNoteReference={onDropNoteReference}
           />
-        </div>
+        }
+        placeholder={<p className="capture-editor__placeholder">写下此刻想到的事…</p>}
+        ErrorBoundary={LexicalErrorBoundary}
+      />
+    </div>
+  );
+
+  return (
+    <div className={`capture-editor capture-editor--${variant}`} data-testid="capture-editor">
+      <LexicalComposer initialConfig={initialConfig}>
+        {variant === "capture" ? <>{canvas}{toolbar}</> : <>{toolbar}{canvas}</>}
         <CalloutInteractionPlugin />
         <CalloutNormalizationPlugin />
         <OnChangePlugin

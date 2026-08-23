@@ -17,8 +17,8 @@ describe("主窗口尺寸配置", () => {
 describe("快捷便签窗口尺寸配置", () => {
   it("保留一半以上的正文空间，同时维持快捷记录的紧凑感", () => {
     expect(QUICK_CAPTURE_WINDOW_OPTIONS).toMatchObject({
-      width: 600,
-      height: 500,
+      width: 520,
+      height: 420,
       minWidth: 440,
       minHeight: 360,
       show: false,
