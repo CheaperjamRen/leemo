@@ -1,308 +1,157 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import type { ArtifactEntry } from "../stores/artifacts";
-import type { TimelineItem } from "../stores/message-model";
-import { deriveWorkbenchOverview, WorkbenchOverview } from "./WorkbenchOverview";
+import type { ConversationContinuitySnapshot, NotebookContinuitySnapshot } from "./workbench-overview-model";
+import { WorkbenchOverview } from "./WorkbenchOverview";
+
+function artifact(id: string, title: string, conversationId = "conversation-main"): ArtifactEntry {
+  return { id, kind: "file", path: `results/${title}`, title, bookId: "notebook", sourceConversationId: conversationId, sourceRunId: "run-main", createdAt: 1_723_000_000_000, escaped: false };
+}
+
+function conversation(overrides: Partial<ConversationContinuitySnapshot> = {}): ConversationContinuitySnapshot {
+  return {
+    conversationId: "conversation-main", title: "连续性概览验收", state: "running",
+    objective: { text: "完成连续性概览并保留可复现证据", source: "semantic" },
+    successCriteria: ["七个恢复问题都有真源答案", "成果可以回到当前对话"],
+    currentPhase: "真实性与恢复核验", currentFocus: "确认日志保留方式",
+    currentPlan: { runId: "run-main", done: 2, total: 4, current: true, steps: [
+      { text: "核对恢复链路", status: "done" }, { text: "生成核验记录", status: "done" },
+      { text: "确认日志保留方式", status: "active" }, { text: "完成最终交接", status: "todo" },
+    ] },
+    nextKnown: [
+      { text: "完成最终交接", certainty: "known" },
+      { text: "可能需要补充重启截图", certainty: "possible" },
+    ],
+    blockers: [{ text: "日志保留方式尚未确认", kind: "waiting" }],
+    completed: [
+      { evidenceId: "recovery", text: "失败后恢复链路已核验", basisEventIds: ["result-recovery"] },
+      { evidenceId: "record", text: "核验记录已写入", basisEventIds: ["write-record"] },
+    ],
+    artifacts: [artifact("evidence", "evidence.md"), artifact("report", "report.md")],
+    updatedAt: 1_723_000_000_000, ...overrides,
+  };
+}
+
+function notebook(rows: ConversationContinuitySnapshot[] = []): NotebookContinuitySnapshot {
+  return { conversations: rows };
+}
 
 describe("WorkbenchOverview", () => {
-  it("derives plans, attention, collaborators, and artifacts from real scope data", () => {
-    const timelines: Record<string, TimelineItem[]> = {
-      active: [
-        { kind: "plan", id: "p", runId: "r1", toolUseId: "plan", todos: [
-          { text: "整理课程笔记", status: "done" },
-          { text: "完成练习题", status: "active" },
-        ] },
-        { kind: "activity", id: "a", runId: "r1", parentToolUseId: "agent", status: "running", role: "调研助手", task: "核对参考资料", childToolUseIds: [], tools: [], transcript: [] },
-      ],
-      waiting: [],
-    };
-    const artifacts: ArtifactEntry[] = [{
-      id: "out", kind: "file", path: "math/复习提纲.md", title: "复习提纲.md", bookId: "math",
-      sourceConversationId: "active", sourceRunId: "r1", createdAt: 10, escaped: false,
-    }];
-
-    const model = deriveWorkbenchOverview({
-      conversationIds: ["active", "waiting"],
-      activeConversationId: "active",
-      timelines,
-      runIds: { active: "r1", waiting: null },
-      pendingConversationIds: new Set(["waiting"]),
-      artifacts,
-    });
-
-    expect(model).toMatchObject({ conversationCount: 2, runningCount: 1, attentionCount: 1, artifactCount: 1 });
-    expect(model.todos.map((todo) => todo.text)).toEqual(["整理课程笔记", "完成练习题"]);
-    expect(model.collaborators).toEqual([{ role: "调研助手", task: "核对参考资料", status: "running" }]);
+  it("renders the seven recovery sections in order without dashboard metrics or invented percentages", () => {
+    render(<WorkbenchOverview model={notebook([conversation()])} conversationModel={notebook([conversation()])} />);
+    const names = ["工作目标", "当前阶段与当前重点", "本轮执行", "接下来", "阻塞或待决定", "已完成", "相关成果"];
+    const headings = names.map((name) => screen.getByRole("heading", { name }));
+    for (let index = 1; index < headings.length; index += 1) {
+      expect(headings[index - 1].compareDocumentPosition(headings[index]) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    }
+    expect(screen.getByText("完成连续性概览并保留可复现证据")).toBeInTheDocument();
+    expect(screen.getByText("真实性与恢复核验")).toBeInTheDocument();
+    expect(screen.getAllByText("确认日志保留方式")).toHaveLength(2);
+    expect(screen.getByText("已完成 2/4 个已知步骤")).toBeInTheDocument();
+    expect(screen.getByText("可能需要补充重启截图")).toHaveTextContent(/^可能需要/u);
+    expect(screen.getByText("日志保留方式尚未确认")).toBeInTheDocument();
+    expect(screen.getByText("失败后恢复链路已核验")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "打开成果 evidence.md" })).toBeInTheDocument();
+    expect(screen.queryByText(/项进行中|项待回答|个新成果|完成度|50%/u)).not.toBeInTheDocument();
+    expect(screen.queryByRole("progressbar")).not.toBeInTheDocument();
   });
 
-  it("renders a restrained empty state instead of invented progress", () => {
-    render(<WorkbenchOverview model={{
-      conversationCount: 0, runningCount: 0, attentionCount: 0, artifactCount: 0,
-      todos: [], collaborators: [], recentArtifacts: [], overview: null,
-    }} />);
-    expect(screen.getByText("这里还没有可汇总的进展")).toBeInTheDocument();
-    expect(screen.queryByText(/完成度/)).not.toBeInTheDocument();
-  });
-
-  it("does not call a completed, failed, interrupted, or restored run plan current", () => {
-    const stalePlan: TimelineItem = {
-      kind: "plan",
-      id: "stale-plan",
-      runId: "old-run",
-      toolUseId: "todo",
-      todos: [{ text: "旧轮计划", status: "active" }],
-    };
-    const model = deriveWorkbenchOverview({
-      conversationIds: ["finished", "failed", "interrupted", "restored"],
-      activeConversationId: "finished",
-      timelines: {
-        finished: [stalePlan, { kind: "result", id: "done", runId: "old-run", isError: false, interrupted: false, finalText: "done", pathAudit: { claimed: [] } }],
-        failed: [{ ...stalePlan, id: "failed-plan" }, { kind: "result", id: "failed", runId: "old-run", isError: true, interrupted: false, finalText: "failed", pathAudit: { claimed: [] } }],
-        interrupted: [{ ...stalePlan, id: "interrupted-plan" }, { kind: "result", id: "interrupted", runId: "old-run", isError: false, interrupted: true, finalText: "stopped", pathAudit: { claimed: [] } }],
-        restored: [{ ...stalePlan, id: "restored-plan" }],
-      },
-      runIds: { finished: null, failed: null, interrupted: null, restored: null },
-      pendingConversationIds: new Set(),
-      artifacts: [],
-    });
-
-    expect(model.todos).toEqual([]);
-  });
-
-  it("prioritizes the newest persisted semantic overview in the current scope", () => {
-    const model = deriveWorkbenchOverview({
-      conversationIds: ["active", "other"],
-      activeConversationId: "active",
-      conversationTitles: { active: "旧标题", other: "另一段对话" },
-      timelines: {
-        active: [{
-          kind: "overview", id: "old", runId: "r1", toolUseId: "o1", createdAt: 100,
-          overview: { theme: "旧主题", summary: "旧概括" },
-        }],
-        other: [{
-          kind: "overview", id: "new", runId: "r2", toolUseId: "o2", createdAt: 200,
-          overview: {
-            theme: "Leemo 内测准备",
-            summary: "保持主链路完整并准备安装候选包",
-            currentPosition: "正在补齐工作概览",
-            nextStep: "完成打包验收",
-            focus: "PDF 阅读准确性",
-          },
-        }],
-      },
-      runIds: { active: null, other: null },
-      pendingConversationIds: new Set(),
-      artifacts: [],
-    });
-
-    expect(model.overview).toMatchObject({
-      source: "momo",
-      theme: "Leemo 内测准备",
-      summary: "保持主链路完整并准备安装候选包",
-      currentPosition: "正在补齐工作概览",
-      nextStep: "完成打包验收",
-      focus: "PDF 阅读准确性",
-    });
-
-    render(<WorkbenchOverview model={model} />);
-    expect(screen.getByText("Leemo 内测准备")).toBeInTheDocument();
-    expect(screen.getByText("PDF 阅读准确性")).toBeInTheDocument();
-  });
-
-  it("does not mix a partial overview from another conversation with the active conversation", () => {
-    const model = deriveWorkbenchOverview({
-      conversationIds: ["active", "other"],
-      activeConversationId: "active",
-      conversationTitles: { active: "发布 Leemo 内测版", other: "PDF 阅读体验" },
-      timelines: {
-        active: [{ kind: "plan", id: "plan", runId: "live", toolUseId: "todo", todos: [
-          { text: "生成安装包", status: "active" },
-        ] }],
-        other: [{
-          kind: "overview", id: "focus", runId: "old", toolUseId: "overview", createdAt: 200,
-          overview: { focus: "优先关注文字选择准确性" },
-        }],
-      },
-      runIds: { active: "live", other: null },
-      pendingConversationIds: new Set(),
-      artifacts: [],
-    });
-
-    expect(model.overview).toEqual({
-      source: "momo",
-      theme: "PDF 阅读体验",
-      focus: "优先关注文字选择准确性",
-    });
-    expect(model.overview).not.toMatchObject({
-      theme: "发布 Leemo 内测版",
-      currentPosition: "生成安装包",
-    });
-  });
-
-  it("builds a truthful fallback from the real title and active plan without inventing completion", () => {
-    const model = deriveWorkbenchOverview({
-      conversationIds: ["active"],
-      activeConversationId: "active",
-      conversationTitles: { active: "发布 Leemo 内测版" },
-      timelines: {
-        active: [{ kind: "plan", id: "plan", runId: "live", toolUseId: "todo", todos: [
-          { text: "补齐工作概览", status: "active" },
-          { text: "生成安装包", status: "todo" },
-        ] }],
-      },
-      runIds: { active: "live" },
-      pendingConversationIds: new Set(),
-      artifacts: [],
-    });
-
-    expect(model.overview).toEqual({
-      source: "fallback",
-      theme: "发布 Leemo 内测版",
-      summary: "这段工作正在进行中。",
-      currentPosition: "补齐工作概览",
-      nextStep: "生成安装包",
-    });
-    expect(JSON.stringify(model)).not.toMatch(/完成度|%/u);
-  });
-
-  it("uses waiting, failure, and artifact evidence as fallback rather than a fabricated plan", () => {
-    const artifacts: ArtifactEntry[] = [{
-      id: "installer", kind: "file", path: "dist/Leemo.exe", title: "Leemo.exe", bookId: null,
-      sourceConversationId: "failed", sourceRunId: "old", createdAt: 20, escaped: false,
-    }];
-    const waiting = deriveWorkbenchOverview({
-      conversationIds: ["wait"], activeConversationId: "wait", conversationTitles: { wait: "整理简历" },
-      timelines: { wait: [] }, runIds: { wait: null }, pendingConversationIds: new Set(["wait"]), artifacts: [],
-    });
-    expect(waiting.overview).toMatchObject({ currentPosition: "正在等你处理", nextStep: "处理后继续" });
-
-    const failed = deriveWorkbenchOverview({
-      conversationIds: ["failed"], activeConversationId: "failed", conversationTitles: { failed: "打包 Leemo" },
-      timelines: { failed: [{ kind: "error", id: "error", runId: "old", message: "builder failed" }] },
-      runIds: { failed: null }, pendingConversationIds: new Set(), artifacts,
-    });
-    expect(failed.overview).toMatchObject({
-      theme: "打包 Leemo",
-      currentPosition: "上次任务遇到问题",
-      nextStep: "查看错误后决定是否重试",
-    });
-    expect(failed.recentArtifacts[0]?.title).toBe("Leemo.exe");
-  });
-
-  it("switches between the current notebook and conversation without mixing their real summaries", async () => {
+  it("uses the active conversation as the default scope and switches locally without requesting a refresh", async () => {
     const user = userEvent.setup();
-    const notebookModel = deriveWorkbenchOverview({
-      conversationIds: ["active", "other"],
-      activeConversationId: "active",
-      conversationTitles: { active: "整理高数复习重点", other: "错题归纳" },
-      timelines: {
-        active: [{
-          kind: "overview", id: "book-overview", runId: "r1", toolUseId: "overview", createdAt: 100,
-          overview: { theme: "高等数学复习", summary: "正在把课程内容整理成三天复习计划。" },
-        }],
-        other: [{
-          kind: "overview", id: "latest-book-overview", runId: "r2", toolUseId: "overview", createdAt: 200,
-          overview: { theme: "本子复习主线", summary: "把错题和讲义汇总到同一份复习路线。" },
-        }],
-      },
-      runIds: { active: null, other: null },
-      pendingConversationIds: new Set(),
-      artifacts: [],
-    });
-    const conversationModel = deriveWorkbenchOverview({
-      conversationIds: ["active"],
-      activeConversationId: "active",
-      conversationTitles: { active: "整理高数复习重点" },
-      timelines: {
-        active: [{
-          kind: "overview", id: "conversation-overview", runId: "r1", toolUseId: "overview", createdAt: 100,
-          overview: { theme: "整理高数复习重点", summary: "只梳理这次对话里的三天复习计划。" },
-        }],
-      },
-      runIds: { active: null },
-      pendingConversationIds: new Set(),
-      artifacts: [],
-    });
-
-    render(<WorkbenchOverview model={notebookModel} conversationModel={conversationModel} />);
-
-    expect(screen.getByRole("button", { name: "当前本子" })).toHaveAttribute("aria-pressed", "true");
-    expect(screen.getByText("本子复习主线")).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "本次会话" }));
+    const refresh = vi.fn();
+    const active = conversation();
+    const other = conversation({ conversationId: "conversation-other", title: "安装包验收", objective: { text: "完成安装包重启验收", source: "semantic" }, state: "recent", currentPlan: undefined });
+    render(<WorkbenchOverview model={notebook([active, other])} conversationModel={notebook([active])} onRequestRefresh={refresh} />);
     expect(screen.getByRole("button", { name: "本次会话" })).toHaveAttribute("aria-pressed", "true");
-    expect(screen.getByText("整理高数复习重点")).toBeInTheDocument();
-    expect(screen.queryByText("本子复习主线")).not.toBeInTheDocument();
+    expect(screen.getByText("完成连续性概览并保留可复现证据")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "当前本子" }));
+    expect(screen.getByRole("button", { name: "当前本子" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: /打开会话 安装包验收/u })).toBeInTheDocument();
+    expect(refresh).not.toHaveBeenCalled();
   });
 
-  it("renders the approved overview hierarchy and keeps artifact and board actions real", async () => {
+  it("defaults to the range when there is no active conversation and keeps source rows separate and bounded", async () => {
     const user = userEvent.setup();
-    const onOpenArtifact = vi.fn();
-    const onOpenBoard = vi.fn();
-    const onOpenAttention = vi.fn();
-    const artifact: ArtifactEntry = {
-      id: "review", kind: "file", path: "高等数学/三天复习计划.md", title: "高等数学三天复习计划.md",
-      bookId: "高等数学", sourceConversationId: "active", sourceRunId: "r1", createdAt: 1_723_000_000_000,
-      escaped: false,
-    };
-    const model = deriveWorkbenchOverview({
-      conversationIds: ["active", "waiting"],
-      activeConversationId: "active",
-      conversationTitles: { active: "整理高数复习重点", waiting: "第 4 章材料补缺" },
-      pendingSummaries: { waiting: "第 4 章资料缺失，是否先按现有内容继续？" },
-      timelines: {
-        active: [
-          {
-            kind: "overview", id: "overview", runId: "r1", toolUseId: "overview", createdAt: 100,
-            overview: {
-              theme: "高等数学期末复习",
-              summary: "围绕课程内容整理一套可执行的三天计划。",
-              focus: "完成三天复习计划与章节覆盖检查",
-              currentPosition: "正在归纳高频错题",
-              nextStep: "补齐例题证据",
-            },
-          },
-          {
-            kind: "plan", id: "plan", runId: "r1", toolUseId: "plan",
-            todos: [
-              { text: "整理复习资料", status: "done" },
-              { text: "归纳高频错题", status: "active" },
-            ],
-          },
-          {
-            kind: "activity", id: "agent", runId: "r1", parentToolUseId: "agent", status: "running",
-            role: "核对助手", task: "核对例题", childToolUseIds: [], tools: [], transcript: [],
-          },
-        ],
-        waiting: [],
-      },
-      runIds: { active: "r1", waiting: null },
-      pendingConversationIds: new Set(["waiting"]),
-      artifacts: [artifact],
-    });
+    const openConversation = vi.fn();
+    const rows = Array.from({ length: 6 }, (_, index) => conversation({
+      conversationId: `conversation-${index + 1}`, title: `来源会话 ${index + 1}`, state: index === 0 ? "blocked" : "recent",
+      objective: { text: `目标 ${index + 1}`, source: "semantic" }, currentPhase: `阶段 ${index + 1}`, currentFocus: undefined,
+      currentPlan: undefined, nextKnown: [{ text: `下一步 ${index + 1}`, certainty: "known" }],
+      blockers: index === 0 ? [{ text: "等待确认", kind: "waiting" }] : [], completed: [], artifacts: [],
+    }));
+    render(<WorkbenchOverview model={notebook(rows)} notebookScopeLabel="当前范围" onOpenConversation={openConversation} />);
+    expect(screen.getByRole("button", { name: "当前范围" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getAllByRole("button", { name: /打开会话 来源会话/u })).toHaveLength(5);
+    expect(screen.queryByText("来源会话 6")).not.toBeInTheDocument();
+    expect(screen.getByText("阶段 1")).toBeInTheDocument();
+    expect(screen.getByText("下一步 1")).toBeInTheDocument();
+    expect(screen.getByText("等待确认")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "打开会话 来源会话 2" }));
+    expect(openConversation).toHaveBeenCalledWith("conversation-2");
+  });
 
-    render(
-      <WorkbenchOverview
-        model={model}
-        onOpenAttention={onOpenAttention}
-        onOpenArtifact={onOpenArtifact}
-        onOpenBoard={onOpenBoard}
-      />,
-    );
+  it("opens artifacts through the exact source callback", async () => {
+    const user = userEvent.setup();
+    const openArtifact = vi.fn();
+    const target = artifact("target", "restart-proof.md");
+    const active = conversation({ artifacts: [target] });
+    render(<WorkbenchOverview model={notebook([active])} conversationModel={notebook([active])} onOpenArtifact={openArtifact} />);
+    await user.click(screen.getByRole("button", { name: "打开成果 restart-proof.md" }));
+    expect(openArtifact).toHaveBeenCalledWith(target);
+  });
 
-    expect(screen.getByRole("heading", { name: "这个本子在做什么" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "当前重点" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "需要你处理 · 1" })).toBeInTheDocument();
-    expect(screen.getByText("第 4 章资料缺失，是否先按现有内容继续？")).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "进行中" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "最近成果" })).toBeInTheDocument();
-    expect(screen.getByLabelText("范围状态")).toHaveTextContent(/1 项进行中.*1 项待回答.*1 个新成果/u);
+  it("keeps refresh in a low-emphasis menu, disables it during a run, and reports status in one quiet line", async () => {
+    const user = userEvent.setup();
+    const refresh = vi.fn().mockResolvedValue(undefined);
+    const { rerender } = render(<WorkbenchOverview model={notebook([conversation()])} conversationModel={notebook([conversation()])} onRequestRefresh={refresh} />);
+    expect(screen.queryByRole("button", { name: "更新概览" })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "概览操作" }));
+    expect(screen.getByRole("button", { name: "更新概览" })).toBeDisabled();
+    const idle = conversation({ state: "recent", currentPlan: undefined });
+    rerender(<WorkbenchOverview model={notebook([idle])} conversationModel={notebook([idle])} onRequestRefresh={refresh} />);
+    await user.click(screen.getByRole("button", { name: "更新概览" }));
+    expect(refresh).toHaveBeenCalledTimes(1);
+    expect(await screen.findByRole("status")).toHaveTextContent("概览已更新");
+    expect(screen.getByRole("status")).toHaveClass("text-xs");
+  });
 
-    await user.click(screen.getByRole("button", { name: "打开待处理 第 4 章资料缺失，是否先按现有内容继续？" }));
-    expect(onOpenAttention).toHaveBeenCalledWith("waiting");
-    await user.click(screen.getByRole("button", { name: /打开成果 高等数学三天复习计划\.md/ }));
-    expect(onOpenArtifact).toHaveBeenCalledWith(artifact);
-    await user.click(screen.getByRole("button", { name: "打开完整看板" }));
-    expect(onOpenBoard).toHaveBeenCalledTimes(1);
+  it("shows refresh errors as the same quiet status line rather than a card", async () => {
+    const user = userEvent.setup();
+    const idle = conversation({ state: "recent", currentPlan: undefined });
+    render(<WorkbenchOverview model={notebook([idle])} conversationModel={notebook([idle])} onRequestRefresh={vi.fn().mockRejectedValue(new Error("网络暂时不可用"))} />);
+    await user.click(screen.getByRole("button", { name: "概览操作" }));
+    await user.click(screen.getByRole("button", { name: "更新概览" }));
+    expect(await screen.findByRole("status")).toHaveTextContent("网络暂时不可用");
+    expect(screen.getByRole("status").closest("section")).toBeNull();
+  });
+
+  it("edits only the local objective and success criteria and marks the saved anchor as user-fixed", async () => {
+    const user = userEvent.setup();
+    const saveCorrection = vi.fn().mockResolvedValue(undefined);
+    const active = conversation({ state: "recent", currentPlan: undefined });
+    render(<WorkbenchOverview model={notebook([active])} conversationModel={notebook([active])} onSaveCorrection={saveCorrection} onRequestRefresh={vi.fn()} />);
+    await user.click(screen.getByRole("button", { name: "概览操作" }));
+    await user.click(screen.getByRole("button", { name: "编辑工作目标" }));
+    const form = screen.getByRole("form", { name: "编辑工作目标" });
+    const objective = within(form).getByLabelText("工作目标");
+    const criteria = within(form).getByLabelText("完成标准");
+    await user.clear(objective); await user.type(objective, "交付可恢复的连续性概览");
+    await user.clear(criteria); await user.type(criteria, "七个问题都能回答\n成果可以直接打开");
+    await user.click(within(form).getByRole("button", { name: "保存" }));
+    expect(saveCorrection).toHaveBeenCalledWith({ objective: "交付可恢复的连续性概览", successCriteria: ["七个问题都能回答", "成果可以直接打开"] });
+    expect(await screen.findByText("由你固定")).toBeInTheDocument();
+  });
+
+  it("cancels objective editing without writing a correction", async () => {
+    const user = userEvent.setup();
+    const saveCorrection = vi.fn();
+    const active = conversation({ state: "recent", currentPlan: undefined });
+    render(<WorkbenchOverview model={notebook([active])} conversationModel={notebook([active])} onSaveCorrection={saveCorrection} />);
+    await user.click(screen.getByRole("button", { name: "概览操作" }));
+    await user.click(screen.getByRole("button", { name: "编辑工作目标" }));
+    await user.click(screen.getByRole("button", { name: "取消" }));
+    expect(saveCorrection).not.toHaveBeenCalled();
+    expect(screen.queryByRole("form", { name: "编辑工作目标" })).not.toBeInTheDocument();
   });
 });
