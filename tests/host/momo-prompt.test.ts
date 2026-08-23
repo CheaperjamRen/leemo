@@ -237,6 +237,11 @@ describe("buildMomoSystemPrompt — bounded work overview", () => {
   it("shares one evidence-backed checkpoint policy between Buddy and Workbench without automatic calls", () => {
     for (const mode of ["buddy", "workbench"] as const) {
       const p = build({ mode });
+      const documentStart = p.indexOf("## Local documents");
+      const overviewStart = p.indexOf("## Work overview");
+      expect((p.match(/^## Work overview$/gm) ?? [])).toHaveLength(1);
+      expect(overviewStart).toBeGreaterThan(documentStart);
+      expect(p.slice(documentStart, overviewStart)).not.toContain("Maintain a bounded work overview");
       expect(p).toContain("### Maintain a bounded work overview");
       expect(p).toContain("objective or constraint changes");
       expect(p).toContain("genuinely new phase");
@@ -253,7 +258,8 @@ describe("buildMomoSystemPrompt — bounded work overview", () => {
       expect(p).toContain("retries with no net change");
       expect(p).toContain("Never mark a user Todo complete");
       expect(p).toContain("invent an overall percentage");
-      expect(p).toContain("Completed highlights must cite real run/tool/artifact ids");
+      expect(p).toContain("verified by the actual result of its corresponding run, tool, or artifact");
+      expect(p).toContain("Never present failed, unverified, unrelated, or partially completed work as completed");
       expect(p).toContain("If the metadata call fails, continue the user's task");
       expect(p).toContain("Do not create a timer, background request, or automatic panel-open call");
       expect(p).toContain("Never call it just because Buddy opens or history is viewed");
@@ -407,9 +413,9 @@ describe("buildMomoSystemPrompt — governed notebook memory", () => {
       notebookDir: "/w/本",
       notebookText: flood,
     });
-    // The notebook heading/path guidance is authored prompt overhead outside
-    // its bounded current view; 25 tokens covers that dynamic wrapper.
-    expect(encode(p).length).toBeLessThanOrEqual(1050 + NOTEBOOK_TEXT_TOKEN_LIMIT + 25);
+    const memoryHeading = "### momo 对这个本子的当前记忆\n";
+    const notebookMemory = p.slice(p.indexOf(memoryHeading) + memoryHeading.length);
+    expect(encode(notebookMemory).length).toBeLessThanOrEqual(NOTEBOOK_TEXT_TOKEN_LIMIT + 1);
   });
 
   it("still announces the notebook when its current view is blank", () => {
