@@ -241,14 +241,14 @@ export default function WorkbenchActivityRail({ shellWidth }: WorkbenchActivityR
       if (activeRunId) runIdSet.add(activeRunId);
       if (pending) runIdSet.add(pending.runId);
       const summary = pending?.kind === "question"
-        ? pending.questions[0]?.question?.trim()
-        : pending?.inputSummary.trim();
+        ? pending.questions[0]?.question?.trim() || "等待你的选择"
+        : pending?.inputSummary.trim() || "等待权限确认";
       return {
         conversationId,
         title: conversations[conversationId]?.title?.trim() || "未命名会话",
         timeline,
         activeRunId,
-        ...(pending && summary ? { pending: { interaction: pending, summary } } : {}),
+        ...(pending ? { pending: { interaction: pending, summary } } : {}),
         resolvedInteractions: [...runIdSet].flatMap((runId) => resolvedByRun[runId] ?? []),
         artifacts: artifacts.filter((artifact) => artifact.sourceConversationId === conversationId),
       };
@@ -349,7 +349,8 @@ export default function WorkbenchActivityRail({ shellWidth }: WorkbenchActivityR
               ? (correction) => correctWorkOverview(activeScopedConversationId, correction)
               : undefined}
             activeRunInProgress={activeScopedConversationId
-              ? runIds[activeScopedConversationId] !== null && runIds[activeScopedConversationId] !== undefined
+              ? (runIds[activeScopedConversationId] !== null && runIds[activeScopedConversationId] !== undefined)
+                || Boolean(pendingByConversation[activeScopedConversationId])
               : false}
           />
         )}

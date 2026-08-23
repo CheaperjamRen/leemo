@@ -348,6 +348,92 @@ describe("WorkbenchActivityRail", () => {
     expect(screen.queryByTestId("workbench-tool-panel")).not.toBeInTheDocument();
   });
 
+  it("retains an empty AskUser interaction and blocks refresh after the run id clears", async () => {
+    const user = userEvent.setup();
+    let stores!: BridgeStores;
+    render(
+      <BridgeProvider>
+        <Capture onReady={(value) => { stores = value; }} />
+        <WorkbenchActivityRail shellWidth={1440} />
+      </BridgeProvider>,
+    );
+    const refreshWorkOverview = vi.fn(async () => undefined);
+    act(() => {
+      stores.conversations.setState({
+        byId: {
+          active: {
+            id: "active", title: "等待选择的整理", titleManuallyUpdated: true, bookId: null, workspaceId: "leemo-home",
+            source: "workbench", providerId: "deepseek", modelId: "deepseek-chat", createdAt: 1, lastActivityAt: 2, unread: false,
+          },
+        },
+        order: ["active"], openTabs: ["active"], activeId: "active",
+        timelines: { active: [semanticOverview("active", "等待选择的整理", { runId: "run-active" })] },
+        runIds: { active: null },
+        refreshWorkOverview,
+      });
+      stores.approvals.setState({
+        pendingByConversation: {
+          active: {
+            kind: "question", id: "empty-question", conversationId: "active", runId: "run-active", receivedAt: 10,
+            questions: [],
+          },
+        },
+      });
+      stores.ui.getState().activateWorkbenchScope("global");
+    });
+
+    await user.click(screen.getByRole("button", { name: "概览" }));
+    expect(screen.getByText("等待你的选择")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "概览操作" }));
+    const refreshButton = screen.getByRole("button", { name: "更新概览" });
+    expect(refreshButton).toBeDisabled();
+    await user.click(refreshButton);
+    expect(refreshWorkOverview).not.toHaveBeenCalled();
+  });
+
+  it("retains an empty approval interaction and blocks refresh while permission is pending", async () => {
+    const user = userEvent.setup();
+    let stores!: BridgeStores;
+    render(
+      <BridgeProvider>
+        <Capture onReady={(value) => { stores = value; }} />
+        <WorkbenchActivityRail shellWidth={1440} />
+      </BridgeProvider>,
+    );
+    const refreshWorkOverview = vi.fn(async () => undefined);
+    act(() => {
+      stores.conversations.setState({
+        byId: {
+          active: {
+            id: "active", title: "等待权限的整理", titleManuallyUpdated: true, bookId: null, workspaceId: "leemo-home",
+            source: "workbench", providerId: "deepseek", modelId: "deepseek-chat", createdAt: 1, lastActivityAt: 2, unread: false,
+          },
+        },
+        order: ["active"], openTabs: ["active"], activeId: "active",
+        timelines: { active: [semanticOverview("active", "等待权限的整理", { runId: "run-active" })] },
+        runIds: { active: null },
+        refreshWorkOverview,
+      });
+      stores.approvals.setState({
+        pendingByConversation: {
+          active: {
+            kind: "approval", id: "empty-approval", conversationId: "active", runId: "run-active", receivedAt: 10,
+            toolName: "Bash", inputSummary: "   ", risk: "moderate",
+          },
+        },
+      });
+      stores.ui.getState().activateWorkbenchScope("global");
+    });
+
+    await user.click(screen.getByRole("button", { name: "概览" }));
+    expect(screen.getByText("等待权限确认")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "概览操作" }));
+    const refreshButton = screen.getByRole("button", { name: "更新概览" });
+    expect(refreshButton).toBeDisabled();
+    await user.click(refreshButton);
+    expect(refreshWorkOverview).not.toHaveBeenCalled();
+  });
+
   it("keeps refresh disabled for a real active run with a pending interaction", async () => {
     const user = userEvent.setup();
     let stores!: BridgeStores;
