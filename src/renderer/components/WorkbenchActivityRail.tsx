@@ -13,13 +13,11 @@ import {
   useApprovals,
   useArtifacts,
   useConversations,
-  useSettings,
   useUi,
   useWorkspaces,
 } from "../bridge/context";
 import type { ScopeKey } from "../stores/workbench-scope";
 import { HOME_WORKSPACE_ID } from "../stores/workspaces";
-import { startStore } from "../stores/start";
 import {
   WORKBENCH_COMPACT_SIDEBAR_WIDTH,
   WORKBENCH_TOOL_RAIL_WIDTH,
@@ -29,7 +27,12 @@ import {
 import FileTree from "./FileTree";
 import GlobalSearchPage from "../pages/GlobalSearchPage";
 import { collectConversationFiles, type WorkbenchFileRef } from "./workbench-files";
-import { deriveWorkbenchOverview, WorkbenchOverview } from "./WorkbenchOverview";
+import {
+  deriveConversationContinuity,
+  deriveNotebookContinuity,
+  type ConversationContinuityInput,
+} from "./workbench-overview-model";
+import { WorkbenchOverview } from "./WorkbenchOverview";
 
 const TOOL_LABELS = {
   files: "文件",
@@ -178,7 +181,6 @@ export default function WorkbenchActivityRail({ shellWidth }: WorkbenchActivityR
   const sidebarWidth = useUi((s) => s.workbenchSidebarWidth);
   const previewOpen = useUi((s) => s.previewOpen);
   const openPreview = useUi((s) => s.openPreview);
-  const setSurface = useSettings((s) => s.setSurface);
   const openScopeConversation = useUi((s) => s.openScopeConversation);
   const toggleTool = useUi((s) => s.toggleWorkbenchTool);
   const closeTool = useUi((s) => s.closeWorkbenchTool);
@@ -190,7 +192,10 @@ export default function WorkbenchActivityRail({ shellWidth }: WorkbenchActivityR
   const timelines = useConversations((s) => s.timelines);
   const runIds = useConversations((s) => s.runIds);
   const switchConversation = useConversations((s) => s.switchActive);
+  const refreshWorkOverview = useConversations((s) => s.refreshWorkOverview);
+  const correctWorkOverview = useConversations((s) => s.correctWorkOverview);
   const pendingByConversation = useApprovals((s) => s.pendingByConversation);
+  const resolvedByRun = useApprovals((s) => s.resolvedByRun);
   const artifacts = useArtifacts((s) => s.entries);
   const activeWorkspaceId = useWorkspaces((s) => s.activeId);
   const currentWidth = shellWidth ?? (typeof window === "undefined" ? 1280 : window.innerWidth);
@@ -215,43 +220,49 @@ export default function WorkbenchActivityRail({ shellWidth }: WorkbenchActivityR
   });
   const docked = presentation === "docked";
   const activeScope = scopeParts(scopeKey);
-  const { overviewModel, conversationOverviewModel } = useMemo(() => {
+  const { overviewModel, conversationOverviewModel, activeScopedConversationId } = useMemo(() => {
     const conversationIds = Object.values(conversations)
       .filter((conversation) => conversation
         && (conversation.workspaceId ?? HOME_WORKSPACE_ID) === activeScope.workspaceId
         && (conversation.bookId ?? null) === activeScope.bookId)
       .map((conversation) => conversation.id);
     const conversationIdSet = new Set(conversationIds);
-    const conversationTitles = Object.fromEntries(
-      conversationIds.map((id) => [id, conversations[id]?.title]),
-    );
-    const pendingSummaries = Object.fromEntries(conversationIds.flatMap((id) => {
-      const pending = pendingByConversation[id];
-      if (!pending) return [];
-      const summary = pending.kind === "question"
-        ? pending.questions[0]?.question
-        : pending.inputSummary;
-      return summary?.trim() ? [[id, summary.trim()]] : [];
-    }));
-    const scopedArtifacts = artifacts.filter((artifact) => conversationIdSet.has(artifact.sourceConversationId));
-    const derive = (ids: string[]) => {
-      const idSet = new Set(ids);
-      return deriveWorkbenchOverview({
-        conversationIds: ids,
-        activeConversationId: activeConversationId && idSet.has(activeConversationId) ? activeConversationId : null,
-        conversationTitles,
-        timelines,
-        runIds,
-        pendingConversationIds: new Set(ids.filter((id) => pendingByConversation[id] != null)),
-        pendingSummaries,
-        artifacts: scopedArtifacts.filter((artifact) => idSet.has(artifact.sourceConversationId)),
-      });
-    };
+    const activeScopedId = activeConversationId && conversationIdSet.has(activeConversationId)
+      ? activeConversationId
+      : null;
+    const inputs = conversationIds.map((conversationId): ConversationContinuityInput => {
+      const timeline = timelines[conversationId] ?? [];
+      const pending = pendingByConversation[conversationId];
+      const runIdSet = new Set<string>();
+      for (const item of timeline) {
+        if (item.kind !== "compact") runIdSet.add(item.runId);
+      }
+      const activeRunId = runIds[conversationId] ?? null;
+      if (activeRunId) runIdSet.add(activeRunId);
+      if (pending) runIdSet.add(pending.runId);
+      const summary = pending?.kind === "question"
+        ? pending.questions[0]?.question?.trim()
+        : pending?.inputSummary.trim();
+      return {
+        conversationId,
+        title: conversations[conversationId]?.title?.trim() || "未命名会话",
+        timeline,
+        activeRunId,
+        ...(pending && summary ? { pending: { interaction: pending, summary } } : {}),
+        resolvedInteractions: [...runIdSet].flatMap((runId) => resolvedByRun[runId] ?? []),
+        artifacts: artifacts.filter((artifact) => artifact.sourceConversationId === conversationId),
+      };
+    });
+    const inputById = new Map(inputs.map((input) => [input.conversationId, input]));
+    const activeInput = activeScopedId ? inputById.get(activeScopedId) : undefined;
     return {
-      overviewModel: derive(conversationIds),
-      conversationOverviewModel: derive(activeConversationId && conversationIdSet.has(activeConversationId) ? [activeConversationId] : []),
+      overviewModel: deriveNotebookContinuity({ conversations: inputs }),
+      conversationOverviewModel: {
+        conversations: activeInput ? [deriveConversationContinuity(activeInput)] : [],
+      },
+      activeScopedConversationId: activeScopedId,
     };
-  }, [activeConversationId, activeScope.bookId, activeScope.workspaceId, artifacts, conversations, pendingByConversation, runIds, timelines]);
+  }, [activeConversationId, activeScope.bookId, activeScope.workspaceId, artifacts, conversations, pendingByConversation, resolvedByRun, runIds, timelines]);
 
   const getResizeStart = usePointerResize(
     activeTool ?? "files",
@@ -322,7 +333,7 @@ export default function WorkbenchActivityRail({ shellWidth }: WorkbenchActivityR
             model={overviewModel}
             conversationModel={conversationOverviewModel}
             notebookScopeLabel={activeScope.bookId ? "当前本子" : "当前范围"}
-            onOpenAttention={(conversationId) => {
+            onOpenConversation={(conversationId) => {
               switchConversation(conversationId);
               openScopeConversation(conversationId);
               closeTool();
@@ -331,11 +342,15 @@ export default function WorkbenchActivityRail({ shellWidth }: WorkbenchActivityR
               openPreview(artifact.path, artifact.title, artifactPreviewKind(artifact.path));
               closeTool();
             }}
-            onOpenBoard={() => {
-              closeTool();
-              startStore.getState().open("home");
-              setSurface("start");
-            }}
+            onRequestRefresh={activeScopedConversationId
+              ? () => refreshWorkOverview(activeScopedConversationId)
+              : undefined}
+            onSaveCorrection={activeScopedConversationId
+              ? (correction) => correctWorkOverview(activeScopedConversationId, correction)
+              : undefined}
+            activeRunInProgress={activeScopedConversationId
+              ? runIds[activeScopedConversationId] !== null && runIds[activeScopedConversationId] !== undefined
+              : false}
           />
         )}
         {activeTool === "search" && <GlobalSearchPage embedded initialScope="current" onClose={closeTool} />}

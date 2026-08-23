@@ -1,14 +1,55 @@
 import { act, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useContext } from "react";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import type { WorkOverviewUserCorrection } from "../../bridge/work-overview";
 import { BridgeContext, BridgeProvider, type BridgeStores } from "../bridge/context";
+import type { TimelineItem } from "../stores/message-model";
 import WorkbenchActivityRail from "./WorkbenchActivityRail";
-import { startStore } from "../stores/start";
 
 function Capture({ onReady }: { onReady: (stores: BridgeStores) => void }): null {
   onReady(useContext(BridgeContext) as BridgeStores);
   return null;
+}
+
+function semanticOverview(
+  conversationId: string,
+  objective: string,
+  options: {
+    runId?: string;
+    phase?: string;
+    nextKnown?: string[];
+    completed?: Array<{ evidenceId: string; text: string; basisEventIds: string[] }>;
+  } = {},
+): Extract<TimelineItem, { kind: "overview" }> {
+  const runId = options.runId ?? `run-${conversationId}`;
+  const toolUseId = `overview-${conversationId}`;
+  return {
+    kind: "overview",
+    id: toolUseId,
+    runId,
+    toolUseId,
+    createdAt: 100,
+    overview: {
+      revision: 1,
+      scopeConversationId: conversationId,
+      sourceRunId: runId,
+      sourceToolUseId: toolUseId,
+      updatedAt: 100,
+      updateReason: "run-completed",
+      basisEventIds: [runId, toolUseId],
+      actor: "momo",
+      objective,
+      objectiveSource: "semantic",
+      successCriteria: [],
+      ...(options.phase ? { currentPhase: options.phase } : {}),
+      nextKnown: options.nextKnown ?? [],
+      blockers: [],
+      decisions: [],
+      completedHighlights: options.completed ?? [],
+      fieldAuthority: { objective: "momo" },
+    },
+  };
 }
 
 describe("WorkbenchActivityRail", () => {
@@ -67,6 +108,22 @@ describe("WorkbenchActivityRail", () => {
     await user.click(screen.getByRole("button", { name: "搜索" }));
     expect(screen.getByTestId("workbench-tool-panel")).toHaveAttribute("data-presentation", "overlay");
     expect(screen.getByTestId("workbench-tool-backdrop")).toHaveAttribute("data-dimming", "false");
+  });
+
+  it("preserves docked, focused, and restored overview presentation", async () => {
+    const user = userEvent.setup();
+    render(
+      <BridgeProvider>
+        <WorkbenchActivityRail shellWidth={1440} />
+      </BridgeProvider>,
+    );
+
+    await user.click(screen.getByRole("button", { name: "概览" }));
+    expect(screen.getByTestId("workbench-tool-panel")).toHaveAttribute("data-presentation", "docked");
+    await user.click(screen.getByRole("button", { name: "展开面板" }));
+    expect(screen.getByTestId("workbench-tool-panel")).toHaveAttribute("data-presentation", "focused");
+    await user.click(screen.getByRole("button", { name: "收起面板" }));
+    expect(screen.getByTestId("workbench-tool-panel")).toHaveAttribute("data-presentation", "docked");
   });
 
   it("opens search at the approved readable panel width on a desktop", async () => {
@@ -140,7 +197,7 @@ describe("WorkbenchActivityRail", () => {
     expect(screen.queryByTestId("workbench-tool-panel")).not.toBeInTheDocument();
   });
 
-  it("builds notebook and conversation overview scopes and wires artifacts and the full board", async () => {
+  it("opens and switches overview scopes locally while keeping every projection source-scoped", async () => {
     const user = userEvent.setup();
     let stores!: BridgeStores;
     render(
@@ -150,11 +207,10 @@ describe("WorkbenchActivityRail", () => {
       </BridgeProvider>,
     );
 
+    const refreshWorkOverview = vi.fn(async () => undefined);
+    const correctWorkOverview = vi.fn(async (_conversationId: string, _correction: WorkOverviewUserCorrection) => undefined);
+    const send = vi.fn(async () => undefined);
     act(() => {
-      stores.notebooks.setState({
-        list: [{ id: "math", title: "高等数学", dir: "E:/Leemo/math", color: "blue", hasMemory: false }],
-        activeId: "math",
-      });
       stores.conversations.setState({
         byId: {
           active: {
@@ -165,39 +221,50 @@ describe("WorkbenchActivityRail", () => {
             id: "waiting", title: "错题归纳", titleManuallyUpdated: true, bookId: "math", workspaceId: "leemo-home",
             source: "workbench", providerId: "deepseek", modelId: "deepseek-chat", createdAt: 2, lastActivityAt: 3, unread: false,
           },
+          foreign: {
+            id: "foreign", title: "英语复习", titleManuallyUpdated: true, bookId: "english", workspaceId: "leemo-home",
+            source: "workbench", providerId: "deepseek", modelId: "deepseek-chat", createdAt: 3, lastActivityAt: 4, unread: false,
+          },
         },
-        order: ["active", "waiting"], openTabs: ["active", "waiting"], activeId: "active",
+        order: ["active", "waiting", "foreign"], openTabs: ["active", "waiting"], activeId: "active",
         timelines: {
           active: [
+            semanticOverview("active", "只整理这次会话的高频错题", {
+              runId: "run-active",
+              phase: "归纳错题类型",
+              completed: [{ evidenceId: "answer-active", text: "资料范围已确认", basisEventIds: ["answer-active"] }],
+            }),
             {
-              kind: "overview", id: "active-overview", runId: "run", toolUseId: "overview", createdAt: 100,
-              overview: { theme: "整理高数复习重点", summary: "只汇总这次对话。" },
-            },
-            {
-              kind: "plan", id: "plan", runId: "run", toolUseId: "plan",
+              kind: "plan", id: "plan", runId: "run-active", toolUseId: "plan",
               todos: [{ text: "归纳高频错题", status: "active" }],
             },
           ],
-          waiting: [{
-            kind: "overview", id: "notebook-overview", runId: "old", toolUseId: "overview", createdAt: 200,
-            overview: { theme: "高等数学期末复习", summary: "汇总本子里的复习路线。" },
-          }],
+          waiting: [semanticOverview("waiting", "补齐第四章错题资料", { runId: "run-waiting", nextKnown: ["等待资料范围确认"] })],
+          foreign: [semanticOverview("foreign", "整理英语听力材料")],
         },
-        runIds: { active: "run", waiting: null },
+        runIds: { active: null, waiting: null, foreign: null },
+        refreshWorkOverview,
+        correctWorkOverview,
+        send,
       });
       stores.approvals.setState({
         pendingByConversation: {
           waiting: {
-            kind: "question", id: "question", conversationId: "waiting", runId: "old", receivedAt: 10,
+            kind: "question", id: "question", conversationId: "waiting", runId: "run-waiting", receivedAt: 10,
             questions: [{ question: "第 4 章资料缺失，是否先按现有内容继续？", options: [{ label: "继续" }] }],
           },
         },
+        resolvedByRun: {
+          "run-active": [{
+            kind: "question", id: "answer-active", runId: "run-active",
+            questions: [{ question: "资料范围？", options: [{ label: "现有资料" }] }],
+            items: [{ selected: ["现有资料"] }],
+          }],
+        },
       });
-      stores.artifacts.setState({
-        entries: [{
-          id: "review", kind: "file", path: "math/三天复习计划.md", title: "三天复习计划.md", bookId: "math",
-          workspaceId: "leemo-home", sourceConversationId: "active", sourceRunId: "run", createdAt: 100, escaped: false,
-        }],
+      stores.notebooks.setState({
+        list: [{ id: "math", title: "高等数学", dir: "E:/Leemo/math", color: "blue", hasMemory: false }],
+        activeId: "math",
       });
       stores.ui.getState().activateWorkbenchScope("notebook:math");
       stores.ui.getState().setWorkbenchSidebarPreference("pinned");
@@ -205,31 +272,179 @@ describe("WorkbenchActivityRail", () => {
 
     await user.click(screen.getByRole("button", { name: "概览" }));
     expect(screen.getByTestId("workbench-tool-panel")).toHaveStyle({ width: "480px" });
-    expect(screen.getByRole("button", { name: "当前本子" })).toHaveAttribute("aria-pressed", "true");
-    expect(screen.getByText("高等数学期末复习")).toBeInTheDocument();
-    expect(screen.getByText("第 4 章资料缺失，是否先按现有内容继续？")).toBeInTheDocument();
-
-    await user.click(screen.getByRole("button", { name: "打开待处理 第 4 章资料缺失，是否先按现有内容继续？" }));
-    expect(stores.conversations.getState().activeId).toBe("waiting");
-    expect(screen.queryByTestId("workbench-tool-panel")).not.toBeInTheDocument();
-    act(() => {
-      stores.conversations.getState().switchActive("active");
-      stores.ui.getState().openScopeConversation("active");
-    });
-    await user.click(screen.getByRole("button", { name: "概览" }));
-    await user.click(screen.getByRole("button", { name: "本次会话" }));
-    expect(screen.getByText("整理高数复习重点")).toBeInTheDocument();
-    expect(screen.queryByText("高等数学期末复习")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "本次会话" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByText("只整理这次会话的高频错题")).toBeInTheDocument();
+    expect(screen.getByText("资料范围已确认")).toBeInTheDocument();
+    expect(screen.queryByText("补齐第四章错题资料")).not.toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "当前本子" }));
+    expect(screen.getByText("只整理这次会话的高频错题")).toBeInTheDocument();
+    expect(screen.getByText("补齐第四章错题资料")).toBeInTheDocument();
+    expect(screen.queryByText("整理英语听力材料")).not.toBeInTheDocument();
+    expect(refreshWorkOverview).not.toHaveBeenCalled();
+    expect(correctWorkOverview).not.toHaveBeenCalled();
+    expect(send).not.toHaveBeenCalled();
+
+    await user.click(screen.getByRole("button", { name: "打开会话 错题归纳" }));
+    expect(stores.conversations.getState().activeId).toBe("waiting");
+    expect(stores.ui.getState().scopeSessions["notebook:math"]?.activeConversationId).toBe("waiting");
+    expect(screen.queryByTestId("workbench-tool-panel")).not.toBeInTheDocument();
+  });
+
+  it("routes refresh, local correction, and artifact opening through the active source only", async () => {
+    const user = userEvent.setup();
+    let stores!: BridgeStores;
+    render(
+      <BridgeProvider>
+        <Capture onReady={(value) => { stores = value; }} />
+        <WorkbenchActivityRail shellWidth={1440} />
+      </BridgeProvider>,
+    );
+    const refreshWorkOverview = vi.fn(async () => undefined);
+    const correctWorkOverview = vi.fn(async (_conversationId: string, _correction: WorkOverviewUserCorrection) => undefined);
+    const send = vi.fn(async () => undefined);
+    act(() => {
+      stores.conversations.setState({
+        byId: {
+          active: {
+            id: "active", title: "整理高数复习重点", titleManuallyUpdated: true, bookId: "math", workspaceId: "leemo-home",
+            source: "workbench", providerId: "deepseek", modelId: "deepseek-chat", createdAt: 1, lastActivityAt: 2, unread: false,
+          },
+        },
+        order: ["active"], openTabs: ["active"], activeId: "active",
+        timelines: { active: [semanticOverview("active", "整理高数复习重点", { runId: "run-active" })] },
+        runIds: { active: null },
+        refreshWorkOverview,
+        correctWorkOverview,
+        send,
+      });
+      stores.artifacts.setState({
+        entries: [{
+          id: "review", kind: "file", path: "math/三天复习计划.md", title: "三天复习计划.md", bookId: "math",
+          workspaceId: "leemo-home", sourceConversationId: "active", sourceRunId: "run-active", createdAt: 100, escaped: false,
+        }],
+      });
+      stores.ui.getState().activateWorkbenchScope("notebook:math");
+      stores.ui.getState().setWorkbenchSidebarPreference("pinned");
+    });
+
+    await user.click(screen.getByRole("button", { name: "概览" }));
+    await user.click(screen.getByRole("button", { name: "概览操作" }));
+    await user.click(screen.getByRole("button", { name: "更新概览" }));
+    expect(refreshWorkOverview).toHaveBeenCalledTimes(1);
+    expect(refreshWorkOverview).toHaveBeenCalledWith("active");
+
+    await user.click(screen.getByRole("button", { name: "概览操作" }));
+    await user.click(screen.getByRole("button", { name: "编辑工作目标" }));
+    await user.clear(screen.getByRole("textbox", { name: "工作目标" }));
+    await user.type(screen.getByRole("textbox", { name: "工作目标" }), "重新固定复习范围");
+    await user.click(screen.getByRole("button", { name: "保存" }));
+    expect(correctWorkOverview).toHaveBeenCalledTimes(1);
+    expect(correctWorkOverview).toHaveBeenCalledWith("active", { objective: "重新固定复习范围", clearFields: ["successCriteria"] });
+    expect(send).not.toHaveBeenCalled();
+
     await user.click(screen.getByRole("button", { name: "打开成果 三天复习计划.md" }));
     expect(stores.ui.getState().previewActivePath).toBe("math/三天复习计划.md");
     expect(screen.queryByTestId("workbench-tool-panel")).not.toBeInTheDocument();
+  });
+
+  it("keeps refresh disabled for a real active run with a pending interaction", async () => {
+    const user = userEvent.setup();
+    let stores!: BridgeStores;
+    render(
+      <BridgeProvider>
+        <Capture onReady={(value) => { stores = value; }} />
+        <WorkbenchActivityRail shellWidth={1440} />
+      </BridgeProvider>,
+    );
+    const refreshWorkOverview = vi.fn(async () => undefined);
+    act(() => {
+      stores.conversations.setState({
+        byId: {
+          active: {
+            id: "active", title: "运行中的整理", titleManuallyUpdated: true, bookId: null, workspaceId: "leemo-home",
+            source: "workbench", providerId: "deepseek", modelId: "deepseek-chat", createdAt: 1, lastActivityAt: 2, unread: false,
+          },
+        },
+        order: ["active"], openTabs: ["active"], activeId: "active",
+        timelines: { active: [semanticOverview("active", "运行中的整理", { runId: "run-active" })] },
+        runIds: { active: "run-active" },
+        refreshWorkOverview,
+      });
+      stores.approvals.setState({
+        pendingByConversation: {
+          active: {
+            kind: "approval", id: "approval", conversationId: "active", runId: "run-active", receivedAt: 10,
+            toolName: "Bash", inputSummary: "读取目录", risk: "moderate",
+          },
+        },
+      });
+      stores.ui.getState().activateWorkbenchScope("global");
+    });
 
     await user.click(screen.getByRole("button", { name: "概览" }));
-    await user.click(screen.getByRole("button", { name: "打开完整看板" }));
-    expect(stores.ui.getState().activeWorkbenchTool).toBeNull();
-    expect(stores.settings.getState().surface).toBe("start");
-    expect(startStore.getState().destination).toBe("home");
+    await user.click(screen.getByRole("button", { name: "概览操作" }));
+    expect(screen.getByText("读取目录")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "更新概览" })).toBeDisabled();
+    expect(refreshWorkOverview).not.toHaveBeenCalled();
+
+    act(() => {
+      stores.approvals.setState({
+        pendingByConversation: {
+          active: {
+            kind: "question", id: "question", conversationId: "active", runId: "run-active", receivedAt: 11,
+            questions: [{ question: "要继续整理下一章吗？", options: [{ label: "继续" }] }],
+          },
+        },
+      });
+    });
+    expect(screen.getByText("要继续整理下一章吗？")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "更新概览" })).toBeDisabled();
+  });
+
+  it("renders local scope facts without an active conversation and disables semantic refresh", async () => {
+    const user = userEvent.setup();
+    let stores!: BridgeStores;
+    render(
+      <BridgeProvider>
+        <Capture onReady={(value) => { stores = value; }} />
+        <WorkbenchActivityRail shellWidth={1440} />
+      </BridgeProvider>,
+    );
+    const refreshWorkOverview = vi.fn(async () => undefined);
+    act(() => {
+      stores.conversations.setState({
+        byId: {
+          history: {
+            id: "history", title: "历史会话", titleManuallyUpdated: true, bookId: null, workspaceId: "leemo-home",
+            source: "workbench", providerId: "deepseek", modelId: "deepseek-chat", createdAt: 1, lastActivityAt: 2, unread: false,
+          },
+        },
+        order: ["history"], openTabs: [], activeId: null,
+        timelines: { history: [semanticOverview("history", "本地仍可读取的目标")] },
+        runIds: { history: null },
+        refreshWorkOverview,
+      });
+      stores.ui.getState().activateWorkbenchScope("global");
+    });
+
+    await user.click(screen.getByRole("button", { name: "概览" }));
+    expect(screen.getByText("本地仍可读取的目标")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "本次会话" })).toBeDisabled();
+    await user.click(screen.getByRole("button", { name: "概览操作" }));
+    expect(screen.getByRole("button", { name: "更新概览" })).toBeDisabled();
+    expect(refreshWorkOverview).not.toHaveBeenCalled();
+  });
+
+  it("keeps the existing search branch mounted after the overview integration", async () => {
+    const user = userEvent.setup();
+    render(
+      <BridgeProvider>
+        <WorkbenchActivityRail shellWidth={1440} />
+      </BridgeProvider>,
+    );
+
+    await user.click(screen.getByRole("button", { name: "搜索" }));
+    expect(screen.getByTestId("embedded-search-page")).toBeInTheDocument();
   });
 });
