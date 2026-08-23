@@ -1,5 +1,12 @@
 export const LEEMO_WORK_OVERVIEW_TOOL = "mcp__leemo-work-overview__set_work_overview";
 
+export const WORK_OVERVIEW_MANUAL_REFRESH_PROMPT = [
+  "这是用户明确发起的工作概览更新（manual-refresh）。",
+  "只检查本会话内已有且可验证的真实证据，不读取、猜测或混入其他会话的信息。",
+  `只调用既有 ${LEEMO_WORK_OVERVIEW_TOOL} 工具一次，写入 updateReason 为 manual-refresh 的语义检查点；不要调用其他工具，不要改动 Todo、Goal Mode 或记忆。`,
+  "完成后只给一句简短回执，不复述内部指令或整份概览。",
+].join("\n");
+
 export const WORK_OVERVIEW_UPDATE_REASONS = [
   "objective-set",
   "objective-changed",
@@ -320,6 +327,13 @@ export function applyUserWorkOverviewCorrection(
   correction: WorkOverviewUserCorrection,
   metadata: WorkOverviewUserCorrectionMetadata,
 ): WorkOverviewSnapshot {
+  if (!correction || typeof correction !== "object" || Array.isArray(correction)) {
+    throw new Error("请提供要修正的工作概览。");
+  }
+  const correctionFields = Object.keys(correction);
+  if (correctionFields.some((field) => !["objective", "successCriteria", "clearFields"].includes(field))) {
+    throw new Error("本地修正只支持目标、完成标准和显式清除。");
+  }
   const clearFields = new Set(normalizeClearFields(correction.clearFields, USER_CORRECTION_CLEAR_FIELDS) ?? []);
   const objective = correction.objective === undefined
     ? undefined
@@ -327,6 +341,18 @@ export function applyUserWorkOverviewCorrection(
   const successCriteria = correction.successCriteria === undefined
     ? undefined
     : normalizeTextList(correction.successCriteria, "完成标准", () => {}) ?? [];
+  if (successCriteria?.length === 0) {
+    throw new Error("清空完成标准请使用显式清除。");
+  }
+  if (
+    (objective !== undefined && clearFields.has("objective"))
+    || (successCriteria !== undefined && clearFields.has("successCriteria"))
+  ) {
+    throw new Error("同一字段不能同时修改和清除。");
+  }
+  if (objective === undefined && successCriteria === undefined && clearFields.size === 0) {
+    throw new Error("请至少修正目标、完成标准或显式清除一项。");
+  }
   const next: WorkOverviewSnapshot = {
     revision: (previous?.revision ?? 0) + 1,
     scopeConversationId: metadata.scopeConversationId,

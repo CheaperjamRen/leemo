@@ -1,5 +1,12 @@
 import { createStore, type StoreApi } from "zustand/vanilla";
 import type { AttachmentRef, BridgeEventEnvelope, GuideResponse, PermissionMode, WorkspaceFileRef } from "../../bridge/contract";
+import {
+  applyUserWorkOverviewCorrection,
+  migrateLegacyWorkOverview,
+  WORK_OVERVIEW_MANUAL_REFRESH_PROMPT,
+  type WorkOverviewSnapshot,
+  type WorkOverviewUserCorrection,
+} from "../../bridge/work-overview";
 import type { BridgeClient } from "../bridge/client";
 import { applyEvent, type TimelineItem, RENDERER_RUN_ID_INITIAL } from "./message-model";
 import { HOME_WORKSPACE_ID } from "./workspaces";
@@ -191,6 +198,8 @@ export interface ConversationsState {
     workspaceFiles?: WorkspaceFileRef[],
     options?: ConversationTurnOptions,
   ) => Promise<void>;
+  refreshWorkOverview: (conversationId: string) => Promise<void>;
+  correctWorkOverview: (conversationId: string, correction: WorkOverviewUserCorrection) => Promise<void>;
   guide: (conversationId: string, text: string) => Promise<GuideResponse>;
   enqueueTurn: (
     conversationId: string,
@@ -246,6 +255,33 @@ function moveToFront(order: string[], conversationId: string): string[] {
 
 function unknownConversation(conversationId: string): Error {
   return new Error(`Unknown conversation: ${conversationId}`);
+}
+
+function latestWorkOverviewSnapshot(
+  timeline: TimelineItem[],
+  conversationId: string,
+  fallbackUpdatedAt: number,
+): WorkOverviewSnapshot | undefined {
+  for (let index = timeline.length - 1; index >= 0; index -= 1) {
+    const item = timeline[index];
+    if (item.kind !== "overview") continue;
+    if (
+      typeof item.overview.revision === "number"
+      && typeof item.overview.scopeConversationId === "string"
+      && item.overview.fieldAuthority
+    ) {
+      if (item.overview.scopeConversationId === conversationId) {
+        return item.overview as WorkOverviewSnapshot;
+      }
+      continue;
+    }
+    const migrated = migrateLegacyWorkOverview(item.overview, {
+      scopeConversationId: conversationId,
+      updatedAt: item.createdAt ?? fallbackUpdatedAt,
+    });
+    if (migrated) return migrated;
+  }
+  return undefined;
 }
 
 function withoutConversation<T>(record: Record<string, T | undefined>, conversationId: string): Record<string, T | undefined> {
@@ -481,6 +517,7 @@ export function createConversationsStore(
 ): StoreApi<ConversationsState> {
   let runSeq = 0;
   let queueSeq = 0;
+  let localCorrectionSeq = 0;
   const now = deps.now ?? Date.now;
   const reportPersistenceError = deps.onPersistenceError
     ?? ((error: unknown) => console.error("[leemo:conversation-lifecycle]", error));
@@ -817,6 +854,69 @@ export function createConversationsStore(
             };
           });
           throw error;
+        }
+      } finally {
+        conversationLocks.delete(conversationId);
+      }
+    },
+
+    refreshWorkOverview: async (conversationId) => {
+      const state = get();
+      if (!state.byId[conversationId]) throw unknownConversation(conversationId);
+      if (state.runIds[conversationId] !== null && state.runIds[conversationId] !== undefined) {
+        throw new Error("任务进行中，完成后会自动更新概览。");
+      }
+      return get().send(conversationId, WORK_OVERVIEW_MANUAL_REFRESH_PROMPT, [], [], {
+        displayText: "更新工作概览",
+        allowSubagents: false,
+      });
+    },
+
+    correctWorkOverview: async (conversationId, correction) => {
+      if (!get().byId[conversationId]) throw unknownConversation(conversationId);
+      if (conversationLocks.has(conversationId)) {
+        throw new Error("这个对话正在保存，请稍后再试。");
+      }
+      conversationLocks.add(conversationId);
+      const timestamp = now();
+      const correctionId = `local-correction-${timestamp}-${++localCorrectionSeq}`;
+      try {
+        for (;;) {
+          const state = get();
+          const meta = state.byId[conversationId];
+          if (!meta) throw unknownConversation(conversationId);
+          const timeline = state.timelines[conversationId] ?? [];
+          const overview = applyUserWorkOverviewCorrection(
+            latestWorkOverviewSnapshot(timeline, conversationId, timestamp),
+            correction,
+            { correctionId, scopeConversationId: conversationId, updatedAt: timestamp },
+          );
+          const nextTimeline: TimelineItem[] = [...timeline, {
+            kind: "overview",
+            id: correctionId,
+            runId: "",
+            toolUseId: "",
+            overview,
+            createdAt: timestamp,
+          }];
+
+          await deps.persistence?.saveConversation(meta, nextTimeline);
+
+          let committed = false;
+          let removed = false;
+          set((latest) => {
+            if (!latest.byId[conversationId]) {
+              removed = true;
+              return {};
+            }
+            if (latest.byId[conversationId] !== meta || latest.timelines[conversationId] !== timeline) return {};
+            committed = true;
+            return {
+              timelines: { ...latest.timelines, [conversationId]: nextTimeline },
+            };
+          });
+          if (removed) throw unknownConversation(conversationId);
+          if (committed) return;
         }
       } finally {
         conversationLocks.delete(conversationId);

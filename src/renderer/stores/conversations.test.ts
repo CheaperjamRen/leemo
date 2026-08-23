@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { BridgeEventEnvelope } from "../../bridge/contract";
+import type { WorkOverviewSnapshot } from "../../bridge/work-overview";
 import type { BridgeClient } from "../bridge/client";
 import type { TimelineItem } from "./message-model";
 import {
@@ -1560,6 +1561,301 @@ describe("conversations store", () => {
         updatedAt: 200,
       },
     });
+  });
+
+  it("rejects overview refresh for unknown or actively running conversations without sending", async () => {
+    const bridge = makeClient(["refresh-guard"]);
+    const store = createConversationsStore(bridge.client, { resolveConversationDefaults: () => DEFAULTS });
+
+    await expect(store.getState().refreshWorkOverview("missing")).rejects.toThrow(/unknown conversation/i);
+    expect(bridge.calls).toHaveLength(0);
+
+    const conversationId = await store.getState().createConversation({ source: "workbench" });
+    store.setState((state) => ({
+      runIds: { ...state.runIds, [conversationId]: "run-active" },
+    }));
+    const callsBeforeRefresh = bridge.calls.length;
+
+    await expect(store.getState().refreshWorkOverview(conversationId)).rejects.toThrow(
+      "任务进行中，完成后会自动更新概览。",
+    );
+    expect(bridge.calls).toHaveLength(callsBeforeRefresh);
+    expect(store.getState().timelines[conversationId]).toEqual([]);
+  });
+
+  it("refreshes through one normal visible send and preserves its retry and permission semantics", async () => {
+    const bridge = makeClient(["refresh-idle"]);
+    const store = createConversationsStore(bridge.client, {
+      resolveConversationDefaults: () => ({ providerId: "provider-selected", modelId: "model-selected" }),
+      resolvePersonaContext: () => ({
+        mode: "workbench",
+        personaText: "",
+        talkStyle: 2,
+        webSearchEnabled: false,
+        permissionMode: "plan",
+      }),
+    });
+    const approvalsStore = createApprovalsStore(bridge.client, {});
+    const wikiEntriesStore = createWikiEntriesStore(bridge.client, {
+      resolveConversationDefaults: () => DEFAULTS,
+    });
+    wireBridgeSubscriptions(bridge.client, {
+      conversations: store,
+      approvals: approvalsStore,
+      wikiEntries: wikiEntriesStore,
+    });
+    const conversationId = await store.getState().createConversation({ source: "workbench" });
+
+    await store.getState().refreshWorkOverview(conversationId);
+
+    const sends = bridge.calls.filter((call) => call.channel === "bridge:send");
+    expect(sends).toHaveLength(1);
+    expect(sends[0].request).toMatchObject({
+      conversationId,
+      sourceMessageId: "u0",
+      allowSubagents: false,
+    });
+    const prompt = (sends[0].request as { prompt: string }).prompt;
+    expect(prompt.length).toBeLessThanOrEqual(800);
+    expect(prompt).toMatch(/manual-refresh/);
+    expect(prompt).toMatch(/本会话/);
+    expect(prompt).toMatch(/真实证据/);
+    expect(prompt).toMatch(/set_work_overview/);
+    expect(prompt).toMatch(/简短回执/);
+    expect(store.getState().timelines[conversationId]).toEqual([
+      expect.objectContaining({ kind: "text", role: "user", text: "更新工作概览" }),
+    ]);
+    expect(store.getState().timelines[conversationId][0]).not.toMatchObject({ text: prompt });
+    expect(store.getState().pendingSends[conversationId]).toMatchObject({
+      text: prompt,
+      displayText: "更新工作概览",
+      providerId: "provider-selected",
+      modelId: "model-selected",
+      allowSubagents: false,
+    });
+    expect(bridge.calls).toContainEqual({
+      channel: "bridge:createConversation",
+      request: expect.objectContaining({
+        providerId: "provider-selected",
+        modelId: "model-selected",
+        permissionMode: "plan",
+      }),
+    });
+    expect(bridge.calls.some((call) => call.channel === "bridge:updateContext")).toBe(false);
+
+    bridge.emit({ conversationId, event: { type: "error", message: "服务暂时不可用" } });
+    bridge.emit({ conversationId, event: {
+      type: "run.finished",
+      subtype: "error",
+      isError: true,
+      finalText: "",
+      pathAudit: { claimed: [] },
+    } });
+    await store.getState().retry(conversationId);
+
+    const retriedSends = bridge.calls.filter((call) => call.channel === "bridge:send");
+    expect(retriedSends).toHaveLength(2);
+    expect(retriedSends[1].request).toMatchObject({
+      conversationId,
+      prompt,
+      allowSubagents: false,
+    });
+    expect(store.getState().timelines[conversationId].filter((item) => item.kind === "text" && item.role === "user").at(-1))
+      .toMatchObject({ text: "更新工作概览" });
+  });
+
+  it("persists a local correction, hydrates it, and protects user-owned fields from a later model patch", async () => {
+    const bridge = makeClient(["correct-local"]);
+    const persistence = {
+      saveConversation: vi.fn(async (
+        _meta: import("./conversations").ConversationMeta,
+        _timeline: TimelineItem[],
+      ) => undefined),
+    };
+    const store = createConversationsStore(bridge.client, {
+      resolveConversationDefaults: () => DEFAULTS,
+      persistence: persistence as never,
+      now: () => 500,
+    });
+    const conversationId = await store.getState().createConversation({ source: "workbench" });
+    const initialOverview: WorkOverviewSnapshot = {
+      revision: 1,
+      scopeConversationId: conversationId,
+      sourceRunId: "run-1",
+      sourceToolUseId: "overview-1",
+      updatedAt: 400,
+      updateReason: "objective-set",
+      basisEventIds: ["run-1", "overview-1"],
+      actor: "momo",
+      objective: "模型原目标",
+      objectiveSource: "semantic",
+      successCriteria: ["模型原标准"],
+      currentPhase: "实现中",
+      currentFocus: "旧重点",
+      nextKnown: [],
+      blockers: [],
+      decisions: [],
+      completedHighlights: [],
+      fieldAuthority: { objective: "momo", successCriteria: "momo" },
+    };
+    const initialTimeline: TimelineItem[] = [{
+      kind: "overview",
+      id: "m0",
+      runId: "run-1",
+      toolUseId: "overview-1",
+      overview: initialOverview,
+      createdAt: 400,
+    }];
+    store.setState((state) => ({
+      timelines: { ...state.timelines, [conversationId]: initialTimeline },
+    }));
+    const bridgeCallsBeforeCorrection = bridge.calls.length;
+
+    await store.getState().correctWorkOverview(conversationId, {
+      objective: "用户确认的目标",
+      successCriteria: ["用户确认标准一", "用户确认标准二"],
+    });
+
+    expect(bridge.calls).toHaveLength(bridgeCallsBeforeCorrection);
+    const corrected = store.getState().timelines[conversationId].at(-1);
+    expect(store.getState().timelines[conversationId]).toHaveLength(2);
+    expect(corrected).toMatchObject({
+      kind: "overview",
+      runId: "",
+      toolUseId: "",
+      createdAt: 500,
+      overview: {
+        revision: 2,
+        scopeConversationId: conversationId,
+        sourceRunId: "",
+        sourceToolUseId: "",
+        updatedAt: 500,
+        updateReason: "user-correction",
+        actor: "user",
+        objective: "用户确认的目标",
+        successCriteria: ["用户确认标准一", "用户确认标准二"],
+        fieldAuthority: { objective: "user", successCriteria: "user" },
+      },
+    });
+    expect((corrected as Extract<TimelineItem, { kind: "overview" }>).overview.basisEventIds).toEqual([
+      expect.stringMatching(/^local-correction-500-\d+$/),
+    ]);
+    expect(persistence.saveConversation).toHaveBeenCalledTimes(1);
+    const [savedMeta, savedTimeline] = persistence.saveConversation.mock.calls[0];
+    expect(savedTimeline).toHaveLength(2);
+
+    const restored = createConversationsStore(makeClient().client, {
+      resolveConversationDefaults: () => DEFAULTS,
+    });
+    restored.getState().hydrate([{ meta: savedMeta, timeline: savedTimeline }]);
+    restored.setState((state) => ({
+      runIds: { ...state.runIds, [conversationId]: "run-model" },
+    }));
+    restored.setState((state) => foldConversationEnvelope(state, {
+      conversationId,
+      event: {
+        type: "tool.started",
+        toolUseId: "overview-model",
+        name: "mcp__leemo-work-overview__set_work_overview",
+        input: {
+          objective: "模型试图覆盖目标",
+          successCriteria: ["模型试图覆盖标准"],
+          currentPhase: "验收中",
+          currentFocus: "检查恢复结果",
+          updateReason: "phase-changed",
+        },
+        subagent: false,
+      },
+    }, 600));
+    restored.setState((state) => foldConversationEnvelope(state, {
+      conversationId,
+      event: {
+        type: "tool.finished",
+        toolUseId: "overview-model",
+        isError: false,
+        contentSummary: "工作概览已更新。",
+      },
+    }, 601));
+
+    expect(restored.getState().timelines[conversationId].at(-1)).toMatchObject({
+      kind: "overview",
+      overview: {
+        revision: 3,
+        objective: "用户确认的目标",
+        successCriteria: ["用户确认标准一", "用户确认标准二"],
+        currentPhase: "验收中",
+        currentFocus: "检查恢复结果",
+        fieldAuthority: { objective: "user", successCriteria: "user" },
+      },
+    });
+  });
+
+  it("supports explicit local clears and keeps failed persistence out of visible state", async () => {
+    const bridge = makeClient(["correct-clear"]);
+    const persistence = {
+      saveConversation: vi.fn(async (
+        _meta: import("./conversations").ConversationMeta,
+        _timeline: TimelineItem[],
+      ) => undefined),
+    };
+    const store = createConversationsStore(bridge.client, {
+      resolveConversationDefaults: () => DEFAULTS,
+      persistence: persistence as never,
+      now: () => 700,
+    });
+    const conversationId = await store.getState().createConversation({ source: "workbench" });
+    const original: WorkOverviewSnapshot = {
+      revision: 1,
+      scopeConversationId: conversationId,
+      sourceRunId: "run-1",
+      sourceToolUseId: "overview-1",
+      updatedAt: 600,
+      updateReason: "objective-set",
+      basisEventIds: ["run-1", "overview-1"],
+      actor: "momo",
+      objective: "需要清空",
+      objectiveSource: "semantic",
+      successCriteria: ["也需要清空"],
+      nextKnown: [],
+      blockers: [],
+      decisions: [],
+      completedHighlights: [],
+      fieldAuthority: { objective: "momo", successCriteria: "momo" },
+    };
+    const timeline: TimelineItem[] = [{
+      kind: "overview",
+      id: "m0",
+      runId: "run-1",
+      toolUseId: "overview-1",
+      overview: original,
+      createdAt: 600,
+    }];
+    store.setState((state) => ({ timelines: { ...state.timelines, [conversationId]: timeline } }));
+
+    await expect(store.getState().correctWorkOverview(conversationId, {
+      currentPhase: "本地修正不拥有这个字段",
+    } as never)).rejects.toThrow("本地修正只支持目标、完成标准和显式清除");
+    expect(store.getState().timelines[conversationId]).toBe(timeline);
+
+    await store.getState().correctWorkOverview(conversationId, {
+      clearFields: ["objective", "successCriteria"],
+    });
+    expect(store.getState().timelines[conversationId].at(-1)).toMatchObject({
+      kind: "overview",
+      overview: {
+        revision: 2,
+        successCriteria: [],
+        fieldAuthority: { objective: "user", successCriteria: "user" },
+      },
+    });
+    expect((store.getState().timelines[conversationId].at(-1) as Extract<TimelineItem, { kind: "overview" }>).overview.objective)
+      .toBeUndefined();
+
+    const beforeFailedCorrection = store.getState().timelines[conversationId];
+    persistence.saveConversation.mockRejectedValueOnce(new Error("磁盘不可写"));
+    await expect(store.getState().correctWorkOverview(conversationId, { objective: "不应显示" }))
+      .rejects.toThrow("磁盘不可写");
+    expect(store.getState().timelines[conversationId]).toBe(beforeFailedCorrection);
   });
 
   describe("本子 binding → prompt layer ⑨ (轮 3 卡 G)", () => {
