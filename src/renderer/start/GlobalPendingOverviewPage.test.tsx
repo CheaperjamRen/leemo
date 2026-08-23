@@ -17,6 +17,8 @@ describe("GlobalPendingOverviewPage", () => {
     const end = vi.fn();
     render(<GlobalPendingOverviewPage items={items} uncertainSourceIds={["conversation:c9"]} sourceLabels={{ "task:t1": "待办：产品故事", "conversation:c1": "会话：产品故事讨论", "conversation:c9": "会话：待确认线索" }} onOpenSource={openSource} onSetPriority={priority} onIgnore={ignore} onEnd={end} onRestore={vi.fn()} />);
 
+    expect(screen.getByText("根据 Todo、会话和成果整理的全局概览。")).toBeInTheDocument();
+    expect(screen.queryByText(/不会替你|改写原对象/)).not.toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "求职准备" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "未归组" })).toBeInTheDocument();
     expect(screen.getByText("尚不确定的来源（1）").closest("details")).not.toHaveAttribute("open");

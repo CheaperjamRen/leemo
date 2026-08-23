@@ -27,11 +27,14 @@ const items: GlobalOverviewDisplayItem[] = Array.from({ length: 4 }, (_, index) 
 }));
 
 describe("GlobalPendingOverviewCard", () => {
-  it("starts quiet, explains the model cost, and calls nothing before the user clicks", async () => {
+  it("starts quiet and calls nothing before the user clicks", async () => {
     const refresh = vi.fn();
     render(<GlobalPendingOverviewCard snapshot={null} items={[]} status="idle" error={null} onRefresh={refresh} onOpenBoard={vi.fn()} onOpenItem={vi.fn()} />);
 
-    expect(screen.getByRole("button", { name: "为我梳理待完成事项" })).toHaveAccessibleDescription(/使用当前模型/);
+    expect(screen.getByRole("button", { name: "为我梳理待完成事项" })).not.toHaveAccessibleDescription();
+    expect(screen.getByText("还没有梳理过待完成事项。")).toBeInTheDocument();
+    expect(screen.getByText("还没有梳理过待完成事项。").parentElement).toHaveAttribute("data-empty-layout", "compact");
+    expect(screen.queryByText(/使用当前模型|计入用量|调用模型|叫醒 AI/)).not.toBeInTheDocument();
     expect(refresh).not.toHaveBeenCalled();
     await userEvent.click(screen.getByRole("button", { name: "为我梳理待完成事项" }));
     expect(refresh).toHaveBeenCalledOnce();

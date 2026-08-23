@@ -1,4 +1,4 @@
-import { ArrowRight, CalendarDays, CheckCircle2, FileText, Inbox, Sparkles } from "lucide-react";
+import { ArrowRight, CalendarDays, CheckCircle2, FileText, Inbox } from "lucide-react";
 import { useMemo } from "react";
 import {
   useApprovals,
@@ -13,6 +13,7 @@ import { buildGlobalOverviewFactPack } from "../global-overview/facts";
 import { deriveGlobalOverviewDisplayItems } from "../stores/global-pending-overview";
 import type { StartDestination } from "./start-navigation";
 import GlobalPendingOverviewCard from "./GlobalPendingOverviewCard";
+import { markdownPreviewText } from "../components/markdown-normalization";
 
 function isToday(timestamp: number | null): boolean {
   if (timestamp === null) return false;
@@ -61,8 +62,9 @@ export default function StartHome({
   );
   const todayTaskCount = tasks.filter((task) => task.status === "open" && task.deletedAt === undefined && (isToday(task.plannedAt) || isToday(task.dueAt))).length;
   const todayTasks = tasks.filter((task) => task.status === "open" && task.deletedAt === undefined && (isToday(task.plannedAt) || isToday(task.dueAt))).slice(0, 3);
-  const inboxCount = notes.filter((note) => note.archivedAt === undefined && note.deletedAt === undefined).length;
-  const inbox = notes.filter((note) => note.archivedAt === undefined && note.deletedAt === undefined).slice(0, 3);
+  const inboxAll = notes.filter((note) => note.archivedAt === undefined && note.deletedAt === undefined && note.organizedAt === null);
+  const inboxCount = inboxAll.length;
+  const inbox = inboxAll.slice(0, 3);
   const recentAll = [...notes].filter((note) => note.deletedAt === undefined).sort((a, b) => b.updatedAt - a.updatedAt);
   const recent = recentAll.slice(0, 3);
   const todayLabel = new Intl.DateTimeFormat("zh-CN", {
@@ -114,9 +116,9 @@ export default function StartHome({
             <div className="leemo-start-card__heading"><h2 id="start-inbox-title">收集箱</h2><span>{inboxCount} 条最近记录</span></div>
           </header>
           <div className="leemo-start-plain-list">
-            {inbox.length ? inbox.map((note) => <button type="button" key={note.id} onClick={() => onOpenNote ? onOpenNote(note.id, "inbox") : onOpen("inbox")}><Inbox aria-hidden /><span><strong>{note.title || note.markdown.slice(0, 48) || "无标题便签"}</strong></span><ArrowRight aria-hidden /></button>) : <p>随手记下的内容会安静地留在这里。</p>}
+            {inbox.length ? inbox.map((note) => <button type="button" key={note.id} onClick={() => onOpenNote ? onOpenNote(note.id, "inbox") : onOpen("inbox")}><Inbox aria-hidden /><span><strong>{note.title || markdownPreviewText(note.markdown, 48) || "无标题便签"}</strong></span><ArrowRight aria-hidden /></button>) : <p>随手记下的内容会安静地留在这里。</p>}
           </div>
-          <footer className="leemo-start-card__footer"><span><Sparkles aria-hidden />记录后不会自动叫醒 AI</span><button onClick={() => onOpen("inbox")}>打开收集箱 <ArrowRight aria-hidden /></button></footer>
+          <footer className="leemo-start-card__footer"><span>尚未整理的记录</span><button onClick={() => onOpen("inbox")}>打开收集箱 <ArrowRight aria-hidden /></button></footer>
         </section>
 
         <section className="leemo-start-card" data-density={recent.length === 0 ? "compact" : recent.length < 3 ? "regular" : "full"} aria-labelledby="start-recent-title">
@@ -125,9 +127,9 @@ export default function StartHome({
             <div className="leemo-start-card__heading"><h2 id="start-recent-title">最近</h2><span>本地文档</span></div>
           </header>
           <div className="leemo-start-plain-list">
-            {recent.length ? recent.map((note) => <button type="button" key={note.id} onClick={() => onOpenNote ? onOpenNote(note.id, "recent") : onOpen("recent")}><FileText aria-hidden /><span><strong>{note.title || "无标题便签"}</strong></span><time>{new Date(note.updatedAt).toLocaleDateString("zh-CN")}</time></button>) : <p>最近编辑过的文档会出现在这里。</p>}
+            {recent.length ? recent.map((note) => <button type="button" key={note.id} onClick={() => onOpenNote ? onOpenNote(note.id, "recent") : onOpen("recent")}><FileText aria-hidden /><span><strong>{note.title || markdownPreviewText(note.markdown, 48) || "无标题便签"}</strong></span><time>{new Date(note.updatedAt).toLocaleDateString("zh-CN")}</time></button>) : <p>最近编辑过的文档会出现在这里。</p>}
           </div>
-          <footer className="leemo-start-card__footer"><span>原文件与便签都保持本地</span><button onClick={() => onOpen("recent")}>查看最近 <ArrowRight aria-hidden /></button></footer>
+          <footer className="leemo-start-card__footer"><span>按最近编辑排序</span><button onClick={() => onOpen("recent")}>查看最近 <ArrowRight aria-hidden /></button></footer>
         </section>
       </div>
     </div>

@@ -6,29 +6,21 @@
 
 .leemo-scheduled-hero__icon {
   border: 1px solid color-mix(in srgb, var(--leemo-amber) 22%, var(--leemo-line));
-  background:
-    linear-gradient(145deg, color-mix(in srgb, var(--leemo-bg) 82%, white), color-mix(in srgb, var(--leemo-amber-soft) 65%, var(--leemo-bg)));
-  box-shadow:
-    inset 0 1px 0 color-mix(in srgb, white 78%, transparent),
-    0 5px 14px color-mix(in srgb, var(--leemo-ink) 7%, transparent);
+  background: color-mix(in srgb, var(--leemo-amber-soft) 56%, var(--leemo-surface-default));
+  box-shadow: inset 0 1px 0 color-mix(in srgb, white 70%, transparent);
   color: var(--leemo-amber-strong);
 }
 
 .leemo-scheduled-primary {
-  border: 1px solid color-mix(in srgb, var(--leemo-ink) 88%, white);
-  background: linear-gradient(180deg, color-mix(in srgb, var(--leemo-ink) 88%, white), var(--leemo-ink));
-  box-shadow:
-    inset 0 1px 0 color-mix(in srgb, white 20%, transparent),
-    0 4px 10px color-mix(in srgb, var(--leemo-ink) 15%, transparent);
-  transition: transform 140ms ease, box-shadow 140ms ease, filter 140ms ease;
+  border: 1px solid color-mix(in srgb, var(--leemo-workbench-action, var(--leemo-ink)) 86%, white);
+  background: var(--leemo-workbench-action, var(--leemo-ink));
+  box-shadow: inset 0 1px 0 color-mix(in srgb, white 16%, transparent);
+  transition: background-color 140ms ease, border-color 140ms ease;
 }
 
 .leemo-scheduled-primary:hover:not(:disabled) {
-  box-shadow:
-    inset 0 1px 0 color-mix(in srgb, white 22%, transparent),
-    0 7px 16px color-mix(in srgb, var(--leemo-ink) 20%, transparent);
-  filter: brightness(1.08);
-  transform: translateY(-1px);
+  border-color: var(--leemo-workbench-action-hover, var(--leemo-ink));
+  background: var(--leemo-workbench-action-hover, var(--leemo-ink));
 }
 
 .leemo-scheduled-controls {
@@ -129,9 +121,7 @@
 }
 
 .leemo-scheduled-table {
-  box-shadow:
-    0 1px 2px color-mix(in srgb, var(--leemo-ink) 4%, transparent),
-    0 12px 30px color-mix(in srgb, var(--leemo-ink) 4%, transparent);
+  box-shadow: 0 1px 2px color-mix(in srgb, var(--leemo-ink) 4%, transparent);
 }
 
 .leemo-scheduled-row {

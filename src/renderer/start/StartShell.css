@@ -1,18 +1,26 @@
+.leemo-start-shell,
+body:has(.leemo-start-shell),
+html:has(.leemo-start-shell) {
+  overflow: hidden;
+}
+
 .leemo-start-shell {
-  --start-bg: #f5f4f0;
-  --start-surface: #fbfaf7;
-  --start-surface-active: #fff7ed;
-  --start-nav-active: #ffffff;
-  --start-ink: #101827;
-  --start-ink-2: #475467;
-  --start-ink-3: #7a8494;
-  --start-line: #deded8;
-  --start-line-soft: #e9e8e2;
-  --start-accent: #f56a00;
-  --start-accent-strong: #df5d00;
-  --start-accent-soft: #fff0e2;
-  --start-focus-ring: rgba(245, 106, 0, 0.30);
-  min-height: 100vh;
+  --start-bg: var(--leemo-bg);
+  --start-surface: var(--leemo-card);
+  --start-surface-active: var(--leemo-amber-bg);
+  --start-nav-active: var(--leemo-surface-raised);
+  --start-ink: var(--leemo-ink);
+  --start-ink-2: var(--leemo-ink-2);
+  --start-ink-3: var(--leemo-ink-3);
+  --start-line: var(--leemo-line);
+  --start-line-soft: var(--leemo-line-soft);
+  --start-accent: var(--leemo-amber);
+  --start-accent-strong: var(--leemo-amber-strong);
+  --start-accent-soft: var(--leemo-amber-soft);
+  --start-focus-ring: var(--leemo-focus);
+  height: 100vh;
+  min-height: 0;
+  overflow: hidden;
   color: var(--start-ink);
   background: var(--start-bg);
 }
@@ -27,7 +35,8 @@
 
 .leemo-start-shell__body {
   display: grid;
-  min-height: 100vh;
+  height: 100vh;
+  min-height: 0;
   grid-template-columns: 288px minmax(0, 1fr);
   padding-top: 64px;
   transition: grid-template-columns 160ms ease;
@@ -323,6 +332,11 @@
   text-align: center;
 }
 
+.leemo-start-card[data-density="compact"] :is(.leemo-start-overview-card__empty, .leemo-start-card__quiet-state) {
+  min-height: 36px;
+  margin-block: 4px;
+}
+
 .leemo-start-overview-card__empty svg {
   width: 20px;
   height: 20px;
@@ -357,7 +371,7 @@
 }
 
 .leemo-start-overview-card__row:hover {
-  background: #fafafa;
+  background: color-mix(in srgb, var(--start-surface) 72%, var(--start-bg));
 }
 
 .leemo-start-overview-card__rank {
@@ -408,7 +422,7 @@
   border: 1px solid var(--start-line-soft);
   border-radius: 5px;
   color: var(--start-ink-2);
-  background: #fafafa;
+  background: color-mix(in srgb, var(--start-surface) 72%, var(--start-bg));
   font-size: 12px;
 }
 
@@ -473,7 +487,7 @@
 .leemo-start-card__footer button.is-primary {
   min-height: 34px;
   padding: 0 12px;
-  border-radius: 6px;
+  border-radius: 999px;
   color: #fff;
   background: var(--start-accent);
   font-size: 13px;
@@ -522,7 +536,7 @@
 }
 
 .leemo-start-plain-list > button:hover {
-  background: #fafafa;
+  background: color-mix(in srgb, var(--start-surface) 72%, var(--start-bg));
 }
 
 .leemo-start-plain-list > button > span {
@@ -675,7 +689,7 @@
   border: 1px solid var(--start-line);
   border-radius: 4px;
   color: var(--start-ink-2);
-  background: #fafafa;
+  background: color-mix(in srgb, var(--start-surface) 72%, var(--start-bg));
   font-family: inherit;
   font-size: 11.5px;
   text-overflow: ellipsis;
@@ -764,6 +778,128 @@
   stroke-width: 1.5;
 }
 
+.leemo-start-locations-heading {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.leemo-start-pill-button {
+  display: inline-flex;
+  min-height: 34px;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 0 14px;
+  border: 1px solid var(--start-line);
+  border-radius: 999px;
+  color: var(--start-ink-2);
+  background: var(--start-surface);
+  font-size: 13px;
+  font-weight: 560;
+  transition: background-color 120ms ease, border-color 120ms ease, transform 120ms ease;
+}
+
+.leemo-start-pill-button:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--start-accent) 42%, var(--start-line));
+  background: var(--start-accent-soft);
+}
+
+.leemo-start-pill-button:active:not(:disabled) { transform: translateY(1px); }
+.leemo-start-pill-button:disabled { cursor: wait; opacity: 0.62; }
+.leemo-start-pill-button svg { width: 15px; height: 15px; }
+
+.leemo-start-pill-button--accent {
+  border-color: color-mix(in srgb, var(--start-accent) 48%, var(--start-line));
+  color: var(--start-accent-strong);
+  background: var(--start-accent-soft);
+}
+
+.leemo-start-inline-error {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 14px;
+  padding: 10px 12px;
+  border: 1px solid color-mix(in srgb, var(--start-accent) 34%, var(--start-line));
+  border-radius: 12px;
+  color: var(--start-ink-2);
+  background: color-mix(in srgb, var(--start-accent-soft) 58%, var(--start-surface));
+  font-size: 13px;
+}
+
+.leemo-start-inline-error svg { width: 16px; height: 16px; color: var(--start-accent-strong); }
+
+.leemo-start-locations-empty,
+.leemo-start-locations-state {
+  display: grid;
+  min-height: 260px;
+  place-items: center;
+  align-content: center;
+  gap: 8px;
+  color: var(--start-ink-2);
+  text-align: center;
+}
+
+.leemo-start-locations-empty svg { width: 30px; height: 30px; color: var(--start-accent); stroke-width: 1.6; }
+.leemo-start-locations-empty h2 { margin: 2px 0 0; color: var(--start-ink); font-size: 18px; font-weight: 600; }
+.leemo-start-locations-empty p { margin: 0 0 8px; font-size: 13px; }
+
+.leemo-start-location-list {
+  display: grid;
+  gap: 8px;
+  max-width: 980px;
+}
+
+.leemo-start-location-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 34px;
+  min-height: 70px;
+  align-items: stretch;
+  border: 1px solid color-mix(in srgb, var(--start-line) 84%, transparent);
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--start-surface) 94%, var(--start-bg));
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.68), 0 10px 24px -26px rgb(25 42 56 / 0.5);
+  transition: border-color 120ms ease, background-color 120ms ease;
+}
+
+.leemo-start-location-row:hover { border-color: color-mix(in srgb, var(--start-accent) 36%, var(--start-line)); }
+.leemo-start-location-row.is-missing { background: color-mix(in srgb, var(--start-line-soft) 58%, var(--start-surface)); }
+
+.leemo-start-location-main {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 10px 12px;
+  color: var(--start-ink);
+  text-align: left;
+}
+
+.leemo-start-location-main:disabled { cursor: default; opacity: 0.72; }
+.leemo-start-location-icon { display: grid; width: 30px; height: 30px; place-items: center; border-radius: 10px; color: var(--start-accent-strong); background: var(--start-accent-soft); }
+.leemo-start-location-icon svg { width: 17px; height: 17px; }
+.leemo-start-location-copy { display: grid; min-width: 0; gap: 2px; }
+.leemo-start-location-copy strong { overflow: hidden; font-size: 14px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.leemo-start-location-copy small { overflow: hidden; color: var(--start-ink-3); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.leemo-start-location-status { display: inline-flex; align-items: center; gap: 5px; color: var(--start-ink-3); font-size: 12px; white-space: nowrap; }
+.leemo-start-location-status svg { width: 14px; height: 14px; }
+.leemo-start-location-row.is-missing .leemo-start-location-status { color: var(--start-accent-strong); }
+.leemo-start-location-more,
+.leemo-start-location-forget { display: grid; width: 34px; place-items: center; color: var(--start-ink-3); }
+.leemo-start-location-more { display: none; }
+.leemo-start-location-forget { border-radius: 0 16px 16px 0; }
+.leemo-start-location-forget:hover:not(:disabled) { color: var(--start-accent-strong); background: var(--start-accent-soft); }
+.leemo-start-location-forget svg { width: 15px; height: 15px; }
+
+@media (max-width: 720px) {
+  .leemo-start-locations-heading { align-items: start; flex-direction: column; gap: 10px; }
+  .leemo-start-location-main { grid-template-columns: 30px minmax(0, 1fr); }
+  .leemo-start-location-status { display: none; }
+}
+
 .leemo-start-overview-page__empty h2,
 .leemo-start-overview-page__empty p,
 .leemo-start-simple-empty p {
@@ -780,6 +916,216 @@
   border-top: 1px solid var(--start-line);
 }
 
+.leemo-start-task-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.leemo-start-task-heading__create,
+.leemo-start-simple-empty > button {
+  display: inline-flex;
+  height: 34px;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 0 14px;
+  border: 1px solid color-mix(in srgb, var(--start-accent) 56%, var(--start-line));
+  border-radius: 999px;
+  color: var(--start-surface);
+  background: var(--start-accent-strong);
+  font-size: 12px;
+  font-weight: 600;
+  transition: transform 120ms ease, filter 120ms ease;
+}
+
+.leemo-start-task-heading__create:hover,
+.leemo-start-simple-empty > button:hover {
+  filter: brightness(0.96);
+  transform: translateY(-1px);
+}
+
+.leemo-start-task-heading__create svg,
+.leemo-start-simple-empty > button svg {
+  width: 14px;
+  height: 14px;
+}
+
+.leemo-start-task-filters {
+  display: inline-flex;
+  gap: 2px;
+  padding: 3px;
+  margin-bottom: 14px;
+  border: 1px solid var(--start-line-soft);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--start-surface) 72%, transparent);
+}
+
+.leemo-start-task-filters button {
+  display: inline-flex;
+  height: 28px;
+  align-items: center;
+  gap: 6px;
+  padding: 0 11px;
+  border-radius: 999px;
+  color: var(--start-ink-3);
+  font-size: 12px;
+}
+
+.leemo-start-task-filters button[aria-pressed="true"] {
+  color: var(--start-ink);
+  background: var(--start-surface);
+  box-shadow: 0 1px 5px color-mix(in srgb, var(--start-ink) 10%, transparent);
+}
+
+.leemo-start-task-filters span {
+  min-width: 16px;
+  color: var(--start-ink-3);
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
+.leemo-start-task-editor {
+  padding: 16px;
+  margin-bottom: 16px;
+  border: 1px solid color-mix(in srgb, var(--start-accent) 28%, var(--start-line));
+  border-radius: 16px;
+  background: var(--start-surface);
+  box-shadow: 0 12px 34px -28px color-mix(in srgb, var(--start-ink) 36%, transparent);
+}
+
+.leemo-start-task-editor > header,
+.leemo-start-task-editor > footer {
+  display: flex;
+  align-items: center;
+}
+
+.leemo-start-task-editor > header {
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.leemo-start-task-editor > header div {
+  display: grid;
+  gap: 2px;
+}
+
+.leemo-start-task-editor > header strong {
+  font-size: 14px;
+}
+
+.leemo-start-task-editor > header span,
+.leemo-start-task-editor label > span {
+  color: var(--start-ink-3);
+  font-size: 11.5px;
+}
+
+.leemo-start-task-editor > header button,
+.leemo-start-task-list__actions > button {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  border-radius: 9px;
+  color: var(--start-ink-3);
+}
+
+.leemo-start-task-editor > header button:hover,
+.leemo-start-task-list__actions > button:hover {
+  color: var(--start-ink);
+  background: var(--start-nav-active);
+}
+
+.leemo-start-task-editor > header svg,
+.leemo-start-task-list__actions > button svg {
+  width: 15px;
+  height: 15px;
+}
+
+.leemo-start-task-editor__fields {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 180px;
+  gap: 10px;
+}
+
+.leemo-start-task-editor label {
+  display: grid;
+  gap: 5px;
+}
+
+.leemo-start-task-editor__details {
+  grid-column: 1 / -1;
+}
+
+.leemo-start-task-editor input,
+.leemo-start-task-editor textarea {
+  width: 100%;
+  border: 1px solid var(--start-line);
+  border-radius: 10px;
+  outline: none;
+  color: var(--start-ink);
+  background: color-mix(in srgb, var(--start-surface) 88%, var(--start-bg));
+  font: inherit;
+}
+
+.leemo-start-task-editor input {
+  height: 36px;
+  padding: 0 11px;
+}
+
+.leemo-start-task-editor textarea {
+  min-height: 62px;
+  padding: 9px 11px;
+  resize: vertical;
+}
+
+.leemo-start-task-editor input:focus,
+.leemo-start-task-editor textarea:focus {
+  border-color: var(--start-focus-ring);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--start-focus-ring) 16%, transparent);
+}
+
+.leemo-start-task-editor > footer {
+  justify-content: flex-end;
+  gap: 7px;
+  margin-top: 12px;
+}
+
+.leemo-start-task-editor > footer > span,
+.leemo-start-task-editor > footer > p {
+  margin: 0 auto 0 0;
+  color: var(--leemo-danger);
+  font-size: 12px;
+}
+
+.leemo-start-task-editor > footer button,
+.leemo-start-task-confirm footer button {
+  height: 32px;
+  padding: 0 13px;
+  border: 1px solid var(--start-line);
+  border-radius: 999px;
+  color: var(--start-ink-2);
+  background: var(--start-surface);
+  font-size: 12px;
+}
+
+.leemo-start-task-editor > footer button.is-primary {
+  border-color: var(--start-accent-strong);
+  color: var(--start-surface);
+  background: var(--start-accent-strong);
+}
+
+.leemo-start-task-error {
+  padding: 9px 11px;
+  margin: 0 0 12px;
+  border: 1px solid color-mix(in srgb, var(--leemo-danger) 28%, var(--start-line));
+  border-radius: 10px;
+  color: var(--leemo-danger);
+  background: color-mix(in srgb, var(--leemo-danger) 6%, var(--start-surface));
+  font-size: 12px;
+}
+
 .leemo-start-task-list > article,
 .leemo-start-note-list > article {
   display: grid;
@@ -793,7 +1139,8 @@
 }
 
 .leemo-start-task-list > article {
-  grid-template-columns: 24px minmax(0, 1fr) auto;
+  grid-template-columns: 28px minmax(0, 1fr) auto;
+  border-radius: 10px;
 }
 
 .leemo-start-task-list > article:hover,
@@ -825,6 +1172,52 @@
   font-size: 11.5px;
 }
 
+.leemo-start-task-list__content {
+  min-width: 0;
+}
+
+.leemo-start-task-list__content > div {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 10px;
+}
+
+.leemo-start-task-list__content small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.leemo-start-task-list__content time {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 4px;
+  color: var(--start-ink-3);
+  font-size: 11.5px;
+}
+
+.leemo-start-task-list__content time svg {
+  width: 12px;
+  height: 12px;
+}
+
+.leemo-start-task-list__actions {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.leemo-start-task-list > article.is-done strong {
+  color: var(--start-ink-3);
+  text-decoration: line-through;
+}
+
+.leemo-start-task-list > article.is-done .leemo-start-task-list__check svg {
+  color: var(--start-accent-strong);
+}
+
 .leemo-start-task-list__source:hover {
   border-color: color-mix(in srgb, var(--start-accent) 40%, var(--start-line));
   color: var(--start-accent-strong);
@@ -845,6 +1238,53 @@
 .leemo-start-task-list strong,
 .leemo-start-task-list small {
   display: block;
+}
+
+.leemo-start-task-confirm-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  display: grid;
+  place-items: center;
+  background: color-mix(in srgb, var(--start-ink) 22%, transparent);
+  backdrop-filter: blur(3px);
+}
+
+.leemo-start-task-confirm {
+  width: min(390px, calc(100vw - 32px));
+  padding: 20px;
+  border: 1px solid var(--start-line);
+  border-radius: 18px;
+  background: var(--start-surface);
+  box-shadow: 0 22px 70px -34px color-mix(in srgb, var(--start-ink) 56%, transparent);
+}
+
+.leemo-start-task-confirm > strong {
+  font-size: 16px;
+}
+
+.leemo-start-task-confirm > p {
+  margin: 6px 0 18px;
+  color: var(--start-ink-3);
+  font-size: 12.5px;
+}
+
+.leemo-start-task-confirm footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.leemo-start-task-confirm footer button.is-danger {
+  border-color: var(--leemo-danger);
+  color: var(--start-surface);
+  background: var(--leemo-danger);
+}
+
+@media (max-width: 720px) {
+  .leemo-start-task-editor__fields { grid-template-columns: 1fr; }
+  .leemo-start-task-editor__details { grid-column: auto; }
+  .leemo-start-task-list__source span { display: none; }
 }
 
 .leemo-start-task-list strong {
@@ -929,6 +1369,8 @@
 .leemo-start-documents {
   display: grid;
   width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
   height: 100%;
   min-height: 0;
   grid-template-columns: 248px minmax(0, 1fr);
@@ -943,7 +1385,7 @@
   flex-direction: column;
   overflow: hidden;
   border-right: 1px solid var(--start-line);
-  background: #fbfbfc;
+  background: color-mix(in srgb, var(--start-surface) 88%, var(--start-bg));
 }
 
 .leemo-note-explorer__header {
@@ -956,12 +1398,15 @@
   border-bottom: 1px solid var(--start-line-soft);
 }
 
-.leemo-note-explorer__header > div {
+.leemo-note-explorer__header > div:first-child,
+.leemo-note-explorer__header-actions {
   display: flex;
   min-width: 0;
-  align-items: baseline;
+  align-items: center;
   gap: 7px;
 }
+
+.leemo-note-explorer__header-actions { flex: 0 0 auto; gap: 2px; }
 
 .leemo-note-explorer__header strong {
   font-size: 14px;
@@ -975,7 +1420,7 @@
   font-variant-numeric: tabular-nums;
 }
 
-.leemo-note-explorer__header > button,
+.leemo-note-explorer__header-actions > button,
 .leemo-document-header__actions > button {
   display: grid;
   width: 30px;
@@ -988,7 +1433,7 @@
   transition: border-color 120ms ease, color 120ms ease, background-color 120ms ease;
 }
 
-.leemo-note-explorer__header > button:hover,
+.leemo-note-explorer__header-actions > button:hover,
 .leemo-document-header__actions > button:hover:not(:disabled) {
   border-color: var(--start-line);
   color: var(--start-ink);
@@ -1065,6 +1510,12 @@
   width: 16px;
   height: 16px;
   stroke-width: 1.7;
+}
+
+.leemo-note-explorer__close,
+.leemo-document-explorer-toggle,
+.leemo-note-explorer-backdrop {
+  display: none;
 }
 
 .leemo-note-explorer__search {
@@ -1171,7 +1622,7 @@
 }
 
 .leemo-note-tree__row:hover {
-  background: #f3f4f6;
+  background: color-mix(in srgb, var(--start-surface) 68%, var(--start-bg));
 }
 
 .leemo-note-tree__row[aria-selected="true"] {
@@ -1229,14 +1680,18 @@
 .leemo-document-workspace {
   position: relative;
   display: grid;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
   min-width: 0;
   min-height: 0;
-  grid-template-rows: 56px auto minmax(0, 1fr) 32px;
+  grid-template-rows: 64px auto minmax(0, 1fr) 32px;
   background: var(--start-surface);
 }
 
 .leemo-document-header {
   display: grid;
+  box-sizing: border-box;
   min-width: 0;
   grid-template-columns: minmax(220px, 1fr) auto;
   align-items: center;
@@ -1247,6 +1702,11 @@
 
 .leemo-document-header__identity {
   min-width: 0;
+}
+
+.leemo-document-header__identity.is-bare {
+  display: flex;
+  align-items: center;
 }
 
 .leemo-document-header__identity p {
@@ -1263,15 +1723,20 @@
   width: 100%;
   min-width: 0;
   border: 0;
-  border-radius: 4px;
+  border-radius: 999px;
   outline: 0;
   color: var(--start-ink);
   background: transparent;
   font: inherit;
-  font-size: 17px;
-  font-weight: 600;
-  line-height: 25px;
+  font-size: 19px;
+  font-weight: 650;
+  line-height: 28px;
   letter-spacing: -0.01em;
+}
+
+.leemo-document-header__identity input::placeholder {
+  color: var(--start-ink-3);
+  opacity: 0.66;
 }
 
 .leemo-document-header__identity input:not(:read-only):focus {
@@ -1280,7 +1745,9 @@
 
 .leemo-document-header__actions {
   display: flex;
+  min-width: 0;
   align-items: center;
+  flex-wrap: nowrap;
   gap: 4px;
 }
 
@@ -1306,16 +1773,25 @@
   align-items: center;
   padding: 2px;
   border: 1px solid var(--start-line);
-  border-radius: 7px;
-  background: #f7f8f9;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--start-surface) 82%, var(--start-bg));
 }
 
 .leemo-document-mode button {
+  display: inline-flex;
   height: 26px;
+  align-items: center;
+  gap: 5px;
   padding: 0 9px;
-  border-radius: 5px;
+  border-radius: 999px;
   color: var(--start-ink-3);
   font-size: 12px;
+}
+
+.leemo-document-mode button svg {
+  width: 13px;
+  height: 13px;
+  stroke-width: 1.8;
 }
 
 .leemo-document-mode button[aria-pressed="true"] {
@@ -1333,7 +1809,81 @@
   font-size: 12.5px;
 }
 
+.leemo-document-conflict {
+  display: flex;
+  min-height: 54px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 8px 18px 8px 24px;
+  border-bottom: 1px solid color-mix(in srgb, var(--start-accent) 24%, var(--start-line));
+  background: color-mix(in srgb, var(--start-accent) 6%, var(--start-surface));
+}
+
+.leemo-document-conflict strong { color: var(--start-ink); font-size: 12.5px; }
+.leemo-document-conflict p { margin: 2px 0 0; color: var(--start-ink-3); font-size: 11.5px; }
+.leemo-document-conflict > div:last-child { display: flex; flex: 0 0 auto; gap: 6px; }
+.leemo-document-conflict button {
+  min-height: 30px;
+  border: 1px solid var(--start-line);
+  border-radius: 6px;
+  padding: 0 9px;
+  color: var(--start-ink-2);
+  background: var(--start-surface);
+  font-size: 11.5px;
+}
+.leemo-document-conflict button:hover { border-color: color-mix(in srgb, var(--start-accent) 44%, var(--start-line)); color: var(--start-accent-strong); }
+
+.leemo-attachment-preview-backdrop {
+  position: absolute;
+  z-index: 45;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 28px;
+  background: rgb(15 27 46 / 24%);
+  backdrop-filter: blur(3px);
+}
+
+.leemo-attachment-preview {
+  display: grid;
+  width: min(960px, 94%);
+  height: min(720px, 92%);
+  min-height: 320px;
+  grid-template-rows: 44px minmax(0, 1fr);
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--start-line) 86%, transparent);
+  border-radius: 12px;
+  background: var(--start-surface);
+  box-shadow: 0 28px 76px -32px rgb(15 27 46 / 56%), 0 8px 24px rgb(15 27 46 / 10%);
+}
+
+.leemo-attachment-preview:is([data-kind="markdown"], [data-kind="text"]) {
+  height: auto;
+  max-height: min(560px, 78%);
+  min-height: 320px;
+}
+
+.leemo-attachment-preview > header {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 10px 0 15px;
+  border-bottom: 1px solid var(--start-line-soft);
+}
+
+.leemo-attachment-preview > header strong { overflow: hidden; font-size: 13px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.leemo-attachment-preview > header button { display: grid; width: 30px; height: 30px; place-items: center; border-radius: 6px; color: var(--start-ink-3); }
+.leemo-attachment-preview > header button:hover { color: var(--start-ink); background: color-mix(in srgb, var(--start-ink) 6%, transparent); }
+.leemo-attachment-preview > header svg { width: 16px; height: 16px; }
+.leemo-attachment-preview__body { min-height: 0; overflow: auto; padding: 24px 28px; }
+.leemo-attachment-preview__body > :is(img) { display: block; max-width: 100%; max-height: 100%; margin: auto; object-fit: contain; }
+.leemo-attachment-preview__body > pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-family: "Cascadia Code", Consolas, monospace; font-size: 12.5px; line-height: 1.68; }
+.leemo-attachment-preview__body > [data-testid="pdf-view"] { height: 100%; }
+
 .leemo-document-scroll {
+  grid-row: 3;
   min-height: 0;
   overflow: hidden auto;
 }
@@ -1402,15 +1952,21 @@
 
 .leemo-note-reference-menu {
   position: absolute;
-  bottom: calc(100% - 42px);
+  top: calc(100% + 6px);
+  bottom: auto;
   left: 0;
-  z-index: 20;
+  z-index: 40;
   width: min(390px, calc(100vw - 80px));
   overflow: hidden;
   border: 1px solid var(--start-line);
   border-radius: 9px;
   background: var(--start-surface);
   box-shadow: 0 18px 42px -24px rgb(16 24 39 / 0.42);
+}
+
+.capture-editor__source-bar .leemo-note-reference-menu {
+  right: 0;
+  left: auto;
 }
 
 .leemo-note-reference-menu > header {
@@ -1655,13 +2211,24 @@
 }
 
 .leemo-document-attachments li button {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border-radius: 6px;
   color: var(--start-ink-3);
   font-size: 11.5px;
 }
 
 .leemo-document-attachments li button:hover {
-  color: var(--leemo-danger);
+  color: var(--start-ink);
+  background: color-mix(in srgb, var(--start-ink) 6%, transparent);
 }
+
+.leemo-document-attachments li button.is-remove { width: auto; padding: 0 7px; }
+.leemo-document-attachments li button.is-remove:hover { color: var(--leemo-danger); background: color-mix(in srgb, var(--leemo-danger) 7%, transparent); }
+.leemo-document-attachments__actions { display: flex; align-items: center; gap: 2px; }
+.leemo-document-attachments__actions svg { width: 14px; height: 14px; stroke-width: 1.75; }
 
 .leemo-document-backlinks > button {
   grid-template-columns: 16px minmax(0, 1fr);
@@ -1672,7 +2239,7 @@
 
 .leemo-document-backlinks > button:hover {
   color: var(--start-accent-strong);
-  background: #fafafa;
+  background: color-mix(in srgb, var(--start-surface) 72%, var(--start-bg));
 }
 
 .leemo-document-task-link > header > button {
@@ -1717,7 +2284,7 @@
 
 .leemo-document-task-link__existing button:hover {
   color: var(--start-accent-strong);
-  background: #fafafa;
+  background: color-mix(in srgb, var(--start-surface) 72%, var(--start-bg));
 }
 
 .leemo-document-task-link__existing small {
@@ -1730,7 +2297,7 @@
   overflow: hidden;
   border: 1px solid var(--start-line);
   border-radius: 8px;
-  background: #fbfbfc;
+  background: color-mix(in srgb, var(--start-surface) 88%, var(--start-bg));
 }
 
 .leemo-document-task-copy > header,
@@ -1819,7 +2386,9 @@
 
 .leemo-document-status {
   display: flex;
+  min-height: 32px;
   min-width: 0;
+  grid-row: 4;
   align-items: center;
   justify-content: flex-end;
   gap: 8px;
@@ -1827,6 +2396,11 @@
   border-top: 1px solid var(--start-line-soft);
   color: var(--start-ink-3);
   font-size: 11.5px;
+}
+
+.leemo-document-conflict,
+.leemo-document-error {
+  grid-row: 2;
 }
 
 .leemo-document-status svg {
@@ -1999,7 +2573,7 @@
   .leemo-start-card { min-height: 248px; }
   .leemo-start-card[data-density="regular"] { min-height: 204px; }
   .leemo-start-card[data-density="compact"] { min-height: 152px; }
-  .leemo-start-main { height: auto; min-height: calc(100vh - 64px); }
+  .leemo-start-main { height: calc(100vh - 64px); min-height: 0; }
   .leemo-start-overview-item { grid-template-columns: minmax(0, 1fr); }
   .leemo-start-overview-item__actions { grid-column: 1; grid-row: auto; padding-left: 68px; }
   .leemo-start-documents { grid-template-columns: 224px minmax(0, 1fr); }
@@ -2043,13 +2617,38 @@
   .leemo-start-card__refresh span { display: none; }
   .leemo-start-card__refresh { width: 34px; padding: 0; }
   .leemo-start-documents { position: relative; display: block; overflow: hidden; }
-  .leemo-note-explorer { position: absolute; inset: 0 auto 0 0; z-index: 12; width: min(296px, calc(100vw - 44px)); box-shadow: 18px 0 40px -28px rgb(16 24 39 / 0.42); }
+  .leemo-note-explorer {
+    position: absolute;
+    inset: 0 auto 0 0;
+    z-index: 14;
+    width: min(296px, calc(100vw - 44px));
+    transform: translateX(-104%);
+    box-shadow: 18px 0 40px -28px rgb(16 24 39 / 0.42);
+    transition: transform 160ms ease;
+  }
+  .leemo-start-documents.is-explorer-open .leemo-note-explorer { transform: translateX(0); }
+  .leemo-note-explorer[aria-hidden="true"] { pointer-events: none; }
+  .leemo-start-documents.is-explorer-open .leemo-note-explorer { pointer-events: auto; }
+  .leemo-note-explorer-backdrop {
+    position: absolute;
+    z-index: 13;
+    inset: 0;
+    display: block;
+    border: 0;
+    background: rgb(16 24 39 / 19%);
+    backdrop-filter: blur(1px);
+  }
+  .leemo-note-explorer__close,
+  .leemo-document-explorer-toggle { display: grid; }
   .leemo-document-workspace { height: 100%; }
-  .leemo-document-header { grid-template-columns: minmax(0, 1fr) auto; padding-inline: 16px; }
+  .leemo-document-header { grid-template-columns: 30px minmax(0, 1fr) auto; gap: 9px; padding-inline: 12px; }
   .leemo-document-header__actions > span { display: none; }
-  .leemo-document-mode button { width: 30px; overflow: hidden; padding: 0; font-size: 0; }
-  .leemo-document-mode button::first-letter { font-size: 12px; }
+  .leemo-document-mode button { width: 30px; overflow: hidden; justify-content: center; padding: 0; }
+  .leemo-document-mode button span { display: none; }
   .leemo-document-canvas { padding: 24px 20px 48px; }
+  .leemo-attachment-preview-backdrop { padding: 12px; }
+  .leemo-attachment-preview { width: 100%; height: 100%; border-radius: 10px; }
+  .leemo-attachment-preview__body { padding: 16px; }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -2058,5 +2657,6 @@
   .leemo-start-simple-page,
   .leemo-start-card__refresh svg.is-spinning { animation: none; }
   .leemo-start-sidebar,
-  .leemo-start-shell__body { transition: none; }
+  .leemo-start-shell__body,
+  .leemo-note-explorer { transition: none; }
 }

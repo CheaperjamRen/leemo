@@ -33,7 +33,7 @@ export default function GlobalPendingOverviewPage({
         <div>
           {onBack && <button type="button" className="leemo-start-back" onClick={onBack}><ArrowLeft aria-hidden />首页</button>}
           <h1>待完成事项</h1>
-          <p>这是一张来源于真实 Todo、会话和成果的快照，不会替你完成或改写原对象。</p>
+          <p>根据 Todo、会话和成果整理的全局概览。</p>
         </div>
       </header>
 

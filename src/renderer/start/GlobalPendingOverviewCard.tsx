@@ -42,18 +42,16 @@ export default function GlobalPendingOverviewCard({
           className="leemo-start-card__refresh-icon"
           onClick={onRefresh}
           disabled={status === "refreshing"}
-          aria-describedby="global-overview-cost-note"
           aria-label={status === "refreshing" ? "刷新状态：正在梳理" : "刷新待完成事项"}
         >
           <RefreshCw aria-hidden className={status === "refreshing" ? "is-spinning" : ""} />
         </button>}
-        <span id="global-overview-cost-note" className="sr-only">会使用当前模型梳理真实待办、会话和成果，并计入用量。</span>
       </header>
 
       {!hasSnapshot ? (
-        <div className="leemo-start-overview-card__empty">
+        <div className="leemo-start-overview-card__empty" data-empty-layout="compact">
           <Sparkles aria-hidden />
-          <p>需要时，再让 momo 帮你把散落在各处的工作线索收成一张看板。</p>
+          <p>还没有梳理过待完成事项。</p>
         </div>
       ) : items.length > 0 ? (
         <div className="leemo-start-overview-card__rows" role="list">
@@ -92,12 +90,12 @@ export default function GlobalPendingOverviewCard({
         {hasSnapshot ? <>
           <span><Sparkles aria-hidden />由 momo 梳理</span>
           <span className="leemo-start-card__footer-actions">
-            <button type="button" className="is-primary" onClick={onRefresh} disabled={status === "refreshing"} aria-describedby="global-overview-cost-note"><RefreshCw aria-hidden className={status === "refreshing" ? "is-spinning" : ""} />{status === "refreshing" ? "正在梳理" : "重新梳理"}</button>
+            <button type="button" className="is-primary" onClick={onRefresh} disabled={status === "refreshing"}><RefreshCw aria-hidden className={status === "refreshing" ? "is-spinning" : ""} />{status === "refreshing" ? "正在梳理" : "重新梳理"}</button>
             <button type="button" onClick={onOpenBoard}>查看完整看板 <ArrowRight aria-hidden /></button>
           </span>
         </> : <>
-          <span><Sparkles aria-hidden />只在你主动要求时调用模型</span>
-          <button type="button" className="is-primary" onClick={onRefresh} disabled={status === "refreshing"} aria-describedby="global-overview-cost-note" aria-label={status === "refreshing" ? "正在梳理" : "为我梳理待完成事项"}><RefreshCw aria-hidden className={status === "refreshing" ? "is-spinning" : ""} />{status === "refreshing" ? "正在梳理" : "为我梳理待完成事项"}</button>
+          <span>整理 Todo、会话和成果</span>
+          <button type="button" className="is-primary" onClick={onRefresh} disabled={status === "refreshing"} aria-label={status === "refreshing" ? "正在梳理" : "为我梳理待完成事项"}><RefreshCw aria-hidden className={status === "refreshing" ? "is-spinning" : ""} />{status === "refreshing" ? "正在梳理" : "为我梳理待完成事项"}</button>
         </>}
       </footer>
     </section>

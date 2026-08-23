@@ -41,15 +41,16 @@ describe("StartShell", () => {
     expect(screen.getByRole("button", { name: "关闭开始导航" })).toBeInTheDocument();
   });
 
-  it("opens the document library as a second-level Start view and gives writing the wider rail", async () => {
+  it("opens the document library as a second-level Start view without hiding the global navigation", async () => {
     const { container } = render(<BridgeProvider><StartShell /></BridgeProvider>);
 
-    await userEvent.click(screen.getByRole("button", { name: "我的文档" }));
+    await userEvent.click(screen.getByRole("button", { name: "文档库" }));
     expect(screen.getByTestId("start-documents-view")).toBeInTheDocument();
-    await waitFor(() => expect(container.querySelector(".leemo-start-shell__body")).toHaveClass("is-sidebar-collapsed"));
+    await waitFor(() => expect(container.querySelector(".leemo-start-shell__body")).not.toHaveClass("is-sidebar-collapsed"));
+    expect(screen.getByRole("button", { name: "首页" })).toBeVisible();
     expect(screen.queryByPlaceholderText("输入消息…")).not.toBeInTheDocument();
 
     await userEvent.click(screen.getByRole("button", { name: "首页" }));
-    await waitFor(() => expect(container.querySelector(".leemo-start-shell__body")).not.toHaveClass("is-sidebar-collapsed"));
+    expect(container.querySelector(".leemo-start-shell__body")).not.toHaveClass("is-sidebar-collapsed");
   });
 });

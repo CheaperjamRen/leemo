@@ -37,8 +37,8 @@ export const START_NAVIGATION: readonly StartNavigationItem[] = [
   { id: "tasks", label: "待办", icon: ListChecks, section: "primary" },
   { id: "pinned", label: "置顶", icon: Pin, section: "primary" },
   { id: "recent", label: "最近", icon: Clock3, section: "primary" },
-  { id: "locations", label: "位置", icon: FolderOpen, section: "library" },
-  { id: "documents", label: "我的文档", icon: FileText, section: "library" },
+  { id: "locations", label: "常用文件夹", icon: FolderOpen, section: "library" },
+  { id: "documents", label: "文档库", icon: FileText, section: "library" },
   { id: "archive", label: "已归档", icon: Archive, section: "system" },
   { id: "trash", label: "回收站", icon: Trash2, section: "system" },
 ] as const;

@@ -243,7 +243,7 @@ export default function ScheduledTasksPage() {
             <button
               type="button"
               onClick={() => { setForm(newForm(activeWorkspaceId)); setEditingId(null); setFormOpen(true); }}
-              className="leemo-scheduled-primary ml-auto inline-flex h-9 items-center gap-1.5 rounded-[7px] px-3.5 text-xs font-medium text-white"
+              className="leemo-scheduled-primary ml-auto inline-flex h-9 items-center gap-1.5 rounded-full px-4 text-xs font-medium text-white"
             >
               <Plus className="h-3.5 w-3.5" aria-hidden />
               新建任务
@@ -464,7 +464,7 @@ export default function ScheduledTasksPage() {
               <button
                 type="button"
                 onClick={resetForm}
-                className="h-9 rounded-[7px] border border-[var(--leemo-line)] bg-[var(--leemo-bg)] px-4 text-xs font-medium text-[var(--leemo-ink-2)] hover:bg-[var(--leemo-side-hover)]"
+                className="h-9 rounded-full border border-[var(--leemo-line)] bg-[var(--leemo-bg)] px-4 text-xs font-medium text-[var(--leemo-ink-2)] hover:bg-[var(--leemo-side-hover)]"
               >
                 取消
               </button>
@@ -472,7 +472,7 @@ export default function ScheduledTasksPage() {
                 type="button"
                 disabled={!form.prompt.trim() || (form.kind === "weekly" && form.weekdays.length === 0) || busyAction === "save"}
                 onClick={() => void submit()}
-                className="leemo-scheduled-primary inline-flex h-9 items-center gap-1.5 rounded-[7px] px-4 text-xs font-medium text-white disabled:cursor-not-allowed disabled:opacity-40"
+                className="leemo-scheduled-primary inline-flex h-9 items-center gap-1.5 rounded-full px-4 text-xs font-medium text-white disabled:cursor-not-allowed disabled:opacity-40"
               >
                 {busyAction === "save" && <LoaderCircle className="h-3.5 w-3.5 animate-spin" aria-hidden />}
                 {editingId ? "保存修改" : "创建任务"}
@@ -490,7 +490,7 @@ export default function ScheduledTasksPage() {
               正在读取任务
             </div>
           ) : tasks.length === 0 ? (
-            <div data-testid="scheduled-empty-state" className="flex min-h-[104px] flex-col items-center justify-center gap-1.5 rounded-[8px] border border-dashed border-[var(--leemo-line)] bg-white/65 px-4 text-center text-xs text-[var(--leemo-ink-3)]">
+            <div data-testid="scheduled-empty-state" className="mx-auto flex min-h-[104px] w-full max-w-[560px] flex-col items-center justify-center gap-1.5 rounded-[12px] border border-[var(--leemo-line)] bg-[var(--leemo-surface-default)] px-4 text-center text-xs text-[var(--leemo-ink-3)]">
               <CalendarClock className="h-4.5 w-4.5" aria-hidden />
               <span className="font-medium text-[var(--leemo-ink-2)]">还没有定时任务</span>
               <span className="text-[10.5px]">从右上角新建一个按时运行的任务</span>

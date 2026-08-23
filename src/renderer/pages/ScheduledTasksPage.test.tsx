@@ -20,9 +20,10 @@ describe("ScheduledTasksPage", () => {
 
     expect(await screen.findByRole("heading", { name: "定时任务" })).toBeInTheDocument();
     expect(screen.getByText("还没有定时任务")).toBeInTheDocument();
-    expect(screen.getByTestId("scheduled-empty-state")).toHaveClass("min-h-[104px]");
+    expect(screen.getByTestId("scheduled-empty-state")).toHaveClass("min-h-[104px]", "max-w-[560px]");
     expect(screen.getByTestId("scheduled-empty-state")).toHaveTextContent("从右上角新建一个按时运行的任务");
     expect(screen.queryByRole("dialog", { name: "新建任务" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "新建任务" })).toHaveClass("rounded-full");
     await user.click(screen.getByRole("button", { name: "新建任务" }));
     const dialog = await screen.findByRole("dialog", { name: "新建任务" });
     expect(screen.getByLabelText("要做什么")).toBeInTheDocument();
@@ -36,6 +37,7 @@ describe("ScheduledTasksPage", () => {
     expect(dialog).toHaveTextContent("周末");
     expect(screen.queryByText(/cron/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/模型|技能匹配/)).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "创建任务" })).toHaveClass("rounded-full");
 
     await user.type(screen.getByLabelText("要做什么"), "给我一份 10 分钟英语练习");
     await user.click(screen.getByRole("button", { name: "创建任务" }));

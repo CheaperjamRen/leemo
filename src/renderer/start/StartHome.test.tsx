@@ -24,4 +24,11 @@ describe("StartHome", () => {
         .toHaveAttribute("data-density", "compact");
     }
   });
+
+  it("uses ordinary workspace copy instead of explaining internal AI behavior", () => {
+    render(<BridgeProvider><StartHome onOpen={vi.fn()} /></BridgeProvider>);
+
+    expect(screen.queryByText(/叫醒 AI|自动触发 AI|自动调用模型|主动要求时调用模型/)).not.toBeInTheDocument();
+    expect(screen.getByText("尚未整理的记录")).toBeInTheDocument();
+  });
 });
