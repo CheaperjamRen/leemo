@@ -898,4 +898,71 @@ describe("applyEvent — persisted work overview", () => {
     const latest = items.at(-1);
     expect(latest?.kind === "overview" ? latest.overview : {}).not.toHaveProperty("objective");
   });
+
+  it("orders overlapping overview revisions by completion instead of tool start", () => {
+    const first: TimelineItem = {
+      kind: "overview",
+      id: "overview-1",
+      runId: "run-1",
+      toolUseId: "overview-1",
+      createdAt: 100,
+      overview: {
+        revision: 1,
+        scopeConversationId: "conv-a",
+        sourceRunId: "run-1",
+        sourceToolUseId: "overview-1",
+        updatedAt: 100,
+        updateReason: "objective-set",
+        basisEventIds: ["run-1", "overview-1"],
+        actor: "momo",
+        objective: "完成连续性验收",
+        objectiveSource: "semantic",
+        successCriteria: [],
+        nextKnown: [],
+        blockers: [],
+        decisions: [],
+        completedHighlights: [],
+        fieldAuthority: { objective: "momo" },
+      },
+    };
+    let items = applyEvent([first], {
+      type: "tool.started",
+      toolUseId: "overview-a",
+      name: toolName,
+      input: { currentPhase: "A 完成较晚", updateReason: "phase-changed" },
+      subagent: false,
+    }, "run-2", 110, "conv-a");
+    items = applyEvent(items, {
+      type: "tool.started",
+      toolUseId: "overview-b",
+      name: toolName,
+      input: { currentFocus: "B 先完成", updateReason: "phase-changed" },
+      subagent: false,
+    }, "run-2", 120, "conv-a");
+    items = applyEvent(items, {
+      type: "tool.finished",
+      toolUseId: "overview-b",
+      isError: false,
+      contentSummary: "工作概览已更新。",
+    }, "run-2", 200, "conv-a");
+    items = applyEvent(items, {
+      type: "tool.finished",
+      toolUseId: "overview-a",
+      isError: false,
+      contentSummary: "工作概览已更新。",
+    }, "run-2", 300, "conv-a");
+
+    const revisions = items.filter(
+      (item): item is Extract<TimelineItem, { kind: "overview" }> => item.kind === "overview",
+    );
+    expect(revisions.map((item) => item.overview.revision)).toEqual([1, 2, 3]);
+    expect(revisions.at(-1)).toMatchObject({
+      toolUseId: "overview-a",
+      overview: {
+        revision: 3,
+        sourceToolUseId: "overview-a",
+        updatedAt: 300,
+      },
+    });
+  });
 });

@@ -378,7 +378,7 @@ export function applyEvent(
               ? { createdAt: occurredAt ?? pending.createdAt }
               : {}),
           };
-          return [...items.slice(0, pendingIndex), semantic, ...items.slice(pendingIndex + 1)];
+          return [...items.slice(0, pendingIndex), ...items.slice(pendingIndex + 1), semantic];
         }
       }
 
