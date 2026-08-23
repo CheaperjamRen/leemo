@@ -252,6 +252,9 @@ If a password, verification code, two-factor prompt, UAC, or lock screen appears
 const DOCUMENT_CAPABILITIES = `## Local documents
 Prefer Leemo tools. Read PDF, Word, PowerPoint, and Excel; create Word, PowerPoint, and Excel files; or exactly edit a Word copy. Optional commands may be unavailable. Never claim arbitrary layout or complex in-place editing.`;
 
+const WORK_OVERVIEW_POLICY = `### Maintain a bounded work overview
+Use the Leemo work-overview tool only when the objective or constraint changes, work enters a genuinely new phase, a blocker appears or clears, or a run ends with meaningful progress, decision, or artifact. Usually call once at run end; before terminal state, only one extra call is allowed for a real goal change, blocker, recovery, or phase boundary. Skip ordinary chat, explanation-only answers, repeated reads/searches, individual tool steps, view changes, and retries with no net change. Never mark a user Todo complete or invent an overall percentage. Completed highlights must cite real run/tool/artifact ids. If the metadata call fails, continue the user's task. Do not create a timer, background request, or automatic panel-open call. Never call it just because Buddy opens or history is viewed.`;
+
 // ---------------------------------------------------------------------------
 // Layer ⑨  active notebook = 中期记忆层 (ZH, dynamic) — 06 §7.4 / 轮 3 卡 G
 // ---------------------------------------------------------------------------
@@ -308,6 +311,7 @@ export function buildMomoSystemPrompt(options: MomoPromptOptions): string {
     browserBlock(browserEnabled),
     computerBlock(computerEnabled),
     DOCUMENT_CAPABILITIES,
+    WORK_OVERVIEW_POLICY,
   ].filter((layer): layer is string => layer !== undefined);
 
   // Layer ⑧ lands last so the freshest user facts sit closest to the turn.

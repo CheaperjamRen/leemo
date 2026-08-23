@@ -233,17 +233,45 @@ describe("buildMomoSystemPrompt — identity regression (验收②)", () => {
   });
 });
 
+describe("buildMomoSystemPrompt — bounded work overview", () => {
+  it("shares one evidence-backed checkpoint policy between Buddy and Workbench without automatic calls", () => {
+    for (const mode of ["buddy", "workbench"] as const) {
+      const p = build({ mode });
+      expect(p).toContain("### Maintain a bounded work overview");
+      expect(p).toContain("objective or constraint changes");
+      expect(p).toContain("genuinely new phase");
+      expect(p).toContain("blocker appears or clears");
+      expect(p).toContain("run ends with meaningful progress, decision, or artifact");
+      expect(p).toContain("Usually call once at run end");
+      expect(p).toContain("only one extra call is allowed");
+      expect(p).toContain("goal change, blocker, recovery, or phase boundary");
+      expect(p).toContain("ordinary chat");
+      expect(p).toContain("explanation-only answers");
+      expect(p).toContain("repeated reads/searches");
+      expect(p).toContain("individual tool steps");
+      expect(p).toContain("view changes");
+      expect(p).toContain("retries with no net change");
+      expect(p).toContain("Never mark a user Todo complete");
+      expect(p).toContain("invent an overall percentage");
+      expect(p).toContain("Completed highlights must cite real run/tool/artifact ids");
+      expect(p).toContain("If the metadata call fails, continue the user's task");
+      expect(p).toContain("Do not create a timer, background request, or automatic panel-open call");
+      expect(p).toContain("Never call it just because Buddy opens or history is viewed");
+    }
+  });
+});
+
 describe("buildMomoSystemPrompt — token budget (验收③)", () => {
-  it("stays within 900 tokens for the pinned configuration", () => {
+  it("stays within 1,050 tokens for the pinned configuration", () => {
     // Pinned: gpt-tokenizer o200k_base (same estimator as the gateway's
     // count_tokens), mode=buddy, default persona card, talkStyle=2, no search.
     // memoryDir IS included: layer ⑥ quotes it four times, so measuring
     // without it would under-report the prompt that actually ships.
     //
-    // This budget covers the layers WE author (①-⑦) — the part paid on every
-    // single turn of every conversation. 762 at 卡 A, 810 at 卡 E (skills path).
+    // This ceiling covers all authored, always-on rule layers paid on every
+    // turn of every conversation.
     const shipped = build({ memoryDir: "C:\\Users\\Rengar\\Leemo" });
-    expect(encode(shipped).length).toBeLessThanOrEqual(900);
+    expect(encode(shipped).length).toBeLessThanOrEqual(1050);
   });
 
   it("keeps the governed empty current view small", () => {
@@ -271,13 +299,13 @@ describe("buildMomoSystemPrompt — token budget (验收③)", () => {
     expect(encode(memoryText!).length).toBeLessThanOrEqual(20);
 
     const shipped = build({ memoryDir, memoryText });
-    expect(encode(shipped).length).toBeLessThanOrEqual(900 + 20);
+    expect(encode(shipped).length).toBeLessThanOrEqual(1050 + 20);
   });
 
   it("truncates an oversized persona card instead of blowing the budget", () => {
     const huge = "超长人设卡内容，反复堆叠很多字。".repeat(200);
     const p = build({ personaText: huge });
-    expect(encode(p).length).toBeLessThanOrEqual(900 + PERSONA_TEXT_TOKEN_LIMIT);
+    expect(encode(p).length).toBeLessThanOrEqual(1050 + PERSONA_TEXT_TOKEN_LIMIT);
     expect(p).not.toContain(huge);
     expect(p).toContain("…");
   });
@@ -300,7 +328,7 @@ describe("buildMomoSystemPrompt — governed current memory", () => {
   it("caps a runaway memory bank so it cannot eat the context window", () => {
     const flood = "记忆条目：用户说了很多话。\n".repeat(5000);
     const p = build({ memoryText: flood });
-    expect(encode(p).length).toBeLessThanOrEqual(900 + MEMORY_TEXT_TOKEN_LIMIT);
+    expect(encode(p).length).toBeLessThanOrEqual(1050 + MEMORY_TEXT_TOKEN_LIMIT);
   });
 
   it("ignores a blank memory file", () => {
@@ -379,7 +407,9 @@ describe("buildMomoSystemPrompt — governed notebook memory", () => {
       notebookDir: "/w/本",
       notebookText: flood,
     });
-    expect(encode(p).length).toBeLessThanOrEqual(900 + NOTEBOOK_TEXT_TOKEN_LIMIT);
+    // The notebook heading/path guidance is authored prompt overhead outside
+    // its bounded current view; 25 tokens covers that dynamic wrapper.
+    expect(encode(p).length).toBeLessThanOrEqual(1050 + NOTEBOOK_TEXT_TOKEN_LIMIT + 25);
   });
 
   it("still announces the notebook when its current view is blank", () => {
