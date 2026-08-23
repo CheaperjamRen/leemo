@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   AlertCircle,
   Check,
@@ -309,6 +309,11 @@ export function WorkbenchOverview({
   activeRunInProgress,
 }: WorkbenchOverviewProps) {
   const activeConversation = conversationModel?.conversations[0];
+  const activeConversationId = activeConversation?.conversationId ?? null;
+  const activeConversationIdRef = useRef<string | null>(activeConversationId);
+  const correctionRequestRef = useRef(0);
+  const refreshRequestRef = useRef(0);
+  activeConversationIdRef.current = activeConversationId;
   const [scope, setScope] = useState<"notebook" | "conversation">(activeConversation ? "conversation" : "notebook");
   const [menuOpen, setMenuOpen] = useState(false);
   const [editing, setEditing] = useState(false);
@@ -325,6 +330,8 @@ export function WorkbenchOverview({
     || !onRequestRefresh;
 
   useEffect(() => {
+    correctionRequestRef.current += 1;
+    refreshRequestRef.current += 1;
     setScope(activeConversation ? "conversation" : "notebook");
     setMenuOpen(false);
     setEditing(false);
@@ -334,7 +341,11 @@ export function WorkbenchOverview({
     setEditError("");
     setUserFixed(false);
     setRefreshState({ kind: "idle", message: "" });
-  }, [activeConversation?.conversationId]);
+    return () => {
+      correctionRequestRef.current += 1;
+      refreshRequestRef.current += 1;
+    };
+  }, [activeConversationId]);
 
   const beginEdit = () => {
     if (!activeConversation || !onSaveCorrection) return;
@@ -347,6 +358,10 @@ export function WorkbenchOverview({
 
   const saveEdit = async () => {
     if (!onSaveCorrection) return;
+    const requestConversationId = activeConversationId;
+    const requestId = ++correctionRequestRef.current;
+    const requestIsCurrent = () => activeConversationIdRef.current === requestConversationId
+      && correctionRequestRef.current === requestId;
     const objectiveText = objective.trim();
     const successCriteria = criteria.split(/\r?\n/u).map((item) => item.trim()).filter(Boolean).slice(0, 5);
     const clearFields: NonNullable<WorkOverviewUserCorrection["clearFields"]> = [];
@@ -361,23 +376,31 @@ export function WorkbenchOverview({
     setEditError("");
     try {
       await onSaveCorrection(correction);
+      if (!requestIsCurrent()) return;
       setUserFixed(true);
       setEditing(false);
     } catch (error) {
+      if (!requestIsCurrent()) return;
       setEditError(error instanceof Error ? error.message : "工作目标暂时无法保存");
     } finally {
-      setSaving(false);
+      if (requestIsCurrent()) setSaving(false);
     }
   };
 
   const refresh = async () => {
     if (refreshDisabled || !onRequestRefresh) return;
+    const requestConversationId = activeConversationId;
+    const requestId = ++refreshRequestRef.current;
+    const requestIsCurrent = () => activeConversationIdRef.current === requestConversationId
+      && refreshRequestRef.current === requestId;
     setRefreshState({ kind: "pending", message: "正在更新概览…" });
     setMenuOpen(false);
     try {
       await onRequestRefresh();
+      if (!requestIsCurrent()) return;
       setRefreshState({ kind: "success", message: "概览已更新" });
     } catch (error) {
+      if (!requestIsCurrent()) return;
       setRefreshState({ kind: "error", message: error instanceof Error ? error.message : "概览暂时无法更新" });
     }
   };

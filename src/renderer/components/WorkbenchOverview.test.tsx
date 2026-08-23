@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import type { ArtifactEntry } from "../stores/artifacts";
@@ -35,6 +35,16 @@ function conversation(overrides: Partial<ConversationContinuitySnapshot> = {}): 
 
 function notebook(rows: ConversationContinuitySnapshot[] = []): NotebookContinuitySnapshot {
   return { conversations: rows };
+}
+
+function deferred<T = void>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, resolve, reject };
 }
 
 describe("WorkbenchOverview", () => {
@@ -221,5 +231,70 @@ describe("WorkbenchOverview", () => {
     await user.clear(screen.getByLabelText("完成标准"));
     await user.click(screen.getByRole("button", { name: "保存" }));
     expect(saveCorrection).toHaveBeenCalledWith({ clearFields: ["objective", "successCriteria"] });
+  });
+
+  it("ignores a stale correction success after switching conversations", async () => {
+    const user = userEvent.setup();
+    const pendingA = deferred();
+    const saveA = vi.fn(() => pendingA.promise);
+    const saveB = vi.fn().mockResolvedValue(undefined);
+    const a = conversation({ conversationId: "conversation-a", objective: { text: "目标 A", source: "semantic" }, state: "recent", currentPlan: undefined });
+    const b = conversation({ conversationId: "conversation-b", objective: { text: "目标 B", source: "semantic" }, state: "recent", currentPlan: undefined });
+    const { rerender } = render(<WorkbenchOverview model={notebook([a, b])} conversationModel={notebook([a])} onSaveCorrection={saveA} />);
+
+    await user.click(screen.getByRole("button", { name: "概览操作" }));
+    await user.click(screen.getByRole("button", { name: "编辑工作目标" }));
+    await user.click(screen.getByRole("button", { name: "保存" }));
+    expect(saveA).toHaveBeenCalledTimes(1);
+
+    rerender(<WorkbenchOverview model={notebook([a, b])} conversationModel={notebook([b])} onSaveCorrection={saveB} />);
+    await user.click(screen.getByRole("button", { name: "概览操作" }));
+    await user.click(screen.getByRole("button", { name: "编辑工作目标" }));
+    await user.clear(screen.getByLabelText("工作目标"));
+    await user.type(screen.getByLabelText("工作目标"), "B 的未保存草稿");
+
+    await act(async () => pendingA.resolve());
+    expect(screen.getByRole("form", { name: "编辑工作目标" })).toBeInTheDocument();
+    expect(screen.getByLabelText("工作目标")).toHaveValue("B 的未保存草稿");
+    expect(screen.queryByText("由你固定")).not.toBeInTheDocument();
+  });
+
+  it("ignores a stale correction failure after switching conversations", async () => {
+    const user = userEvent.setup();
+    const pendingA = deferred();
+    const a = conversation({ conversationId: "conversation-a", state: "recent", currentPlan: undefined });
+    const b = conversation({ conversationId: "conversation-b", objective: { text: "目标 B", source: "semantic" }, state: "recent", currentPlan: undefined });
+    const { rerender } = render(<WorkbenchOverview model={notebook([a, b])} conversationModel={notebook([a])} onSaveCorrection={() => pendingA.promise} />);
+
+    await user.click(screen.getByRole("button", { name: "概览操作" }));
+    await user.click(screen.getByRole("button", { name: "编辑工作目标" }));
+    await user.click(screen.getByRole("button", { name: "保存" }));
+    rerender(<WorkbenchOverview model={notebook([a, b])} conversationModel={notebook([b])} onSaveCorrection={vi.fn()} />);
+    await user.click(screen.getByRole("button", { name: "概览操作" }));
+    await user.click(screen.getByRole("button", { name: "编辑工作目标" }));
+
+    await act(async () => pendingA.reject(new Error("A 的迟到错误")));
+    expect(screen.getByRole("form", { name: "编辑工作目标" })).toBeInTheDocument();
+    expect(screen.queryByText("A 的迟到错误")).not.toBeInTheDocument();
+  });
+
+  it("does not let a stale refresh response overwrite the new conversation request", async () => {
+    const user = userEvent.setup();
+    const refreshA = deferred();
+    const refreshB = deferred();
+    const a = conversation({ conversationId: "conversation-a", state: "recent", currentPlan: undefined });
+    const b = conversation({ conversationId: "conversation-b", state: "recent", currentPlan: undefined });
+    const { rerender } = render(<WorkbenchOverview model={notebook([a, b])} conversationModel={notebook([a])} onRequestRefresh={() => refreshA.promise} />);
+
+    await user.click(screen.getByRole("button", { name: "概览操作" }));
+    await user.click(screen.getByRole("button", { name: "更新概览" }));
+    rerender(<WorkbenchOverview model={notebook([a, b])} conversationModel={notebook([b])} onRequestRefresh={() => refreshB.promise} />);
+    await user.click(screen.getByRole("button", { name: "概览操作" }));
+    await user.click(screen.getByRole("button", { name: "更新概览" }));
+
+    await act(async () => refreshA.resolve());
+    expect(screen.getByRole("status")).toHaveTextContent("正在更新概览…");
+    await act(async () => refreshB.resolve());
+    expect(screen.getByRole("status")).toHaveTextContent("概览已更新");
   });
 });
