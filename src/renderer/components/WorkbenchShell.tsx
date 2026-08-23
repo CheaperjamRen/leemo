@@ -6,7 +6,7 @@ import {
   Search,
   X,
 } from "lucide-react";
-import { useApprovals, useCaptures, useComposerDrafts, useConversations, useSettings, useUi, useSkills, useProviders, useWorkspace, useWorkspaces, useNotebooks, useFileTree } from "../bridge/context";
+import { useApprovals, useCaptures, useComposerDrafts, useContextUsage, useConversations, useSettings, useUi, useSkills, useProviders, useWorkspace, useWorkspaces, useNotebooks, useFileTree } from "../bridge/context";
 import { deriveConversationMarker, deriveConversationStatus } from "../stores/conversation-status";
 import {
   EMPTY_COMPOSER_DRAFT,
@@ -220,6 +220,7 @@ export default function WorkbenchShell() {
   const queuedTurns = useConversations((s) => activeId ? s.queuedTurns[activeId] : undefined);
   // Model picker (轮 3 卡 F): the shell owns the subscription, InputArea renders.
   const activeMeta = activeId ? conversations[activeId] : undefined;
+  const activeContextUsage = useContextUsage((state) => activeId ? state.byConversation[activeId] : undefined);
   const composerDrafts = useComposerDrafts((state) => state.drafts);
   const notes = useCaptures((state) => state.notes);
   const updateComposerDraft = useComposerDrafts((state) => state.updateDraft);
@@ -503,7 +504,7 @@ export default function WorkbenchShell() {
           )}
           <div className="mt-auto shrink-0">
             <div
-              className="leemo-workbench-composer-column mx-auto w-full max-w-[880px]"
+              className="leemo-workbench-composer-column mx-auto w-full max-w-[952px] max-[1120px]:max-w-[856px]"
               data-testid="workbench-composer-column"
             >
               {drop.pending && (
@@ -551,6 +552,7 @@ export default function WorkbenchShell() {
                 providers={providerList}
                   currentProviderId={activeMeta?.providerId ?? defaultProviderId}
                   currentModelId={activeMeta?.modelId ?? defaultModelId}
+                contextUsage={activeContextUsage}
                 permissionMode={permissionMode}
                   onOpenSettings={() => openSettings("models")}
                   onSelectPermissionMode={setPermissionMode}
@@ -592,6 +594,7 @@ export default function WorkbenchShell() {
       ref={shellRef}
       className="leemo-workbench-shell relative flex h-screen flex-col overflow-hidden bg-[var(--leemo-bg)]"
       data-shell="workbench"
+      data-canvas="workbench"
       data-testid="workbench-shell"
       onDragOver={(e) => {
         if (drop.enabled && isFileDataTransfer(e.dataTransfer)) e.preventDefault();
@@ -612,7 +615,7 @@ export default function WorkbenchShell() {
         <WorkbenchSidebar onNewConversation={handleNewConversation} shellWidth={shellWidth} />
 
         {/* 主区域 */}
-        <main className="leemo-workbench-main flex min-h-0 min-w-0 flex-1 flex-col bg-[var(--leemo-bg)]">
+        <main className="leemo-workbench-main leemo-workbench-canvas flex min-h-0 min-w-0 flex-1 flex-col bg-[var(--leemo-bg)]" data-surface-level="canvas" data-content-axis="primary">
         {/* 对话标签栏只属于聊天 / 文件工作区；独立页面直接使用完整内容高度。 */}
         {view === "chat" && (
         <header

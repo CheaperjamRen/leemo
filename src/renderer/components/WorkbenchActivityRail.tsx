@@ -130,6 +130,46 @@ function ConversationFilesPanel({ onClose, scopeKey }: { onClose: () => void; sc
   );
 }
 
+function ScopedFilesPanel({ onClose, scopeKey, onOpenFile }: { onClose: () => void; scopeKey: ScopeKey; onOpenFile?: () => void }) {
+  const [view, setView] = useState<"workspace" | "conversation">("workspace");
+
+  if (scopeKey !== "global") {
+    return <FileTree embedded scopeKey={scopeKey} onClose={onClose} onOpenFile={onOpenFile} />;
+  }
+
+  return (
+    <div className="flex min-h-0 flex-1 flex-col" data-testid="global-files-panel">
+      <div className="border-b border-[var(--leemo-line)] px-3 py-2">
+        <div className="inline-flex rounded-full border border-[var(--leemo-line)] bg-[var(--leemo-bg)] p-0.5">
+          <button
+            type="button"
+            aria-pressed={view === "workspace"}
+            onClick={() => setView("workspace")}
+            className={`rounded-full px-2.5 py-1 text-[11px] transition-colors ${view === "workspace"
+              ? "bg-[var(--leemo-card)] text-[var(--leemo-ink)] shadow-sm"
+              : "text-[var(--leemo-ink-3)] hover:text-[var(--leemo-ink-2)]"}`}
+          >
+            工作区文件
+          </button>
+          <button
+            type="button"
+            aria-pressed={view === "conversation"}
+            onClick={() => setView("conversation")}
+            className={`rounded-full px-2.5 py-1 text-[11px] transition-colors ${view === "conversation"
+              ? "bg-[var(--leemo-card)] text-[var(--leemo-ink)] shadow-sm"
+              : "text-[var(--leemo-ink-3)] hover:text-[var(--leemo-ink-2)]"}`}
+          >
+            本次文件
+          </button>
+        </div>
+      </div>
+      {view === "workspace"
+        ? <FileTree embedded scopeKey={scopeKey} onClose={onClose} onOpenFile={onOpenFile} />
+        : <ConversationFilesPanel onClose={onClose} scopeKey={scopeKey} />}
+    </div>
+  );
+}
+
 function usePointerResize(
   tool: "files" | "overview" | "search",
   panelWidth: number,
@@ -320,13 +360,11 @@ export default function WorkbenchActivityRail({ shellWidth }: WorkbenchActivityR
       </div>
       <div className="relative flex min-h-0 flex-1">
         {activeTool === "files" && (
-          scopeKey === "global"
-            ? <ConversationFilesPanel onClose={closeTool} scopeKey={scopeKey} />
-            : <FileTree
-                embedded
-                onClose={closeTool}
-                onOpenFile={presentation === "docked" ? undefined : closeTool}
-              />
+          <ScopedFilesPanel
+            onClose={closeTool}
+            scopeKey={scopeKey}
+            onOpenFile={presentation === "docked" ? undefined : closeTool}
+          />
         )}
         {activeTool === "overview" && (
           <WorkbenchOverview

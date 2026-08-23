@@ -212,6 +212,24 @@ describe("FileTree", () => {
     expect(kindFromName("notes.txt")).toBe("other");
   });
 
+  it("exports a workspace-relative drag payload for the composer", () => {
+    render(
+      <TestProvider roots={SAMPLE_ROOTS}>
+        <FileTree />
+      </TestProvider>,
+    );
+    fireEvent.click(screen.getByText("A"));
+    const row = screen.getByTestId("file-row-A/note.md");
+    const setData = vi.fn();
+    fireEvent.dragStart(row, { dataTransfer: { setData, effectAllowed: "none" } });
+
+    expect(setData).toHaveBeenCalledWith(
+      "application/x-leemo-workspace-file",
+      JSON.stringify({ name: "note.md", workspaceId: "leemo-home", workspacePath: "A/note.md" }),
+    );
+    expect(row).toHaveAttribute("draggable", "true");
+  });
+
   it("keeps the currently open file visibly selected", () => {
     render(
       <TestProvider roots={SAMPLE_ROOTS}>

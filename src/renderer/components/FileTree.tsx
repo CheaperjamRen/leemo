@@ -4,6 +4,9 @@ import { useNotebooks } from "../bridge/context";
 import { useWorkspace } from "../bridge/context";
 import { useWorkspaces } from "../bridge/context";
 import type { FileNode } from "../stores/file-tree";
+import { HOME_WORKSPACE_ID } from "../stores/workspaces";
+import type { ScopeKey } from "../stores/workbench-scope";
+import { WORKSPACE_FILE_DRAG_TYPE } from "./workspace-file-drag";
 import { X } from "lucide-react";
 
 export function kindFromName(name: string): "markdown" | "pdf" | "html" | "other" {
@@ -17,11 +20,13 @@ function FileRow({
   node,
   reveal,
   allowNotebookMove,
+  workspaceId,
   onOpenFile,
 }: {
   node: FileNode;
   reveal: (path: string) => Promise<void>;
   allowNotebookMove: boolean;
+  workspaceId: string;
   onOpenFile?: () => void;
 }) {
   const expandedPaths = useFileTree((s) => s.expandedPaths);
@@ -58,7 +63,7 @@ function FileRow({
         {isExpanded && node.children && (
           <div className="ml-3">
             {node.children.map((child) => (
-              <FileRow key={child.path} node={child} reveal={reveal} allowNotebookMove={allowNotebookMove} onOpenFile={onOpenFile} />
+              <FileRow key={child.path} node={child} reveal={reveal} allowNotebookMove={allowNotebookMove} workspaceId={workspaceId} onOpenFile={onOpenFile} />
             ))}
           </div>
         )}
@@ -75,6 +80,7 @@ function FileRow({
       allowNotebookMove={allowNotebookMove}
     >
       <button
+        draggable
         className={`flex h-7 w-full items-center gap-1.5 rounded-[6px] border px-2 text-left text-[11.5px] transition-colors ${isActive
           ? "border-[var(--leemo-amber-line)] bg-[var(--leemo-amber-soft)] text-[var(--leemo-ink)]"
           : "border-transparent text-[var(--leemo-ink-2)] hover:bg-[var(--leemo-side-hover)]"
@@ -82,6 +88,17 @@ function FileRow({
         onClick={() => {
           openPreview(node.path, node.name, kindFromName(node.name));
           onOpenFile?.();
+        }}
+        onDragStart={(event) => {
+          event.dataTransfer.effectAllowed = "copy";
+          event.dataTransfer.setData(WORKSPACE_FILE_DRAG_TYPE, JSON.stringify({
+            name: node.name,
+            workspaceId,
+            workspacePath: node.path,
+          }));
+          // Keeps the payload inspectable in browser/Electron devtools without
+          // exposing an absolute path or pretending this is an OS file copy.
+          event.dataTransfer.setData("text/plain", node.name);
         }}
         data-testid={`file-row-${node.path}`}
         aria-current={isActive ? "page" : undefined}
@@ -218,9 +235,11 @@ export interface FileTreeProps {
   onClose?: () => void;
   /** Optional callback used by an overlay activity panel after opening a file. */
   onOpenFile?: () => void;
+  /** The owning workbench scope. Global scope must not inherit a stale notebook filter. */
+  scopeKey?: ScopeKey;
 }
 
-export default function FileTree({ embedded = false, onClose, onOpenFile }: FileTreeProps = {}) {
+export default function FileTree({ embedded = false, onClose, onOpenFile, scopeKey }: FileTreeProps = {}) {
   const roots = useFileTree((s) => s.roots);
   const error = useFileTree((s) => s.error);
   const loading = useFileTree((s) => s.loading);
@@ -233,8 +252,10 @@ export default function FileTree({ embedded = false, onClose, onOpenFile }: File
   const dropFiles = useFileTree((s) => s.dropFiles);
   const closeFiles = useUi((s) => s.closeFiles);
   const [dragOver, setDragOver] = React.useState(false);
-  const visibleRoots = activeWorkspace?.kind === "home" && activeNotebook
-    ? roots.filter((node) => node.bookId === activeNotebook)
+  const scopedNotebook = scopeKey?.startsWith("notebook:") ? scopeKey.slice("notebook:".length) : null;
+  const effectiveNotebook = scopeKey ? scopedNotebook : activeNotebook;
+  const visibleRoots = activeWorkspace?.kind === "home" && effectiveNotebook
+    ? roots.filter((node) => node.bookId === effectiveNotebook)
     : roots;
 
   const reveal = React.useCallback(
@@ -260,8 +281,10 @@ export default function FileTree({ embedded = false, onClose, onOpenFile }: File
       .map((f) => workspace.pathForFile(f))
       .filter((p) => p !== "");
     if (sources.length === 0) return;
-    void dropFiles(sources, activeWorkspace?.kind === "external" ? null : activeNotebook).catch(() => {});
+    void dropFiles(sources, activeWorkspace?.kind === "external" ? null : effectiveNotebook).catch(() => {});
   };
+
+  const activeWorkspaceId = activeWorkspace?.id ?? HOME_WORKSPACE_ID;
 
   return (
     <div
@@ -280,7 +303,7 @@ export default function FileTree({ embedded = false, onClose, onOpenFile }: File
         <span className="text-[11px] text-[var(--leemo-ink-3)]">
           {activeWorkspace?.kind === "external"
             ? activeWorkspace.name
-            : activeNotebook ?? "全部文件"}
+            : effectiveNotebook ?? "全部文件"}
         </span>
         <div className="flex items-center gap-1">
           <button
@@ -288,7 +311,7 @@ export default function FileTree({ embedded = false, onClose, onOpenFile }: File
             title="在文件夹中打开本子"
             aria-label="在文件夹中打开本子"
             onClick={() => void workspace?.reveal(
-              activeWorkspace?.kind === "home" ? activeNotebook ?? undefined : undefined,
+              activeWorkspace?.kind === "home" ? effectiveNotebook ?? undefined : undefined,
               activeWorkspace?.id,
             ).catch(() => {})}
           >
@@ -347,6 +370,7 @@ export default function FileTree({ embedded = false, onClose, onOpenFile }: File
               node={node}
               reveal={reveal}
               allowNotebookMove={activeWorkspace?.kind !== "external"}
+              workspaceId={activeWorkspaceId}
               onOpenFile={onOpenFile}
             />
           ))}

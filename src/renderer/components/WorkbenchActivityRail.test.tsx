@@ -1,4 +1,4 @@
-import { act, render, screen } from "@testing-library/react";
+import { act, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useContext } from "react";
 import { describe, expect, it, vi } from "vitest";
@@ -138,7 +138,7 @@ describe("WorkbenchActivityRail", () => {
     expect(screen.getByTestId("workbench-tool-panel")).toHaveStyle({ width: "480px" });
   });
 
-  it("uses the global conversation file list instead of the hidden home tree", async () => {
+  it("opens the global Explorer by default while keeping the conversation file list", async () => {
     const user = userEvent.setup();
     let stores!: BridgeStores;
     render(
@@ -167,9 +167,14 @@ describe("WorkbenchActivityRail", () => {
     });
 
     await user.click(screen.getByRole("button", { name: "文件" }));
-    expect(screen.getByText("本次文件")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "工作区文件" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByTestId("file-tree")).toBeInTheDocument();
+    expect(screen.getByText("不相关.md")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "本次文件" }));
+    expect(within(screen.getByTestId("conversation-files-panel")).getByText("本次文件")).toBeInTheDocument();
     expect(screen.getByText("这次的资料.pdf")).toBeInTheDocument();
-    expect(screen.queryByText("不相关.md")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("file-tree")).not.toBeInTheDocument();
   });
 
   it("reveals a file after closing an overlay panel on a narrow workbench", async () => {

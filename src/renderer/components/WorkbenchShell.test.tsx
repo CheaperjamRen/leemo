@@ -26,6 +26,18 @@ describe("WorkbenchShell", () => {
     expect(screen.getByRole("button", { name: "收起侧栏" })).toBeInTheDocument();
   });
 
+  it("exposes one continuous workbench canvas and a primary content axis", () => {
+    render(
+      <BridgeProvider>
+        <WorkbenchShell />
+      </BridgeProvider>,
+    );
+
+    expect(screen.getByTestId("workbench-shell")).toHaveAttribute("data-canvas", "workbench");
+    expect(screen.getByRole("main")).toHaveAttribute("data-surface-level", "canvas");
+    expect(screen.getByRole("main")).toHaveAttribute("data-content-axis", "primary");
+  });
+
   it("shows empty state when no conversations", () => {
     render(
       <BridgeProvider>
@@ -485,7 +497,7 @@ describe("WorkbenchShell", () => {
     expect(screen.getByRole("main")).toHaveClass("min-h-0");
   });
 
-  it("centers the composer in a restrained work column instead of stretching across wide screens", () => {
+  it("aligns the composer with the wider workbench reading track", () => {
     render(
       <BridgeProvider>
         <WorkbenchShell />
@@ -495,7 +507,8 @@ describe("WorkbenchShell", () => {
     expect(screen.getByTestId("workbench-composer-column")).toHaveClass(
       "mx-auto",
       "w-full",
-      "max-w-[880px]",
+      "max-w-[952px]",
+      "max-[1120px]:max-w-[856px]",
     );
   });
 
