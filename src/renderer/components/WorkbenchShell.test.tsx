@@ -833,7 +833,7 @@ describe("WorkbenchShell — 本子 + 拖入归类 (轮 3 卡 G, 06 §2.2)", () 
     await user.click(screen.getByRole("button", { name: "概览" }));
     expect(screen.getByTestId("workbench-tool-panel")).toHaveAttribute("data-tool", "overview");
     expect(screen.getByTestId("conversation-column")).toBeInTheDocument();
-    expect(screen.getByText(/还没有可汇总的进展/)).toBeInTheDocument();
+    expect(screen.getByText(/当前范围还没有可恢复的工作记录/)).toBeInTheDocument();
   });
 
   it("orders pinned conversations first and keeps archived conversations in a restorable section", async () => {
