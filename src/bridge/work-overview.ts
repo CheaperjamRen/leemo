@@ -351,7 +351,7 @@ export function applyUserWorkOverviewCorrection(
   if (clearFields.has("objective")) {
     delete next.objective;
     delete next.objectiveSource;
-    delete next.fieldAuthority.objective;
+    next.fieldAuthority.objective = "user";
   } else if (objective !== undefined) {
     next.objective = objective;
     next.objectiveSource = "semantic";
@@ -359,7 +359,7 @@ export function applyUserWorkOverviewCorrection(
   }
   if (clearFields.has("successCriteria")) {
     next.successCriteria = [];
-    delete next.fieldAuthority.successCriteria;
+    next.fieldAuthority.successCriteria = "user";
   } else if (successCriteria !== undefined) {
     next.fieldAuthority.successCriteria = "user";
   }

@@ -182,6 +182,28 @@ describe("work overview semantic checkpoints", () => {
     expect(next.basisEventIds).toEqual(["local-correction-1"]);
   });
 
+  it("keeps user authority after a local clear so model patches cannot restore stable fields", () => {
+    const cleared = applyUserWorkOverviewCorrection(previous, {
+      clearFields: ["objective", "successCriteria"],
+    }, {
+      correctionId: "local-correction-clear",
+      scopeConversationId: "conv-1",
+      updatedAt: 301,
+    });
+
+    const next = applyWorkOverviewPatch(cleared, {
+      objective: "模型不能恢复用户清空的目标",
+      successCriteria: ["模型不能恢复用户清空的标准"],
+      updateReason: "manual-refresh",
+    }, metadata);
+
+    expect(cleared.objective).toBeUndefined();
+    expect(cleared.successCriteria).toEqual([]);
+    expect(cleared.fieldAuthority).toEqual({ objective: "user", successCriteria: "user" });
+    expect(next.objective).toBeUndefined();
+    expect(next.successCriteria).toEqual([]);
+  });
+
   it("migrates legacy data without presenting its title as a verified objective", () => {
     const migrated = migrateLegacyWorkOverview({
       theme: "旧会话标题",
