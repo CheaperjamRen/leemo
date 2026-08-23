@@ -19,6 +19,29 @@ into a weaker second agent.
 - A feature is complete only after its visible user path, failure state, and
   restart recovery are verified in proportion to risk.
 
+## Product-quality discipline
+
+- Do not optimize only for the latest explicit edit. Before changing a surface,
+  identify the user outcome, its parent layout, adjacent states, and durable
+  product constraints. Explicit and locally testable goals must not hide data
+  risk, long-term side effects, broken recovery, or a worse overall experience.
+- A local UI fix is not complete until the parent surface is visually reviewed
+  at representative widths. After removing, hiding, or moving an element,
+  rebalance the released space and recheck alignment, hierarchy, density,
+  responsive behavior, and the core click path. Passing the component test alone
+  is insufficient evidence.
+- User-visible UI, screenshots, PDFs, presentations, reports, and exports contain
+  only real product or business content. Do not put agent reasoning, design
+  rationale, debugging notes, implementation plans, or phrases such as “我将”、
+  “我们可以”、“本页面用于展示”、“这里会” into deliverables unless the user
+  explicitly asks for a design/process record. Keep that material in chat,
+  code comments, plans, or review documents instead.
+- All mutable visual color roles belong in `src/renderer/design/tokens.css`.
+  Components consume semantic `--leemo-*` roles; theme changes select a
+  validated `data-theme` palette and never fork page-specific color CSS. A
+  color change is not accepted until the whole parent surface is rechecked and
+  the newest screenshot is retained under `.tmp-visual-audit`.
+
 ## Development
 
 Requirements: Windows, Node.js 20 or newer, and npm.
