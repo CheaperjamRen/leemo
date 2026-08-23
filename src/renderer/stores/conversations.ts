@@ -422,6 +422,7 @@ export function foldConversationEnvelope(
     envelope.event,
     oldRunId ?? RENDERER_RUN_ID_INITIAL,
     now,
+    conversationId,
   );
   const event = envelope.event;
   const finished = event.type === "run.finished";

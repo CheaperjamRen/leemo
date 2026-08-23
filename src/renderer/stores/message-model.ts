@@ -1,8 +1,11 @@
 import type { BrowserCaptureRef, LeemoEvent, PathAudit, UsageRecord } from "../../bridge/contract";
 import {
+  applyWorkOverviewPatch,
   LEEMO_WORK_OVERVIEW_TOOL,
-  normalizeWorkOverviewInput,
+  migrateLegacyWorkOverview,
+  normalizeWorkOverviewPatch,
   type WorkOverviewData,
+  type WorkOverviewSnapshot,
 } from "../../bridge/work-overview";
 
 export interface TimelineAttachment {
@@ -48,7 +51,7 @@ export type TimelineItem =
       id: string;
       runId: string;
       toolUseId: string;
-      overview: WorkOverviewData;
+      overview: WorkOverviewData & Partial<WorkOverviewSnapshot>;
       createdAt?: number;
     }
   | {
@@ -181,7 +184,13 @@ function settleRetry(
 /** Pure reducer: fold one LeemoEvent into the timeline. `runId` tags every
  *  appended item (render layer groups by it). Slice 2 handles text + run
  *  lifecycle here; tool/plan/activity/compact land in the same switch. */
-export function applyEvent(items: TimelineItem[], event: LeemoEvent, runId: string, occurredAt?: number): TimelineItem[] {
+export function applyEvent(
+  items: TimelineItem[],
+  event: LeemoEvent,
+  runId: string,
+  occurredAt?: number,
+  conversationId?: string,
+): TimelineItem[] {
   switch (event.type) {
     case "text.delta": {
       const current = settleRetry(items, runId, "recovered");
@@ -323,17 +332,48 @@ export function applyEvent(items: TimelineItem[], event: LeemoEvent, runId: stri
         : undefined;
 
       if (!event.isError && pending?.name === LEEMO_WORK_OVERVIEW_TOOL) {
-        const normalized = normalizeWorkOverviewInput(pending.input);
+        const normalized = normalizeWorkOverviewPatch(pending.input);
         if (normalized.ok) {
-          const previous = [...items].reverse().find(
-            (item): item is Extract<TimelineItem, { kind: "overview" }> => item.kind === "overview",
+          const updatedAt = occurredAt ?? pending.createdAt ?? 0;
+          const latestSnapshot = [...items].reverse().find((item) =>
+            item.kind === "overview"
+            && typeof item.overview.revision === "number"
+            && typeof item.overview.scopeConversationId === "string",
           );
+          const scopeConversationId = conversationId
+            ?? (latestSnapshot?.kind === "overview" ? latestSnapshot.overview.scopeConversationId : undefined)
+            ?? "";
+          let previous: WorkOverviewSnapshot | undefined;
+          for (let index = items.length - 1; index >= 0; index -= 1) {
+            const item = items[index];
+            if (item.kind !== "overview") continue;
+            if (
+              typeof item.overview.revision === "number"
+              && typeof item.overview.scopeConversationId === "string"
+              && item.overview.fieldAuthority
+            ) {
+              if (item.overview.scopeConversationId !== scopeConversationId) continue;
+              previous = item.overview as WorkOverviewSnapshot;
+              break;
+            }
+            previous = migrateLegacyWorkOverview(item.overview, {
+              scopeConversationId,
+              updatedAt: item.createdAt ?? updatedAt,
+            }) ?? undefined;
+            if (previous) break;
+          }
           const semantic: Extract<TimelineItem, { kind: "overview" }> = {
             kind: "overview",
             id: pending.id,
             runId: pending.runId,
             toolUseId: pending.toolUseId,
-            overview: { ...previous?.overview, ...normalized.value },
+            overview: applyWorkOverviewPatch(previous, normalized.value, {
+              scopeConversationId,
+              sourceRunId: pending.runId,
+              toolUseId: pending.toolUseId,
+              updatedAt,
+              actor: "momo",
+            }),
             ...((occurredAt ?? pending.createdAt) !== undefined
               ? { createdAt: occurredAt ?? pending.createdAt }
               : {}),

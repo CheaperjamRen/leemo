@@ -713,34 +713,13 @@ describe("applyEvent — lightweight file change receipt", () => {
 describe("applyEvent — persisted work overview", () => {
   const toolName = "mcp__leemo-work-overview__set_work_overview";
 
-  it("replaces a successful metadata tool call with a compact semantic overview", () => {
-    let items = applyEvent([], {
-      type: "tool.started",
-      toolUseId: "overview-1",
-      name: toolName,
-      input: {
-        theme: "  Leemo 内测  ",
-        summary: " 聚焦可安装候选包 ",
-        currentPosition: " 正在补齐概览 ",
-        nextStep: " 打包验收 ",
-        focus: " PDF 阅读准确性 ",
-      },
-      subagent: false,
-    }, RUN, 100);
-
-    items = applyEvent(items, {
-      type: "tool.finished",
-      toolUseId: "overview-1",
-      isError: false,
-      contentSummary: "工作概览已更新。",
-    }, RUN, 200);
-
-    expect(items).toEqual([{
+  it("migrates the newest legacy overview into revision metadata and retains both revisions", () => {
+    const existing: TimelineItem = {
       kind: "overview",
-      id: "m0",
-      runId: RUN,
+      id: "old-overview",
+      runId: "run-1",
       toolUseId: "overview-1",
-      createdAt: 200,
+      createdAt: 100,
       overview: {
         theme: "Leemo 内测",
         summary: "聚焦可安装候选包",
@@ -748,50 +727,175 @@ describe("applyEvent — persisted work overview", () => {
         nextStep: "打包验收",
         focus: "PDF 阅读准确性",
       },
-    }]);
+    };
+    let items = applyEvent([existing], {
+      type: "tool.started",
+      toolUseId: "overview-2",
+      name: toolName,
+      input: {
+        currentPhase: "验收中",
+        updateReason: "phase-changed",
+      },
+      subagent: false,
+    }, "run-2", 150, "conv-a");
+
+    items = applyEvent(items, {
+      type: "tool.finished",
+      toolUseId: "overview-2",
+      isError: false,
+      contentSummary: "工作概览已更新。",
+    }, "run-2", 200, "conv-a");
+
+    expect(items.at(-1)).toMatchObject({
+      kind: "overview",
+      id: "m1",
+      runId: "run-2",
+      toolUseId: "overview-2",
+      createdAt: 200,
+      overview: {
+        revision: 2,
+        scopeConversationId: "conv-a",
+        sourceRunId: "run-2",
+        sourceToolUseId: "overview-2",
+        updatedAt: 200,
+        updateReason: "phase-changed",
+        objective: "Leemo 内测",
+        currentPhase: "验收中",
+      },
+    });
+    expect(items.filter((item) => item.kind === "overview")).toHaveLength(2);
   });
 
   it("keeps a failed or malformed update visible as an ordinary tool result", () => {
     let failed = applyEvent([], {
       type: "tool.started", toolUseId: "failed", name: toolName,
-      input: { theme: "新主题" }, subagent: false,
-    }, RUN);
+      input: { objective: "新目标", updateReason: "objective-set" }, subagent: false,
+    }, RUN, 10, "conv-a");
     failed = applyEvent(failed, {
       type: "tool.finished", toolUseId: "failed", isError: true, contentSummary: "保存失败",
-    }, RUN);
+    }, RUN, 20, "conv-a");
     expect(failed[0]).toMatchObject({ kind: "tool", status: "error", summary: "保存失败" });
 
     let malformed = applyEvent([], {
       type: "tool.started", toolUseId: "bad", name: toolName,
-      input: { theme: " " }, subagent: false,
-    }, RUN);
+      input: { currentPhase: "缺少更新原因" }, subagent: false,
+    }, RUN, 30, "conv-a");
     malformed = applyEvent(malformed, {
       type: "tool.finished", toolUseId: "bad", isError: false, contentSummary: "unexpected",
-    }, RUN);
+    }, RUN, 40, "conv-a");
     expect(malformed[0]).toMatchObject({ kind: "tool", status: "ok" });
   });
 
-  it("keeps earlier overview meaning when the user only changes one focus field", () => {
+  it("applies explicit clearing and deduplicates appended evidence by evidence id", () => {
     const existing: TimelineItem = {
-      kind: "overview", id: "old", runId: "old-run", toolUseId: "old-tool", createdAt: 10,
-      overview: { theme: "毕业求职", summary: "准备投递材料", nextStep: "完成岗位定向简历" },
+      kind: "overview",
+      id: "old",
+      runId: "run-1",
+      toolUseId: "overview-1",
+      createdAt: 100,
+      overview: {
+        revision: 1,
+        scopeConversationId: "conv-a",
+        sourceRunId: "run-1",
+        sourceToolUseId: "overview-1",
+        updatedAt: 100,
+        updateReason: "blocked",
+        basisEventIds: ["run-1", "overview-1"],
+        actor: "momo",
+        objective: "完成连续性验收",
+        objectiveSource: "semantic",
+        successCriteria: ["重启后仍可读取"],
+        currentPhase: "修复中",
+        currentFocus: "排查阻塞",
+        nextKnown: ["重跑验收"],
+        blockers: ["host offline"],
+        decisions: [],
+        completedHighlights: [
+          { evidenceId: "tool-a", text: "已完成存储迁移", basisEventIds: ["tool-a"] },
+        ],
+        fieldAuthority: { objective: "momo", successCriteria: "momo" },
+      },
     };
     let items = applyEvent([existing], {
-      type: "tool.started", toolUseId: "focus", name: toolName,
-      input: { focus: "优先关注产品岗位" }, subagent: false,
-    }, RUN);
+      type: "tool.started",
+      toolUseId: "overview-2",
+      name: toolName,
+      input: {
+        blockers: [],
+        clearFields: ["currentFocus"],
+        completedHighlights: [
+          { evidenceId: "tool-a", text: "重复条目不应追加", basisEventIds: ["tool-a"] },
+          { evidenceId: "artifact-b", text: "已生成验收包", basisEventIds: ["artifact-b"] },
+        ],
+        updateReason: "recovered",
+      },
+      subagent: false,
+    }, "run-2", 150, "conv-a");
     items = applyEvent(items, {
-      type: "tool.finished", toolUseId: "focus", isError: false, contentSummary: "工作概览已更新。",
-    }, RUN, 20);
+      type: "tool.finished", toolUseId: "overview-2", isError: false, contentSummary: "工作概览已更新。",
+    }, "run-2", 200, "conv-a");
 
     expect(items.at(-1)).toMatchObject({
       kind: "overview",
       overview: {
-        theme: "毕业求职",
-        summary: "准备投递材料",
-        nextStep: "完成岗位定向简历",
-        focus: "优先关注产品岗位",
+        revision: 2,
+        blockers: [],
+        completedHighlights: [
+          { evidenceId: "tool-a", text: "已完成存储迁移" },
+          { evidenceId: "artifact-b", text: "已生成验收包" },
+        ],
       },
     });
+    const latest = items.at(-1);
+    expect(latest?.kind === "overview" ? latest.overview : {}).not.toHaveProperty("currentFocus");
+    expect(items.filter((item) => item.kind === "overview")).toHaveLength(2);
+  });
+
+  it("does not merge a partial patch with another conversation's snapshot", () => {
+    const foreign: TimelineItem = {
+      kind: "overview",
+      id: "foreign",
+      runId: "run-b",
+      toolUseId: "overview-b",
+      overview: {
+        revision: 4,
+        scopeConversationId: "conv-b",
+        sourceRunId: "run-b",
+        sourceToolUseId: "overview-b",
+        updatedAt: 100,
+        updateReason: "objective-set",
+        basisEventIds: ["run-b", "overview-b"],
+        actor: "momo",
+        objective: "只属于 B 的目标",
+        objectiveSource: "semantic",
+        successCriteria: [],
+        nextKnown: [],
+        blockers: [],
+        decisions: [],
+        completedHighlights: [],
+        fieldAuthority: { objective: "momo" },
+      },
+    };
+    let items = applyEvent([foreign], {
+      type: "tool.started",
+      toolUseId: "overview-a",
+      name: toolName,
+      input: { currentFocus: "A 的当前重点", updateReason: "phase-changed" },
+      subagent: false,
+    }, "run-a", 150, "conv-a");
+    items = applyEvent(items, {
+      type: "tool.finished", toolUseId: "overview-a", isError: false, contentSummary: "工作概览已更新。",
+    }, "run-a", 200, "conv-a");
+
+    expect(items.at(-1)).toMatchObject({
+      kind: "overview",
+      overview: {
+        revision: 1,
+        scopeConversationId: "conv-a",
+        currentFocus: "A 的当前重点",
+      },
+    });
+    const latest = items.at(-1);
+    expect(latest?.kind === "overview" ? latest.overview : {}).not.toHaveProperty("objective");
   });
 });

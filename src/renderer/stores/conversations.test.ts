@@ -1521,6 +1521,47 @@ describe("conversations store", () => {
     expect(foldConversationEnvelope(before, { conversationId: "unknown", event: { type: "text.delta", text: "ignored" } }, 1000)).toEqual({});
   });
 
+  it("persists the real envelope conversation id and receipt time on an overview revision", async () => {
+    const bridge = makeClient(["conv-a"]);
+    const store = createConversationsStore(bridge.client, { resolveConversationDefaults: () => DEFAULTS });
+    const conversationId = await store.getState().createConversation({ source: "workbench" });
+    store.setState((state) => ({
+      runIds: { ...state.runIds, [conversationId]: "run-2" },
+    }));
+
+    store.setState((state) => foldConversationEnvelope(state, {
+      conversationId: "conv-a",
+      event: {
+        type: "tool.started",
+        toolUseId: "overview-2",
+        name: "mcp__leemo-work-overview__set_work_overview",
+        input: { currentPhase: "验收中", updateReason: "phase-changed" },
+        subagent: false,
+      },
+    }, 150));
+    store.setState((state) => foldConversationEnvelope(state, {
+      conversationId: "conv-a",
+      event: {
+        type: "tool.finished",
+        toolUseId: "overview-2",
+        isError: false,
+        contentSummary: "工作概览已更新。",
+      },
+    }, 200));
+
+    expect(store.getState().timelines[conversationId].at(-1)).toMatchObject({
+      kind: "overview",
+      createdAt: 200,
+      overview: {
+        revision: 1,
+        scopeConversationId: "conv-a",
+        sourceRunId: "run-2",
+        sourceToolUseId: "overview-2",
+        updatedAt: 200,
+      },
+    });
+  });
+
   describe("本子 binding → prompt layer ⑨ (轮 3 卡 G)", () => {
     const createReq = (bridge: ReturnType<typeof makeClient>) =>
       bridge.calls.find((c) => c.channel === "bridge:createConversation")!.request as Record<string, unknown>;
