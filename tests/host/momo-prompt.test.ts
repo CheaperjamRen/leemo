@@ -68,6 +68,15 @@ describe("buildMomoSystemPrompt — seven layers", () => {
     expect(hasCjk(section("## 话风"))).toBe(true);
   });
 
+  it("keeps everyday replies concrete without canned AI prose", () => {
+    const p = build();
+    expect(p).toContain("Prefer concrete facts and plain language");
+    expect(p).toContain("中文禁用“不是/不只是 X，而是/是 Y”");
+    expect(p).toContain("“你真正想/怕的是”式翻案");
+    expect(p).toContain("直接陈述判断");
+    expect(p).toContain("不编故事，不堆抽象比喻");
+  });
+
   it("orders the layers ①→⑦ so later layers refine earlier ones", () => {
     const p = build();
     const at = (s: string): number => p.indexOf(s);
@@ -209,6 +218,8 @@ describe("buildMomoSystemPrompt — identity regression (验收②)", () => {
     expect(p).toContain("after earlier cards");
     expect(p).toContain("changes subsequent execution or memory");
     expect(p).toContain("Do not use a card for rhetorical questions");
+    expect(p).toContain("draft, example, analysis, or best-effort first pass");
+    expect(p).toContain("no missing fact blocks the answer");
     expect(p).toContain("user's unrestricted wording is the point");
   });
 
