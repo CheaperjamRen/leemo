@@ -1,12 +1,13 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import mermaid from "mermaid";
 import MarkdownContent from "./MarkdownContent";
 
 vi.mock("mermaid", () => ({
   default: {
     initialize: vi.fn(),
+    parse: vi.fn(),
     render: vi.fn(),
   },
 }));
@@ -34,6 +35,18 @@ const COMPLETE_MARKDOWN = [
 ].join("\n");
 
 describe("MarkdownContent", () => {
+  beforeEach(() => {
+    vi.mocked(mermaid.parse).mockReset();
+    vi.mocked(mermaid.parse).mockResolvedValue({
+      diagramType: "flowchart-v2",
+      config: {},
+    } as Awaited<ReturnType<typeof mermaid.parse>>);
+    vi.mocked(mermaid.render).mockReset();
+    vi.mocked(mermaid.render).mockResolvedValue({
+      svg: "<svg></svg>",
+      diagramType: "flowchart-v2",
+    } as Awaited<ReturnType<typeof mermaid.render>>);
+  });
   it("routes leemo-note links to the document library instead of browser navigation", async () => {
     const onOpenNoteReference = vi.fn();
     const onOpenLocalLink = vi.fn();
@@ -191,6 +204,44 @@ describe("MarkdownContent", () => {
     view.rerender(<MarkdownContent text={"```mermaid\ngraph TD\n  A-->B\n```"} />);
     await waitFor(() => expect(screen.queryByText("图表没有渲染，已保留源码。")).not.toBeInTheDocument());
     expect(document.querySelector("svg[aria-label='valid diagram']")).toBeInTheDocument();
+
+    Object.defineProperty(navigator, "userAgent", { configurable: true, value: originalUserAgent });
+  });
+
+  it("parses Mermaid before rendering and suppresses full-page error diagrams", async () => {
+    const originalUserAgent = navigator.userAgent;
+    Object.defineProperty(navigator, "userAgent", { configurable: true, value: "Leemo test renderer" });
+    vi.mocked(mermaid.parse).mockResolvedValueOnce(
+      false as unknown as Awaited<ReturnType<typeof mermaid.parse>>,
+    );
+
+    render(<MarkdownContent text={"```mermaid\ngraph TD\n  A--\n```"} />);
+
+    expect(await screen.findByText("图表没有渲染，已保留源码。")).toBeInTheDocument();
+    expect(mermaid.parse).toHaveBeenCalledWith("graph TD\n  A--", { suppressErrors: true });
+    expect(mermaid.render).not.toHaveBeenCalled();
+    expect(mermaid.initialize).toHaveBeenCalledWith(expect.objectContaining({ suppressErrorRendering: true }));
+    expect(document.querySelector("[id^='dleemo-mermaid-']")).not.toBeInTheDocument();
+
+    Object.defineProperty(navigator, "userAgent", { configurable: true, value: originalUserAgent });
+  });
+
+  it("contains Mermaid rendering inside its component and removes rejected temporary nodes", async () => {
+    const originalUserAgent = navigator.userAgent;
+    Object.defineProperty(navigator, "userAgent", { configurable: true, value: "Leemo test renderer" });
+    vi.mocked(mermaid.render).mockImplementationOnce(async (id, _source, container) => {
+      const leaked = document.createElement("div");
+      leaked.id = `d${id}`;
+      leaked.textContent = "Syntax error in text";
+      document.body.append(leaked);
+      expect(container).toBeInstanceOf(HTMLDivElement);
+      throw new Error("invalid graph");
+    });
+
+    render(<MarkdownContent text={"```mermaid\ngraph TD\n  A--\n```"} />);
+
+    expect(await screen.findByText("图表没有渲染，已保留源码。")).toBeInTheDocument();
+    expect(document.body).not.toHaveTextContent("Syntax error in text");
 
     Object.defineProperty(navigator, "userAgent", { configurable: true, value: originalUserAgent });
   });

@@ -80,14 +80,19 @@ function updatedTime(value: number | undefined): string {
 
 function Section({
   title,
+  action,
   children,
 }: {
   title: string;
+  action?: React.ReactNode;
   children: React.ReactNode;
 }) {
   return (
     <section className="border-b border-[var(--leemo-line-soft)] py-4 last:border-b-0">
-      <h3 className="text-[13px] font-semibold leading-5 text-[var(--leemo-ink)]">{title}</h3>
+      <div className="flex min-h-7 items-center justify-between gap-3">
+        <h3 className="text-[13px] font-semibold leading-5 text-[var(--leemo-ink)]">{title}</h3>
+        {action}
+      </div>
       <div className="mt-2.5">{children}</div>
     </section>
   );
@@ -159,6 +164,8 @@ function ConversationOverview({
   saving,
   editError,
   userFixed,
+  refreshDisabled,
+  onRefresh,
 }: {
   snapshot: ConversationContinuitySnapshot;
   onOpenArtifact?: (artifact: ArtifactEntry) => void;
@@ -172,11 +179,28 @@ function ConversationOverview({
   saving: boolean;
   editError: string;
   userFixed: boolean;
+  refreshDisabled: boolean;
+  onRefresh: () => void;
 }) {
   const currentPlan = snapshot.currentPlan?.current ? snapshot.currentPlan : undefined;
   return (
     <div className="min-w-0">
-      <Section title="工作目标">
+      <Section
+        title="工作目标"
+        action={(
+          <button
+            type="button"
+            aria-label="更新概览"
+            title="根据最近进展更新概览"
+            disabled={refreshDisabled}
+            onClick={onRefresh}
+            className="inline-flex h-7 shrink-0 items-center gap-1.5 rounded-full px-2.5 text-[11px] font-medium text-[var(--leemo-ink-3)] transition-colors hover:bg-[var(--leemo-hover)] hover:text-[var(--leemo-ink-2)] disabled:cursor-not-allowed disabled:opacity-35"
+          >
+            <RefreshCw className="h-3.5 w-3.5" aria-hidden />
+            更新
+          </button>
+        )}
+      >
         {editing ? (
           <form aria-label="编辑工作目标" className="space-y-3" onSubmit={(event) => { event.preventDefault(); onSaveEdit(); }}>
             <label className="block text-[11px] font-medium text-[var(--leemo-ink-3)]">
@@ -446,7 +470,6 @@ export function WorkbenchOverview({
             <button type="button" aria-label="概览操作" aria-expanded={menuOpen} onClick={() => setMenuOpen((open) => !open)} className="leemo-icon-btn h-8 w-8"><MoreHorizontal className="h-4 w-4" aria-hidden /></button>
             {menuOpen && (
               <div className="absolute right-0 top-10 z-20 w-36 rounded-[var(--leemo-radius-control)] border border-[var(--leemo-line)] bg-[var(--leemo-surface-overlay)] p-1.5 shadow-[var(--leemo-shadow-popover)]">
-                <button type="button" onClick={refresh} disabled={refreshDisabled} className="flex h-8 w-full items-center gap-2 rounded-full px-2.5 text-left text-xs text-[var(--leemo-ink-2)] hover:bg-[var(--leemo-hover)] disabled:opacity-40"><RefreshCw className="h-3.5 w-3.5" aria-hidden />更新概览</button>
                 <button type="button" onClick={beginEdit} disabled={!activeConversation || !onSaveCorrection} className="flex h-8 w-full items-center gap-2 rounded-full px-2.5 text-left text-xs text-[var(--leemo-ink-2)] hover:bg-[var(--leemo-hover)] disabled:opacity-40"><FileText className="h-3.5 w-3.5" aria-hidden />编辑工作目标</button>
               </div>
             )}
@@ -475,6 +498,8 @@ export function WorkbenchOverview({
           saving={saving}
           editError={editError}
           userFixed={userFixed}
+          refreshDisabled={refreshDisabled}
+          onRefresh={() => { void refresh(); }}
         />
       ) : (
         <NotebookOverview snapshot={model} onOpenConversation={sourceOpener} />

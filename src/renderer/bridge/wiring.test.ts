@@ -110,7 +110,7 @@ describe("wireBridgeSubscriptions", () => {
     expect(conversationsStore.setState).toHaveBeenCalledWith(expect.any(Function));
   });
 
-  it("routes real usage and compaction events into the shared context meter", () => {
+  it("routes exact context snapshots and compaction events into the shared context meter", () => {
     const contextUsage = createContextUsageStore();
     wireBridgeSubscriptions(mockClient, {
       conversations: conversationsStore,
@@ -122,20 +122,13 @@ describe("wireBridgeSubscriptions", () => {
     eventSubscriber!({
       conversationId: "c1",
       event: {
-        type: "usage.final",
-        usage: {
-          providerId: "deepseek",
-          modelId: "deepseek-v4-flash",
-          inputTokens: 10,
-          outputTokens: 99,
-          cacheReadTokens: 20,
-          cacheCreationTokens: 3,
-          contextInputTokens: 80,
-          contextCacheReadTokens: 20,
-          contextCacheCreationTokens: 5,
-          costSource: "unpriced",
-          tokensEstimated: false,
-        },
+        type: "context.snapshot",
+        currentTokens: 105,
+        maxTokens: 200,
+        rawMaxTokens: 200,
+        autoCompactThreshold: 180,
+        isAutoCompactEnabled: true,
+        model: "deepseek-v4-flash",
       },
     });
     expect(contextUsage.getState().byConversation.c1.currentTokens).toBe(105);
@@ -144,7 +137,13 @@ describe("wireBridgeSubscriptions", () => {
       conversationId: "c1",
       event: { type: "compact.boundary", trigger: "auto", preTokens: 105, postTokens: 24 },
     });
-    expect(contextUsage.getState().byConversation.c1).toEqual({ currentTokens: 24, justCompacted: true });
+    expect(contextUsage.getState().byConversation.c1).toEqual({
+      currentTokens: 24,
+      capacityTokens: 180,
+      rawMaxTokens: 200,
+      source: "sdk",
+      justCompacted: true,
+    });
   });
 
   it("records one concise notification when a non-active conversation finishes", () => {

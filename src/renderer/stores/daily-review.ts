@@ -161,3 +161,19 @@ export function findTodayDailyReviewConversation(
     )
     .sort((left, right) => right.lastActivityAt - left.lastActivityAt)[0] ?? null;
 }
+
+/** In the single momo relationship stream a daily review is an episode, not a
+ * second conversation. Detect the visible episode marker so the top-bar action
+ * can reopen today's review without spending another model call. */
+export function hasDailyReviewToday(
+  timeline: readonly TimelineItem[] | undefined,
+  now: number,
+): boolean {
+  const bounds = dayBounds(now);
+  return (timeline ?? []).some((item) =>
+    item.kind === "text"
+    && item.role === "user"
+    && item.text === "回顾今天"
+    && isToday(item.createdAt, bounds),
+  );
+}

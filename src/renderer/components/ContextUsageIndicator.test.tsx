@@ -7,6 +7,8 @@ describe("ContextUsageIndicator", () => {
     render(
       <ContextUsageIndicator
         currentTokens={406_000}
+        capacityTokens={486_000}
+        rawMaxTokens={512_000}
         policy={{ contextWindowTokens: 512_000, autoCompactWindowTokens: 486_000 }}
       />,
     );

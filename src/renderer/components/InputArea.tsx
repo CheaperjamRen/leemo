@@ -47,7 +47,10 @@ import {
   filterWorkspaceFiles,
   parseFileMention,
 } from "./file-mention";
-import ContextUsageIndicator from "./ContextUsageIndicator";
+import ContextUsageIndicator, {
+  effectiveContextCapacity,
+  formatContextTokens,
+} from "./ContextUsageIndicator";
 import { WORKSPACE_FILE_DRAG_TYPE } from "./workspace-file-drag";
 
 export type Attachment = ComposerAttachment;
@@ -1579,6 +1582,8 @@ export default function InputArea({
                 {(contextUsage || currentContextPolicy) && (
                   <ContextUsageIndicator
                     currentTokens={contextUsage?.currentTokens ?? 0}
+                    capacityTokens={contextUsage?.capacityTokens}
+                    rawMaxTokens={contextUsage?.rawMaxTokens}
                     policy={currentContextPolicy}
                   />
                 )}
@@ -1749,6 +1754,13 @@ export default function InputArea({
                   </div>
                   {group.options.map((option) => {
                     const current = isCurrentModel(option, currentProviderId, currentModelId);
+                    const optionProvider = providers.find((provider) => provider.id === option.providerId);
+                    const optionCapacity = effectiveContextCapacity(
+                      optionProvider?.modelContextPolicies?.[option.modelId],
+                    );
+                    const needsContextHandoff = optionCapacity !== undefined
+                      && contextUsage !== undefined
+                      && contextUsage.currentTokens > optionCapacity;
                     return (
                       <button
                         key={`${option.providerId}::${option.modelId}`}
@@ -1768,6 +1780,16 @@ export default function InputArea({
                         <span className="min-w-0 flex-1 truncate text-[var(--leemo-ink)]">
                           {option.modelId}
                         </span>
+                        {optionCapacity !== undefined && (
+                          <span className="shrink-0 text-[10px] tabular-nums text-[var(--leemo-ink-3)]">
+                            {formatContextTokens(optionCapacity)}
+                          </span>
+                        )}
+                        {needsContextHandoff && (
+                          <span className="shrink-0 rounded-full bg-[var(--leemo-warm-soft)] px-1.5 py-0.5 text-[10px] text-[var(--leemo-amber-strong)]">
+                            将先整理
+                          </span>
+                        )}
                         {option.reasoningStatus === "verified" && (
                           <span className="shrink-0 rounded bg-[var(--leemo-hover)] px-1 text-[10px] text-[var(--leemo-ink-3)]">
                             思考

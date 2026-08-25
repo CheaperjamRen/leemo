@@ -1,6 +1,6 @@
 import { query as sdkQuery } from "@anthropic-ai/claude-agent-sdk";
 import type { SDKUserMessage, McpServerConfig, Options, Settings } from "@anthropic-ai/claude-agent-sdk";
-import type { QueryFn, QueryStream } from "../bridge/pool";
+import type { QueryFn, QueryParams, QueryStream } from "../bridge/pool";
 import type { CanUseTool } from "@anthropic-ai/claude-agent-sdk";
 import type { PermissionMode } from "../bridge/interact";
 import { createManagedClaudeProcessSpawner } from "./sdk-process";
@@ -92,7 +92,7 @@ export function buildQueryFn(
   extras: ConversationExtras,
   queryImpl: typeof sdkQuery = sdkQuery
 ): QueryFn {
-  return (params) => {
+  const queryFn = ((params: QueryParams) => {
     const { prompt, options } = params;
     const permissionMode = extras.permissionMode ?? "default";
     // Leemo's broker owns the product-facing modes. Passing acceptEdits or
@@ -181,5 +181,11 @@ export function buildQueryFn(
           : {}),
       },
     }) as QueryStream;
-  };
+  }) as QueryFn;
+  // Keep one CLI subprocess and one byte-stable system/tool prefix across
+  // adjacent user turns. The pool owns the open input queue, turn boundaries,
+  // idle recycling and resume fallback; the adapter only declares that this is
+  // the real SDK path capable of that contract.
+  queryFn.supportsPersistentInput = true;
+  return queryFn;
 }

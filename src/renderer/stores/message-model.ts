@@ -70,6 +70,17 @@ export type TimelineItem =
     }
   | { kind: "result"; id: string; runId: string; isError: boolean; interrupted: boolean; finalText: string; pathAudit: PathAudit; outcome?: Extract<LeemoEvent, { type: "run.finished" }>["outcome"]; retryable?: boolean; statusCode?: number; createdAt?: number }
   | { kind: "compact"; id: string; trigger: string; preTokens: number; postTokens?: number }
+  | {
+      kind: "context";
+      id: string;
+      runId: string;
+      currentTokens: number;
+      maxTokens: number;
+      rawMaxTokens: number;
+      autoCompactThreshold?: number;
+      isAutoCompactEnabled: boolean;
+      model: string;
+    }
   | { kind: "usage"; id: string; runId: string; usage: UsageRecord }
   | {
       kind: "files";
@@ -542,6 +553,18 @@ export function applyEvent(
     }
     case "usage.final":
       return [...items, { kind: "usage", id: `m${items.length}`, runId, usage: event.usage }];
+    case "context.snapshot":
+      return [...items, {
+        kind: "context",
+        id: `m${items.length}`,
+        runId,
+        currentTokens: event.currentTokens,
+        maxTokens: event.maxTokens,
+        rawMaxTokens: event.rawMaxTokens,
+        ...(event.autoCompactThreshold !== undefined ? { autoCompactThreshold: event.autoCompactThreshold } : {}),
+        isAutoCompactEnabled: event.isAutoCompactEnabled,
+        model: event.model,
+      }];
     case "file.changed": {
       const receiptIndex = items.findIndex((item) => item.kind === "files" && item.runId === runId);
       if (receiptIndex < 0) {

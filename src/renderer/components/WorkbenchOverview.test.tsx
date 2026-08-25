@@ -118,13 +118,13 @@ describe("WorkbenchOverview", () => {
     expect(openArtifact).toHaveBeenCalledWith(target);
   });
 
-  it("keeps refresh in a low-emphasis menu, disables it during a run, and reports status in one quiet line", async () => {
+  it("keeps refresh visible beside the work objective, disables it during a run, and reports status in one quiet line", async () => {
     const user = userEvent.setup();
     const refresh = vi.fn().mockResolvedValue(undefined);
     const { rerender } = render(<WorkbenchOverview model={notebook([conversation()])} conversationModel={notebook([conversation()])} onRequestRefresh={refresh} />);
-    expect(screen.queryByRole("button", { name: "更新概览" })).not.toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "概览操作" }));
-    expect(screen.getByRole("button", { name: "更新概览" })).toBeDisabled();
+    const objectiveSection = screen.getByRole("heading", { name: "工作目标" }).closest("section");
+    expect(objectiveSection).not.toBeNull();
+    expect(within(objectiveSection!).getByRole("button", { name: "更新概览" })).toBeDisabled();
     const idle = withOverviewRevision(conversation({ state: "recent", currentPlan: undefined }), 4);
     rerender(<WorkbenchOverview model={notebook([idle])} conversationModel={notebook([idle])} onRequestRefresh={refresh} />);
     await user.click(screen.getByRole("button", { name: "更新概览" }));

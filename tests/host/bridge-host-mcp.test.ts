@@ -42,6 +42,25 @@ function makeHarness(over: Partial<HostDeps> = {}) {
 }
 
 describe("bridge-host MCP channels", () => {
+  it("offers relationship-history recall only to the global Buddy relationship", async () => {
+    const searchBuddyHistory = vi.fn(async () => []);
+    const { host } = makeHarness({ searchBuddyHistory });
+    const buddy = await host.handleInvoke("bridge:createConversation", {
+      providerId: "deepseek",
+      modelId: "deepseek-chat",
+      mode: "buddy",
+    });
+    const workbench = await host.handleInvoke("bridge:createConversation", {
+      providerId: "deepseek",
+      modelId: "deepseek-chat",
+      mode: "workbench",
+    });
+
+    expect(host.inspect(buddy.conversationId)?.mcpServerNames).toContain("leemo-relationship-history");
+    expect(host.inspect(workbench.conversationId)?.mcpServerNames).not.toContain("leemo-relationship-history");
+    expect(host.inspect(buddy.conversationId)?.systemPromptAppend).toContain("Relationship history search is on demand");
+  });
+
   it("lists and enables the built-in browser by default without persisting a synthetic choice", async () => {
     const { host, current } = makeHarness();
     const list = await host.handleInvoke("bridge:listMcpServers", undefined);

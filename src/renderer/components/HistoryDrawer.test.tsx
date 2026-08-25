@@ -1,8 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, waitFor, within } from "@testing-library/react";
-import { useContext } from "react";
 import userEvent from "@testing-library/user-event";
-import { BridgeContext, BridgeProvider, type BridgeStores } from "../bridge/context";
+import { BridgeProvider } from "../bridge/context";
 import type { BridgeClient } from "../bridge/client";
 import BuddyShell from "./BuddyShell";
 import type { BridgeEventEnvelope } from "../../bridge/contract";
@@ -33,23 +32,6 @@ function createClient(): MockedBridgeClient {
       return () => {};
     }),
   } as unknown as MockedBridgeClient;
-}
-
-/** Drive the buddy shell to hold `titles.length` conversations, newest last.
- *  Goes through the real send path so store state matches production. */
-async function seedConversations(user: ReturnType<typeof userEvent.setup>, titles: string[]): Promise<void> {
-  for (const [i, title] of titles.entries()) {
-    if (i > 0) {
-      // A second conversation needs an explicit "new chat"; the buddy shell
-      // reuses activeId otherwise.
-      await user.click(screen.getByLabelText("历史对话"));
-      await user.click(screen.getByRole("button", { name: "开始新对话" }));
-    }
-    const input = screen.getByPlaceholderText("输入消息…");
-    await user.type(input, title);
-    await user.keyboard("{Enter}");
-    await waitFor(() => expect(screen.getByText(title)).toBeInTheDocument());
-  }
 }
 
 function openDrawer(user: ReturnType<typeof userEvent.setup>): Promise<void> {
@@ -110,13 +92,13 @@ describe("HistoryDrawer — real conversations, not fixtures", () => {
 
     await openDrawer(user);
 
-    const dialog = screen.getByRole("dialog", { name: "对话" });
+    const dialog = screen.getByRole("dialog", { name: "momo 的记录" });
     expect(dialog).toHaveAttribute("data-history-drawer", "buddy");
-    expect(within(dialog).getByRole("heading", { name: "对话" })).toBeInTheDocument();
-    expect(within(dialog).getByRole("button", { name: "关闭对话" })).toBeInTheDocument();
-    expect(within(dialog).getByRole("button", { name: "开始新对话" })).toHaveTextContent("新对话");
-    expect(within(dialog).getByRole("searchbox", { name: "搜索对话" })).toBeInTheDocument();
-    expect(within(dialog).getByPlaceholderText("搜索对话")).not.toHaveFocus();
+    expect(within(dialog).getByRole("heading", { name: "momo 的记录" })).toBeInTheDocument();
+    expect(within(dialog).getByRole("button", { name: "关闭记录" })).toBeInTheDocument();
+    expect(within(dialog).queryByRole("button", { name: "开始新对话" })).not.toBeInTheDocument();
+    expect(within(dialog).getByRole("searchbox", { name: "搜索记录" })).toBeInTheDocument();
+    expect(within(dialog).getByPlaceholderText("搜索记录")).not.toHaveFocus();
     expect(within(dialog).queryByRole("button", { name: "设置" })).not.toBeInTheDocument();
     expect(screen.getByTestId("buddy-history-scrim")).toBeInTheDocument();
   });
@@ -136,7 +118,7 @@ describe("HistoryDrawer — real conversations, not fixtures", () => {
 
     await openDrawer(user);
 
-    const dialog = screen.getByRole("dialog", { name: "对话" });
+    const dialog = screen.getByRole("dialog", { name: "momo 的记录" });
     const groups = within(dialog).getAllByTestId("buddy-history-group");
     expect(groups.map((group) => group.getAttribute("data-group"))).toEqual([
       "pinned",
@@ -155,17 +137,21 @@ describe("HistoryDrawer — real conversations, not fixtures", () => {
     render(<BridgeProvider client={createClient()}><BuddyShell /></BridgeProvider>);
     await openDrawer(user);
 
-    expect(screen.getByText("还没有对话")).toBeInTheDocument();
+    expect(screen.getByText("还没有记录")).toBeInTheDocument();
     // The fixture strings that used to be hardcoded here must be gone for good.
     expect(screen.queryByText("第五章复习笔记整理")).not.toBeInTheDocument();
     expect(screen.queryByText("社团招新的推文文案")).not.toBeInTheDocument();
     expect(screen.queryByText("周五晚上看什么电影")).not.toBeInTheDocument();
   });
 
-  it("lists the store's real conversation titles in `order` (newest first)", async () => {
+  it("lists the real legacy chapter titles newest first", async () => {
     const user = userEvent.setup();
-    render(<BridgeProvider client={createClient()}><BuddyShell /></BridgeProvider>);
-    await seedConversations(user, ["买菜清单", "周报怎么写"]);
+    const persist = persistenceWith(
+      storedConversation("older", "买菜清单", { lastOpenedAt: 1 }),
+      storedConversation("newer", "周报怎么写", { lastOpenedAt: 2 }),
+    );
+    render(<BridgeProvider client={createClient()} persist={persist}><BuddyShell /></BridgeProvider>);
+    await screen.findByText("周报怎么写");
     await openDrawer(user);
 
     const items = screen.getAllByRole("button", { name: /买菜清单|周报怎么写/ })
@@ -174,26 +160,36 @@ describe("HistoryDrawer — real conversations, not fixtures", () => {
     expect(items.map((el) => el.textContent)).toEqual(["周报怎么写", "买菜清单"]);
   });
 
-  it("switches the active conversation and closes when an entry is picked", async () => {
+  it("closes after a chapter is picked without starting a model request", async () => {
     const user = userEvent.setup();
-    render(<BridgeProvider client={createClient()}><BuddyShell /></BridgeProvider>);
-    await seedConversations(user, ["买菜清单", "周报怎么写"]);
+    const client = createClient();
+    const persist = persistenceWith(
+      storedConversation("older", "买菜清单", { lastOpenedAt: 1 }),
+      storedConversation("newer", "周报怎么写", { lastOpenedAt: 2 }),
+    );
+    render(<BridgeProvider client={client} persist={persist}><BuddyShell /></BridgeProvider>);
+    await screen.findByText("周报怎么写");
     await openDrawer(user);
 
     await user.click(screen.getByRole("button", { name: "买菜清单" }));
 
     // Drawer dismissed, and the picked conversation's message is on screen.
-    await waitFor(() => expect(screen.queryByLabelText("搜索对话")).not.toBeInTheDocument());
+    await waitFor(() => expect(screen.queryByLabelText("搜索记录")).not.toBeInTheDocument());
     expect(screen.getByText("买菜清单")).toBeInTheDocument();
+    expect(client.invoke.mock.calls.filter(([channel]) => channel === "bridge:send")).toHaveLength(0);
   });
 
   it("filters by title as the user searches", async () => {
     const user = userEvent.setup();
-    render(<BridgeProvider client={createClient()}><BuddyShell /></BridgeProvider>);
-    await seedConversations(user, ["买菜清单", "周报怎么写"]);
+    const persist = persistenceWith(
+      storedConversation("older", "买菜清单", { lastOpenedAt: 1 }),
+      storedConversation("newer", "周报怎么写", { lastOpenedAt: 2 }),
+    );
+    render(<BridgeProvider client={createClient()} persist={persist}><BuddyShell /></BridgeProvider>);
+    await screen.findByText("周报怎么写");
     await openDrawer(user);
 
-    await user.type(screen.getByLabelText("搜索对话"), "周报");
+    await user.type(screen.getByLabelText("搜索记录"), "周报");
 
     expect(screen.getByRole("button", { name: "周报怎么写" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "买菜清单" })).not.toBeInTheDocument();
@@ -201,8 +197,9 @@ describe("HistoryDrawer — real conversations, not fixtures", () => {
 
   it("renames a conversation inline and keeps the new title in history", async () => {
     const user = userEvent.setup();
-    render(<BridgeProvider client={createClient()}><BuddyShell /></BridgeProvider>);
-    await seedConversations(user, ["请帮我分析秋招简历"]);
+    const persist = persistenceWith(storedConversation("resume", "请帮我分析秋招简历"));
+    render(<BridgeProvider client={createClient()} persist={persist}><BuddyShell /></BridgeProvider>);
+    await screen.findByText("请帮我分析秋招简历");
     await openDrawer(user);
 
     await user.click(screen.getByRole("button", { name: "更多操作：分析秋招简历" }));
@@ -218,13 +215,14 @@ describe("HistoryDrawer — real conversations, not fixtures", () => {
 
   it("tells the user when a search matches nothing (rather than looking broken)", async () => {
     const user = userEvent.setup();
-    render(<BridgeProvider client={createClient()}><BuddyShell /></BridgeProvider>);
-    await seedConversations(user, ["买菜清单"]);
+    const persist = persistenceWith(storedConversation("shopping", "买菜清单"));
+    render(<BridgeProvider client={createClient()} persist={persist}><BuddyShell /></BridgeProvider>);
+    await screen.findByText("买菜清单");
     await openDrawer(user);
 
-    await user.type(screen.getByLabelText("搜索对话"), "zzz没有这个");
+    await user.type(screen.getByLabelText("搜索记录"), "zzz没有这个");
 
-    expect(screen.getByText("没有匹配的对话")).toBeInTheDocument();
+    expect(screen.getByText("没有匹配的记录")).toBeInTheDocument();
   });
 
   it("lists a RESTORED conversation and can send to it (the reported bug, end to end)", async () => {
@@ -288,51 +286,6 @@ describe("HistoryDrawer — real conversations, not fixtures", () => {
         expect.objectContaining({ conversationId: "conv-restored", prompt: "接着说" }),
       );
     });
-  });
-
-  it("starts a new conversation from the drawer and closes it", async () => {
-    const user = userEvent.setup();
-    render(<BridgeProvider client={createClient()}><BuddyShell /></BridgeProvider>);
-    await seedConversations(user, ["买菜清单"]);
-    await openDrawer(user);
-
-    await user.click(screen.getByRole("button", { name: "开始新对话" }));
-
-    await waitFor(() => expect(screen.queryByLabelText("搜索对话")).not.toBeInTheDocument());
-    // Fresh conversation → the greeting (empty-timeline state) is back.
-    expect(screen.queryByText("买菜清单")).not.toBeInTheDocument();
-  });
-
-  it("routes a missing-model failure from the drawer to model setup", async () => {
-    const user = userEvent.setup();
-    const client = createClient();
-    client.invoke.mockImplementation(async (channel: string) => {
-      if (channel === "bridge:createConversation") {
-        throw new Error("「DeepSeek」还没有配置 API Key，先去设置页填一个再开始对话。");
-      }
-      if (channel === "bridge:listWhitelist") return [];
-      return undefined;
-    });
-    let stores!: BridgeStores;
-    function CaptureStores() {
-      stores = useContext(BridgeContext) as BridgeStores;
-      return null;
-    }
-    render(
-      <BridgeProvider client={client}>
-        <CaptureStores />
-        <BuddyShell />
-      </BridgeProvider>,
-    );
-
-    await openDrawer(user);
-    await user.click(screen.getByRole("button", { name: "开始新对话" }));
-
-    await waitFor(() => expect(stores.ui.getState()).toMatchObject({
-      settingsOpen: true,
-      settingsSection: "models",
-    }));
-    expect(screen.queryByRole("dialog", { name: "对话" })).not.toBeInTheDocument();
   });
 
   it("keeps buddy history global and puts archived conversations in a separate section", async () => {

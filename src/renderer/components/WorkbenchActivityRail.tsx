@@ -140,7 +140,11 @@ function ScopedFilesPanel({ onClose, scopeKey, onOpenFile }: { onClose: () => vo
   return (
     <div className="flex min-h-0 flex-1 flex-col" data-testid="global-files-panel">
       <div className="border-b border-[var(--leemo-line)] px-3 py-2">
-        <div className="inline-flex rounded-full border border-[var(--leemo-line)] bg-[var(--leemo-bg)] p-0.5">
+        <div
+          role="group"
+          aria-label="文件范围"
+          className="inline-flex rounded-[var(--leemo-radius-control)] border border-[var(--leemo-line)] bg-[var(--leemo-bg)] p-0.5"
+        >
           <button
             type="button"
             aria-pressed={view === "workspace"}

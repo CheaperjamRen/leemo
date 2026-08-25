@@ -3,7 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { createBridge, PROCESS_TREE_STOP_RESULT_KEY } from "../../src/bridge/pool";
-import type { QueryParams, SdkMessageLike } from "../../src/bridge/pool";
+import type { QueryFn, QueryParams, QueryStream, SdkMessageLike } from "../../src/bridge/pool";
 import { deepseekDirect, relay2Gateway, glmDirect } from "./fixtures/providers";
 import { oneTurnStream, type TestMsg } from "./fixtures/sdk-messages";
 
@@ -59,6 +59,62 @@ async function drain(stream: AsyncIterable<SdkMessageLike>): Promise<SdkMessageL
   return out;
 }
 
+class AsyncTestQueue<T> implements AsyncIterable<T> {
+  private values: T[] = [];
+  private waiters: Array<(value: IteratorResult<T>) => void> = [];
+  private closed = false;
+
+  push(value: T): void {
+    const waiter = this.waiters.shift();
+    if (waiter) waiter({ value, done: false });
+    else this.values.push(value);
+  }
+
+  close(): void {
+    this.closed = true;
+    for (const waiter of this.waiters.splice(0)) waiter({ value: undefined, done: true });
+  }
+
+  [Symbol.asyncIterator](): AsyncIterator<T> {
+    return {
+      next: async (): Promise<IteratorResult<T>> => {
+        const value = this.values.shift();
+        if (value !== undefined) return { value, done: false };
+        if (this.closed) return { value: undefined, done: true };
+        return new Promise<IteratorResult<T>>((resolve) => this.waiters.push(resolve));
+      },
+    };
+  }
+}
+
+function persistentQueryFn(): {
+  queryFn: QueryFn;
+  calls: FakeCall[];
+  output: AsyncTestQueue<SdkMessageLike>;
+  close: ReturnType<typeof vi.fn>;
+} {
+  const calls: FakeCall[] = [];
+  const output = new AsyncTestQueue<SdkMessageLike>();
+  const closeQueue = output.close.bind(output);
+  const close = vi.fn(() => closeQueue());
+  const queryFn = Object.assign(((params: QueryParams): QueryStream => {
+    calls.push({ prompt: params.prompt, options: params.options ?? {} });
+    return Object.assign(output, {
+      close,
+      getContextUsage: vi.fn(async () => ({
+        totalTokens: 42_000,
+        maxTokens: 200_000,
+        rawMaxTokens: 200_000,
+        percentage: 21,
+        model: "kimi-k3",
+        isAutoCompactEnabled: true,
+        autoCompactThreshold: 180_000,
+      })),
+    });
+  }) as QueryFn, { supportsPersistentInput: true as const });
+  return { queryFn, calls, output, close };
+}
+
 // ---- temp dataDir bookkeeping ----------------------------------------------
 
 const tmpDirs: string[] = [];
@@ -80,6 +136,51 @@ afterEach(() => {
 // ---- DIRECT wiring ----------------------------------------------------------
 
 describe("pool — DIRECT wiring env reaches the SDK", () => {
+  it("emits the SDK's exact context snapshot after the terminal result", async () => {
+    const getContextUsage = vi.fn(async () => ({
+      categories: [],
+      totalTokens: 87_450,
+      maxTokens: 200_000,
+      rawMaxTokens: 200_000,
+      percentage: 43.725,
+      gridRows: [],
+      model: "kimi-k3",
+      memoryFiles: [],
+      mcpTools: [],
+      agents: [],
+      isAutoCompactEnabled: true,
+      autoCompactThreshold: 180_000,
+    }));
+    const queryFn = vi.fn(() => Object.assign((async function* () {
+      yield* oneTurnStream("sess-context", "ok");
+    })(), { getContextUsage }));
+    const bridge = createBridge({ queryFn, dataDir: freshDataDir() });
+    const convo = bridge.createConversation({ provider: deepseekDirect, modelId: "deepseek-v4pro" });
+
+    const messages = await drain(convo.send("hello"));
+
+    expect(getContextUsage).toHaveBeenCalledOnce();
+    expect(messages.at(-1)).toMatchObject({
+      type: "leemo_context_snapshot",
+      session_id: "sess-context",
+      contextUsage: expect.objectContaining({ totalTokens: 87_450, maxTokens: 200_000 }),
+    });
+  });
+
+  it("keeps a completed round usable when exact context inspection is unavailable", async () => {
+    const getContextUsage = vi.fn(async () => { throw new Error("unsupported"); });
+    const queryFn = vi.fn(() => Object.assign((async function* () {
+      yield* oneTurnStream("sess-context-fallback", "ok");
+    })(), { getContextUsage }));
+    const bridge = createBridge({ queryFn, dataDir: freshDataDir() });
+    const convo = bridge.createConversation({ provider: deepseekDirect, modelId: "deepseek-v4pro" });
+
+    const messages = await drain(convo.send("hello"));
+
+    expect(messages.map((message) => message.type)).toEqual(["system", "assistant", "result"]);
+    expect(convo.state).toBe("idle");
+  });
+
   it("keeps an explicit empty built-in tool list distinct from an omitted list", async () => {
     const { queryFn, calls } = makeFakeQuery({
       scripts: [oneTurnStream("sess-tools-empty", "ok"), oneTurnStream("sess-tools-default", "ok")],
@@ -346,6 +447,210 @@ describe("pool — resume", () => {
 
     expect(calls[0].options.resume).toBeUndefined();
     expect(calls[1].options.resume).toBe("sess-777");
+  });
+});
+
+describe("pool — persistent SDK multi-turn transport", () => {
+  function finishTurn(
+    output: AsyncTestQueue<SdkMessageLike>,
+    sessionId: string,
+    cumulativeInput: number,
+    cumulativeCost: number,
+  ): void {
+    output.push({
+      type: "assistant",
+      session_id: sessionId,
+      message: { role: "assistant", content: [{ type: "text", text: "ok" }] },
+    } as SdkMessageLike);
+    output.push({
+      type: "result",
+      subtype: "success",
+      session_id: sessionId,
+      is_error: false,
+      total_cost_usd: cumulativeCost,
+      usage: { input_tokens: cumulativeInput, output_tokens: 5 },
+      modelUsage: {
+        "kimi-k3": {
+          inputTokens: cumulativeInput,
+          outputTokens: 5,
+          cacheReadInputTokens: 0,
+          cacheCreationInputTokens: 0,
+          costUSD: cumulativeCost,
+          contextWindow: 200_000,
+        },
+      },
+    } as SdkMessageLike);
+    output.push({
+      type: "system",
+      subtype: "session_state_changed",
+      state: "idle",
+      session_id: sessionId,
+    } as SdkMessageLike);
+  }
+
+  it("keeps one SDK query alive across user turns instead of respawning with resume", async () => {
+    const { queryFn, calls, output } = persistentQueryFn();
+    const bridge = createBridge({ queryFn, dataDir: freshDataDir() });
+    const convo = bridge.createConversation({ provider: deepseekDirect, modelId: "kimi-k3" });
+
+    const first = drain(convo.send("第一轮"));
+    await vi.waitFor(() => expect(calls).toHaveLength(1));
+    const input = calls[0].prompt as AsyncIterable<Record<string, unknown>>;
+    const inputIterator = input[Symbol.asyncIterator]();
+    await expect(inputIterator.next()).resolves.toMatchObject({
+      done: false,
+      value: { type: "user", message: { role: "user", content: "第一轮" } },
+    });
+    finishTurn(output, "sess-persistent", 100, 0.1);
+    await first;
+
+    const second = drain(convo.send("第二轮"));
+    await expect(inputIterator.next()).resolves.toMatchObject({
+      done: false,
+      value: { type: "user", message: { role: "user", content: "第二轮" } },
+    });
+    finishTurn(output, "sess-persistent", 160, 0.16);
+    await second;
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0].options.resume).toBeUndefined();
+    bridge.dispose();
+  });
+
+  it("finishes a turn after a short grace period when a compatible runtime omits the idle state event", async () => {
+    const { queryFn, calls, output } = persistentQueryFn();
+    const bridge = createBridge({
+      queryFn,
+      dataDir: freshDataDir(),
+      persistentTurnBoundaryGraceMs: 5,
+    });
+    const convo = bridge.createConversation({ provider: deepseekDirect, modelId: "kimi-k3" });
+
+    const first = drain(convo.send("第一轮"));
+    await vi.waitFor(() => expect(calls).toHaveLength(1));
+    output.push({
+      type: "result",
+      subtype: "success",
+      session_id: "sess-without-idle",
+      is_error: false,
+      total_cost_usd: 0.1,
+      modelUsage: {},
+    } as SdkMessageLike);
+    await first;
+    expect(convo.state).toBe("idle");
+
+    const second = drain(convo.send("第二轮"));
+    output.push({
+      type: "result",
+      subtype: "success",
+      session_id: "sess-without-idle",
+      is_error: false,
+      total_cost_usd: 0.2,
+      modelUsage: {},
+    } as SdkMessageLike);
+    await second;
+
+    expect(calls).toHaveLength(1);
+    expect(convo.state).toBe("idle");
+    bridge.dispose();
+  });
+
+  it("turns cumulative streaming modelUsage into this turn's billing delta", async () => {
+    const { queryFn, calls, output } = persistentQueryFn();
+    const bridge = createBridge({ queryFn, dataDir: freshDataDir() });
+    const convo = bridge.createConversation({ provider: deepseekDirect, modelId: "kimi-k3" });
+
+    const first = drain(convo.send("第一轮"));
+    await vi.waitFor(() => expect(calls).toHaveLength(1));
+    finishTurn(output, "sess-usage", 100, 0.1);
+    const firstMessages = await first;
+
+    const second = drain(convo.send("第二轮"));
+    finishTurn(output, "sess-usage", 160, 0.16);
+    const secondMessages = await second;
+
+    const firstResult = firstMessages.find((message) => message.type === "result") as Record<string, any>;
+    const secondResult = secondMessages.find((message) => message.type === "result") as Record<string, any>;
+    expect(firstResult.modelUsage["kimi-k3"].inputTokens).toBe(100);
+    expect(secondResult.modelUsage["kimi-k3"].inputTokens).toBe(60);
+    expect(secondResult.total_cost_usd).toBeCloseTo(0.06, 8);
+    bridge.dispose();
+  });
+
+  it("routes active guidance through the held-open input queue without closing stdin", async () => {
+    const { queryFn, calls, output } = persistentQueryFn();
+    const bridge = createBridge({ queryFn, dataDir: freshDataDir() });
+    const convo = bridge.createConversation({ provider: deepseekDirect, modelId: "kimi-k3" });
+
+    const running = drain(convo.send("开始"));
+    await vi.waitFor(() => expect(calls).toHaveLength(1));
+    const iterator = (calls[0].prompt as AsyncIterable<Record<string, any>>)[Symbol.asyncIterator]();
+    await iterator.next();
+    await expect(convo.guide("补充条件")).resolves.toBe("applied");
+    await expect(iterator.next()).resolves.toMatchObject({
+      value: { message: { content: "补充条件" }, priority: "now", shouldQuery: true },
+    });
+    finishTurn(output, "sess-guide", 100, 0.1);
+    await running;
+    bridge.dispose();
+  });
+
+  it("restarts the transport on a model change and resumes the captured session", async () => {
+    const first = persistentQueryFn();
+    const secondOutput = new AsyncTestQueue<SdkMessageLike>();
+    const closeSecondQueue = secondOutput.close.bind(secondOutput);
+    const secondClose = vi.fn(() => closeSecondQueue());
+    const queryFn = Object.assign(((params: QueryParams): QueryStream => {
+      if (first.calls.length === 0) return first.queryFn(params);
+      first.calls.push({ prompt: params.prompt, options: params.options ?? {} });
+      return Object.assign(secondOutput, { close: secondClose });
+    }) as QueryFn, { supportsPersistentInput: true as const });
+    const bridge = createBridge({ queryFn, dataDir: freshDataDir() });
+    const convo = bridge.createConversation({ provider: deepseekDirect, modelId: "kimi-k3" });
+
+    const roundOne = drain(convo.send("第一轮"));
+    await vi.waitFor(() => expect(first.calls).toHaveLength(1));
+    finishTurn(first.output, "sess-switch-live", 100, 0.1);
+    await roundOne;
+
+    convo.setModel(deepseekDirect, "kimi-k2.6");
+    const roundTwo = drain(convo.send("第二轮"));
+    await vi.waitFor(() => expect(first.calls).toHaveLength(2));
+    finishTurn(secondOutput, "sess-switch-live", 30, 0.03);
+    await roundTwo;
+
+    expect(first.close).toHaveBeenCalledOnce();
+    expect(first.calls[1].options.resume).toBe("sess-switch-live");
+    expect(first.calls[1].options.env?.ANTHROPIC_MODEL).toBe("kimi-k2.6");
+    bridge.dispose();
+  });
+
+  it("restarts on prompt/tool runtime invalidation without losing the session", async () => {
+    const first = persistentQueryFn();
+    const nextOutput = new AsyncTestQueue<SdkMessageLike>();
+    const closeNextQueue = nextOutput.close.bind(nextOutput);
+    const queryFn = Object.assign(((params: QueryParams): QueryStream => {
+      if (first.calls.length === 0) return first.queryFn(params);
+      first.calls.push({ prompt: params.prompt, options: params.options ?? {} });
+      return Object.assign(nextOutput, { close: vi.fn(closeNextQueue) });
+    }) as QueryFn, { supportsPersistentInput: true as const });
+    const bridge = createBridge({ queryFn, dataDir: freshDataDir() });
+    const convo = bridge.createConversation({ provider: deepseekDirect, modelId: "kimi-k3" });
+
+    const before = drain(convo.send("旧配置"));
+    await vi.waitFor(() => expect(first.calls).toHaveLength(1));
+    finishTurn(first.output, "sess-runtime", 100, 0.1);
+    await before;
+
+    convo.invalidateRuntime();
+    const after = drain(convo.send("新配置"));
+    await vi.waitFor(() => expect(first.calls).toHaveLength(2));
+    finishTurn(nextOutput, "sess-runtime", 30, 0.03);
+    await after;
+
+    expect(first.close).toHaveBeenCalledOnce();
+    expect(first.calls[1].options.resume).toBe("sess-runtime");
+    bridge.dispose();
   });
 });
 

@@ -501,7 +501,20 @@ export async function runVisiblePrompt(page, prompt, finalMarker, timeoutMs = 90
       if (await candidate.isVisible().catch(() => false)) await candidate.click();
     }
     if (await page.getByText(finalMarker, { exact: false }).last().isVisible().catch(() => false)) {
-      await page.getByRole("button", { name: "发送", exact: true }).waitFor({ state: "visible" });
+      try {
+        await page.getByRole("button", { name: "发送", exact: true }).waitFor({ state: "visible" });
+      } catch (error) {
+        const visibleButtons = await page.getByRole("button").evaluateAll((buttons) => buttons
+          .filter((button) => button instanceof HTMLElement && button.offsetParent !== null)
+          .map((button) => button.getAttribute("aria-label") || button.textContent?.trim() || "")
+          .filter(Boolean)
+          .slice(-30));
+        const bodyTail = (await page.locator("body").innerText()).slice(-2_000);
+        throw new Error(
+          `最终标记已出现，但任务没有回到可发送状态。可见按钮=${JSON.stringify(visibleButtons)}\n${bodyTail}`,
+          { cause: error },
+        );
+      }
       return;
     }
     if (await page.getByText("任务没有完成", { exact: true }).isVisible().catch(() => false)) {

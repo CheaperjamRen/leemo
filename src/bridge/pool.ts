@@ -30,6 +30,17 @@ export interface SdkMessageLike {
   session_id?: string;
 }
 
+export interface QueryContextUsage {
+  totalTokens: number;
+  maxTokens: number;
+  rawMaxTokens: number;
+  percentage: number;
+  model: string;
+  isAutoCompactEnabled: boolean;
+  autoCompactThreshold?: number;
+  [key: string]: unknown;
+}
+
 /** Options the pool builds for a round. A structural subset of the SDK `Options`
  *  (only the fields B1 sets). B4's real-SDK adapter maps these onto `Options`. */
 export interface QueryOptions {
@@ -66,16 +77,32 @@ export interface QueryParams {
 
 export interface QueryStream extends AsyncIterable<SdkMessageLike> {
   streamInput?(stream: AsyncIterable<unknown>): Promise<void>;
+  getContextUsage?(): Promise<QueryContextUsage>;
+  close?(): void;
 }
 
 /** The injected query function. Fake in tests; real SDK `query` (adapted) in B4. */
-export type QueryFn = (params: QueryParams) => QueryStream;
+export type QueryFn = ((params: QueryParams) => QueryStream) & {
+  /** The real Agent SDK accepts an open AsyncIterable as a multi-turn session.
+   * Test doubles and older adapters omit this flag and retain one-query-per-turn
+   * behavior, which is also our compatibility fallback. */
+  supportsPersistentInput?: true;
+};
 
 export interface BridgeDeps {
   queryFn: QueryFn;
   /** Root dir under which per-provider CLAUDE_CONFIG_DIRs live
    *  (`<dataDir>/providers/<id>/`). Phase 1 passes Electron userData. */
   dataDir: string;
+  /** Recycle an idle Agent SDK subprocess after this delay. A bounded warm
+   * window preserves provider prefix-cache hits during active work without
+   * accumulating one background CLI process for every old conversation. */
+  persistentQueryIdleMs?: number;
+  /** Some Anthropic-compatible runtimes complete a streaming-input turn with
+   * `result` but omit the newer `session_state_changed: idle` frame. Keep a
+   * short grace window for the authoritative frame, then treat the result as
+   * the compatibility boundary without closing the warm transport. */
+  persistentTurnBoundaryGraceMs?: number;
   /** Reserved for B4 live wiring (gateway registry). Unused in B1 — the
    *  gateway port is injected per-conversation via ConversationConfig. */
   registryFactory?: unknown;
@@ -127,9 +154,67 @@ export interface ConversationHandle<TMessage = SdkMessageLike> {
    *  switched on after the conversation already exists, and the shim port is
    *  carried in the subprocess env, which is rebuilt per round. */
   setSearchShimPort(port: number | undefined): void;
+  /** Runtime-only prompt/tool/permission configuration changed. The active turn
+   * finishes on its original snapshot; the next turn resumes through a fresh
+   * transport so the new configuration is actually applied. */
+  invalidateRuntime(): void;
   /** Terminate: aborts any in-flight round; further send() throws. */
   dispose(): void;
   readonly state: ConversationState;
+}
+
+const DEFAULT_PERSISTENT_QUERY_IDLE_MS = 5 * 60_000;
+const DEFAULT_PERSISTENT_TURN_BOUNDARY_GRACE_MS = 750;
+
+type PersistentNextResult =
+  | { ok: true; value: IteratorResult<SdkMessageLike> }
+  | { ok: false; error: unknown };
+
+class PushInputQueue implements AsyncIterable<unknown> {
+  private values: unknown[] = [];
+  private waiters: Array<(value: IteratorResult<unknown>) => void> = [];
+  private closed = false;
+
+  push(value: unknown): void {
+    if (this.closed) throw new Error("persistent input stream is closed");
+    const waiter = this.waiters.shift();
+    if (waiter) waiter({ value, done: false });
+    else this.values.push(value);
+  }
+
+  close(): void {
+    if (this.closed) return;
+    this.closed = true;
+    for (const waiter of this.waiters.splice(0)) {
+      waiter({ value: undefined, done: true });
+    }
+  }
+
+  [Symbol.asyncIterator](): AsyncIterator<unknown> {
+    return {
+      next: async (): Promise<IteratorResult<unknown>> => {
+        const value = this.values.shift();
+        if (value !== undefined) return { value, done: false };
+        if (this.closed) return { value: undefined, done: true };
+        return new Promise<IteratorResult<unknown>>((resolve) => this.waiters.push(resolve));
+      },
+    };
+  }
+}
+
+interface PersistentQueryTransport {
+  query: QueryStream;
+  iterator: AsyncIterator<SdkMessageLike>;
+  input: PushInputQueue;
+  abortController?: AbortController;
+  signature: string;
+  idleTimer?: ReturnType<typeof setTimeout>;
+  modelUsageCursor: Record<string, Record<string, unknown>>;
+  totalCostCursor: number;
+  /** A timed-out read stays owned by the transport and is consumed by the next
+   * round. This prevents a late idle/background frame from being dropped or a
+   * second concurrent iterator.next() call from corrupting stream ordering. */
+  pendingNext?: Promise<PersistentNextResult>;
 }
 
 export interface Bridge {
@@ -165,6 +250,8 @@ class Conversation implements ConversationHandle {
   private sessionId?: string;
   private currentAbort?: AbortController;
   private currentQuery?: QueryStream;
+  private persistentTransport?: PersistentQueryTransport;
+  private runtimeRevision = 0;
   /** A failed process-tree stop is terminal for this in-memory handle. Clearing
    * the controller must never let a second Stop turn an unconfirmed process
    * into an apparently reusable conversation. Only dispose/restart replaces
@@ -184,7 +271,9 @@ class Conversation implements ConversationHandle {
   constructor(
     cfg: ConversationConfig,
     private readonly queryFn: QueryFn,
-    private readonly dataDir: string
+    private readonly dataDir: string,
+    private readonly persistentQueryIdleMs: number,
+    private readonly persistentTurnBoundaryGraceMs: number,
   ) {
     this.id = cfg.id ?? randomUUID();
     this.provider = cfg.provider;
@@ -215,11 +304,17 @@ class Conversation implements ConversationHandle {
     this.provider = provider;
     this.modelId = modelId;
     this.gatewayPort = gatewayPort;
+    this.runtimeRevision += 1;
   }
 
   setSearchShimPort(port: number | undefined): void {
     // Same next-round contract as setModel: buildOptions() re-reads this field.
     this.searchShimPort = port;
+    this.runtimeRevision += 1;
+  }
+
+  invalidateRuntime(): void {
+    this.runtimeRevision += 1;
   }
 
   interrupt(): boolean {
@@ -235,7 +330,10 @@ class Conversation implements ConversationHandle {
       const stopped = abort
         ? (abort.signal as AbortSignal & { [PROCESS_TREE_STOP_RESULT_KEY]?: boolean })[PROCESS_TREE_STOP_RESULT_KEY] ?? true
         : true;
-      if (stopped) this.setState("idle");
+      if (stopped) {
+        this.closePersistentTransport();
+        this.setState("idle");
+      }
       else this.processTreeStopFailed = true;
       return stopped;
     }
@@ -245,21 +343,26 @@ class Conversation implements ConversationHandle {
 
   async guide(prompt: string): Promise<"applied"> {
     const query = this.currentQuery;
-    if (this._state !== "running" || !query?.streamInput) {
+    if (this._state !== "running" || !query) {
       throw new Error("当前任务暂时不能接收引导，请稍后重试。");
     }
     const message = prompt.trim();
     if (!message) throw new Error("引导内容不能为空。");
-    await query.streamInput((async function* () {
-      yield {
+    const guidance = {
         type: "user",
         message: { role: "user", content: message },
         parent_tool_use_id: null,
         session_id: "",
         priority: "now",
         shouldQuery: true,
-      };
-    })());
+    };
+    if (this.persistentTransport?.query === query) {
+      this.persistentTransport.input.push(guidance);
+    } else if (query.streamInput) {
+      await query.streamInput((async function* () { yield guidance; })());
+    } else {
+      throw new Error("当前任务暂时不能接收引导，请稍后重试。");
+    }
     return "applied";
   }
 
@@ -269,6 +372,7 @@ class Conversation implements ConversationHandle {
     this.currentAbort = undefined;
     this.setState("disposed");
     abort?.abort();
+    this.closePersistentTransport();
   }
 
   /** Build this round's options: a fresh AbortController, the dual-wiring env
@@ -311,11 +415,253 @@ class Conversation implements ConversationHandle {
     return options;
   }
 
+  private persistentSignature(roundOptions?: ConversationRoundOptions): string {
+    return JSON.stringify({
+      provider: this.provider.id,
+      model: this.modelId,
+      gatewayPort: this.gatewayPort ?? null,
+      searchShimPort: this.searchShimPort ?? null,
+      tools: roundOptions?.tools ?? null,
+      disallowedTools: roundOptions?.disallowedTools ?? null,
+      runtimeRevision: this.runtimeRevision,
+    });
+  }
+
+  private closePersistentTransport(expected?: PersistentQueryTransport): void {
+    const transport = this.persistentTransport;
+    if (!transport || (expected && transport !== expected)) return;
+    this.persistentTransport = undefined;
+    if (transport.idleTimer) clearTimeout(transport.idleTimer);
+    transport.input.close();
+    try {
+      transport.query.close?.();
+    } catch {
+      // The child may already have exited. Reaping an idle transport is best
+      // effort and must not turn a completed user round into an error.
+    }
+  }
+
+  private schedulePersistentTransportRecycle(transport: PersistentQueryTransport): void {
+    if (transport.idleTimer) clearTimeout(transport.idleTimer);
+    if (this.persistentQueryIdleMs <= 0) {
+      this.closePersistentTransport(transport);
+      return;
+    }
+    transport.idleTimer = setTimeout(() => {
+      if (this._state === "idle") this.closePersistentTransport(transport);
+    }, this.persistentQueryIdleMs);
+    transport.idleTimer.unref?.();
+  }
+
+  private ensurePersistentTransport(
+    options: QueryOptions,
+    roundOptions?: ConversationRoundOptions,
+  ): PersistentQueryTransport {
+    const signature = this.persistentSignature(roundOptions);
+    const existing = this.persistentTransport;
+    if (existing && existing.signature === signature) {
+      if (existing.idleTimer) {
+        clearTimeout(existing.idleTimer);
+        existing.idleTimer = undefined;
+      }
+      return existing;
+    }
+    if (existing) this.closePersistentTransport(existing);
+
+    const input = new PushInputQueue();
+    const query = this.queryFn({ prompt: input, options });
+    const transport: PersistentQueryTransport = {
+      query,
+      iterator: query[Symbol.asyncIterator](),
+      input,
+      abortController: options.abortController,
+      signature,
+      modelUsageCursor: {},
+      totalCostCursor: 0,
+    };
+    this.persistentTransport = transport;
+    return transport;
+  }
+
+  private normalizePersistentResult(
+    message: SdkMessageLike,
+    transport: PersistentQueryTransport,
+  ): SdkMessageLike {
+    if (message.type !== "result") return message;
+    const raw = message as SdkMessageLike & {
+      modelUsage?: Record<string, Record<string, unknown>>;
+      total_cost_usd?: number;
+    };
+    if (!raw.modelUsage || typeof raw.modelUsage !== "object") return message;
+
+    const deltaUsage: Record<string, Record<string, unknown>> = {};
+    const cumulativeKeys = new Set([
+      "inputTokens",
+      "outputTokens",
+      "cacheReadInputTokens",
+      "cacheCreationInputTokens",
+      "webSearchRequests",
+      "costUSD",
+    ]);
+    for (const [model, current] of Object.entries(raw.modelUsage)) {
+      const previous = transport.modelUsageCursor[model] ?? {};
+      const delta: Record<string, unknown> = { ...current };
+      for (const key of cumulativeKeys) {
+        const now = current[key];
+        const before = previous[key];
+        if (typeof now !== "number" || !Number.isFinite(now)) continue;
+        delta[key] = typeof before === "number" && Number.isFinite(before) && now >= before
+          ? now - before
+          : now;
+      }
+      deltaUsage[model] = delta;
+      transport.modelUsageCursor[model] = { ...current };
+    }
+
+    const currentCost = typeof raw.total_cost_usd === "number" && Number.isFinite(raw.total_cost_usd)
+      ? raw.total_cost_usd
+      : 0;
+    const deltaCost = currentCost >= transport.totalCostCursor
+      ? currentCost - transport.totalCostCursor
+      : currentCost;
+    transport.totalCostCursor = currentCost;
+    return {
+      ...raw,
+      modelUsage: deltaUsage,
+      total_cost_usd: deltaCost,
+    } as SdkMessageLike;
+  }
+
+  private pendingPersistentNext(transport: PersistentQueryTransport): Promise<PersistentNextResult> {
+    if (!transport.pendingNext) {
+      transport.pendingNext = transport.iterator.next().then(
+        (value) => ({ ok: true as const, value }),
+        (error: unknown) => ({ ok: false as const, error }),
+      );
+    }
+    return transport.pendingNext;
+  }
+
+  private async consumePersistentNext(
+    transport: PersistentQueryTransport,
+  ): Promise<IteratorResult<SdkMessageLike>> {
+    const pending = this.pendingPersistentNext(transport);
+    const result = await pending;
+    if (transport.pendingNext === pending) transport.pendingNext = undefined;
+    if (!result.ok) throw result.error;
+    return result.value;
+  }
+
+  private async consumePersistentNextWithin(
+    transport: PersistentQueryTransport,
+    waitMs: number,
+  ): Promise<IteratorResult<SdkMessageLike> | undefined> {
+    if (waitMs <= 0) return undefined;
+    const pending = this.pendingPersistentNext(transport);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timeout = new Promise<undefined>((resolve) => {
+      timer = setTimeout(() => resolve(undefined), waitMs);
+      timer.unref?.();
+    });
+    const result = await Promise.race([pending, timeout]);
+    if (timer) clearTimeout(timer);
+    if (result === undefined) return undefined;
+    if (transport.pendingNext === pending) transport.pendingNext = undefined;
+    if (!result.ok) throw result.error;
+    return result.value;
+  }
+
+  private async *runPersistentRound(
+    prompt: string,
+    options: QueryOptions,
+    roundId: number,
+    roundOptions?: ConversationRoundOptions,
+  ): AsyncIterable<SdkMessageLike> {
+    const transport = this.ensurePersistentTransport(options, roundOptions);
+    this.currentAbort = transport.abortController;
+    this.currentQuery = transport.query;
+    transport.input.push({
+      type: "user",
+      message: { role: "user", content: prompt },
+      parent_tool_use_id: null,
+      session_id: "",
+    });
+
+    let observedResult = false;
+    try {
+      while (this.activeRoundId === roundId) {
+        const next = observedResult
+          ? await this.consumePersistentNextWithin(transport, this.persistentTurnBoundaryGraceMs)
+          : await this.consumePersistentNext(transport);
+        if (!next) {
+          const snapshot = await this.contextSnapshot(transport.query, roundId);
+          if (snapshot) yield snapshot;
+          this.schedulePersistentTransportRecycle(transport);
+          return;
+        }
+        if (next.done) {
+          this.closePersistentTransport(transport);
+          return;
+        }
+        const message = this.normalizePersistentResult(next.value, transport);
+        this.captureSession(message, roundId);
+        if (message.type === "result") observedResult = true;
+        yield message;
+
+        const state = message as SdkMessageLike & { subtype?: string; state?: string };
+        if (
+          observedResult
+          && state.type === "system"
+          && state.subtype === "session_state_changed"
+          && state.state === "idle"
+        ) {
+          const snapshot = await this.contextSnapshot(transport.query, roundId);
+          if (snapshot) yield snapshot;
+          this.schedulePersistentTransportRecycle(transport);
+          return;
+        }
+      }
+    } catch (error) {
+      this.closePersistentTransport(transport);
+      throw error;
+    }
+  }
+
   /** Capture the session id as it flows by, for next round's resume. */
   private captureSession(msg: SdkMessageLike, roundId: number): void {
     if (this.activeRoundId !== roundId) return;
     if (msg && typeof msg.session_id === "string" && msg.session_id) {
       this.sessionId = msg.session_id;
+    }
+  }
+
+  /** Read the SDK's own context accounting while the query object still owns
+   * its control channel. Billing usage and context occupancy are deliberately
+   * separate: the former may count repeated/cacheable input while the latter
+   * is the exact live window position shown by the composer ring. */
+  private async contextSnapshot(
+    query: QueryStream,
+    roundId: number,
+  ): Promise<SdkMessageLike | undefined> {
+    if (this.activeRoundId !== roundId || !query.getContextUsage) return undefined;
+    try {
+      const contextUsage = await query.getContextUsage();
+      if (
+        this.activeRoundId !== roundId
+        || !Number.isFinite(contextUsage.totalTokens)
+        || !Number.isFinite(contextUsage.maxTokens)
+        || !Number.isFinite(contextUsage.rawMaxTokens)
+      ) return undefined;
+      return {
+        type: "leemo_context_snapshot",
+        ...(this.sessionId ? { session_id: this.sessionId } : {}),
+        contextUsage,
+      } as SdkMessageLike;
+    } catch {
+      // Third-party compatible endpoints and older runtimes may omit this
+      // control request. A missing meter must never fail an otherwise complete
+      // user turn or be replaced with a guessed number.
+      return undefined;
     }
   }
 
@@ -339,6 +685,8 @@ class Conversation implements ConversationHandle {
       this.captureSession(msg, roundId);
       yield msg;
     }
+    const snapshot = await this.contextSnapshot(query, roundId);
+    if (snapshot) yield snapshot;
   }
 
   send(prompt: string, roundOptions?: ConversationRoundOptions): AsyncIterable<SdkMessageLike> {
@@ -359,19 +707,28 @@ class Conversation implements ConversationHandle {
     // leaves the conversation reusable (idle), not stuck running.
     const options = this.buildOptions(roundOptions);
     const roundId = ++this.nextRoundId;
+    const mayDegrade = this.resumeFallbackGrant;
+    const usePersistentTransport = this.queryFn.supportsPersistentInput === true && !mayDegrade;
+    const reusableTransport = usePersistentTransport
+      && this.persistentTransport?.signature === this.persistentSignature(roundOptions)
+      ? this.persistentTransport
+      : undefined;
     // Flip to running synchronously so a racing send() is rejected even before
     // the generator is first pulled.
     this.activeRoundId = roundId;
-    this.currentAbort = options.abortController;
+    this.currentAbort = reusableTransport?.abortController ?? options.abortController;
     this.setState("running");
     const self = this;
     // Consume the degrade grant here: it belongs to the first round after a
     // re-claim only. A standing "retry without resume" policy would silently
     // amputate context on any transient upstream blip.
-    const mayDegrade = this.resumeFallbackGrant;
     this.resumeFallbackGrant = false;
     return (async function* () {
       try {
+        if (usePersistentTransport) {
+          yield* self.runPersistentRound(prompt, options, roundId, roundOptions);
+          return;
+        }
         // ── Resume degradation (轮 2 卡 C §7) ────────────────────────────────
         // The persisted session transcript can be gone (workspace cleared, SDK
         // pruned it). The first round of a RE-CLAIMED conversation then dies,
@@ -443,6 +800,8 @@ class Conversation implements ConversationHandle {
             yield* self.retryWithoutResume(prompt, roundId, roundOptions);
           } else {
             yield* flushHeld();
+            const snapshot = await self.contextSnapshot(query, roundId);
+            if (snapshot) yield snapshot;
           }
         } catch (e: unknown) {
           if (!canDegradeNow()) {
@@ -472,7 +831,13 @@ export function createBridge(deps: BridgeDeps): Bridge {
   const conversations = new Set<Conversation>();
   return {
     createConversation(cfg: ConversationConfig): ConversationHandle {
-      const convo = new Conversation(cfg, deps.queryFn, deps.dataDir);
+      const convo = new Conversation(
+        cfg,
+        deps.queryFn,
+        deps.dataDir,
+        deps.persistentQueryIdleMs ?? DEFAULT_PERSISTENT_QUERY_IDLE_MS,
+        deps.persistentTurnBoundaryGraceMs ?? DEFAULT_PERSISTENT_TURN_BOUNDARY_GRACE_MS,
+      );
       conversations.add(convo);
       return convo;
     },

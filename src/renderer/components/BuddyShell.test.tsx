@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, waitFor, fireEvent, within } from "@testing-library/react";
-import { useContext } from "react";
+import { useContext, useEffect, useState } from "react";
 import type { WorkspaceClient } from "../workspace/client";
 import userEvent from "@testing-library/user-event";
 import { BridgeContext, BridgeProvider, type BridgeStores } from "../bridge/context";
@@ -12,7 +12,7 @@ import { resolveMomoPersonaText } from "../stores/settings";
 
 type MockedBridgeClient = BridgeClient & { invoke: ReturnType<typeof vi.fn> };
 
-function createBuddyClient(reply = "你好，我在"): MockedBridgeClient {
+function createBuddyClient(reply = "你好，我在", finishRun = false): MockedBridgeClient {
   let onEvent: ((payload: BridgeEventEnvelope) => void) | undefined;
   let onApproval: ((payload: unknown) => void) | undefined;
   let onAskUser: ((payload: unknown) => void) | undefined;
@@ -22,7 +22,21 @@ function createBuddyClient(reply = "你好，我在"): MockedBridgeClient {
       if (channel === "bridge:createConversation") return { conversationId: `conv-${++createCount}` };
       if (channel === "bridge:send") {
         const conversationId = (request as { conversationId: string }).conversationId;
-        queueMicrotask(() => onEvent?.({ conversationId, event: { type: "text.final", text: reply } }));
+        queueMicrotask(() => {
+          onEvent?.({ conversationId, event: { type: "text.final", text: reply } });
+          if (finishRun) {
+            onEvent?.({
+              conversationId,
+              event: {
+                type: "run.finished",
+                subtype: "success",
+                isError: false,
+                finalText: reply,
+                pathAudit: { claimed: [] },
+              },
+            });
+          }
+        });
       }
       if (channel === "bridge:approvalDecision") return undefined;
       if (channel === "bridge:askUserAnswer") return undefined;
@@ -103,7 +117,7 @@ describe("BuddyShell", () => {
 
     const picker = screen.getByRole("button", { name: "切换模型" });
     await user.click(picker);
-    const option = await screen.findByRole("button", { name: "deepseek-chat" });
+    const option = await screen.findByRole("button", { name: /^deepseek-chat\b/ });
     await user.click(option);
 
     await waitFor(() => expect(picker).toHaveTextContent("deepseek-chat"));
@@ -210,8 +224,8 @@ describe("BuddyShell", () => {
     expect(screen.getByRole("button", { name: "让 momo 认识我" })).toBeInTheDocument();
   });
 
-  it("starts one real relationship conversation with a display-safe kickoff and reuses it", async () => {
-    const { client } = renderBuddy(createBuddyClient("那我先从一个轻松的问题开始。"));
+  it("keeps every explicit onboarding episode inside the same relationship conversation", async () => {
+    const { client } = renderBuddy(createBuddyClient("那我先从一个轻松的问题开始。", true));
 
     await userEvent.click(screen.getByRole("button", { name: "让 momo 认识我" }));
 
@@ -225,10 +239,13 @@ describe("BuddyShell", () => {
 
     await userEvent.click(screen.getByRole("button", { name: "让 momo 认识我" }));
     expect(client.invoke.mock.calls.filter(([channel]) => channel === "bridge:createConversation")).toHaveLength(1);
-    expect(client.invoke.mock.calls.filter(([channel]) => channel === "bridge:send")).toHaveLength(1);
+    expect(client.invoke.mock.calls.filter(([channel]) => channel === "bridge:send")).toHaveLength(2);
+    expect(client.invoke.mock.calls.filter(([channel]) => channel === "bridge:send")
+      .map(([, request]) => (request as { conversationId: string }).conversationId))
+      .toEqual(["conv-1", "conv-1"]);
   });
 
-  it("reopens the hydrated relationship conversation after restart without sending another kickoff", async () => {
+  it("reopens the hydrated relationship after restart and starts onboarding only on explicit click", async () => {
     const client = createBuddyClient();
 
     function SeedHydratedRelationship() {
@@ -277,7 +294,116 @@ describe("BuddyShell", () => {
     await userEvent.click(screen.getByRole("button", { name: "让 momo 认识我" }));
 
     expect(await screen.findByText("上次你说想让我更直接一点。")).toBeInTheDocument();
-    expect(client.invoke.mock.calls.filter(([channel]) => channel === "bridge:createConversation")).toHaveLength(0);
+    const hostClaims = client.invoke.mock.calls.filter(([channel]) => channel === "bridge:createConversation");
+    expect(hostClaims).toHaveLength(1);
+    expect(hostClaims[0]?.[1]).toEqual(expect.objectContaining({
+      conversationId: "conv-relationship-existing",
+    }));
+    expect(client.invoke.mock.calls.filter(([channel]) => channel === "bridge:send")).toHaveLength(1);
+    expect(client.invoke).toHaveBeenCalledWith("bridge:send", expect.objectContaining({
+      conversationId: "conv-relationship-existing",
+      prompt: expect.stringMatching(/^\/meet-momo\b/u),
+    }));
+  });
+
+  it("projects legacy buddy chapters into one relationship stream without leaking workbench tasks", async () => {
+    const client = createBuddyClient();
+
+    function SeedRelationshipHistory() {
+      const stores = useContext(BridgeContext) as BridgeStores;
+      const [ready, setReady] = useState(false);
+      useEffect(() => {
+        stores.settings.setState({
+          relationshipInviteDismissed: true,
+          relationshipConversationId: "buddy-current",
+        });
+        stores.conversations.setState({
+          byId: {
+            "buddy-old": {
+              id: "buddy-old",
+              title: "前几天聊到的求职焦虑",
+              titleManuallyUpdated: true,
+              bookId: null,
+              workspaceId: "leemo-home",
+              source: "buddy",
+              providerId: "deepseek",
+              modelId: "deepseek-chat",
+              createdAt: 1,
+              lastActivityAt: 2,
+              unread: false,
+            },
+            "buddy-current": {
+              id: "buddy-current",
+              title: "刚刚想到的一件事",
+              titleManuallyUpdated: true,
+              bookId: null,
+              workspaceId: "leemo-home",
+              source: "buddy",
+              providerId: "deepseek",
+              modelId: "deepseek-chat",
+              createdAt: 3,
+              lastActivityAt: 4,
+              unread: false,
+            },
+            "workbench-task": {
+              id: "workbench-task",
+              title: "整理项目代码",
+              titleManuallyUpdated: true,
+              bookId: null,
+              workspaceId: "leemo-home",
+              source: "workbench",
+              providerId: "deepseek",
+              modelId: "deepseek-chat",
+              createdAt: 5,
+              lastActivityAt: 6,
+              unread: false,
+            },
+          },
+          order: ["workbench-task", "buddy-current", "buddy-old"],
+          activeId: null,
+          timelines: {
+            "buddy-old": [{
+              kind: "text",
+              id: "old-message",
+              runId: "run-old",
+              role: "momo",
+              text: "你当时说，先把简历投递节奏稳下来。",
+              streaming: false,
+              createdAt: 2,
+            }],
+            "buddy-current": [{
+              kind: "text",
+              id: "current-message",
+              runId: "run-current",
+              role: "momo",
+              text: "今天我们接着聊这件事。",
+              streaming: false,
+              createdAt: 4,
+            }],
+            "workbench-task": [{
+              kind: "text",
+              id: "workbench-message",
+              runId: "run-workbench",
+              role: "momo",
+              text: "这是工作台内部执行记录。",
+              streaming: false,
+              createdAt: 6,
+            }],
+          },
+          runIds: { "buddy-old": null, "buddy-current": null, "workbench-task": null },
+        });
+        setReady(true);
+      }, [stores]);
+      return ready ? <BuddyShell /> : null;
+    }
+
+    render(<BridgeProvider client={client}><SeedRelationshipHistory /></BridgeProvider>);
+
+    await waitFor(() => {
+      expect(screen.getByText("你当时说，先把简历投递节奏稳下来。")).toBeInTheDocument();
+      expect(screen.getByText("今天我们接着聊这件事。")).toBeInTheDocument();
+    });
+    expect(screen.queryByText("这是工作台内部执行记录。")).not.toBeInTheDocument();
     expect(client.invoke.mock.calls.filter(([channel]) => channel === "bridge:send")).toHaveLength(0);
   });
 
@@ -366,9 +492,8 @@ describe("BuddyShell", () => {
     await waitFor(() => {
       const sendCall = client.invoke.mock.calls.find(([channel]) => channel === "bridge:send");
       expect(sendCall?.[1]).toEqual(expect.objectContaining({
-        conversationId: "conv-1",
+        conversationId: "conv-source",
         prompt: expect.stringContaining("把项目经历改得更具体"),
-        sourceMessageId: "u0",
       }));
       expect((sendCall?.[1] as { prompt: string }).prompt).toContain("简历-v2.docx");
     });
@@ -376,7 +501,9 @@ describe("BuddyShell", () => {
     expect(screen.queryByText(/<records>/)).not.toBeInTheDocument();
 
     await userEvent.click(screen.getByRole("button", { name: "回顾今天" }));
-    expect(client.invoke.mock.calls.filter(([channel]) => channel === "bridge:createConversation")).toHaveLength(1);
+    const hostClaims = client.invoke.mock.calls.filter(([channel]) => channel === "bridge:createConversation");
+    expect(hostClaims).toHaveLength(1);
+    expect(hostClaims[0]?.[1]).toEqual(expect.objectContaining({ conversationId: "conv-source" }));
     expect(client.invoke.mock.calls.filter(([channel]) => channel === "bridge:send")).toHaveLength(1);
   });
 
@@ -566,7 +693,7 @@ describe("BuddyShell", () => {
   it("clicking the history button opens the drawer", async () => {
     renderBuddy();
     await userEvent.click(screen.getByLabelText("历史对话"));
-    expect(screen.getByRole("searchbox", { name: "搜索对话" })).toBeInTheDocument();
+    expect(screen.getByRole("searchbox", { name: "搜索记录" })).toBeInTheDocument();
   });
 
   it("renders approval bar when there is a pending approval in the active run", async () => {

@@ -2,6 +2,8 @@ import type { ModelContextPolicy } from "../../bridge/contract";
 
 export interface ContextUsageIndicatorProps {
   currentTokens: number;
+  capacityTokens?: number;
+  rawMaxTokens?: number;
   policy?: ModelContextPolicy;
 }
 
@@ -26,10 +28,13 @@ export function formatContextTokens(tokens: number): string {
 
 export default function ContextUsageIndicator({
   currentTokens,
+  capacityTokens,
+  rawMaxTokens,
   policy,
 }: ContextUsageIndicatorProps): React.JSX.Element {
   const used = Math.max(0, currentTokens);
-  const capacity = effectiveContextCapacity(policy);
+  const capacity = capacityTokens ?? effectiveContextCapacity(policy);
+  const modelMaximum = rawMaxTokens ?? policy?.contextWindowTokens;
   const percent = capacity ? Math.min(100, Math.round((used / capacity) * 100)) : undefined;
   const accessibleLabel = percent === undefined
     ? `上下文已用 ${formatContextTokens(used)}，容量自动识别`
@@ -66,8 +71,8 @@ export default function ContextUsageIndicator({
             ? `已用 ${formatContextTokens(used)}，整理窗口 ${formatContextTokens(capacity)}`
             : `已用 ${formatContextTokens(used)}`}
         </span>
-        {policy?.contextWindowTokens && policy.contextWindowTokens !== capacity ? (
-          <span className="mt-1 block text-[11px] text-white/60">模型上限 {formatContextTokens(policy.contextWindowTokens)}</span>
+        {modelMaximum && modelMaximum !== capacity ? (
+          <span className="mt-1 block text-[11px] text-white/60">模型上限 {formatContextTokens(modelMaximum)}</span>
         ) : !capacity ? (
           <span className="mt-1 block text-[11px] text-white/60">容量由当前模型自动识别</span>
         ) : null}

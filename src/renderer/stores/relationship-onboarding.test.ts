@@ -56,4 +56,29 @@ describe("momo relationship onboarding", () => {
 
     expect(result?.id).toBe("newest");
   });
+
+  it("adopts the newest ordinary global buddy conversation as the durable relationship", () => {
+    const result = findRelationshipConversation({
+      older: conversation({
+        id: "older",
+        title: "前几天聊到的求职焦虑",
+        titleManuallyUpdated: false,
+        lastActivityAt: 8,
+      }),
+      newest: conversation({
+        id: "newest",
+        title: "刚刚想到的一件事",
+        titleManuallyUpdated: false,
+        lastActivityAt: 12,
+      }),
+      workbench: conversation({
+        id: "workbench",
+        source: "workbench",
+        title: "工作台任务",
+        lastActivityAt: 30,
+      }),
+    }, null);
+
+    expect(result?.id).toBe("newest");
+  });
 });

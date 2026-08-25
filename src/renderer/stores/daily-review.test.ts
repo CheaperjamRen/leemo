@@ -6,6 +6,7 @@ import {
   buildDailyReviewPrompt,
   dailyReviewTitle,
   findTodayDailyReviewConversation,
+  hasDailyReviewToday,
 } from "./daily-review";
 
 const NOW = new Date(2026, 7, 5, 20, 30).getTime();
@@ -137,5 +138,15 @@ describe("daily review digest", () => {
     ], NOW);
 
     expect(found?.id).toBe("today-review");
+  });
+
+  it("recognizes today's review episode inside the durable momo relationship", () => {
+    expect(hasDailyReviewToday([
+      text("user", "回顾今天", NOW - 2_000),
+      text("momo", "今天主要推进了简历。", NOW - 1_000),
+    ], NOW)).toBe(true);
+    expect(hasDailyReviewToday([
+      text("user", "回顾今天", NOW - 86_400_000),
+    ], NOW)).toBe(false);
   });
 });

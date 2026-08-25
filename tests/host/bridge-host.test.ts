@@ -3204,7 +3204,7 @@ describe("bridge-host — skills (轮 2 卡 E)", () => {
 
   it("applies a skill switch to every live conversation on its next round", async () => {
     const seen: Record<string, unknown>[] = [];
-    const { deps } = makeDeps((params) => (async function* () {
+    const { deps, pushed } = makeDeps((params) => (async function* () {
       seen.push((params.options ?? {}) as Record<string, unknown>);
       yield { type: "result", subtype: "success", result: "ok", is_error: false };
     })() as never);
@@ -3214,6 +3214,12 @@ describe("bridge-host — skills (轮 2 卡 E)", () => {
     await host.handleInvoke("bridge:send", { conversationId, prompt: "first" });
     await vi.waitFor(() => expect(seen).toHaveLength(1));
     expect(seen[0]?.skills).toEqual(["leemo:pdf"]);
+    await vi.waitFor(() => {
+      expect(pushed.some((call) =>
+        call.channel === "bridge:event"
+        && (call.payload as { event?: { type?: string } }).event?.type === "run.finished"
+      )).toBe(true);
+    });
 
     await expect(host.handleInvoke("bridge:syncEnabledSkills", { enabledQualifiedNames: [] }))
       .resolves.toEqual({ updatedConversations: 1 });

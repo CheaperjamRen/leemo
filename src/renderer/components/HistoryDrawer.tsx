@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
-import { ChevronDown, ChevronRight, Search, SquarePen, X } from "lucide-react";
+import { ChevronDown, ChevronRight, Search, X } from "lucide-react";
 import type { ConversationMeta } from "../stores/conversations";
-import { useApprovals, useConversations, useNotebooks, useUi, useWorkspaces } from "../bridge/context";
+import { useApprovals, useConversations, useNotebooks, useWorkspaces } from "../bridge/context";
 import { deriveConversationStatus } from "../stores/conversation-status";
 import { HOME_WORKSPACE_ID } from "../stores/workspaces";
 import ConversationListItem from "./ConversationListItem";
@@ -67,16 +67,22 @@ function formatActivityTime(conversation: ConversationMeta, now: number): string
 
 /** Buddy mode keeps global conversations here; notebook conversations remain
  * inside their real workbench so the two surfaces never imply duplicate data. */
-export default function HistoryDrawer({ open, onClose }: { open: boolean; onClose: () => void }) {
+export default function HistoryDrawer({
+  open,
+  onClose,
+  relationshipId,
+  onPickChapter,
+}: {
+  open: boolean;
+  onClose: () => void;
+  relationshipId?: string | null;
+  onPickChapter?: (conversationId: string) => void;
+}) {
   const [q, setQ] = useState("");
   const [showArchived, setShowArchived] = useState(false);
-  const [startError, setStartError] = useState<string | null>(null);
   const [collapsedGroups, setCollapsedGroups] = useState<Partial<Record<HistoryGroupId, boolean>>>({});
   const byId = useConversations((s) => s.byId);
   const order = useConversations((s) => s.order);
-  const activeId = useConversations((s) => s.activeId);
-  const switchActive = useConversations((s) => s.switchActive);
-  const createConversation = useConversations((s) => s.createConversation);
   const renameTitle = useConversations((s) => s.renameTitle);
   const setConversationUnread = useConversations((s) => s.setConversationUnread);
   const pinConversation = useConversations((s) => s.pinConversation);
@@ -88,7 +94,6 @@ export default function HistoryDrawer({ open, onClose }: { open: boolean; onClos
   const notebookList = useNotebooks((s) => s.list);
   const workspaceList = useWorkspaces((s) => s.list);
   const pendingByConversation = useApprovals((s) => s.pendingByConversation);
-  const openSettings = useUi((s) => s.openSettings);
 
   useEffect(() => {
     if (!open) return;
@@ -113,11 +118,16 @@ export default function HistoryDrawer({ open, onClose }: { open: boolean; onClos
         && conversation.bookId === null
     );
   const query = q.trim();
-  const matchesQuery = (title: string) => query === "" || title.toLocaleLowerCase().includes(query.toLocaleLowerCase());
-  const visible = conversations.filter((conversation) => !conversation.archived && matchesQuery(conversation.title));
+  const normalizedQuery = query.toLocaleLowerCase();
+  const matchesQuery = (conversation: ConversationMeta) => query === ""
+    || conversation.title.toLocaleLowerCase().includes(normalizedQuery)
+    || (timelines[conversation.id] ?? []).some((item) => (
+      item.kind === "text" && item.text.toLocaleLowerCase().includes(normalizedQuery)
+    ));
+  const visible = conversations.filter((conversation) => !conversation.archived && matchesQuery(conversation));
   const groups = groupConversations(visible, now);
   const archived = conversations
-    .filter((conversation) => conversation.archived && matchesQuery(conversation.title))
+    .filter((conversation) => conversation.archived && matchesQuery(conversation))
     .sort((left, right) => activityTime(right) - activityTime(left));
   const archivedCount = conversations.filter((conversation) => conversation.archived).length;
   const archiveOpen = showArchived || query !== "";
@@ -131,38 +141,20 @@ export default function HistoryDrawer({ open, onClose }: { open: boolean; onClos
   const dismiss = () => {
     setQ("");
     setShowArchived(false);
-    setStartError(null);
     setCollapsedGroups({});
     onClose();
   };
 
   const pick = (id: string) => {
-    switchActive(id);
+    onPickChapter?.(id);
     dismiss();
-  };
-
-  const startNew = async () => {
-    setStartError(null);
-    try {
-      const id = await createConversation({ source: "buddy", bookId: null });
-      switchActive(id);
-      dismiss();
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      if (/还没有(?:选择可用模型|完成登录与保存|配置 API Key)/u.test(message)) {
-        dismiss();
-        openSettings("models");
-        return;
-      }
-      setStartError(message);
-    }
   };
 
   const row = (conversation: ConversationMeta) => (
     <li key={conversation.id} className="buddy-history-row">
       <ConversationListItem
         conversation={conversation}
-        active={conversation.id === activeId}
+        active={conversation.id === relationshipId}
         variant="buddy"
         onPick={() => pick(conversation.id)}
         onRename={(title) => renameTitle(conversation.id, title)}
@@ -193,41 +185,36 @@ export default function HistoryDrawer({ open, onClose }: { open: boolean; onClos
       <aside
         role="dialog"
         aria-modal="true"
-        aria-label="对话"
+        aria-label="momo 的记录"
         data-history-drawer="buddy"
         className="buddy-history-drawer"
         onKeyDown={(event) => { if (event.key === "Escape") dismiss(); }}
       >
         <header className="buddy-history-header">
-          <h2>对话</h2>
-          <button type="button" className="buddy-history-close" aria-label="关闭对话" onClick={dismiss}>
+          <h2>momo 的记录</h2>
+          <button type="button" className="buddy-history-close" aria-label="关闭记录" onClick={dismiss}>
             <X aria-hidden />
           </button>
         </header>
 
         <div className="buddy-history-controls">
-          <button type="button" aria-label="开始新对话" className="buddy-history-new" onClick={() => void startNew()}>
-            <SquarePen aria-hidden />
-            <span>新对话</span>
-          </button>
           <label className="buddy-history-search">
             <Search aria-hidden />
             <input
               role="searchbox"
-              aria-label="搜索对话"
-              placeholder="搜索对话"
+              aria-label="搜索记录"
+              placeholder="搜索记录"
               value={q}
               onChange={(event) => setQ(event.target.value)}
             />
           </label>
-          {startError && <p className="buddy-history-error" role="alert">{startError}</p>}
         </div>
 
         <div className="buddy-history-list" data-testid="buddy-history-list">
           {conversations.length === 0 ? (
-            <p className="buddy-history-empty">还没有对话</p>
+            <p className="buddy-history-empty">还没有记录</p>
           ) : groups.length === 0 && archived.length === 0 ? (
-            <p className="buddy-history-empty">没有匹配的对话</p>
+            <p className="buddy-history-empty">没有匹配的记录</p>
           ) : (
             groups.map((group) => {
               const collapsed = collapsedGroups[group.id] === true;

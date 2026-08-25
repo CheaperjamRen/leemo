@@ -29,6 +29,7 @@ export interface QuickCaptureMainWindowLike {
 export interface QuickCaptureTrayLike {
   setToolTip(label: string): void;
   setContextMenu(menu: unknown): void;
+  on(event: "click", listener: () => void): unknown;
   destroy(): void;
 }
 
@@ -146,6 +147,9 @@ export function createQuickCaptureController(
       if (startResult) return startResult;
       tray = deps.createTray();
       tray.setToolTip("Leemo");
+      tray.on("click", () => {
+        if (!quitting) deps.focusMainWindow();
+      });
       tray.setContextMenu(deps.buildMenu([
         { label: "快速记一条", click: showCapture },
         { label: "打开 Leemo", click: deps.focusMainWindow },

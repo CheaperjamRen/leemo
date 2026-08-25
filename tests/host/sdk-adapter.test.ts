@@ -14,6 +14,11 @@ function makeExtras() {
 }
 
 describe("buildQueryFn", () => {
+  it("declares support for the pool's held-open multi-turn input contract", () => {
+    const fakeQuery = () => (async function* () {})();
+    const qfn = buildQueryFn(makeExtras(), fakeQuery as never);
+    expect(qfn.supportsPersistentInput).toBe(true);
+  });
   it("passes through options.env unchanged", async () => {
     const captured: QueryParams[] = [];
     const fakeQuery = (p: QueryParams) => { captured.push(p); return (async function* () {})(); };

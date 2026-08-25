@@ -40,6 +40,7 @@ import {
   type QuickCaptureController,
 } from "./quick-capture-window";
 import { createBridgeHost, type BridgeHost } from "../host/bridge-host";
+import { searchRelationshipHistory } from "./relationship-history-search";
 import { buildCatalog } from "../host/provider-catalog";
 import {
   createMemoryGovernance,
@@ -1104,6 +1105,10 @@ function setupHost(): void {
     readGlobalMemory: () => readCurrentMemory({ type: "global" }),
     captures: captureAdmin,
     tasks: taskAdmin,
+    searchBuddyHistory: (query) => searchRelationshipHistory(
+      activePersistence.loadAll().conversations,
+      query,
+    ),
     memoryDir: memoryDir(),
     skillAdmin: createSkillAdminService({ memoryDir: memoryDir(), fetchFn: fetch }),
     officeSkills,

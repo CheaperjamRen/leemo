@@ -1,7 +1,8 @@
 import type { ConversationMeta } from "./conversations";
 import { HOME_WORKSPACE_ID } from "./workspaces";
 
-export const RELATIONSHIP_CONVERSATION_TITLE = "和 momo 认识一下";
+export const RELATIONSHIP_CONVERSATION_TITLE = "和 momo 的对话";
+export const RELATIONSHIP_ONBOARDING_LABEL = "和 momo 认识一下";
 
 /**
  * The slash command selects the richer bundled workflow when it is enabled.
@@ -20,7 +21,7 @@ export function buildRelationshipOnboardingPrompt(): string {
   ].join("\n");
 }
 
-function isGlobalBuddyConversation(meta: ConversationMeta): boolean {
+export function isGlobalBuddyConversation(meta: ConversationMeta): boolean {
   return meta.source === "buddy"
     && (meta.workspaceId ?? HOME_WORKSPACE_ID) === HOME_WORKSPACE_ID
     && meta.bookId === null
@@ -37,6 +38,6 @@ export function findRelationshipConversation(
   }
 
   return Object.values(conversations)
-    .filter((meta) => isGlobalBuddyConversation(meta) && meta.title === RELATIONSHIP_CONVERSATION_TITLE)
+    .filter((meta) => isGlobalBuddyConversation(meta))
     .sort((left, right) => right.lastActivityAt - left.lastActivityAt)[0];
 }

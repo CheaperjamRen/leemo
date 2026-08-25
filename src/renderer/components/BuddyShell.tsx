@@ -19,13 +19,14 @@ import { HOME_WORKSPACE_ID } from "../stores/workspaces";
 import type { ConversationTurnOptions } from "../stores/conversations";
 import {
   buildDailyReviewPrompt,
-  dailyReviewTitle,
-  findTodayDailyReviewConversation,
+  hasDailyReviewToday,
 } from "../stores/daily-review";
 import {
   RELATIONSHIP_CONVERSATION_TITLE,
+  RELATIONSHIP_ONBOARDING_LABEL,
   buildRelationshipOnboardingPrompt,
   findRelationshipConversation,
+  isGlobalBuddyConversation,
 } from "../stores/relationship-onboarding";
 import { buildGreeting } from "../stores/settings";
 import Clock from "./Clock";
@@ -38,21 +39,22 @@ export default function BuddyShell() {
   const [dailyReviewError, setDailyReviewError] = useState<string | null>(null);
   const [relationshipBusy, setRelationshipBusy] = useState(false);
   const [relationshipError, setRelationshipError] = useState<string | null>(null);
+  const [historyFocus, setHistoryFocus] = useState<{ runId: string; nonce: number } | null>(null);
   const dailyReviewInFlight = useRef(false);
   const relationshipInFlight = useRef(false);
   const globalActiveId = useConversations((s) => s.activeId);
   const conversations = useConversations((s) => s.byId);
-  const activateScope = useConversations((s) => s.activateScope);
-  const activeId = globalActiveId
-    && (conversations[globalActiveId]?.workspaceId ?? HOME_WORKSPACE_ID) === HOME_WORKSPACE_ID
-    && conversations[globalActiveId]?.bookId === null
-    ? globalActiveId
-    : null;
+  const relationshipInviteDismissed = useSettings((s) => s.relationshipInviteDismissed);
+  const relationshipConversationId = useSettings((s) => s.relationshipConversationId);
+  const dismissRelationshipInvite = useSettings((s) => s.dismissRelationshipInvite);
+  const setRelationshipConversationId = useSettings((s) => s.setRelationshipConversationId);
+  const relationshipConversation = useMemo(
+    () => findRelationshipConversation(conversations, relationshipConversationId),
+    [conversations, relationshipConversationId],
+  );
+  const activeId = relationshipConversation?.id ?? null;
   const activeIdRef = useRef(activeId);
   activeIdRef.current = activeId;
-  useEffect(() => {
-    if (globalActiveId !== activeId) activateScope(HOME_WORKSPACE_ID, null);
-  }, [activateScope, activeId, globalActiveId]);
   const composerDrafts = useComposerDrafts((state) => state.drafts);
   const updateComposerDraft = useComposerDrafts((state) => state.updateDraft);
   const setComposerText = useComposerDrafts((state) => state.setText);
@@ -73,13 +75,23 @@ export default function BuddyShell() {
   const retry = useConversations((s) => s.retry);
   const dismissRetry = useConversations((s) => s.dismissRetry);
   const interrupt = useConversations((s) => s.interrupt);
-  const timeline = useConversations((s) => activeId ? s.timelines[activeId] : undefined);
   const activeRunId = useConversations((s) => activeId ? s.runIds[activeId] : null);
   const retryDraft = useConversations((s) => activeId ? s.pendingSends[activeId] : undefined);
   const queuedTurns = useConversations((s) => activeId ? s.queuedTurns[activeId] : undefined);
   const conversationOrder = useConversations((s) => s.order);
   const timelines = useConversations((s) => s.timelines);
   const runIds = useConversations((s) => s.runIds);
+  const relationshipChapters = useMemo(() => Object.values(conversations)
+    .filter(isGlobalBuddyConversation)
+    .sort((left, right) => {
+      if (left.id === activeId) return 1;
+      if (right.id === activeId) return -1;
+      return left.createdAt - right.createdAt || left.lastActivityAt - right.lastActivityAt;
+    }), [activeId, conversations]);
+  const relationshipTimeline = useMemo(
+    () => relationshipChapters.flatMap((conversation) => timelines[conversation.id] ?? []),
+    [relationshipChapters, timelines],
+  );
   const artifacts = useArtifacts((s) => s.entries);
   const scheduledTasks = useScheduledTasks((s) => s.tasks);
   const scheduledRuns = useScheduledTasks((s) => s.runs);
@@ -92,14 +104,19 @@ export default function BuddyShell() {
   const defaultProviderId = useSettings((s) => s.defaultProviderId);
   const defaultModelId = useSettings((s) => s.defaultModelId);
   const setDefaultModel = useSettings((s) => s.setDefaultModel);
-  const relationshipInviteDismissed = useSettings((s) => s.relationshipInviteDismissed);
-  const relationshipConversationId = useSettings((s) => s.relationshipConversationId);
-  const dismissRelationshipInvite = useSettings((s) => s.dismissRelationshipInvite);
-  const setRelationshipConversationId = useSettings((s) => s.setRelationshipConversationId);
   const setModelForConversation = useConversations((s) => s.setModelForConversation);
   const setGoal = useConversations((s) => s.setGoal);
   const toggleGoalPaused = useConversations((s) => s.toggleGoalPaused);
   const clearGoal = useConversations((s) => s.clearGoal);
+  useEffect(() => {
+    if (!relationshipConversation) return;
+    if (relationshipConversationId !== relationshipConversation.id) {
+      setRelationshipConversationId(relationshipConversation.id);
+    }
+    if (globalActiveId !== relationshipConversation.id) {
+      switchActive(relationshipConversation.id);
+    }
+  }, [globalActiveId, relationshipConversation, relationshipConversationId, setRelationshipConversationId, switchActive]);
   const rawProviderList = useProviders((s) => s.list);
   const providerList = useMemo(
     () => orderConfiguredProviders(rawProviderList, providerOrder, { providerId: defaultProviderId, modelId: defaultModelId }),
@@ -117,11 +134,7 @@ export default function BuddyShell() {
   const enabledSkills = skillList.filter(
     (skill) => skill.available !== false && !skillsDisabled.includes(skill.id ?? skill.name),
   );
-  const relationshipConversation = useMemo(
-    () => findRelationshipConversation(conversations, relationshipConversationId),
-    [conversations, relationshipConversationId],
-  );
-  const messages = timeline ?? [];
+  const messages = relationshipTimeline;
   const retryRecoveryRendered = Boolean(
     retryDraft?.errorMessage
       && messages.some((item) => item.kind === "result"
@@ -140,14 +153,9 @@ export default function BuddyShell() {
     return undefined;
   })();
 
-  const sendFromBuddy = async (
-    text: string,
-    attachments?: AttachmentRef[],
-    referencedFiles?: WorkspaceFileRef[],
-    options?: ConversationTurnOptions,
-  ) => {
-    const sendingScope = draftScope;
-    let conversationId = activeId ?? composerDraft.assignedConversationId;
+  const ensureRelationshipConversation = useCallback(async (): Promise<string> => {
+    const existing = findRelationshipConversation(conversations, relationshipConversationId);
+    let conversationId = existing?.id;
     if (!conversationId) {
       conversationId = await createConversation({
         source: "buddy",
@@ -155,14 +163,22 @@ export default function BuddyShell() {
         bookId: null,
         activate: false,
       });
-      assignComposerConversation(sendingScope, conversationId);
-      // Enter the newly-created thread before waiting for the host's send ACK.
-      // The optimistic user turn and momo's truthful start state then appear
-      // immediately instead of leaving the first screen looking unresponsive.
-      if (!activeIdRef.current && draftScopeRef.current === sendingScope) {
-        switchActive(conversationId);
-      }
+      renameTitle(conversationId, RELATIONSHIP_CONVERSATION_TITLE);
     }
+    setRelationshipConversationId(conversationId);
+    if (activeIdRef.current !== conversationId) switchActive(conversationId);
+    return conversationId;
+  }, [conversations, createConversation, relationshipConversationId, renameTitle, setRelationshipConversationId, switchActive]);
+
+  const sendFromBuddy = async (
+    text: string,
+    attachments?: AttachmentRef[],
+    referencedFiles?: WorkspaceFileRef[],
+    options?: ConversationTurnOptions,
+  ) => {
+    const sendingScope = draftScope;
+    const conversationId = await ensureRelationshipConversation();
+    assignComposerConversation(sendingScope, conversationId);
     await send(conversationId, text, attachments, referencedFiles, options);
     if (!activeIdRef.current && draftScopeRef.current === sendingScope) {
       switchActive(conversationId);
@@ -182,16 +198,8 @@ export default function BuddyShell() {
 
   const saveGoalFromBuddy = async (text: string) => {
     const goalScope = draftScope;
-    let conversationId = activeId ?? composerDraft.assignedConversationId;
-    if (!conversationId) {
-      conversationId = await createConversation({
-        source: "buddy",
-        workspaceId: HOME_WORKSPACE_ID,
-        bookId: null,
-        activate: false,
-      });
-      assignComposerConversation(goalScope, conversationId);
-    }
+    const conversationId = await ensureRelationshipConversation();
+    assignComposerConversation(goalScope, conversationId);
     await setGoal(conversationId, text);
     if (!activeIdRef.current && draftScopeRef.current === goalScope) switchActive(conversationId);
   };
@@ -203,11 +211,8 @@ export default function BuddyShell() {
     setDailyReviewError(null);
     try {
       const now = Date.now();
-      const existing = findTodayDailyReviewConversation(Object.values(conversations), now);
-      if (existing) {
-        switchActive(existing.id);
-        if ((timelines[existing.id] ?? []).length > 0 || runIds[existing.id]) return;
-      }
+      const conversationId = await ensureRelationshipConversation();
+      if (hasDailyReviewToday(timelines[conversationId], now) || runIds[conversationId]) return;
 
       const prompt = buildDailyReviewPrompt({
         now,
@@ -218,16 +223,6 @@ export default function BuddyShell() {
         scheduledTasks,
         scheduledRuns,
       });
-      const conversationId = existing?.id ?? await createConversation({
-          source: "buddy",
-          workspaceId: HOME_WORKSPACE_ID,
-          bookId: null,
-          activate: false,
-        });
-      if (!existing) {
-        renameTitle(conversationId, dailyReviewTitle(now));
-        switchActive(conversationId);
-      }
       await send(conversationId, prompt, undefined, undefined, { displayText: "回顾今天" });
     } catch (error: unknown) {
       setDailyReviewError(error instanceof Error ? error.message : "暂时无法生成今天的回顾，请稍后重试。");
@@ -239,12 +234,10 @@ export default function BuddyShell() {
     artifacts,
     conversationOrder,
     conversations,
-    createConversation,
-    renameTitle,
+    ensureRelationshipConversation,
     scheduledRuns,
     scheduledTasks,
     send,
-    switchActive,
     timelines,
     runIds,
   ]);
@@ -256,27 +249,14 @@ export default function BuddyShell() {
     setRelationshipError(null);
     dismissRelationshipInvite();
     try {
-      const existing = findRelationshipConversation(conversations, relationshipConversationId);
-      let conversationId = existing?.id;
-      if (!conversationId) {
-        conversationId = await createConversation({
-          source: "buddy",
-          workspaceId: HOME_WORKSPACE_ID,
-          bookId: null,
-          activate: false,
-        });
-        renameTitle(conversationId, RELATIONSHIP_CONVERSATION_TITLE);
-      }
-      setRelationshipConversationId(conversationId);
-      switchActive(conversationId);
-      if ((timelines[conversationId] ?? []).length > 0 || runIds[conversationId]) return;
-
+      const conversationId = await ensureRelationshipConversation();
+      if (runIds[conversationId]) return;
       await send(
         conversationId,
         buildRelationshipOnboardingPrompt(),
         undefined,
         undefined,
-        { displayText: RELATIONSHIP_CONVERSATION_TITLE },
+        { displayText: RELATIONSHIP_ONBOARDING_LABEL },
       );
     } catch (error: unknown) {
       setRelationshipError(error instanceof Error ? error.message : "暂时没能开始这段对话，请再试一次。");
@@ -285,16 +265,10 @@ export default function BuddyShell() {
       setRelationshipBusy(false);
     }
   }, [
-    conversations,
-    createConversation,
     dismissRelationshipInvite,
-    relationshipConversationId,
-    renameTitle,
+    ensureRelationshipConversation,
     runIds,
     send,
-    setRelationshipConversationId,
-    switchActive,
-    timelines,
   ]);
 
   const dismissRetryAndRelease = () => {
@@ -353,7 +327,14 @@ export default function BuddyShell() {
           // the step that raised them: nothing is pinned above the input
           // anymore — a pinned copy on top of the inline one is exactly the
           // "same card twice" duplicate-render bug this round fixed.
-          <Timeline />
+          <Timeline
+            items={relationshipTimeline}
+            activeConversationId={activeId}
+            activeRunId={activeRunId}
+            pageKey={`buddy-relationship:${activeId ?? "empty"}`}
+            pageSize={40}
+            focusRequest={historyFocus}
+          />
         ) : (
           <section
             className="leemo-buddy-landing"
@@ -467,7 +448,18 @@ export default function BuddyShell() {
           </div>
         </div>
       </main>
-      <HistoryDrawer open={drawer} onClose={() => setDrawer(false)} />
+      <HistoryDrawer
+        open={drawer}
+        relationshipId={activeId}
+        onClose={() => setDrawer(false)}
+        onPickChapter={(conversationId) => {
+          const target = (timelines[conversationId] ?? []).find((item) => (
+            item.kind !== "compact" && typeof item.runId === "string" && item.runId.length > 0
+          ));
+          if (!target || target.kind === "compact") return;
+          setHistoryFocus({ runId: target.runId, nonce: Date.now() });
+        }}
+      />
     </div>
   );
 }

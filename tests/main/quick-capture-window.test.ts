@@ -17,6 +17,7 @@ function setup(options: {
   let captureClosed: (() => void) | undefined;
   let captureInput: ((event: PreventableEvent, input: { key: string }) => void) | undefined;
   let mainClose: ((event: PreventableEvent) => void) | undefined;
+  let trayClick: (() => void) | undefined;
   let menuItems: readonly QuickCaptureMenuItem[] = [];
   let backgroundEnabled = options.backgroundEnabled ?? true;
   let shortcut = options.shortcut ?? "Alt+N";
@@ -46,6 +47,7 @@ function setup(options: {
   const tray = {
     setToolTip: vi.fn(),
     setContextMenu: vi.fn(),
+    on: vi.fn((_event: "click", listener: () => void) => { trayClick = listener; }),
     destroy: vi.fn(),
   };
   const menu = { kind: "menu" };
@@ -82,6 +84,7 @@ function setup(options: {
     emitCaptureClosed: () => captureClosed?.(),
     emitCaptureInput: (event: PreventableEvent, key: string) => captureInput?.(event, { key }),
     emitMainClose: (event: PreventableEvent) => mainClose?.(event),
+    emitTrayClick: () => trayClick?.(),
     setBackgroundEnabled: (value: boolean) => { backgroundEnabled = value; },
     setShortcut: (value: string) => { shortcut = value; },
   };
@@ -159,6 +162,18 @@ describe("快捷便签桌面生命周期", () => {
     expect(f.deps.focusMainWindow).toHaveBeenCalledOnce();
     f.getMenuItems()[2]?.click();
     expect(f.deps.quitApp).toHaveBeenCalledOnce();
+  });
+
+  it("单击托盘图标恢复 Leemo，控制器销毁后不再响应残留事件", () => {
+    const f = setup();
+    f.controller.start();
+
+    f.emitTrayClick();
+    expect(f.deps.focusMainWindow).toHaveBeenCalledOnce();
+
+    f.controller.dispose();
+    f.emitTrayClick();
+    expect(f.deps.focusMainWindow).toHaveBeenCalledOnce();
   });
 
   it("Alt+N 注册冲突返回用户能看懂的失败，托盘入口仍可用", () => {

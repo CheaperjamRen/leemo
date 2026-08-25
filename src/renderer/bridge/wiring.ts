@@ -175,7 +175,7 @@ export function wireBridgeSubscriptions(
       conversations.setState((state) =>
         foldConversationEnvelope(state, envelope, Date.now())
       );
-      if (event.type === "usage.final" || event.type === "compact.boundary") {
+      if (event.type === "context.snapshot" || event.type === "compact.boundary") {
         contextUsage?.setState((state) => foldContextUsage(state, event, conversationId));
       }
 

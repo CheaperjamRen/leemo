@@ -112,6 +112,15 @@ export type LeemoEvent =
   | { type: "thinking.delta"; text: string }
   | { type: "text.final"; text: string }
   | {
+      type: "context.snapshot";
+      currentTokens: number;
+      maxTokens: number;
+      rawMaxTokens: number;
+      autoCompactThreshold?: number;
+      isAutoCompactEnabled: boolean;
+      model: string;
+    }
+  | {
       /** Passive progress from an upstream runtime retrying the same request.
        * Leemo never uses this event as permission to resend the user turn. */
       type: "stream.retry";
@@ -217,24 +226,6 @@ export interface RawModelUsageLike {
   [key: string]: unknown;
 }
 
-interface ModelUsageSnapshot {
-  inputTokens: number;
-  outputTokens: number;
-  cacheReadTokens: number;
-  cacheCreationTokens: number;
-  costUsd: number;
-  canonicalModel?: string;
-  servingProvider?: string;
-}
-
-export interface ModelUsageCursor {
-  previous: Record<string, ModelUsageSnapshot>;
-}
-
-export function createModelUsageCursor(): ModelUsageCursor {
-  return { previous: {} };
-}
-
 function num(v: unknown): number {
   return typeof v === "number" && Number.isFinite(v) ? v : 0;
 }
@@ -288,78 +279,31 @@ export function buildUsageRecord(usage: RawUsageLike, ctx: BuildUsageRecordCtx):
   return base;
 }
 
-function snapshotModelUsage(modelUsage: Record<string, RawModelUsageLike>): Record<string, ModelUsageSnapshot> {
-  return Object.fromEntries(Object.entries(modelUsage).map(([modelId, usage]) => [modelId, {
-    inputTokens: num(usage.inputTokens),
-    outputTokens: num(usage.outputTokens),
-    cacheReadTokens: num(usage.cacheReadInputTokens),
-    cacheCreationTokens: num(usage.cacheCreationInputTokens),
-    costUsd: num(usage.costUSD),
-    ...(typeof usage.canonicalModel === "string" && usage.canonicalModel ? { canonicalModel: usage.canonicalModel } : {}),
-    ...(typeof usage.provider === "string" && usage.provider ? { servingProvider: usage.provider } : {}),
-  }]));
-}
-
-function modelUsageRegressed(
-  current: Record<string, ModelUsageSnapshot>,
-  previous: Record<string, ModelUsageSnapshot>,
-): boolean {
-  const previousIds = Object.keys(previous);
-  if (previousIds.length === 0) return false;
-  if (previousIds.some((modelId) => current[modelId] === undefined)) return true;
-  return Object.entries(current).some(([modelId, now]) => {
-    const before = previous[modelId];
-    return before !== undefined && (
-      now.inputTokens < before.inputTokens
-      || now.outputTokens < before.outputTokens
-      || now.cacheReadTokens < before.cacheReadTokens
-      || now.cacheCreationTokens < before.cacheCreationTokens
-      || now.costUsd + 1e-12 < before.costUsd
-    );
-  });
-}
-
 function buildModelUsageRecord(
   mainUsage: RawUsageLike,
   modelUsage: Record<string, RawModelUsageLike>,
   ctx: NormalizeCtx,
   durationMs?: number,
 ): UsageRecord {
-  const current = snapshotModelUsage(modelUsage);
-  const cursor = ctx.modelUsageCursor;
-  const previous = cursor?.previous ?? {};
-  const reset = modelUsageRegressed(current, previous);
-  const baseline = reset ? {} : previous;
   const modelBreakdown: UsageModelRecord[] = [];
 
-  for (const [rawModelId, now] of Object.entries(current)) {
-    const before = baseline[rawModelId];
-    const delta = {
-      inputTokens: Math.max(0, now.inputTokens - (before?.inputTokens ?? 0)),
-      outputTokens: Math.max(0, now.outputTokens - (before?.outputTokens ?? 0)),
-      cacheReadTokens: Math.max(0, now.cacheReadTokens - (before?.cacheReadTokens ?? 0)),
-      cacheCreationTokens: Math.max(0, now.cacheCreationTokens - (before?.cacheCreationTokens ?? 0)),
-      costUsd: Math.max(0, now.costUsd - (before?.costUsd ?? 0)),
-    };
-    if (
-      delta.inputTokens === 0
-      && delta.outputTokens === 0
-      && delta.cacheReadTokens === 0
-      && delta.cacheCreationTokens === 0
-      && delta.costUsd === 0
-    ) continue;
+  for (const [rawModelId, now] of Object.entries(modelUsage)) {
+    const inputTokens = num(now.inputTokens);
+    const outputTokens = num(now.outputTokens);
+    const cacheReadTokens = num(now.cacheReadInputTokens);
+    const cacheCreationTokens = num(now.cacheCreationInputTokens);
+    const costUsd = num(now.costUSD);
     modelBreakdown.push({
       providerId: ctx.providerId,
-      modelId: now.canonicalModel ?? rawModelId,
-      ...(now.servingProvider ? { servingProvider: now.servingProvider } : {}),
-      inputTokens: delta.inputTokens,
-      outputTokens: delta.outputTokens,
-      cacheReadTokens: delta.cacheReadTokens,
-      cacheCreationTokens: delta.cacheCreationTokens,
-      costUsd: delta.costUsd.toFixed(6),
+      modelId: typeof now.canonicalModel === "string" && now.canonicalModel ? now.canonicalModel : rawModelId,
+      ...(typeof now.provider === "string" && now.provider ? { servingProvider: now.provider } : {}),
+      inputTokens,
+      outputTokens,
+      cacheReadTokens,
+      cacheCreationTokens,
+      costUsd: costUsd.toFixed(6),
     });
   }
-  if (cursor) cursor.previous = current;
 
   const aggregate = modelBreakdown.reduce((sum, row) => ({
     inputTokens: sum.inputTokens + row.inputTokens,
@@ -525,8 +469,6 @@ export interface NormalizeCtx {
   /** Trusted Playwright output directory. Only screenshot paths contained by
    * this directory may become renderer-visible opaque capture ids. */
   browserOutputDir?: string;
-  /** Conversation-lifetime cursor for cumulative SDK `modelUsage`. */
-  modelUsageCursor?: ModelUsageCursor;
 }
 
 // Structural shapes read off incoming messages. Kept local/minimal (not
@@ -547,6 +489,14 @@ interface ContentBlock {
 }
 interface IncomingMsg extends SdkMessageLike {
   subtype?: string;
+  contextUsage?: {
+    totalTokens?: unknown;
+    maxTokens?: unknown;
+    rawMaxTokens?: unknown;
+    autoCompactThreshold?: unknown;
+    isAutoCompactEnabled?: unknown;
+    model?: unknown;
+  };
   model?: string;
   parent_tool_use_id?: string | null;
   result?: string;
@@ -979,6 +929,33 @@ export async function* normalizeSdkStream(
       if (typeof msg.session_id === "string" && msg.session_id) sessionId = msg.session_id;
 
       switch (msg.type) {
+        case "leemo_context_snapshot": {
+          const snapshot = msg.contextUsage;
+          if (
+            snapshot
+            && typeof snapshot.totalTokens === "number"
+            && Number.isFinite(snapshot.totalTokens)
+            && typeof snapshot.maxTokens === "number"
+            && Number.isFinite(snapshot.maxTokens)
+            && typeof snapshot.rawMaxTokens === "number"
+            && Number.isFinite(snapshot.rawMaxTokens)
+          ) {
+            const event: Extract<LeemoEvent, { type: "context.snapshot" }> = {
+              type: "context.snapshot",
+              currentTokens: Math.max(0, snapshot.totalTokens),
+              maxTokens: Math.max(0, snapshot.maxTokens),
+              rawMaxTokens: Math.max(0, snapshot.rawMaxTokens),
+              isAutoCompactEnabled: snapshot.isAutoCompactEnabled === true,
+              model: typeof snapshot.model === "string" ? snapshot.model : ctx.modelId,
+            };
+            if (typeof snapshot.autoCompactThreshold === "number" && Number.isFinite(snapshot.autoCompactThreshold)) {
+              event.autoCompactThreshold = Math.max(0, snapshot.autoCompactThreshold);
+            }
+            yield event;
+          }
+          break;
+        }
+
         case "system": {
           if (msg.subtype === "init") {
             yield { type: "conversation.started", sessionId: msg.session_id ?? "" };

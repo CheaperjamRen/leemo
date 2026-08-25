@@ -1,10 +1,12 @@
 import { useEffect } from "react";
 import { render, screen, fireEvent } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { describe, it, expect } from "vitest";
 import { BridgeProvider, useConversations } from "../../bridge/context";
 import Timeline from "./Timeline";
 import { FixtureBridgeClient } from "../../bridge/fixture-client";
 import type { AskUserPayload } from "../../../bridge/contract";
+import type { TimelineItem } from "../../stores/message-model";
 
 /** jsdom never lays anything out, so scrollHeight/clientHeight/scrollTop are
  *  always 0 — useScrollFollow's `atBottom` would never flip false without
@@ -54,6 +56,36 @@ const ASK_PAYLOAD: AskUserPayload = {
 };
 
 describe("Timeline — scroll-out-of-view hint (卡 D §6): pill and BackToBottom are mutually exclusive", () => {
+  it("bounds a relationship stream to recent turns and can reveal older history", async () => {
+    const items: TimelineItem[] = Array.from({ length: 5 }, (_, index) => ({
+      kind: "text",
+      id: `message-${index + 1}`,
+      runId: `run-${index + 1}`,
+      role: "momo",
+      text: `第 ${index + 1} 段记录`,
+      streaming: false,
+      createdAt: index + 1,
+    }));
+
+    render(
+      <BridgeProvider client={new FixtureBridgeClient()}>
+        <Timeline
+          items={items}
+          activeConversationId={null}
+          activeRunId={null}
+          pageKey="momo-relationship"
+          pageSize={2}
+        />
+      </BridgeProvider>,
+    );
+
+    expect(screen.queryByText("第 3 段记录")).not.toBeInTheDocument();
+    expect(screen.getByText("第 4 段记录")).toBeInTheDocument();
+    expect(screen.getByText("第 5 段记录")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "加载更早记录（还有 3 段）" }));
+    expect(screen.getByText("第 2 段记录")).toBeInTheDocument();
+    expect(screen.getByText("第 3 段记录")).toBeInTheDocument();
+  });
   it("shows plain BackToBottom when scrolled up with no pending question", async () => {
     const client = new FixtureBridgeClient();
     const { container } = render(

@@ -29,6 +29,7 @@ const CONFIGURED = spec({
   },
   modelContextPolicies: {
     "deepseek-v4-flash": { contextWindowTokens: 512_000, autoCompactWindowTokens: 486_000 },
+    "deepseek-v4-pro": { contextWindowTokens: 258_000, autoCompactWindowTokens: 240_000 },
   },
 });
 const UNCONFIGURED = spec({
@@ -100,6 +101,21 @@ describe("InputArea model picker — only configured providers appear", () => {
 
     await user.click(screen.getByRole("button", { name: /deepseek-v4-pro/ }));
     expect(onSelectModel).toHaveBeenCalledWith("deepseek", "deepseek-v4-pro");
+  });
+
+  it("shows each model's working window and flags a shorter target without blocking selection", async () => {
+    const user = userEvent.setup();
+    setup({
+      providers: [CONFIGURED],
+      currentProviderId: "deepseek",
+      currentModelId: "deepseek-v4-flash",
+      contextUsage: { currentTokens: 406_000, capacityTokens: 486_000, justCompacted: false },
+    });
+
+    await user.click(screen.getByText(/deepseek-v4-flash/));
+    expect(screen.getByRole("button", { name: /deepseek-v4-flash/ }).textContent).toContain("486K");
+    expect(screen.getByRole("button", { name: /deepseek-v4-pro/ }).textContent).toContain("240K");
+    expect(screen.getByRole("button", { name: /deepseek-v4-pro/ }).textContent).toContain("将先整理");
   });
 
   it("groups by instance so two accounts of one family stay distinguishable", async () => {

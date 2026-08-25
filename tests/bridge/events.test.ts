@@ -3,7 +3,6 @@ import path from "node:path";
 import {
   normalizeSdkStream,
   buildUsageRecord,
-  createModelUsageCursor,
   auditClaimedPaths,
   type LeemoEvent,
 } from "../../src/bridge/events";
@@ -1006,8 +1005,7 @@ describe("normalizeSdkStream — Claude Agent SDK 0.3.227 structured status", ()
     });
   });
 
-  it("deltas cumulative modelUsage across turns and resets cleanly after an SDK lifecycle reset", async () => {
-    const cursor = createModelUsageCursor();
+  it("treats modelUsage as this query lifecycle's full accounting instead of diffing across resumed rounds", async () => {
     const result = (mainInput: number, mainOutput: number, mainCost: number) => ({
       type: "result",
       subtype: "success",
@@ -1042,11 +1040,10 @@ describe("normalizeSdkStream — Claude Agent SDK 0.3.227 structured status", ()
       permission_denials: [],
       session_id: "usage-cumulative",
     });
-    const ctx = { providerId: "anthropic", modelId: "claude-alias", cwd: CWD, modelUsageCursor: cursor };
+    const ctx = { providerId: "anthropic", modelId: "claude-alias", cwd: CWD };
 
     const first = await drain(normalizeSdkStream(fakeStream([result(100, 20, 0.10)] as unknown as TestMsgB2[]), ctx));
     const second = await drain(normalizeSdkStream(fakeStream([result(150, 30, 0.15)] as unknown as TestMsgB2[]), ctx));
-    const reset = await drain(normalizeSdkStream(fakeStream([result(10, 2, 0.01)] as unknown as TestMsgB2[]), ctx));
     const usageOf = (events: LeemoEvent[]) => events.find((event) => event.type === "usage.final") as Extract<LeemoEvent, { type: "usage.final" }>;
 
     expect(usageOf(first).usage).toMatchObject({
@@ -1060,13 +1057,45 @@ describe("normalizeSdkStream — Claude Agent SDK 0.3.227 structured status", ()
       ],
     });
     expect(usageOf(second).usage).toMatchObject({
-      inputTokens: 50,
-      outputTokens: 10,
-      costUsd: "0.050000",
-      modelBreakdown: [expect.objectContaining({ modelId: "claude-sonnet-4-6", inputTokens: 50 })],
+      inputTokens: 200,
+      outputTokens: 40,
+      costUsd: "0.170000",
+      modelBreakdown: [
+        expect.objectContaining({ modelId: "claude-sonnet-4-6", inputTokens: 150 }),
+        expect.objectContaining({ modelId: "claude-haiku-helper", inputTokens: 50 }),
+      ],
     });
-    expect(usageOf(second).usage.modelBreakdown).toHaveLength(1);
-    expect(usageOf(reset).usage).toMatchObject({ inputTokens: 60, outputTokens: 12, costUsd: "0.030000" });
+    expect(usageOf(second).usage.modelBreakdown).toHaveLength(2);
+  });
+
+  it("normalizes an exact SDK context snapshot independently from billing usage", async () => {
+    const events = await drain(normalizeSdkStream(fakeStream([{
+      type: "leemo_context_snapshot",
+      session_id: "context-1",
+      contextUsage: {
+        totalTokens: 87_450,
+        maxTokens: 200_000,
+        rawMaxTokens: 200_000,
+        percentage: 43.725,
+        model: "kimi-k3",
+        isAutoCompactEnabled: true,
+        autoCompactThreshold: 180_000,
+      },
+    }] as unknown as TestMsgB2[]), {
+      providerId: "kimi",
+      modelId: "kimi-k3",
+      cwd: CWD,
+    }));
+
+    expect(events).toEqual([{
+      type: "context.snapshot",
+      currentTokens: 87_450,
+      maxTokens: 200_000,
+      rawMaxTokens: 200_000,
+      autoCompactThreshold: 180_000,
+      isAutoCompactEnabled: true,
+      model: "kimi-k3",
+    }]);
   });
 });
 

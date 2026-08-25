@@ -167,6 +167,9 @@ describe("WorkbenchActivityRail", () => {
     });
 
     await user.click(screen.getByRole("button", { name: "文件" }));
+    const fileScope = screen.getByRole("group", { name: "文件范围" });
+    expect(fileScope).toHaveClass("rounded-[var(--leemo-radius-control)]");
+    expect(fileScope).not.toHaveClass("rounded-full");
     expect(screen.getByRole("button", { name: "工作区文件" })).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByTestId("file-tree")).toBeInTheDocument();
     expect(screen.getByText("不相关.md")).toBeInTheDocument();
@@ -522,8 +525,7 @@ describe("WorkbenchActivityRail", () => {
     await user.click(screen.getByRole("button", { name: "概览" }));
     expect(screen.getByText("本地仍可读取的目标")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "本次会话" })).toBeDisabled();
-    await user.click(screen.getByRole("button", { name: "概览操作" }));
-    expect(screen.getByRole("button", { name: "更新概览" })).toBeDisabled();
+    expect(screen.queryByRole("button", { name: "更新概览" })).not.toBeInTheDocument();
     expect(refreshWorkOverview).not.toHaveBeenCalled();
   });
 

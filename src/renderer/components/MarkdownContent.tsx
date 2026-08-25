@@ -159,6 +159,15 @@ function CodeBlock({ code, language }: { code: string; language: string }) {
 
 let mermaidInitialized = false;
 
+function removeMermaidArtifacts(id: string): void {
+  // Mermaid's body-rendering fallback uses these deterministic temporary ids.
+  // Real rendering is contained below, but explicit cleanup protects streaming
+  // rerenders and older Mermaid builds from leaving a page-sized error diagram.
+  for (const artifactId of [id, `d${id}`, `i${id}`]) {
+    document.getElementById(artifactId)?.remove();
+  }
+}
+
 function MermaidBlock({ source }: { source: string }) {
   const rawId = useId();
   const hostRef = useRef<HTMLDivElement>(null);
@@ -166,7 +175,8 @@ function MermaidBlock({ source }: { source: string }) {
 
   useEffect(() => {
     setError(null);
-    hostRef.current?.replaceChildren();
+    const container = hostRef.current;
+    container?.replaceChildren();
     if (typeof navigator !== "undefined" && navigator.userAgent.includes("jsdom")) return;
     let cancelled = false;
     void import("mermaid")
@@ -177,20 +187,29 @@ function MermaidBlock({ source }: { source: string }) {
             securityLevel: "strict",
             theme: "base",
             flowchart: { htmlLabels: false },
+            suppressErrorRendering: true,
           });
           mermaidInitialized = true;
         }
         const id = `leemo-mermaid-${rawId.replace(/[^a-z0-9_-]/gi, "")}`;
-        const { svg, bindFunctions } = await mermaid.render(id, source);
+        const parsed = await mermaid.parse(source, { suppressErrors: true });
+        if (!parsed) throw new Error("图表语法无法解析");
+        const { svg, bindFunctions } = await mermaid.render(id, source, container ?? undefined);
         if (cancelled || !hostRef.current) return;
         hostRef.current.innerHTML = svg;
         bindFunctions?.(hostRef.current);
       })
       .catch((reason: unknown) => {
+        const id = `leemo-mermaid-${rawId.replace(/[^a-z0-9_-]/gi, "")}`;
+        removeMermaidArtifacts(id);
+        container?.replaceChildren();
         if (!cancelled) setError(reason instanceof Error ? reason.message : "图表语法无法解析");
       });
     return () => {
       cancelled = true;
+      const id = `leemo-mermaid-${rawId.replace(/[^a-z0-9_-]/gi, "")}`;
+      removeMermaidArtifacts(id);
+      container?.replaceChildren();
     };
   }, [rawId, source]);
 

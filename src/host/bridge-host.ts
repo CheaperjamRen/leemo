@@ -22,6 +22,11 @@ import {
   LEEMO_CAPTURE_TASK_TOOL_NAMES,
 } from "../bridge/capture-task-mcp";
 import { createWorkOverviewMcp } from "../bridge/work-overview-mcp";
+import {
+  createRelationshipHistoryMcp,
+  type RelationshipHistoryHit,
+  type RelationshipHistoryQuery,
+} from "../bridge/relationship-history-mcp";
 import type { CaptureAdminService } from "../main/capture-admin";
 import type { TaskAdminService } from "../main/task-admin";
 import type { LearningService } from "../learning";
@@ -36,11 +41,9 @@ import { buildSearchPlan } from "./search-plan";
 import { buildSourceChain, runSearchChain } from "./web-search";
 import { createArxivSearchClient } from "./arxiv-search";
 import {
-  createModelUsageCursor,
   normalizeSdkStream,
   toUserFacingRunError,
   type LeemoEvent,
-  type ModelUsageCursor,
 } from "../bridge/events";
 import { resolvePricing } from "../bridge/pricing";
 import type { StandaloneUsageEvent } from "../bridge/global-pending-overview";
@@ -305,6 +308,11 @@ export interface HostDeps {
    * workboard. Both are required before momo receives the matching tools. */
   captures?: CaptureAdminService;
   tasks?: TaskAdminService;
+  /** Bounded local recall for the one global momo relationship. The model gets
+   * this read-only tool only in Buddy mode; Workbench tasks never share it. */
+  searchBuddyHistory?: (
+    query: RelationshipHistoryQuery,
+  ) => Promise<RelationshipHistoryHit[]> | RelationshipHistoryHit[];
 }
 
 export interface BridgeHost {
@@ -369,9 +377,6 @@ interface ConvRecord {
    * not depend on a provider event to leave its running state. Object identity
    * also fences late events from an interrupted turn out of a newer turn. */
   nextRoundId: number;
-  /** SDK modelUsage is cumulative across turns. One host-owned cursor per
-   * conversation converts it to per-round deltas before it crosses IPC. */
-  modelUsageCursor: ModelUsageCursor;
   /** An engine without in-flight steering accepted an additional instruction.
    * The engine owns its exact prompt payload; the host only starts its next
    * turn after the current one reaches a normal terminal state. */
@@ -526,6 +531,13 @@ function isExternalAgentRecord(rec: ConvRecord): rec is ConvRecord & {
   handle: CodexConversationHandle;
 } {
   return rec.engine !== "claude-agent-sdk";
+}
+
+function isClaudeAgentRecord(rec: ConvRecord): rec is ConvRecord & {
+  engine: "claude-agent-sdk";
+  handle: ConversationHandle;
+} {
+  return rec.engine === "claude-agent-sdk";
 }
 
 type UnknownRecord = Record<string, unknown>;
@@ -1145,6 +1157,7 @@ export function createBridgeHost(deps: HostDeps): BridgeHost {
     for (const rec of conversations.values()) {
       if (rec.purpose === "wiki") continue;
       applySkillSelection(rec.extras, selection);
+      if (isClaudeAgentRecord(rec)) rec.handle.invalidateRuntime();
       updatedConversations += 1;
     }
     return updatedConversations;
@@ -1351,6 +1364,7 @@ export function createBridgeHost(deps: HostDeps): BridgeHost {
         if (!next.includes(qualifiedName)) next.push(qualifiedName);
       }
       applySkillSelection(rec.extras, selectSkills(next));
+      if (isClaudeAgentRecord(rec)) rec.handle.invalidateRuntime();
     }
   }
 
@@ -1362,6 +1376,7 @@ export function createBridgeHost(deps: HostDeps): BridgeHost {
     for (const rec of conversations.values()) {
       const current = rec.extras.enabledSkills ?? [];
       applySkillSelection(rec.extras, selectSkills(current.filter((name) => !qualifiedNames.has(name))));
+      if (isClaudeAgentRecord(rec)) rec.handle.invalidateRuntime();
     }
   }
 
@@ -1581,7 +1596,9 @@ export function createBridgeHost(deps: HostDeps): BridgeHost {
           }
         : {}),
     }), rec.extras.enabledSkills?.includes("superpowers:using-superpowers") === true);
-    if (isExternalAgentRecord(rec)) {
+    if (isClaudeAgentRecord(rec)) {
+      rec.handle.invalidateRuntime();
+    } else if (isExternalAgentRecord(rec)) {
       rec.handle.setDeveloperInstructions(rec.extras.systemPromptAppend);
     }
   }
@@ -2200,6 +2217,9 @@ export function createBridgeHost(deps: HostDeps): BridgeHost {
     };
     const askMcp = createAskUserMcp(cid, askTransport);
     const workOverviewMcp = createWorkOverviewMcp();
+    const relationshipHistoryMcp = personaCtx.mode === "buddy" && deps.searchBuddyHistory
+      ? createRelationshipHistoryMcp({ search: deps.searchBuddyHistory })
+      : undefined;
     const memoryScope: MemoryScope = conversationWorkspace.kind === "external"
       ? { type: "workspace", workspaceId: conversationWorkspace.id }
       : notebook
@@ -2279,6 +2299,9 @@ export function createBridgeHost(deps: HostDeps): BridgeHost {
       extras.mcpServers["leemo-documents"] = documentMcp.server;
       extras.mcpServers["leemo-visualization"] = visualizationMcp.server;
       extras.mcpServers["leemo-work-overview"] = workOverviewMcp.server;
+      if (relationshipHistoryMcp) {
+        extras.mcpServers["leemo-relationship-history"] = relationshipHistoryMcp.server;
+      }
     }
     if (personaCtx.rememberMode && memoryMcp) extras.mcpServers["leemo-memory"] = memoryMcp.server;
     if (!isWiki && skillAdminMcp) extras.mcpServers["leemo-skill-admin"] = skillAdminMcp.server;
@@ -2391,7 +2414,6 @@ export function createBridgeHost(deps: HostDeps): BridgeHost {
       extras, policy, personaCtx, notebookId: r.notebookId ?? undefined,
       configuredMcpIds: new Set(Object.keys(initialConfiguredMcps)),
       nextRoundId: 0,
-      modelUsageCursor: createModelUsageCursor(),
       queuedGuidanceFollowUp: false,
     } satisfies Omit<ConvRecord, "engine" | "handle" | "bridge">;
     if (useExternalAgentRuntime) {
@@ -2649,7 +2671,6 @@ export function createBridgeHost(deps: HostDeps): BridgeHost {
               modelId,
               cwd: auditCwd,
               pricing,
-              modelUsageCursor: rec.modelUsageCursor,
               browserOutputDir: path.join(dataDir, "mcp", "playwright", "browser-output"),
             });
         iterator = stream[Symbol.asyncIterator]();

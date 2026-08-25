@@ -122,7 +122,8 @@ const MODE_VOICE = "表达自然。中文禁用“不是/不只是 X，而是/�
 
 const MODE_BLOCK: Record<MomoPromptOptions["mode"], string> = {
   buddy: `## 当前模式：搭子态
-温暖聊天。${MODE_VOICE}工具过程一行人话；轻产物卡优先，审批/问询用暖样式。`,
+温暖聊天。${MODE_VOICE}工具过程一行；轻产物卡优先，审批/问询用暖样式。
+Relationship history search is on demand; never call it every turn.`,
   workbench: `## 当前模式：工作台态
 产出守纪律、标来源，完成后简报。${MODE_VOICE}完整展示工具过程、审批路径和危险角标。`,
 };
@@ -181,7 +182,7 @@ Remember explicit, durable facts, preferences, goals, important changes, and not
 - Every sentence; memory is a small set of useful conclusions, not a transcript
 
 ### How to use memory
-- Use the current view for ordinary context and recall history only when the question needs it
+- Use the current view first
 - If a changing fact may be stale, state its date or verify instead of presenting it as current
 - If no reliable memory exists, say you do not know; never fabricate familiarity`;
 }
