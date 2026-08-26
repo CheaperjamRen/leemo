@@ -1581,9 +1581,10 @@ export default function InputArea({
               <span className="leemo-composer-model-cluster flex min-w-0 items-center gap-0.5">
                 {(contextUsage || currentContextPolicy) && (
                   <ContextUsageIndicator
-                    currentTokens={contextUsage?.currentTokens ?? 0}
-                    capacityTokens={contextUsage?.capacityTokens}
-                    rawMaxTokens={contextUsage?.rawMaxTokens}
+                    usage={contextUsage}
+                    providerId={currentProviderId ?? undefined}
+                    modelId={currentModelId ?? undefined}
+                    updating={busy}
                     policy={currentContextPolicy}
                   />
                 )}

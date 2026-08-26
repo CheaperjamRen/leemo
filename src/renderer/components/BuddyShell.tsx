@@ -4,11 +4,12 @@ import ChipRow from "./ChipRow";
 import InputArea from "./InputArea";
 import PinnedPlan from "./PinnedPlan";
 import HistoryDrawer from "./HistoryDrawer";
+import NewTopicDialog from "./NewTopicDialog";
 import Timeline from "./timeline/Timeline";
 import LiveStatusBar from "./timeline/LiveStatusBar";
 import DropClassifyBar from "./DropClassifyBar";
 import { isFileDataTransfer, useFileDrop } from "./useFileDrop";
-import { useArtifacts, useCaptures, useComposerDrafts, useContextUsage, useConversations, useScheduledTasks, useSettings, useSkills, useProviders, useUi, useWorkspace, useFileTree, useWorkspaces } from "../bridge/context";
+import { useApprovals, useArtifacts, useCaptures, useComposerDrafts, useContextUsage, useConversations, useScheduledTasks, useSettings, useSkills, useProviders, useUi, useWorkspace, useFileTree, useWorkspaces } from "../bridge/context";
 import type { AttachmentRef, WorkspaceFileRef } from "../../bridge/contract";
 import { orderConfiguredProviders } from "./model-picker";
 import {
@@ -26,22 +27,36 @@ import {
   RELATIONSHIP_ONBOARDING_LABEL,
   buildRelationshipOnboardingPrompt,
   findRelationshipConversation,
-  isGlobalBuddyConversation,
 } from "../stores/relationship-onboarding";
+import {
+  canReuseEmptyRelationshipChapter,
+  deriveRelationshipChapters,
+  projectRelationshipTimelineWindow,
+  relationshipRunCountFromEnd,
+} from "../stores/relationship-chapters";
 import { buildGreeting } from "../stores/settings";
 import Clock from "./Clock";
 import MomoAvatar from "./momo/MomoAvatar";
+import { LEEMO_ASK_USER_TOOL_NAME } from "../bridge/tool-names";
 import "./BuddyShell.css";
+
+const RELATIONSHIP_PAGE_SIZE = 40;
 
 export default function BuddyShell() {
   const [drawer, setDrawer] = useState(false);
+  const [historyVisible, setHistoryVisible] = useState(false);
+  const [newTopicOpen, setNewTopicOpen] = useState(false);
+  const [newTopicBusy, setNewTopicBusy] = useState(false);
+  const [newTopicError, setNewTopicError] = useState<string | null>(null);
   const [dailyReviewBusy, setDailyReviewBusy] = useState(false);
   const [dailyReviewError, setDailyReviewError] = useState<string | null>(null);
   const [relationshipBusy, setRelationshipBusy] = useState(false);
   const [relationshipError, setRelationshipError] = useState<string | null>(null);
   const [historyFocus, setHistoryFocus] = useState<{ runId: string; nonce: number } | null>(null);
+  const [relationshipRunLimit, setRelationshipRunLimit] = useState(RELATIONSHIP_PAGE_SIZE);
   const dailyReviewInFlight = useRef(false);
   const relationshipInFlight = useRef(false);
+  const newTopicInFlight = useRef(false);
   const globalActiveId = useConversations((s) => s.activeId);
   const conversations = useConversations((s) => s.byId);
   const relationshipInviteDismissed = useSettings((s) => s.relationshipInviteDismissed);
@@ -76,21 +91,21 @@ export default function BuddyShell() {
   const dismissRetry = useConversations((s) => s.dismissRetry);
   const interrupt = useConversations((s) => s.interrupt);
   const activeRunId = useConversations((s) => activeId ? s.runIds[activeId] : null);
+  const pendingInteraction = useApprovals((s) => activeId ? s.pendingByConversation[activeId] : null);
   const retryDraft = useConversations((s) => activeId ? s.pendingSends[activeId] : undefined);
   const queuedTurns = useConversations((s) => activeId ? s.queuedTurns[activeId] : undefined);
   const conversationOrder = useConversations((s) => s.order);
   const timelines = useConversations((s) => s.timelines);
   const runIds = useConversations((s) => s.runIds);
-  const relationshipChapters = useMemo(() => Object.values(conversations)
-    .filter(isGlobalBuddyConversation)
-    .sort((left, right) => {
-      if (left.id === activeId) return 1;
-      if (right.id === activeId) return -1;
-      return left.createdAt - right.createdAt || left.lastActivityAt - right.lastActivityAt;
-    }), [activeId, conversations]);
-  const relationshipTimeline = useMemo(
-    () => relationshipChapters.flatMap((conversation) => timelines[conversation.id] ?? []),
-    [relationshipChapters, timelines],
+  const relationshipChapters = useMemo(() => deriveRelationshipChapters({
+    conversations,
+    timelines,
+    activeId,
+  }), [activeId, conversations, timelines]);
+  useEffect(() => setRelationshipRunLimit(RELATIONSHIP_PAGE_SIZE), [activeId]);
+  const relationshipWindow = useMemo(
+    () => projectRelationshipTimelineWindow(relationshipChapters, relationshipRunLimit),
+    [relationshipChapters, relationshipRunLimit],
   );
   const artifacts = useArtifacts((s) => s.entries);
   const scheduledTasks = useScheduledTasks((s) => s.tasks);
@@ -134,7 +149,7 @@ export default function BuddyShell() {
   const enabledSkills = skillList.filter(
     (skill) => skill.available !== false && !skillsDisabled.includes(skill.id ?? skill.name),
   );
-  const messages = relationshipTimeline;
+  const messages = relationshipWindow.items;
   const retryRecoveryRendered = Boolean(
     retryDraft?.errorMessage
       && messages.some((item) => item.kind === "result"
@@ -143,12 +158,27 @@ export default function BuddyShell() {
         && !item.interrupted),
   );
   const hasMessages = messages.length > 0;
+  const interactionNeedsTranscript = Boolean(activeRunId || pendingInteraction || retryDraft?.errorMessage);
+  const showTimeline = interactionNeedsTranscript || (hasMessages && historyVisible);
+  const newTopicUnavailable = Boolean(
+    activeRunId
+      || pendingInteraction
+      || queuedTurns?.length
+      || composerDraft.submitPending
+      || relationshipBusy
+      || dailyReviewBusy
+      || newTopicBusy,
+  );
   const drop = useFileDrop();
   const runningTool = (() => {
     if (!activeRunId) return undefined;
     for (let i = messages.length - 1; i >= 0; i--) {
       const item = messages[i];
-      if (item.kind === "tool" && item.status === "running") return item.name;
+      if (
+        item.kind === "tool"
+        && item.status === "running"
+        && item.name !== LEEMO_ASK_USER_TOOL_NAME
+      ) return item.name;
     }
     return undefined;
   })();
@@ -162,6 +192,7 @@ export default function BuddyShell() {
         workspaceId: HOME_WORKSPACE_ID,
         bookId: null,
         activate: false,
+        durableRelationshipChapter: true,
       });
       renameTitle(conversationId, RELATIONSHIP_CONVERSATION_TITLE);
     }
@@ -176,6 +207,7 @@ export default function BuddyShell() {
     referencedFiles?: WorkspaceFileRef[],
     options?: ConversationTurnOptions,
   ) => {
+    setHistoryVisible(true);
     const sendingScope = draftScope;
     const conversationId = await ensureRelationshipConversation();
     assignComposerConversation(sendingScope, conversationId);
@@ -206,6 +238,7 @@ export default function BuddyShell() {
 
   const startDailyReview = useCallback(async () => {
     if (dailyReviewInFlight.current) return;
+    setHistoryVisible(true);
     dailyReviewInFlight.current = true;
     setDailyReviewBusy(true);
     setDailyReviewError(null);
@@ -244,6 +277,7 @@ export default function BuddyShell() {
 
   const startRelationshipOnboarding = useCallback(async () => {
     if (relationshipInFlight.current) return;
+    setHistoryVisible(true);
     relationshipInFlight.current = true;
     setRelationshipBusy(true);
     setRelationshipError(null);
@@ -269,6 +303,57 @@ export default function BuddyShell() {
     ensureRelationshipConversation,
     runIds,
     send,
+  ]);
+
+  const openNewTopic = useCallback(() => {
+    if (newTopicUnavailable) return;
+    setNewTopicError(null);
+    setNewTopicOpen(true);
+  }, [newTopicUnavailable]);
+
+  const confirmNewTopic = useCallback(async () => {
+    if (newTopicInFlight.current || activeRunId || pendingInteraction) return;
+    newTopicInFlight.current = true;
+    setNewTopicBusy(true);
+    setNewTopicError(null);
+    const sourceDraftScope = draftScopeRef.current;
+    try {
+      const activeChapter = relationshipChapters.find((chapter) => chapter.active);
+      const conversationId = canReuseEmptyRelationshipChapter(activeChapter)
+        ? activeChapter!.conversation.id
+        : await createConversation({
+          source: "buddy",
+          workspaceId: HOME_WORKSPACE_ID,
+          bookId: null,
+          activate: false,
+          durableRelationshipChapter: true,
+          ...(activeMeta ? {
+            modelSelection: {
+              providerId: activeMeta.providerId,
+              modelId: activeMeta.modelId,
+            },
+          } : {}),
+        });
+      assignComposerConversation(sourceDraftScope, conversationId);
+      setRelationshipConversationId(conversationId);
+      switchActive(conversationId);
+      setHistoryVisible(false);
+      setNewTopicOpen(false);
+    } catch (error: unknown) {
+      setNewTopicError(error instanceof Error ? error.message : "暂时无法准备新话题，请稍后再试。");
+    } finally {
+      newTopicInFlight.current = false;
+      setNewTopicBusy(false);
+    }
+  }, [
+    activeRunId,
+    activeMeta,
+    assignComposerConversation,
+    createConversation,
+    pendingInteraction,
+    relationshipChapters,
+    setRelationshipConversationId,
+    switchActive,
   ]);
 
   const dismissRetryAndRelease = () => {
@@ -301,6 +386,8 @@ export default function BuddyShell() {
         dailyReviewBusy={dailyReviewBusy}
         onStartRelationship={() => { void startRelationshipOnboarding(); }}
         relationshipBusy={relationshipBusy}
+        onStartNewTopic={openNewTopic}
+        newTopicDisabled={newTopicUnavailable}
       />
       <main className="leemo-buddy-main relative z-10 flex min-h-0 flex-1 flex-col px-4 sm:px-6">
         {dailyReviewError && (
@@ -319,7 +406,7 @@ export default function BuddyShell() {
             {relationshipError}
           </div>
         )}
-        {hasMessages ? (
+        {showTimeline ? (
           // Timeline is a bounded flex child (flex-1 min-h-0) so it scrolls
           // internally and never shoves the input area out of the viewport.
           // It centers to 720px on its own — no extra wrapper. Approval AND
@@ -328,12 +415,14 @@ export default function BuddyShell() {
           // anymore — a pinned copy on top of the inline one is exactly the
           // "same card twice" duplicate-render bug this round fixed.
           <Timeline
-            items={relationshipTimeline}
+            items={relationshipWindow.items}
             activeConversationId={activeId}
             activeRunId={activeRunId}
             pageKey={`buddy-relationship:${activeId ?? "empty"}`}
-            pageSize={40}
             focusRequest={historyFocus}
+            chapterMarkers={relationshipWindow.chapterMarkers}
+            hasOlder={relationshipWindow.hasOlder}
+            onLoadOlder={() => setRelationshipRunLimit((count) => count + RELATIONSHIP_PAGE_SIZE)}
           />
         ) : (
           <section
@@ -348,6 +437,25 @@ export default function BuddyShell() {
                 {buildGreeting(new Date().getHours())}
               </h1>
             </div>
+            {hasMessages && (
+              <div className="leemo-buddy-landing-actions leemo-rise">
+                <button
+                  type="button"
+                  className="leemo-buddy-continue"
+                  onClick={() => setHistoryVisible(true)}
+                >
+                  继续上次聊天
+                </button>
+                <button
+                  type="button"
+                  className="leemo-buddy-new-topic"
+                  disabled={newTopicUnavailable}
+                  onClick={openNewTopic}
+                >
+                  新话题
+                </button>
+              </div>
+            )}
           </section>
         )}
         <div className="leemo-buddy-composer-dock mt-auto shrink-0" data-testid="buddy-composer-dock">
@@ -361,7 +469,7 @@ export default function BuddyShell() {
                 <LiveStatusBar toolName={runningTool} />
               </div>
             )}
-            {!hasMessages && (
+            {!showTimeline && (
               <>
                 {!relationshipInviteDismissed && !relationshipConversation && (
                   <section className="leemo-buddy-relationship-invite" data-testid="buddy-relationship-invite">
@@ -457,7 +565,23 @@ export default function BuddyShell() {
             item.kind !== "compact" && typeof item.runId === "string" && item.runId.length > 0
           ));
           if (!target || target.kind === "compact") return;
+          const requiredRuns = relationshipRunCountFromEnd(relationshipChapters, target.runId);
+          if (requiredRuns !== undefined) {
+            setRelationshipRunLimit((count) => Math.max(count, requiredRuns));
+          }
+          setHistoryVisible(true);
           setHistoryFocus({ runId: target.runId, nonce: Date.now() });
+        }}
+      />
+      <NewTopicDialog
+        open={newTopicOpen}
+        busy={newTopicBusy}
+        error={newTopicError}
+        onConfirm={() => { void confirmNewTopic(); }}
+        onCancel={() => {
+          if (newTopicBusy) return;
+          setNewTopicOpen(false);
+          setNewTopicError(null);
         }}
       />
     </div>

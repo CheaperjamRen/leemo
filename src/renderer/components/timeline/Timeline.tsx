@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { useConversations, useApprovals, useSettings } from "../../bridge/context";
 import type { TimelineItem } from "../../stores/message-model";
 import TurnBlock from "./TurnBlock";
@@ -31,6 +31,16 @@ interface TimelineProps {
   pageSize?: number;
   pageKey?: string;
   focusRequest?: { runId: string; nonce: number } | null;
+  chapterMarkers?: Array<{ beforeRunId: string; title: string; startedAt: number }>;
+  /** 上游已经按 run 投影时，不把全量历史重新交给本组件。 */
+  hasOlder?: boolean;
+  onLoadOlder?: () => void;
+}
+
+function formatChapterDate(timestamp: number): string {
+  const date = new Date(timestamp);
+  if (!Number.isFinite(date.getTime())) return "";
+  return `${date.getMonth() + 1}月${date.getDate()}日`;
 }
 
 export default function Timeline({
@@ -40,6 +50,9 @@ export default function Timeline({
   pageSize,
   pageKey = "active-conversation",
   focusRequest,
+  chapterMarkers = [],
+  hasOlder = false,
+  onLoadOlder,
 }: TimelineProps = {}) {
   const storeActiveId = useConversations((s) => s.activeId);
   const storeTimeline = useConversations((s) => s.activeId ? s.timelines[s.activeId] : undefined);
@@ -56,6 +69,10 @@ export default function Timeline({
   useEffect(() => setVisibleGroupCount(boundedPageSize), [boundedPageSize, pageKey]);
   const hiddenGroupCount = Math.max(0, groups.length - visibleGroupCount);
   const visibleGroups = hiddenGroupCount > 0 ? groups.slice(hiddenGroupCount) : groups;
+  const markersByRun = useMemo(
+    () => new Map(chapterMarkers.map((marker) => [marker.beforeRunId, marker] as const)),
+    [chapterMarkers],
+  );
   const visibleMessages = useMemo(() => visibleGroups.flatMap((group) => group.items), [visibleGroups]);
   const { containerRef, atBottom, scrollToBottom, onScroll } = useScrollFollow(visibleMessages, pendingInteraction?.id ?? null);
 
@@ -74,6 +91,10 @@ export default function Timeline({
   }, [containerRef, focusRequest, groups]);
 
   const revealOlder = () => {
+    if (hasOlder && onLoadOlder) {
+      onLoadOlder();
+      return;
+    }
     const scroll = containerRef.current;
     const previousHeight = scroll?.scrollHeight ?? 0;
     const previousTop = scroll?.scrollTop ?? 0;
@@ -93,26 +114,41 @@ export default function Timeline({
     <div className="leemo-workbench-timeline relative flex-1 min-h-0 overflow-hidden">
       <div ref={containerRef} onScroll={onScroll} className="leemo-timeline-scroll h-full overflow-y-auto">
         <div data-testid="timeline-content" data-content-axis="primary" className="leemo-workbench-content-axis mx-auto w-full max-w-[900px] space-y-3 px-5 py-4 xl:max-w-[960px]">
-          {hiddenGroupCount > 0 && (
+          {(hiddenGroupCount > 0 || hasOlder) && (
             <button
               type="button"
               className="mx-auto flex min-h-9 items-center rounded-full border border-[var(--leemo-border-soft)] bg-[var(--leemo-surface)] px-4 text-[12.5px] text-[var(--leemo-text-secondary)] transition-colors hover:border-[var(--leemo-border-strong)] hover:text-[var(--leemo-text-primary)]"
-              aria-label={`加载更早记录（还有 ${hiddenGroupCount} 段）`}
+              aria-label={hasOlder ? "加载更早记录" : `加载更早记录（还有 ${hiddenGroupCount} 段）`}
               onClick={revealOlder}
             >
-              加载更早记录 · {hiddenGroupCount} 段
+              {hasOlder ? "加载更早记录" : `加载更早记录 · ${hiddenGroupCount} 段`}
             </button>
           )}
-          {visibleGroups.map((g) => (
-            <div key={g.runId} data-run-id={g.runId}>
-              <TurnBlock
-                items={g.items}
-                active={g.runId === activeRunId}
-                runId={g.runId}
-                density={mode}
-              />
-            </div>
-          ))}
+          {visibleGroups.map((g) => {
+            const marker = markersByRun.get(g.runId);
+            return (
+              <Fragment key={g.runId}>
+                {marker && (
+                  <div
+                    role="separator"
+                    aria-label={`话题开始：${marker.title}`}
+                    className="leemo-timeline-chapter-marker"
+                  >
+                    <span>{marker.title}</span>
+                    <time dateTime={new Date(marker.startedAt).toISOString()}>{formatChapterDate(marker.startedAt)}</time>
+                  </div>
+                )}
+                <div data-run-id={g.runId}>
+                  <TurnBlock
+                    items={g.items}
+                    active={g.runId === activeRunId}
+                    runId={g.runId}
+                    density={mode}
+                  />
+                </div>
+              </Fragment>
+            );
+          })}
         </div>
       </div>
       {hasPendingQuestion ? (

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Bell, CalendarCheck2, Copy, Minus, PanelLeft, PanelLeftClose, PanelLeftOpen, Settings, Square, UserRound, X } from "lucide-react";
+import { Bell, CalendarCheck2, Copy, MessageSquarePlus, Minus, PanelLeft, PanelLeftClose, PanelLeftOpen, Settings, Square, UserRound, X } from "lucide-react";
 import { useNotifications, useUi } from "../bridge/context";
 import LeemoMark from "./brand/LeemoMark";
 import AppSurfaceSwitcher from "./AppSurfaceSwitcher";
@@ -11,6 +11,8 @@ export default function TopBar({
   dailyReviewBusy = false,
   onStartRelationship,
   relationshipBusy = false,
+  onStartNewTopic,
+  newTopicDisabled = false,
   navigationControl = "history",
 }: {
   onOpenHistory: () => void;
@@ -18,6 +20,8 @@ export default function TopBar({
   dailyReviewBusy?: boolean;
   onStartRelationship?: () => void;
   relationshipBusy?: boolean;
+  onStartNewTopic?: () => void;
+  newTopicDisabled?: boolean;
   navigationControl?: "history" | "sidebar-expanded" | "sidebar-collapsed";
 }) {
   const unread = useNotifications((s) => s.unreadCount);
@@ -78,7 +82,7 @@ export default function TopBar({
         </button>
       </div>
       <div className="leemo-topbar-actions">
-        {(onStartRelationship || onDailyReview) && (
+        {(onStartRelationship || onStartNewTopic || onDailyReview) && (
           <div className="leemo-topbar-auxiliary-controls" data-testid="topbar-auxiliary-controls">
             {onStartRelationship && (
               <button
@@ -95,6 +99,19 @@ export default function TopBar({
                   aria-hidden
                 />
                 <span className="hidden lg:inline">认识我</span>
+              </button>
+            )}
+            {onStartNewTopic && (
+              <button
+                type="button"
+                aria-label="新话题"
+                title={newTopicDisabled ? "当前交互完成后可开始新话题" : "新话题"}
+                disabled={newTopicDisabled}
+                onClick={onStartNewTopic}
+                className="leemo-topbar-relationship-action"
+              >
+                <MessageSquarePlus className="h-[16px] w-[16px]" strokeWidth={1.7} aria-hidden />
+                <span className="hidden lg:inline">新话题</span>
               </button>
             )}
             {onDailyReview && (

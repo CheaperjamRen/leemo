@@ -322,6 +322,23 @@ export function createRegisteredWorkspacePersistence(
       index.saveConversation(meta, timeline);
     },
 
+    saveRelationshipChapter(meta, timeline) {
+      if (index.isConversationDeleted(meta.id)) return;
+      const workspaceId = meta.workspaceId ?? HOME_WORKSPACE_ID;
+      const archive = archiveFor(workspaceId);
+      archive.save({ meta, timeline });
+      try {
+        index.saveRelationshipChapter(meta, timeline);
+      } catch (error: unknown) {
+        try {
+          archive.remove(meta.id);
+        } catch (cleanupError: unknown) {
+          reportError(`[leemo:persist] could not roll back relationship chapter ${meta.id}: ${cleanupError instanceof Error ? cleanupError.message : String(cleanupError)}`);
+        }
+        throw error;
+      }
+    },
+
     moveConversation(sourceWorkspaceId, meta, timeline) {
       if (index.isConversationDeleted(meta.id)) return;
       const targetWorkspaceId = meta.workspaceId ?? HOME_WORKSPACE_ID;
@@ -367,6 +384,10 @@ export function createRegisteredWorkspacePersistence(
 
     saveSettings(settings) {
       index.saveSettings(settings);
+    },
+
+    saveComposerDrafts(drafts) {
+      index.saveComposerDrafts(drafts);
     },
 
     loadGlobalOverviewState() {
@@ -508,6 +529,21 @@ export function createWorkspaceBackedPersistence(
       index.saveConversation(meta, timeline);
     },
 
+    saveRelationshipChapter(meta, timeline) {
+      if (index.isConversationDeleted(meta.id)) return;
+      archive.save({ meta, timeline });
+      try {
+        index.saveRelationshipChapter(meta, timeline);
+      } catch (error: unknown) {
+        try {
+          archive.remove(meta.id);
+        } catch (cleanupError: unknown) {
+          reportError(`[leemo:persist] could not roll back relationship chapter ${meta.id}: ${cleanupError instanceof Error ? cleanupError.message : String(cleanupError)}`);
+        }
+        throw error;
+      }
+    },
+
     moveConversation(sourceWorkspaceId, meta, timeline) {
       if (index.isConversationDeleted(meta.id)) return;
       archive.save({ meta, timeline });
@@ -537,6 +573,10 @@ export function createWorkspaceBackedPersistence(
 
     saveSettings(settings) {
       index.saveSettings(settings);
+    },
+
+    saveComposerDrafts(drafts) {
+      index.saveComposerDrafts(drafts);
     },
 
     loadGlobalOverviewState() {

@@ -56,7 +56,7 @@ function conversation(overrides: Partial<ConversationMeta> = {}): PersistedConve
 }
 
 function emptySnapshot(conversations: PersistedConversation[] = []): PersistedSnapshot {
-  return { conversations, wikiEntries: [], settings: {} };
+  return { conversations, wikiEntries: [], settings: {}, composerDrafts: {} };
 }
 
 function fakeIndex(initial: PersistedConversation[] = []) {
@@ -70,6 +70,16 @@ function fakeIndex(initial: PersistedConversation[] = []) {
           { meta: nextMeta, timeline: nextTimeline },
           ...snapshot.conversations.filter((entry) => entry.meta.id !== nextMeta.id),
         ],
+      };
+    }),
+    saveRelationshipChapter: vi.fn((nextMeta: ConversationMeta, nextTimeline: TimelineItem[]) => {
+      snapshot = {
+        ...snapshot,
+        conversations: [
+          { meta: nextMeta, timeline: nextTimeline },
+          ...snapshot.conversations.filter((entry) => entry.meta.id !== nextMeta.id),
+        ],
+        settings: { ...snapshot.settings, relationshipConversationId: nextMeta.id },
       };
     }),
     rebuildConversationIndex: vi.fn((entries: PersistedConversation[]) => {
@@ -95,6 +105,9 @@ function fakeIndex(initial: PersistedConversation[] = []) {
     isConversationDeleted: vi.fn((conversationId: string) => tombstones.has(conversationId)),
     saveWikiEntry: vi.fn(),
     saveSettings: vi.fn(),
+    saveComposerDrafts: vi.fn((drafts: Record<string, unknown>) => {
+      snapshot = { ...snapshot, composerDrafts: drafts };
+    }),
     loadGlobalOverviewState: vi.fn(() => snapshot.globalPendingOverview ?? null),
     saveGlobalOverviewState: vi.fn((state) => {
       snapshot = { ...snapshot, globalPendingOverview: state };
@@ -348,6 +361,22 @@ describe("workspace-backed persistence", () => {
     persistence.saveConversation(meta(), timeline);
     expect(index.saveConversation).toHaveBeenCalledWith(meta(), timeline);
     expect(archive.loadAll().conversations).toEqual([conversation()]);
+  });
+
+  it("removes a staged relationship chapter when the atomic index commit fails", () => {
+    const root = tempWorkspace();
+    const archive = createWorkspaceConversationArchive(root);
+    const { index } = fakeIndex();
+    index.saveRelationshipChapter.mockImplementation(() => {
+      throw new Error("index commit failed");
+    });
+    const persistence = createWorkspaceBackedPersistence(index, archive);
+
+    expect(() => persistence.saveRelationshipChapter(
+      meta({ id: "relationship-failed", bookId: null, source: "buddy" }),
+      [],
+    )).toThrow("index commit failed");
+    expect(archive.loadAll().conversations).toEqual([]);
   });
 });
 

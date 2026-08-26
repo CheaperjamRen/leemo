@@ -41,7 +41,7 @@ function openDrawer(user: ReturnType<typeof userEvent.setup>): Promise<void> {
 function storedConversation(
   id: string,
   title: string,
-  options: { bookId?: string | null; archived?: boolean; lastOpenedAt?: number; pinned?: boolean } = {},
+  options: { bookId?: string | null; archived?: boolean; lastOpenedAt?: number; pinned?: boolean; source?: "buddy" | "workbench" } = {},
 ) {
   const timestamp = options.lastOpenedAt ?? 1;
   return {
@@ -51,7 +51,7 @@ function storedConversation(
       titleManuallyUpdated: false,
       workspaceId: "leemo-home",
       bookId: options.bookId ?? null,
-      source: "buddy" as const,
+      source: options.source ?? "buddy",
       providerId: "deepseek",
       modelId: "deepseek-v4-flash",
       createdAt: timestamp,
@@ -75,10 +75,12 @@ function persistenceWith(...conversations: ReturnType<typeof storedConversation>
   return {
     loadAll: vi.fn(async () => ({ conversations, wikiEntries: [] })),
     saveConversation: vi.fn(async () => {}),
+    saveRelationshipChapter: vi.fn(async () => {}),
     moveConversation: vi.fn(async () => {}),
     deleteConversation: vi.fn(async () => {}),
     saveWikiEntry: vi.fn(async () => {}),
     saveSettings: vi.fn(async () => {}),
+    saveComposerDrafts: vi.fn(async () => {}),
     saveGlobalPendingOverview: vi.fn(async () => {}),
   };
 }
@@ -88,7 +90,7 @@ describe("HistoryDrawer — real conversations, not fixtures", () => {
     const user = userEvent.setup();
     const persist = persistenceWith(storedConversation("current", "今天该先做什么", { lastOpenedAt: Date.now() }));
     render(<BridgeProvider client={createClient()} persist={persist}><BuddyShell /></BridgeProvider>);
-    await screen.findByText("今天该先做什么");
+    await screen.findByRole("button", { name: "继续上次聊天" });
 
     await openDrawer(user);
 
@@ -114,7 +116,7 @@ describe("HistoryDrawer — real conversations, not fixtures", () => {
       storedConversation("pinned", "长期关注", { lastOpenedAt: now - (60 * day), pinned: true }),
     );
     render(<BridgeProvider client={createClient()} persist={persist}><BuddyShell /></BridgeProvider>);
-    await screen.findByText("今天的安排");
+    await screen.findByRole("button", { name: "继续上次聊天" });
 
     await openDrawer(user);
 
@@ -151,7 +153,7 @@ describe("HistoryDrawer — real conversations, not fixtures", () => {
       storedConversation("newer", "周报怎么写", { lastOpenedAt: 2 }),
     );
     render(<BridgeProvider client={createClient()} persist={persist}><BuddyShell /></BridgeProvider>);
-    await screen.findByText("周报怎么写");
+    await screen.findByRole("button", { name: "继续上次聊天" });
     await openDrawer(user);
 
     const items = screen.getAllByRole("button", { name: /买菜清单|周报怎么写/ })
@@ -168,14 +170,14 @@ describe("HistoryDrawer — real conversations, not fixtures", () => {
       storedConversation("newer", "周报怎么写", { lastOpenedAt: 2 }),
     );
     render(<BridgeProvider client={client} persist={persist}><BuddyShell /></BridgeProvider>);
-    await screen.findByText("周报怎么写");
+    await screen.findByRole("button", { name: "继续上次聊天" });
     await openDrawer(user);
 
     await user.click(screen.getByRole("button", { name: "买菜清单" }));
 
     // Drawer dismissed, and the picked conversation's message is on screen.
     await waitFor(() => expect(screen.queryByLabelText("搜索记录")).not.toBeInTheDocument());
-    expect(screen.getByText("买菜清单")).toBeInTheDocument();
+    expect(screen.getAllByText("买菜清单").some((item) => item.closest("[data-run-id]"))).toBe(true);
     expect(client.invoke.mock.calls.filter(([channel]) => channel === "bridge:send")).toHaveLength(0);
   });
 
@@ -186,7 +188,7 @@ describe("HistoryDrawer — real conversations, not fixtures", () => {
       storedConversation("newer", "周报怎么写", { lastOpenedAt: 2 }),
     );
     render(<BridgeProvider client={createClient()} persist={persist}><BuddyShell /></BridgeProvider>);
-    await screen.findByText("周报怎么写");
+    await screen.findByRole("button", { name: "继续上次聊天" });
     await openDrawer(user);
 
     await user.type(screen.getByLabelText("搜索记录"), "周报");
@@ -199,7 +201,7 @@ describe("HistoryDrawer — real conversations, not fixtures", () => {
     const user = userEvent.setup();
     const persist = persistenceWith(storedConversation("resume", "请帮我分析秋招简历"));
     render(<BridgeProvider client={createClient()} persist={persist}><BuddyShell /></BridgeProvider>);
-    await screen.findByText("请帮我分析秋招简历");
+    await screen.findByRole("button", { name: "继续上次聊天" });
     await openDrawer(user);
 
     await user.click(screen.getByRole("button", { name: "更多操作：分析秋招简历" }));
@@ -217,7 +219,7 @@ describe("HistoryDrawer — real conversations, not fixtures", () => {
     const user = userEvent.setup();
     const persist = persistenceWith(storedConversation("shopping", "买菜清单"));
     render(<BridgeProvider client={createClient()} persist={persist}><BuddyShell /></BridgeProvider>);
-    await screen.findByText("买菜清单");
+    await screen.findByRole("button", { name: "继续上次聊天" });
     await openDrawer(user);
 
     await user.type(screen.getByLabelText("搜索记录"), "zzz没有这个");
@@ -250,10 +252,12 @@ describe("HistoryDrawer — real conversations, not fixtures", () => {
         wikiEntries: [],
       })),
       saveConversation: vi.fn(async () => {}),
+      saveRelationshipChapter: vi.fn(async () => {}),
       moveConversation: vi.fn(async () => {}),
       deleteConversation: vi.fn(async () => {}),
       saveWikiEntry: vi.fn(async () => {}),
       saveSettings: vi.fn(async () => {}),
+      saveComposerDrafts: vi.fn(async () => {}),
       saveGlobalPendingOverview: vi.fn(async () => {}),
     };
     render(<BridgeProvider client={client} persist={persist}><BuddyShell /></BridgeProvider>);
@@ -294,15 +298,18 @@ describe("HistoryDrawer — real conversations, not fixtures", () => {
       storedConversation("global", "今晚聊聊", { lastOpenedAt: 2 }),
       storedConversation("archived", "旧想法", { archived: true }),
       storedConversation("book", "高数第三章", { bookId: "高等数学", lastOpenedAt: 9 }),
+      storedConversation("workbench", "工作台执行记录", { source: "workbench", lastOpenedAt: 10 }),
     );
     render(<BridgeProvider client={createClient()} persist={persist}><BuddyShell /></BridgeProvider>);
 
-    expect(await screen.findByText("今晚聊聊")).toBeInTheDocument();
+    await screen.findByRole("button", { name: "继续上次聊天" });
     expect(screen.queryByText("高数第三章")).not.toBeInTheDocument();
+    expect(screen.queryByText("工作台执行记录")).not.toBeInTheDocument();
     await openDrawer(user);
 
     expect(screen.getByRole("button", { name: "今晚聊聊" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "高数第三章" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "工作台执行记录" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "旧想法" })).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "已归档 1" }));
     expect(screen.getByRole("button", { name: "旧想法" })).toBeInTheDocument();
@@ -315,7 +322,7 @@ describe("HistoryDrawer — real conversations, not fixtures", () => {
       storedConversation("older", "稍后整理", { lastOpenedAt: 1 }),
     );
     render(<BridgeProvider client={createClient()} persist={persist}><BuddyShell /></BridgeProvider>);
-    await screen.findByText("当前对话");
+    await screen.findByRole("button", { name: "继续上次聊天" });
     await openDrawer(user);
 
     await user.click(screen.getByRole("button", { name: "更多操作：稍后整理" }));
@@ -355,7 +362,7 @@ describe("HistoryDrawer — real conversations, not fixtures", () => {
     } as unknown as WorkspaceClient;
     render(<BridgeProvider client={createClient()} persist={persist} workspace={workspace}><BuddyShell /></BridgeProvider>);
     await waitFor(() => expect(workspace.listNotebooks).toHaveBeenCalled());
-    await screen.findByText("当前对话");
+    await screen.findByRole("button", { name: "继续上次聊天" });
     await openDrawer(user);
 
     await user.click(screen.getByRole("button", { name: "更多操作：归入课程" }));

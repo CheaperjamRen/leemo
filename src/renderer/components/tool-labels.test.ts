@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
+import { LEEMO_ASK_USER_TOOL_NAME } from "../bridge/tool-names";
 import { permissionToolLabel, toolActionLabel, toolResultLabel } from "./tool-labels";
+import { LEEMO_RELATIONSHIP_HISTORY_TOOL } from "../../bridge/relationship-history-mcp";
 
 describe("desktop tool labels", () => {
   it("keeps internal server and tool names out of user-facing text", () => {
@@ -32,5 +34,15 @@ describe("desktop tool labels", () => {
 
   it("describes Leemo overview updates as first-party metadata", () => {
     expect(toolActionLabel("mcp__leemo-work-overview__set_work_overview")).toBe("更新工作概览");
+  });
+
+  it("describes momo's built-in question card as a first-party confirmation", () => {
+    expect(toolActionLabel(LEEMO_ASK_USER_TOOL_NAME)).toBe("向你确认");
+    expect(permissionToolLabel(LEEMO_ASK_USER_TOOL_NAME)).toBe("向你确认");
+  });
+
+  it("把本地关系召回描述为 momo 回想，不暴露第三方工具心智", () => {
+    expect(toolActionLabel(LEEMO_RELATIONSHIP_HISTORY_TOOL)).toBe("回想之前的聊天");
+    expect(permissionToolLabel(LEEMO_RELATIONSHIP_HISTORY_TOOL)).toBe("回想之前的聊天");
   });
 });

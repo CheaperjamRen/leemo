@@ -3,12 +3,15 @@ import { render, screen, waitFor, fireEvent, within } from "@testing-library/rea
 import { useContext, useEffect, useState } from "react";
 import type { WorkspaceClient } from "../workspace/client";
 import userEvent from "@testing-library/user-event";
-import { BridgeContext, BridgeProvider, type BridgeStores } from "../bridge/context";
+import { BridgeContext, BridgeProvider, type BridgeStores, useComposerDrafts, useSettings } from "../bridge/context";
 import type { BridgeClient } from "../bridge/client";
 import BuddyShell from "./BuddyShell";
 import type { BridgeEventEnvelope } from "../../bridge/contract";
 import { FixtureBridgeClient } from "../bridge/fixture-client";
 import { resolveMomoPersonaText } from "../stores/settings";
+import { LEEMO_ASK_USER_TOOL_NAME } from "../bridge/tool-names";
+import { EMPTY_COMPOSER_DRAFT } from "../stores/composer-drafts";
+import type { PersistenceClient } from "../persistence/client";
 
 type MockedBridgeClient = BridgeClient & { invoke: ReturnType<typeof vi.fn> };
 
@@ -57,6 +60,21 @@ function renderBuddy(client = createBuddyClient()) {
   return {
     client,
     ...render(<BridgeProvider client={client}><BuddyShell /></BridgeProvider>),
+  };
+}
+
+function buddyPersistence(overrides: Partial<PersistenceClient> = {}): PersistenceClient {
+  return {
+    loadAll: vi.fn(async () => ({ conversations: [], wikiEntries: [], settings: {} })),
+    saveConversation: vi.fn(async () => {}),
+    saveRelationshipChapter: vi.fn(async () => {}),
+    moveConversation: vi.fn(async () => {}),
+    deleteConversation: vi.fn(async () => {}),
+    saveWikiEntry: vi.fn(async () => {}),
+    saveSettings: vi.fn(async () => {}),
+    saveComposerDrafts: vi.fn(async () => {}),
+    saveGlobalPendingOverview: vi.fn(async () => {}),
+    ...overrides,
   };
 }
 
@@ -291,6 +309,8 @@ describe("BuddyShell", () => {
     }
 
     render(<BridgeProvider client={client}><SeedHydratedRelationship /></BridgeProvider>);
+    expect(await screen.findByTestId("buddy-landing")).toBeInTheDocument();
+    expect(screen.queryByText("上次你说想让我更直接一点。")).not.toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "让 momo 认识我" }));
 
     expect(await screen.findByText("上次你说想让我更直接一点。")).toBeInTheDocument();
@@ -399,11 +419,196 @@ describe("BuddyShell", () => {
 
     render(<BridgeProvider client={client}><SeedRelationshipHistory /></BridgeProvider>);
 
-    await waitFor(() => {
-      expect(screen.getByText("你当时说，先把简历投递节奏稳下来。")).toBeInTheDocument();
-      expect(screen.getByText("今天我们接着聊这件事。")).toBeInTheDocument();
-    });
+    expect(await screen.findByTestId("buddy-landing")).toBeInTheDocument();
+    expect(screen.queryByText("你当时说，先把简历投递节奏稳下来。")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("timeline-content")).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "继续上次聊天" }));
+    expect(await screen.findByText("你当时说，先把简历投递节奏稳下来。")).toBeInTheDocument();
+    expect(screen.getByText("今天我们接着聊这件事。")).toBeInTheDocument();
     expect(screen.queryByText("这是工作台内部执行记录。")).not.toBeInTheDocument();
+    expect(client.invoke.mock.calls.filter(([channel]) => channel === "bridge:send")).toHaveLength(0);
+  });
+
+  it("starts a new topic transactionally, preserves the draft, and reuses the empty chapter", async () => {
+    const client = createBuddyClient();
+
+    function RelationshipStateProbe() {
+      const relationshipId = useSettings((state) => state.relationshipConversationId);
+      const drafts = useComposerDrafts((state) => state.drafts);
+      const preservedDraft = Object.values(drafts).find((item) => item.text === "我刚想到另一件事");
+      return (
+        <output data-testid="relationship-state">
+          {relationshipId}|{preservedDraft?.assignedConversationId ?? "unassigned"}
+        </output>
+      );
+    }
+
+    function SeedRelationship() {
+      const stores = useContext(BridgeContext) as BridgeStores;
+      const [ready, setReady] = useState(false);
+      useEffect(() => {
+        stores.settings.setState({
+          relationshipInviteDismissed: true,
+          relationshipConversationId: "buddy-current",
+        });
+        stores.conversations.setState({
+          byId: {
+            "buddy-current": {
+              id: "buddy-current",
+              title: "最近聊到的事",
+              titleManuallyUpdated: true,
+              bookId: null,
+              workspaceId: "leemo-home",
+              source: "buddy",
+              providerId: "glm",
+              modelId: "glm-5.2",
+              createdAt: 1,
+              lastActivityAt: 2,
+              unread: false,
+            },
+          },
+          order: ["buddy-current"],
+          activeId: null,
+          timelines: {
+            "buddy-current": [{
+              kind: "text",
+              id: "current-message",
+              runId: "run-current",
+              role: "momo",
+              text: "这件事我们已经聊过一会儿了。",
+              streaming: false,
+              createdAt: 2,
+            }],
+          },
+          runIds: { "buddy-current": null },
+        });
+        stores.composerDrafts!.setState({
+          drafts: {
+            "conversation:buddy-current": {
+              ...EMPTY_COMPOSER_DRAFT,
+              text: "我刚想到另一件事",
+              assignedConversationId: "buddy-current",
+            },
+          },
+        });
+        setReady(true);
+      }, [stores]);
+      return ready ? <><BuddyShell /><RelationshipStateProbe /></> : null;
+    }
+
+    render(<BridgeProvider client={client}><SeedRelationship /></BridgeProvider>);
+    const user = userEvent.setup();
+    const input = await screen.findByPlaceholderText("输入消息…");
+    expect(input).toHaveValue("我刚想到另一件事");
+
+    const landing = screen.getByTestId("buddy-landing");
+    await user.click(within(landing).getByRole("button", { name: "新话题" }));
+    expect(screen.getByRole("alertdialog", { name: "开始新话题？" })).toBeInTheDocument();
+    expect(client.invoke.mock.calls.filter(([channel]) => channel === "bridge:createConversation")).toHaveLength(0);
+    expect(client.invoke.mock.calls.filter(([channel]) => channel === "bridge:send")).toHaveLength(0);
+
+    await user.click(screen.getByRole("button", { name: "开始" }));
+    await waitFor(() => expect(screen.getByTestId("relationship-state")).toHaveTextContent("conv-1|conv-1"));
+    expect(input).toHaveValue("我刚想到另一件事");
+    expect(screen.getByTestId("buddy-landing")).toBeInTheDocument();
+    expect(client.invoke.mock.calls.filter(([channel]) => channel === "bridge:createConversation")).toHaveLength(1);
+    expect(client.invoke.mock.calls.find(([channel]) => channel === "bridge:createConversation")?.[1]).toEqual(
+      expect.objectContaining({ providerId: "glm", modelId: "glm-5.2" }),
+    );
+    expect(client.invoke.mock.calls.filter(([channel]) => channel === "bridge:send")).toHaveLength(0);
+
+    await user.click(within(screen.getByRole("banner")).getByRole("button", { name: "新话题" }));
+    await user.click(screen.getByRole("button", { name: "开始" }));
+    await waitFor(() => expect(screen.queryByRole("alertdialog", { name: "开始新话题？" })).not.toBeInTheDocument());
+    expect(client.invoke.mock.calls.filter(([channel]) => channel === "bridge:createConversation")).toHaveLength(1);
+  });
+
+  it("keeps the current chapter and draft when creating a new topic fails", async () => {
+    const client = createBuddyClient();
+    client.invoke.mockImplementation(async (channel: string) => {
+      if (channel === "bridge:createConversation") throw new Error("暂时无法准备新话题");
+      if (channel === "bridge:listWhitelist") return [];
+      return undefined;
+    });
+
+    function SeedRelationship() {
+      const stores = useContext(BridgeContext) as BridgeStores;
+      const [ready, setReady] = useState(false);
+      useEffect(() => {
+        stores.settings.setState({
+          relationshipInviteDismissed: true,
+          relationshipConversationId: "buddy-current",
+        });
+        stores.conversations.setState({
+          byId: {
+            "buddy-current": {
+              id: "buddy-current",
+              title: "旧话题",
+              titleManuallyUpdated: true,
+              bookId: null,
+              workspaceId: "leemo-home",
+              source: "buddy",
+              providerId: "deepseek",
+              modelId: "deepseek-chat",
+              createdAt: 1,
+              lastActivityAt: 2,
+              unread: false,
+            },
+          },
+          order: ["buddy-current"],
+          activeId: null,
+          timelines: {
+            "buddy-current": [{
+              kind: "text", id: "old", runId: "old-run", role: "momo",
+              text: "旧话题内容", streaming: false, createdAt: 2,
+            }],
+          },
+          runIds: { "buddy-current": null },
+        });
+        stores.composerDrafts!.setState({
+          drafts: {
+            "conversation:buddy-current": {
+              ...EMPTY_COMPOSER_DRAFT,
+              text: "这句还没发",
+              assignedConversationId: "buddy-current",
+            },
+          },
+        });
+        setReady(true);
+      }, [stores]);
+      return ready ? <BuddyShell /> : null;
+    }
+
+    render(<BridgeProvider client={client}><SeedRelationship /></BridgeProvider>);
+    const user = userEvent.setup();
+    expect(await screen.findByPlaceholderText("输入消息…")).toHaveValue("这句还没发");
+    await user.click(within(screen.getByRole("banner")).getByRole("button", { name: "新话题" }));
+    await user.click(screen.getByRole("button", { name: "开始" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("暂时无法准备新话题");
+    expect(screen.getByPlaceholderText("输入消息…")).toHaveValue("这句还没发");
+    expect(screen.getByRole("alertdialog", { name: "开始新话题？" })).toBeInTheDocument();
+  });
+
+  it("keeps the welcome draft and disposes the host when the durable chapter commit fails", async () => {
+    const client = createBuddyClient();
+    const persist = buddyPersistence({
+      saveRelationshipChapter: vi.fn(async () => { throw new Error("本地记录暂时无法保存"); }),
+    });
+    render(<BridgeProvider client={client} persist={persist}><BuddyShell /></BridgeProvider>);
+    const user = userEvent.setup();
+    const input = await screen.findByPlaceholderText("输入消息…");
+    await user.type(input, "先留住这句草稿");
+
+    await user.click(within(screen.getByRole("banner")).getByRole("button", { name: "新话题" }));
+    await user.click(screen.getByRole("button", { name: "开始" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("本地记录暂时无法保存");
+    expect(input).toHaveValue("先留住这句草稿");
+    expect(screen.getByRole("alertdialog", { name: "开始新话题？" })).toBeInTheDocument();
+    expect(persist.saveRelationshipChapter).toHaveBeenCalledTimes(1);
+    expect(client.invoke).toHaveBeenCalledWith("bridge:disposeConversation", { conversationId: "conv-1" });
     expect(client.invoke.mock.calls.filter(([channel]) => channel === "bridge:send")).toHaveLength(0);
   });
 
@@ -616,6 +821,7 @@ describe("BuddyShell", () => {
     }
 
     render(<BridgeProvider client={createBuddyClient()}><SeedRetry /></BridgeProvider>);
+    expect(screen.queryByTestId("buddy-landing")).not.toBeInTheDocument();
     expect(screen.getByRole("alert")).toHaveTextContent("原消息和附件已保留");
 
     await userEvent.click(screen.getByRole("button", { name: "关闭重试提示" }));
@@ -733,6 +939,7 @@ describe("BuddyShell", () => {
     expect(screen.getByTestId("approval-card-pending")).toHaveAttribute("data-conversation-id", "conv-1");
     expect(screen.getByTestId("approval-card-pending")).toHaveAttribute("data-approval-id", "approval-1");
     expect(screen.getByTestId("approval-card-pending")).toHaveAttribute("data-run-id", "run-1");
+    expect(within(screen.getByRole("banner")).getByRole("button", { name: "新话题" })).toBeDisabled();
   });
 
   it("offers conversation-scoped approval so repeated normal commands do not nag", async () => {
@@ -837,6 +1044,19 @@ describe("BuddyShell", () => {
     await userEvent.type(screen.getByPlaceholderText("输入消息…"), "整理笔记{Enter}");
     expect(await screen.findByText("整理笔记")).toBeInTheDocument();
 
+    const onEvent = (wrappedClient.subscribe as ReturnType<typeof vi.fn>).mock.calls
+      .find(([channel]) => channel === "bridge:event")?.[1];
+    onEvent?.({
+      conversationId: "conv-1",
+      event: {
+        type: "tool.started",
+        toolUseId: "ask-tool-1",
+        name: LEEMO_ASK_USER_TOOL_NAME,
+        input: {},
+        subagent: false,
+      },
+    });
+
     const onAskUser = (wrappedClient.subscribe as ReturnType<typeof vi.fn>).mock.calls
       .find(([channel]) => channel === "bridge:askUser")?.[1];
     onAskUser?.({
@@ -847,6 +1067,9 @@ describe("BuddyShell", () => {
 
     const questionTexts = await screen.findAllByText("放进哪个章节？");
     expect(questionTexts).toHaveLength(1);
+    expect(screen.queryByText("正在使用第三方工具…")).not.toBeInTheDocument();
+    expect(screen.queryByText("正在向你确认…")).not.toBeInTheDocument();
+    expect(within(screen.getByRole("banner")).getByRole("button", { name: "新话题" })).toBeDisabled();
   });
 
   it("full lifecycle through the real store: pending → answered stays exactly one DOM node throughout", async () => {

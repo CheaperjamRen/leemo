@@ -17,7 +17,9 @@ import { createNotebooksStore } from "../stores/notebooks";
 import { previewDraftKey } from "../stores/preview-content";
 import { createNotificationsStore } from "../stores/notifications";
 import { createContextUsageStore } from "../stores/context-usage";
+import { deriveContextUsageFromTimelines } from "../stores/context-usage";
 import type { BridgeEventEnvelope, ApprovalExpired, ApprovalRequest, AskUserPayload } from "../../bridge/contract";
+import { normalizeSdkStream } from "../../bridge/events";
 
 describe("wireBridgeSubscriptions", () => {
   let mockClient: BridgeClient;
@@ -110,7 +112,7 @@ describe("wireBridgeSubscriptions", () => {
     expect(conversationsStore.setState).toHaveBeenCalledWith(expect.any(Function));
   });
 
-  it("routes exact context snapshots and compaction events into the shared context meter", () => {
+  it("routes live, final, exact, and compaction context events into the shared meter", () => {
     const contextUsage = createContextUsageStore();
     wireBridgeSubscriptions(mockClient, {
       conversations: conversationsStore,
@@ -122,12 +124,52 @@ describe("wireBridgeSubscriptions", () => {
     eventSubscriber!({
       conversationId: "c1",
       event: {
+        type: "context.live",
+        currentTokens: 101,
+        providerId: "deepseek",
+        model: "deepseek-v4-flash",
+      },
+    });
+    expect(contextUsage.getState().byConversation.c1).toMatchObject({
+      currentTokens: 101,
+      accuracy: "estimated",
+    });
+
+    eventSubscriber!({
+      conversationId: "c1",
+      event: {
+        type: "usage.final",
+        usage: {
+          providerId: "deepseek",
+          modelId: "deepseek-v4-flash",
+          inputTokens: 99_999,
+          outputTokens: 99_999,
+          cacheReadTokens: 99_999,
+          cacheCreationTokens: 99_999,
+          contextInputTokens: 5,
+          contextCacheReadTokens: 95,
+          contextCacheCreationTokens: 0,
+          contextOutputTokens: 2,
+          costSource: "unpriced",
+          tokensEstimated: false,
+        },
+      },
+    });
+    expect(contextUsage.getState().byConversation.c1).toMatchObject({
+      currentTokens: 102,
+      accuracy: "estimated",
+    });
+
+    eventSubscriber!({
+      conversationId: "c1",
+      event: {
         type: "context.snapshot",
         currentTokens: 105,
         maxTokens: 200,
         rawMaxTokens: 200,
         autoCompactThreshold: 180,
         isAutoCompactEnabled: true,
+        providerId: "deepseek",
         model: "deepseek-v4-flash",
       },
     });
@@ -141,7 +183,10 @@ describe("wireBridgeSubscriptions", () => {
       currentTokens: 24,
       capacityTokens: 180,
       rawMaxTokens: 200,
-      source: "sdk",
+      providerId: "deepseek",
+      modelId: "deepseek-v4-flash",
+      accuracy: "exact",
+      updatedAt: expect.any(Number),
       justCompacted: true,
     });
   });
@@ -545,6 +590,165 @@ describe("wireBridgeSubscriptions", () => {
     eventSubscriber!(envelope);
 
     expect(cancelForConversation).toHaveBeenCalledWith("c1");
+  });
+});
+
+describe("context stream integration — normalize → route → restart", () => {
+  it("keeps a later exact snapshot authoritative after terminal billing is persisted", async () => {
+    let emit: ((envelope: BridgeEventEnvelope) => void) | undefined;
+    const client = {
+      subscribe: vi.fn((channel: string, callback: unknown) => {
+        if (channel === "bridge:event") emit = callback as (envelope: BridgeEventEnvelope) => void;
+        return () => {};
+      }),
+      invoke: vi.fn(),
+    } as unknown as BridgeClient;
+    const conversations = createConversationsStore(client, {
+      resolveConversationDefaults: () => ({ providerId: "deepseek", modelId: "deepseek-v4-flash" }),
+    });
+    conversations.setState({
+      byId: {
+        c1: {
+          id: "c1", title: "长对话", titleManuallyUpdated: true, bookId: null,
+          source: "buddy", providerId: "deepseek", modelId: "deepseek-v4-flash",
+          createdAt: 1, lastActivityAt: 1, unread: false,
+        },
+      },
+      order: ["c1"],
+      timelines: { c1: [] },
+      runIds: { c1: "run-1" },
+    });
+    const contextUsage = createContextUsageStore();
+    wireBridgeSubscriptions(client, {
+      conversations,
+      approvals: { getState: () => ({ pendingByConversation: {}, cancelForConversation: vi.fn() }), setState: vi.fn() } as never,
+      wikiEntries: { getState: () => ({ entries: [], active: null, receiveEvent: vi.fn() }), setState: vi.fn() } as never,
+      contextUsage,
+    });
+
+    const raw = [
+      {
+        type: "assistant",
+        parent_tool_use_id: null,
+        message: {
+          role: "assistant",
+          content: [{ type: "text", text: "继续" }],
+          usage: { input_tokens: 100, cache_read_input_tokens: 900, cache_creation_input_tokens: 0, output_tokens: 25 },
+        },
+      },
+      {
+        type: "result", subtype: "success", is_error: false, result: "继续",
+        usage: { input_tokens: 50_000, cache_read_input_tokens: 45_000, cache_creation_input_tokens: 0, output_tokens: 5_000 },
+      },
+      {
+        type: "leemo_context_snapshot",
+        contextUsage: {
+          totalTokens: 1_030, maxTokens: 200_000, rawMaxTokens: 200_000,
+          model: "deepseek-v4-flash", isAutoCompactEnabled: true, autoCompactThreshold: 180_000,
+        },
+      },
+    ];
+    const stream = {
+      async *[Symbol.asyncIterator]() {
+        for (const message of raw) yield message;
+      },
+    };
+    for await (const event of normalizeSdkStream(stream as never, {
+      providerId: "deepseek",
+      modelId: "deepseek-v4-flash",
+      cwd: ".",
+    })) {
+      emit?.({ conversationId: "c1", event });
+    }
+
+    expect(contextUsage.getState().byConversation.c1).toMatchObject({
+      currentTokens: 1_030,
+      accuracy: "exact",
+      capacityTokens: 180_000,
+    });
+    const restored = deriveContextUsageFromTimelines(conversations.getState().timelines);
+    expect(restored.byConversation.c1).toMatchObject({
+      currentTokens: 1_030,
+      accuracy: "exact",
+      capacityTokens: 180_000,
+    });
+  });
+
+  it("assistant → compact → result 在 live store 与重启后都保留整理后真值", async () => {
+    let emit: ((envelope: BridgeEventEnvelope) => void) | undefined;
+    const client = {
+      subscribe: vi.fn((channel: string, callback: unknown) => {
+        if (channel === "bridge:event") emit = callback as (envelope: BridgeEventEnvelope) => void;
+        return () => {};
+      }),
+      invoke: vi.fn(),
+    } as unknown as BridgeClient;
+    const conversations = createConversationsStore(client, {
+      resolveConversationDefaults: () => ({ providerId: "deepseek", modelId: "deepseek-v4-flash" }),
+    });
+    conversations.setState({
+      byId: {
+        c1: {
+          id: "c1", title: "长对话", titleManuallyUpdated: true, bookId: null,
+          source: "buddy", providerId: "deepseek", modelId: "deepseek-v4-flash",
+          createdAt: 1, lastActivityAt: 1, unread: false,
+        },
+      },
+      order: ["c1"],
+      timelines: { c1: [] },
+      runIds: { c1: "run-1" },
+    });
+    const contextUsage = createContextUsageStore();
+    wireBridgeSubscriptions(client, {
+      conversations,
+      approvals: { getState: () => ({ pendingByConversation: {}, cancelForConversation: vi.fn() }), setState: vi.fn() } as never,
+      wikiEntries: { getState: () => ({ entries: [], active: null, receiveEvent: vi.fn() }), setState: vi.fn() } as never,
+      contextUsage,
+    });
+    const raw = [
+      {
+        type: "assistant", parent_tool_use_id: null,
+        message: {
+          role: "assistant", content: [{ type: "text", text: "整理" }],
+          usage: { input_tokens: 10, cache_read_input_tokens: 150_000, cache_creation_input_tokens: 0, output_tokens: 0 },
+        },
+      },
+      {
+        type: "system", subtype: "compact_boundary",
+        compact_metadata: { trigger: "auto", pre_tokens: 150_010, post_tokens: 30_000 },
+      },
+      {
+        type: "result", subtype: "success", is_error: false, result: "完成",
+        usage: { input_tokens: 10, cache_read_input_tokens: 150_000, cache_creation_input_tokens: 0, output_tokens: 0 },
+      },
+    ];
+    const stream = {
+      async *[Symbol.asyncIterator]() {
+        for (const message of raw) yield message;
+      },
+    };
+    for await (const event of normalizeSdkStream(stream as never, {
+      providerId: "deepseek",
+      modelId: "deepseek-v4-flash",
+      cwd: ".",
+    })) {
+      emit?.({ conversationId: "c1", event });
+    }
+
+    expect(contextUsage.getState().byConversation.c1).toMatchObject({
+      currentTokens: 30_000,
+      providerId: "deepseek",
+      modelId: "deepseek-v4-flash",
+      accuracy: "exact",
+      justCompacted: true,
+    });
+    expect(deriveContextUsageFromTimelines(conversations.getState().timelines).byConversation.c1).toMatchObject({
+      currentTokens: 30_000,
+      providerId: "deepseek",
+      modelId: "deepseek-v4-flash",
+      accuracy: "exact",
+      justCompacted: true,
+    });
   });
 });
 

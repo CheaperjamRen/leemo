@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import type { PersistedConversation } from "../../src/main/persistence/schema";
-import { searchRelationshipHistory } from "../../src/main/relationship-history-search";
+import {
+  searchRelationshipHistory,
+  searchRelationshipHistoryCandidates,
+  type RelationshipHistoryCandidate,
+} from "../../src/main/relationship-history-search";
 
 function conversation(
   id: string,
@@ -32,6 +36,30 @@ function conversation(
 }
 
 describe("searchRelationshipHistory", () => {
+  it("scores already-scoped SQLite candidates without loading conversation objects", () => {
+    const candidates: RelationshipHistoryCandidate[] = [
+      {
+        conversationId: "older", runId: "run-older", role: "momo",
+        text: "之前聊过秋招简历的结构", createdAt: 100, activityAt: 100, order: 0,
+      },
+      {
+        conversationId: "newer", runId: "run-newer", role: "user",
+        text: "秋招简历里需要补实验设计", createdAt: 200, activityAt: 200, order: 1,
+      },
+    ];
+
+    expect(searchRelationshipHistoryCandidates(candidates, { query: "秋招简历", limit: 4 })).toEqual([
+      {
+        conversationId: "newer", runId: "run-newer", role: "user",
+        text: "秋招简历里需要补实验设计", createdAt: 200,
+      },
+      {
+        conversationId: "older", runId: "run-older", role: "momo",
+        text: "之前聊过秋招简历的结构", createdAt: 100,
+      },
+    ]);
+  });
+
   it("searches only global Buddy speech and ranks exact matches first", () => {
     const hits = searchRelationshipHistory([
       conversation("buddy-related", "buddy", "我最近在准备秋招产品经理岗位"),

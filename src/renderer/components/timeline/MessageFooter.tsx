@@ -143,6 +143,11 @@ export default function MessageFooter({
   const cacheTokens = usage ? usage.usage.cacheReadTokens + usage.usage.cacheCreationTokens : 0;
   const modelBreakdown = usage?.usage.modelBreakdown ?? [];
   const singleModelUsage = modelBreakdown.length === 1 ? modelBreakdown[0] : undefined;
+  const hasDetailedTiming = usage !== undefined && (
+    usage.usage.timeToRequestMs !== undefined
+    || usage.usage.ttftMs !== undefined
+    || usage.usage.apiDurationMs !== undefined
+  );
   const fullMemoryLabel = memory ? normalizeReceiptLabel(memory.label) : "";
   const visibleMemoryLabel = truncateReceiptLabel(fullMemoryLabel);
   const memoryUndone = memory?.undone === true || memoryUndoState === "undone";
@@ -340,6 +345,14 @@ export default function MessageFooter({
             <span>{usage.usage.costUsd === undefined ? "未估价" : `US$${usage.usage.costUsd}`}</span>
             {usage.usage.tokensEstimated && <span>Token 为估算</span>}
           </div>
+          {hasDetailedTiming && (
+            <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-0.5 border-t border-[var(--leemo-line-2)] pt-1.5 font-mono tabular-nums">
+              {usage.usage.timeToRequestMs !== undefined && <span>准备 {formatDuration(usage.usage.timeToRequestMs)}</span>}
+              {usage.usage.ttftMs !== undefined && <span>首字 {formatDuration(usage.usage.ttftMs)}</span>}
+              {usage.usage.apiDurationMs !== undefined && <span>模型请求 {formatDuration(usage.usage.apiDurationMs)}</span>}
+              {usage.usage.durationMs !== undefined && <span>本轮总历时 {formatDuration(usage.usage.durationMs)}</span>}
+            </div>
+          )}
           {modelBreakdown.length > 1 && (
             <div className="mt-1.5 border-t border-[var(--leemo-line-2)] pt-1.5">
               {modelBreakdown.map((model) => (

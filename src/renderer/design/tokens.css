@@ -191,6 +191,9 @@
   --leemo-text-secondary: var(--leemo-palette-text-secondary);
   --leemo-text-tertiary: var(--leemo-palette-text-tertiary);
   --leemo-text-quaternary: var(--leemo-palette-text-quaternary);
+  --leemo-surface-inverse: var(--leemo-palette-ink-navy);
+  --leemo-text-on-inverse: var(--leemo-palette-white);
+  --leemo-text-on-inverse-muted: color-mix(in srgb, var(--leemo-palette-white) 68%, transparent);
   --leemo-border-default: var(--leemo-palette-line);
   --leemo-border-soft: var(--leemo-palette-line-soft);
 

@@ -4,6 +4,7 @@ import type { TimelineItem } from "../stores/message-model";
 import type { WikiEntry } from "../stores/wiki-entries";
 import type { PersistenceClient, PersistedSnapshot } from "./client";
 import type { PersistedGlobalOverviewState } from "../../bridge/global-pending-overview";
+import type { PersistedComposerDrafts } from "../stores/composer-drafts";
 
 /** The exact surface the preload exposes on `window.leemoPersist`
  *  (see src/main/preload.ts). One multiplexed invoke, mirroring leemoBridge. */
@@ -32,6 +33,11 @@ export class IpcPersistenceClient implements PersistenceClient {
     if (!res.ok) throw new Error(res.error ?? "persist saveConversation failed");
   }
 
+  async saveRelationshipChapter(meta: ConversationMeta, timeline: TimelineItem[]): Promise<void> {
+    const res = await this.api.invoke("saveRelationshipChapter", { meta, timeline });
+    if (!res.ok) throw new Error(res.error ?? "persist saveRelationshipChapter failed");
+  }
+
   async moveConversation(
     sourceWorkspaceId: string,
     meta: ConversationMeta,
@@ -54,6 +60,11 @@ export class IpcPersistenceClient implements PersistenceClient {
   async saveSettings(settings: Record<string, unknown>): Promise<void> {
     const res = await this.api.invoke("saveSettings", settings);
     if (!res.ok) throw new Error(res.error ?? "persist saveSettings failed");
+  }
+
+  async saveComposerDrafts(drafts: PersistedComposerDrafts): Promise<void> {
+    const res = await this.api.invoke("saveComposerDrafts", drafts);
+    if (!res.ok) throw new Error(res.error ?? "persist saveComposerDrafts failed");
   }
 
   async saveGlobalPendingOverview(state: PersistedGlobalOverviewState): Promise<void> {

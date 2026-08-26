@@ -40,7 +40,8 @@ import {
   type QuickCaptureController,
 } from "./quick-capture-window";
 import { createBridgeHost, type BridgeHost } from "../host/bridge-host";
-import { searchRelationshipHistory } from "./relationship-history-search";
+import { searchRelationshipHistoryCandidates } from "./relationship-history-search";
+import { loadRelationshipHistoryCandidates } from "./persistence/relationship-history-query";
 import { buildCatalog } from "../host/provider-catalog";
 import {
   createMemoryGovernance,
@@ -120,6 +121,10 @@ import {
 } from "./mcp-runtime";
 import type { BridgeInvokeMap } from "../bridge/contract";
 import { normalizePersistedGlobalOverviewState } from "../bridge/global-pending-overview";
+import {
+  normalizeMomoE2EScenario,
+  type MomoE2ESdkScenario,
+} from "./e2e-momo-verifier";
 import { applyE2EIsolationFromArgv, resolveE2EWorkspaceCandidate } from "./e2e-isolation";
 import {
   HOME_WORKSPACE_ID,
@@ -441,6 +446,7 @@ let trashIpc: TrashIpcDispatcher | null = null;
 let taskReminderScheduler: TaskReminderScheduler | null = null;
 let unsubscribeCaptureChanges: (() => void) | null = null;
 let quickCaptureController: QuickCaptureController | null = null;
+let e2eTray: Tray | null = null;
 let continueInBackground = true;
 let quickCaptureShortcut = "Alt+N";
 let captureStorageRoot: string | undefined;
@@ -1105,8 +1111,8 @@ function setupHost(): void {
     readGlobalMemory: () => readCurrentMemory({ type: "global" }),
     captures: captureAdmin,
     tasks: taskAdmin,
-    searchBuddyHistory: (query) => searchRelationshipHistory(
-      activePersistence.loadAll().conversations,
+    searchBuddyHistory: (query) => searchRelationshipHistoryCandidates(
+      loadRelationshipHistoryCandidates(database, query),
       query,
     ),
     memoryDir: memoryDir(),
@@ -1203,7 +1209,7 @@ function setupHost(): void {
   // thrown Error across the IPC boundary.
   ipcMain.handle(
     "leemo:invoke",
-    async (_e, msg: { channel: keyof BridgeInvokeMap; req: unknown }) => {
+    async (_e, msg: { channel: keyof BridgeInvokeMap | "bridge:e2eMomo"; req: unknown }) => {
       let clipboardSend: {
         conversationId: string;
         previous?: string[];
@@ -1212,6 +1218,56 @@ function setupHost(): void {
       let wakeTaskId: string | undefined;
       let wakeLeaseAcquired = false;
       try {
+        if (msg.channel === "bridge:e2eMomo") {
+          if (!E2E_ISOLATION) throw new Error("该验收入口只在隔离进程可用。");
+          if (!msg.req || typeof msg.req !== "object" || Array.isArray(msg.req)) {
+            throw new Error("momo 验收请求格式不正确。");
+          }
+          const request = msg.req as Record<string, unknown>;
+          const operation = request.operation;
+          if (operation === "sdk-scenario") {
+            const scenario = request.scenario;
+            const conversationId = request.conversationId;
+            const providerId = request.providerId;
+            const modelId = request.modelId;
+            if ((scenario !== "estimated" && scenario !== "exact" && scenario !== "compact-iterations")
+              || typeof conversationId !== "string" || !conversationId
+              || typeof providerId !== "string" || !providerId
+              || typeof modelId !== "string" || !modelId) {
+              throw new Error("SDK 场景参数不完整。");
+            }
+            const events = await normalizeMomoE2EScenario(scenario as MomoE2ESdkScenario, {
+              providerId,
+              modelId,
+              cwd: memoryDir(),
+            });
+            for (const event of events) {
+              win?.webContents.send("bridge:event", { conversationId, event });
+            }
+            return {
+              ok: true,
+              response: {
+                eventTypes: events.map((event) => event.type),
+                liveTokens: events.flatMap((event) => event.type === "context.live" ? [event.currentTokens] : []),
+                compactPostTokens: events.flatMap((event) => event.type === "compact.boundary" && event.postTokens !== undefined ? [event.postTokens] : []),
+                billing: events.flatMap((event) => event.type === "usage.final" ? [event.usage] : []).at(0),
+              },
+            };
+          }
+          if (operation === "tray-click") {
+            if (!e2eTray || e2eTray.isDestroyed()) throw new Error("真实 Tray 尚未准备好。");
+            if (!win || win.isDestroyed()) throw new Error("主窗口尚未准备好。");
+            win.hide();
+            await new Promise((resolve) => setTimeout(resolve, 50));
+            const before = { visible: win.isVisible(), focused: win.isFocused() };
+            const listenerCount = e2eTray.listenerCount("click");
+            e2eTray.emit("click", {} as never, {} as never, {} as never);
+            await new Promise((resolve) => setTimeout(resolve, 80));
+            const after = { visible: win.isVisible(), focused: win.isFocused() };
+            return { ok: true, response: { listenerCount, before, after } };
+          }
+          throw new Error("未知的 momo 隔离验收操作。");
+        }
         if (msg.channel === "bridge:send") {
           const request = msg.req as BridgeInvokeMap["bridge:send"]["request"];
           wakeTaskId = `conversation:${request.conversationId}`;
@@ -1327,6 +1383,29 @@ function setupHost(): void {
             taskWakeLock?.setEnabled(keepAwakeSetting(confirmedSettings));
             desktopNotifications?.setEnabled(desktopNotificationsSetting(confirmedSettings));
             launchAtLogin?.setEnabled(launchAtLoginSetting(confirmedSettings));
+            return { ok: true };
+          }
+          case "saveComposerDrafts": {
+            const drafts = msg.payload;
+            if (!drafts || typeof drafts !== "object" || Array.isArray(drafts)) {
+              throw new Error("草稿快照无效，原数据仍保留。");
+            }
+            persistence!.saveComposerDrafts(drafts as Record<string, unknown>);
+            return { ok: true };
+          }
+          case "saveRelationshipChapter": {
+            const p = msg.payload as {
+              meta: Parameters<Persistence["saveRelationshipChapter"]>[0];
+              timeline: Parameters<Persistence["saveRelationshipChapter"]>[1];
+            };
+            if (!p?.meta || !Array.isArray(p.timeline)) {
+              throw new Error("新话题的数据不完整，请重试。");
+            }
+            persistence!.saveRelationshipChapter(p.meta, p.timeline);
+            persistedSettingsCache = {
+              ...persistedSettingsCache,
+              relationshipConversationId: p.meta.id,
+            };
             return { ok: true };
           }
           case "saveGlobalPendingOverview":
@@ -1689,7 +1768,9 @@ function setupQuickCaptureDesktop(): void {
         : path.join(HERE, "..", "build", "tray-icon.png");
       let icon = nativeImage.createFromPath(iconPath);
       if (process.platform === "win32") icon = icon.resize({ width: 16, height: 16 });
-      return new Tray(icon);
+      const tray = new Tray(icon);
+      if (E2E_ISOLATION) e2eTray = tray;
+      return tray;
     },
     buildMenu: (items) => Menu.buildFromTemplate(items.map((item) => ({
       label: item.label,
@@ -1826,6 +1907,7 @@ app.on("window-all-closed", () => {
 app.on("will-quit", () => {
   quickCaptureController?.dispose();
   quickCaptureController = null;
+  e2eTray = null;
   quickCaptureWindow = null;
   unsubscribeCaptureChanges?.();
   unsubscribeCaptureChanges = null;

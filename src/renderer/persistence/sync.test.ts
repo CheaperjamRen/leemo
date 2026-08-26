@@ -5,6 +5,7 @@ import type { TimelineItem } from "../stores/message-model";
 import { createSettingsStore } from "../stores/settings";
 import { createUiStore } from "../stores/ui";
 import { createWorkspacesStore, HOME_WORKSPACE } from "../stores/workspaces";
+import { createComposerDraftsStore, workspaceComposerScope } from "../stores/composer-drafts";
 import type { BridgeClient } from "../bridge/client";
 import type { PersistenceClient } from "./client";
 import { startPersistenceSync } from "./sync";
@@ -30,10 +31,12 @@ function mockPersist() {
   return {
     loadAll: vi.fn(async () => ({ conversations: [], wikiEntries: [] })),
     saveConversation: vi.fn(async (_meta: ConversationMeta, _timeline: TimelineItem[]) => {}),
+    saveRelationshipChapter: vi.fn(async (_meta: ConversationMeta, _timeline: TimelineItem[]) => {}),
     moveConversation: vi.fn(async () => {}),
     deleteConversation: vi.fn(async () => {}),
     saveWikiEntry: vi.fn(async (_entry: WikiEntry) => {}),
     saveSettings: vi.fn(async (_s: Record<string, unknown>) => {}),
+    saveComposerDrafts: vi.fn(async () => {}),
     saveGlobalPendingOverview: vi.fn(async () => {}),
   } satisfies PersistenceClient;
 }
@@ -245,6 +248,31 @@ describe("startPersistenceSync", () => {
     expect(persist.saveConversation).not.toHaveBeenCalled();
     stop();
     expect(persist.saveConversation).not.toHaveBeenCalled();
+  });
+
+  it("只在草稿变化后写入安全快照，并在停止同步时排空未保存文本", () => {
+    const stores = makeStores();
+    const composerDrafts = createComposerDraftsStore();
+    const persist = mockPersist();
+    let pending: (() => void) | undefined;
+    const stop = startPersistenceSync({ ...stores, composerDrafts }, persist, {
+      schedule: (fn) => { pending = fn; return () => undefined; },
+    });
+    const scope = workspaceComposerScope("leemo-home");
+
+    expect(persist.saveComposerDrafts).not.toHaveBeenCalled();
+    composerDrafts.getState().setText(scope, "重启后恢复");
+    expect(persist.saveComposerDrafts).not.toHaveBeenCalled();
+    pending?.();
+    expect(persist.saveComposerDrafts).toHaveBeenLastCalledWith(expect.objectContaining({
+      [scope]: expect.objectContaining({ text: "重启后恢复" }),
+    }));
+
+    composerDrafts.getState().setText(scope, "关闭前也要保存");
+    stop();
+    expect(persist.saveComposerDrafts).toHaveBeenLastCalledWith(expect.objectContaining({
+      [scope]: expect.objectContaining({ text: "关闭前也要保存" }),
+    }));
   });
 
   // ── 轮 7 A3: settings 落盘 ────────────────────────────────────────────────

@@ -1,9 +1,11 @@
 import type { ModelContextPolicy } from "../../bridge/contract";
+import type { ConversationContextUsage } from "../stores/context-usage";
 
 export interface ContextUsageIndicatorProps {
-  currentTokens: number;
-  capacityTokens?: number;
-  rawMaxTokens?: number;
+  usage?: ConversationContextUsage;
+  providerId?: string;
+  modelId?: string;
+  updating?: boolean;
   policy?: ModelContextPolicy;
 }
 
@@ -26,20 +28,48 @@ export function formatContextTokens(tokens: number): string {
   return String(Math.max(0, Math.round(tokens)));
 }
 
+function formatReadingTokens(tokens: number, estimated: boolean): string {
+  if (!estimated || tokens < 1_000) return formatContextTokens(tokens);
+  return tokens >= 1_000_000
+    ? formatContextTokens(tokens)
+    : `${Math.round(tokens / 1_000)}K`;
+}
+
 export default function ContextUsageIndicator({
-  currentTokens,
-  capacityTokens,
-  rawMaxTokens,
+  usage,
+  providerId,
+  modelId,
+  updating = false,
   policy,
 }: ContextUsageIndicatorProps): React.JSX.Element {
-  const used = Math.max(0, currentTokens);
-  const capacity = capacityTokens ?? effectiveContextCapacity(policy);
-  const modelMaximum = rawMaxTokens ?? policy?.contextWindowTokens;
-  const percent = capacity ? Math.min(100, Math.round((used / capacity) * 100)) : undefined;
-  const accessibleLabel = percent === undefined
-    ? `上下文已用 ${formatContextTokens(used)}，容量自动识别`
-    : `上下文已用 ${percent}%`;
+  const stale = usage !== undefined
+    && ((Boolean(providerId) && usage.providerId !== providerId)
+      || (Boolean(modelId) && usage.modelId !== modelId));
+  const current = stale ? undefined : usage;
+  const capacity = current?.capacityTokens ?? effectiveContextCapacity(policy);
+  const modelMaximum = current?.rawMaxTokens ?? policy?.contextWindowTokens;
+  const used = current === undefined ? undefined : Math.max(0, current.currentTokens);
+  const percent = used !== undefined && capacity
+    ? Math.min(100, Math.round((used / capacity) * 100))
+    : undefined;
+  const remaining = used !== undefined && capacity !== undefined
+    ? Math.max(0, capacity - used)
+    : undefined;
+  const estimated = current?.accuracy === "estimated";
+  const approximate = estimated ? "约" : "";
+  const accessibleLabel = stale
+    ? "上下文等待新模型更新"
+    : current === undefined
+      ? updating ? "上下文正在更新" : "上下文尚未读取"
+      : percent === undefined
+        ? `上下文${approximate}已用 ${formatContextTokens(used ?? 0)}`
+        : `上下文${approximate}已用 ${percent}%${remaining === undefined ? "" : `，整理前${approximate}剩 ${formatContextTokens(remaining)}`}`;
   const ringDegrees = percent === undefined ? 0 : percent * 3.6;
+  const pendingCopy = stale
+    ? "模型已切换，下一条消息后更新"
+    : updating
+      ? "正在读取本轮背景信息"
+      : "尚未读取当前话题的背景信息";
 
   return (
     <span className="leemo-context-meter group relative inline-grid h-8 w-7 shrink-0 place-items-center">
@@ -52,7 +82,7 @@ export default function ContextUsageIndicator({
           aria-hidden="true"
           className="relative block h-[18px] w-[18px] rounded-full"
           style={{
-            background: capacity
+            background: current && capacity
               ? `conic-gradient(var(--leemo-amber-strong) ${ringDegrees}deg, var(--leemo-line) ${ringDegrees}deg)`
               : "conic-gradient(var(--leemo-line) 0deg 300deg, transparent 300deg)",
           }}
@@ -62,20 +92,33 @@ export default function ContextUsageIndicator({
       </button>
       <span
         role="tooltip"
-        className="pointer-events-none absolute bottom-[calc(100%+9px)] left-1/2 z-[80] w-max max-w-[240px] -translate-x-1/2 rounded-[14px] bg-[var(--leemo-ink)] px-4 py-3 text-center text-white opacity-0 shadow-[0_12px_30px_rgba(20,29,36,0.2)] transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100"
+        className="pointer-events-none absolute bottom-[calc(100%+9px)] left-1/2 z-[80] w-max max-w-[240px] -translate-x-1/2 rounded-[14px] bg-[var(--leemo-surface-inverse)] px-4 py-3 text-center text-[var(--leemo-text-on-inverse)] opacity-0 shadow-[var(--leemo-shadow-popover)] transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100"
       >
-        <span className="block text-[12px] text-white/65">背景信息窗口</span>
-        {percent !== undefined && <span className="mt-0.5 block text-[14px] text-white/75">{percent}% 已用</span>}
-        <span className="mt-1 block text-[13.5px] font-medium">
-          {capacity
-            ? `已用 ${formatContextTokens(used)}，整理窗口 ${formatContextTokens(capacity)}`
-            : `已用 ${formatContextTokens(used)}`}
-        </span>
-        {modelMaximum && modelMaximum !== capacity ? (
-          <span className="mt-1 block text-[11px] text-white/60">模型上限 {formatContextTokens(modelMaximum)}</span>
-        ) : !capacity ? (
-          <span className="mt-1 block text-[11px] text-white/60">容量由当前模型自动识别</span>
-        ) : null}
+        <span className="block text-[12px] text-[var(--leemo-text-on-inverse-muted)]">当前话题背景</span>
+        {current === undefined ? (
+          <span className="mt-1 block text-[13px] font-medium text-[var(--leemo-text-on-inverse)]">{pendingCopy}</span>
+        ) : (
+          <>
+            {percent !== undefined && (
+              <span className="mt-0.5 block text-[14px] text-[var(--leemo-text-on-inverse-muted)]">{approximate}{percent}% 已用</span>
+            )}
+            <span className="mt-1 block text-[13.5px] font-medium">
+              {capacity
+                ? `${estimated ? "约 " : ""}${formatReadingTokens(used ?? 0, estimated)} / ${formatContextTokens(capacity)}`
+                : `${approximate}已用 ${formatReadingTokens(used ?? 0, estimated)}`}
+            </span>
+            {remaining !== undefined && (
+              <span className="mt-1 block text-[11px] text-[var(--leemo-text-on-inverse-muted)]">
+                整理前{approximate}剩 {formatContextTokens(remaining)}
+              </span>
+            )}
+            {updating && <span className="mt-1 block text-[11px] text-[var(--leemo-text-on-inverse-muted)]">本轮更新中</span>}
+            {current.justCompacted && <span className="mt-1 block text-[11px] text-[var(--leemo-text-on-inverse-muted)]">刚刚整理过</span>}
+          </>
+        )}
+        {modelMaximum && modelMaximum !== capacity && (
+          <span className="mt-1 block text-[11px] text-[var(--leemo-text-on-inverse-muted)]">模型上限 {formatContextTokens(modelMaximum)}</span>
+        )}
       </span>
     </span>
   );

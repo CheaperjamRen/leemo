@@ -266,10 +266,12 @@ describe("BridgeProvider persistence gate", () => {
     const persist: PersistenceClient = {
       loadAll: vi.fn(() => new Promise<PersistedSnapshot>((resolve) => { resolveLoad = resolve; })),
       saveConversation: vi.fn(async () => {}),
+      saveRelationshipChapter: vi.fn(async () => {}),
       moveConversation: vi.fn(async () => {}),
       deleteConversation: vi.fn(async () => {}),
       saveWikiEntry: vi.fn(async () => {}),
       saveSettings: vi.fn(async () => {}),
+      saveComposerDrafts: vi.fn(async () => {}),
       saveGlobalPendingOverview: vi.fn(async () => {}),
     };
 

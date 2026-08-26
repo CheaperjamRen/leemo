@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 import {
   conversationComposerScope,
   createComposerDraftsStore,
+  hydrateComposerDrafts,
   resolveComposerScope,
+  serializeComposerDrafts,
   workspaceComposerScope,
 } from "./composer-drafts";
 
@@ -74,5 +76,60 @@ describe("composer drafts", () => {
       text: "跟着对话去求职本子",
       assignedConversationId: "moved-conversation",
     });
+  });
+
+  it("持久化文本和安全引用，重启时清理运行态与临时粘贴图并给出提示", () => {
+    const scope = workspaceComposerScope("leemo-home");
+    const persisted = serializeComposerDrafts({
+      [scope]: {
+        text: "这句重启后还要在",
+        attachments: [
+          { id: "file-1", name: "岗位.md", path: "C:\\隔离\\岗位.md", size: 12, mimeType: "text/markdown" },
+          { id: "paste-1", name: "粘贴图片.png", path: "C:\\Temp\\paste.png", size: 24, mimeType: "image/png", temporary: true },
+        ],
+        workspaceFiles: [{ id: "workspace-1", name: "简历.md", workspaceId: "leemo-home", workspacePath: "求职/简历.md" }],
+        submitPending: true,
+        retryPending: true,
+        submitError: "旧错误",
+        pendingStageCount: 1,
+        allowSubagents: false,
+        planMode: true,
+        assignedConversationId: "chapter-2",
+      },
+    });
+
+    expect(persisted[scope]).toMatchObject({
+      text: "这句重启后还要在",
+      attachments: [{ id: "file-1", path: "C:\\隔离\\岗位.md" }],
+      workspaceFiles: [{ id: "workspace-1", workspacePath: "求职/简历.md" }],
+      lostTemporaryAttachmentCount: 2,
+      allowSubagents: false,
+      planMode: true,
+      assignedConversationId: "chapter-2",
+    });
+    expect(persisted[scope]).not.toHaveProperty("submitPending");
+    expect(persisted[scope]).not.toHaveProperty("submitError");
+
+    const restored = hydrateComposerDrafts(persisted, new Set(["chapter-2"]));
+    expect(restored[scope]).toMatchObject({
+      text: "这句重启后还要在",
+      attachments: [{ id: "file-1", path: "C:\\隔离\\岗位.md" }],
+      workspaceFiles: [{ id: "workspace-1", workspacePath: "求职/简历.md" }],
+      submitPending: false,
+      retryPending: false,
+      pendingStageCount: 0,
+      submitError: "有 2 张未发送的粘贴图片在重启后不可恢复，请重新粘贴或从文件添加。",
+      assignedConversationId: "chapter-2",
+    });
+  });
+
+  it("丢弃纯空草稿并解除不存在章节的关联，但保留用户文本", () => {
+    const restored = hydrateComposerDrafts({
+      empty: { text: "", attachments: [], workspaceFiles: [], assignedConversationId: null },
+      orphan: { text: "不要丢", attachments: [], workspaceFiles: [], assignedConversationId: "missing" },
+    }, new Set());
+
+    expect(restored.empty).toBeUndefined();
+    expect(restored.orphan).toMatchObject({ text: "不要丢", assignedConversationId: null });
   });
 });

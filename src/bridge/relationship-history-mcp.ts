@@ -4,9 +4,12 @@ import {
   type McpSdkServerConfigWithInstance,
 } from "@anthropic-ai/claude-agent-sdk";
 import { z } from "zod";
+import {
+  LEEMO_RELATIONSHIP_HISTORY_ACTION,
+  LEEMO_RELATIONSHIP_HISTORY_SERVER,
+} from "./relationship-history-tool";
 
-const SERVER = "leemo-relationship-history";
-const TOOL = "search_relationship_history";
+export { LEEMO_RELATIONSHIP_HISTORY_TOOL } from "./relationship-history-tool";
 
 export interface RelationshipHistoryQuery {
   query: string;
@@ -84,11 +87,11 @@ export function createRelationshipHistoryMcp(
 
   return {
     server: createSdkMcpServer({
-      name: SERVER,
+      name: LEEMO_RELATIONSHIP_HISTORY_SERVER,
       version: "1.0.0",
       tools: [
         tool(
-          TOOL,
+          LEEMO_RELATIONSHIP_HISTORY_ACTION,
           "Search bounded excerpts from the user's older momo relationship history. Use only when the current message depends on a specific earlier detail that is absent from current context. Search with concrete people, events, decisions, preferences, or phrases. Do not call every turn, do not browse casually, and treat excerpts as dated evidence that may have changed.",
           {
             query: z.string().trim().min(1).max(200).describe("要回忆的具体人、事、决定或关键词"),

@@ -50,6 +50,29 @@ describe("MessageFooter", () => {
     expect(screen.getByText(/未估价/)).toBeInTheDocument();
   });
 
+  it("separates request preparation and model latency from the interactive wall clock", async () => {
+    const user = userEvent.setup();
+    const timed: Usage = {
+      ...usage,
+      usage: {
+        ...usage.usage,
+        durationMs: 208_215,
+        apiDurationMs: 12_140,
+        ttftMs: 3_180,
+        timeToRequestMs: 420,
+      },
+    };
+
+    render(<MessageFooter result={ok} usage={timed} />);
+    await user.click(screen.getByRole("button", { name: /查看用量/ }));
+    const details = screen.getByRole("dialog", { name: "用量详情" });
+
+    expect(within(details).getByText("准备 420 毫秒")).toBeInTheDocument();
+    expect(within(details).getByText("首字 3.2 秒")).toBeInTheDocument();
+    expect(within(details).getByText("模型请求 12 秒")).toBeInTheDocument();
+    expect(within(details).getByText("本轮总历时 3 分 28 秒")).toBeInTheDocument();
+  });
+
   it("shows per-model usage only inside the compact usage popover", async () => {
     const user = userEvent.setup();
     const detailed: Usage = {

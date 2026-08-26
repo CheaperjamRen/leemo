@@ -39,6 +39,12 @@ export interface UsageRecord {
   contextInputTokens?: number;
   contextCacheReadTokens?: number;
   contextCacheCreationTokens?: number;
+  contextOutputTokens?: number;
+  /** Provider/API time is kept separate from the interactive wall clock so a
+   * question card waiting on the user does not look like model latency. */
+  apiDurationMs?: number;
+  ttftMs?: number;
+  timeToRequestMs?: number;
   /** Per-model delta for this Leemo round. `modelUsage` is cumulative in a
    * streaming SDK session, so raw SDK totals never cross this boundary. */
   modelBreakdown?: UsageModelRecord[];
@@ -118,8 +124,10 @@ export type LeemoEvent =
       rawMaxTokens: number;
       autoCompactThreshold?: number;
       isAutoCompactEnabled: boolean;
+      providerId: string;
       model: string;
     }
+  | { type: "context.live"; currentTokens: number; providerId: string; model: string }
   | {
       /** Passive progress from an upstream runtime retrying the same request.
        * Leemo never uses this event as permission to resend the user turn. */
@@ -146,7 +154,7 @@ export type LeemoEvent =
     }
   | { type: "subagent.activity"; parentToolUseId: string }
   | { type: "subagent.output"; parentToolUseId: string; kind: "text" | "thinking"; text: string }
-  | { type: "compact.boundary"; trigger: string; preTokens: number; postTokens?: number }
+  | { type: "compact.boundary"; trigger: string; preTokens: number; postTokens?: number; providerId?: string; model?: string }
   | { type: "usage.final"; usage: UsageRecord }
   | {
       type: "file.changed";
@@ -230,6 +238,66 @@ function num(v: unknown): number {
   return typeof v === "number" && Number.isFinite(v) ? v : 0;
 }
 
+function optionalNonNegativeNumber(v: unknown): number | undefined {
+  return typeof v === "number" && Number.isFinite(v) && v >= 0 ? v : undefined;
+}
+
+function hasOwn(value: object, key: string): boolean {
+  return Object.prototype.hasOwnProperty.call(value, key);
+}
+
+function completeInputSideUsage(value: unknown): value is RawUsageLike {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
+  const usage = value as RawUsageLike;
+  const validCacheField = (key: "cache_read_input_tokens" | "cache_creation_input_tokens"): boolean => (
+    hasOwn(usage, key)
+    && (usage[key] === null || optionalNonNegativeNumber(usage[key]) !== undefined)
+  );
+  return hasOwn(usage, "input_tokens")
+    && optionalNonNegativeNumber(usage.input_tokens) !== undefined
+    && validCacheField("cache_read_input_tokens")
+    && validCacheField("cache_creation_input_tokens");
+}
+
+function completeIterationUsage(value: unknown): value is RawUsageLike {
+  return completeInputSideUsage(value)
+    && hasOwn(value, "output_tokens")
+    && optionalNonNegativeNumber(value.output_tokens) !== undefined;
+}
+
+/** BetaUsage 顶层可能是多次服务端循环的账单累计；当前窗口只读取最后一个
+ * 完整 iteration。没有 iterations 的兼容帧必须至少完整提供输入侧三字段。 */
+function currentWindowUsageFrom(usage: RawUsageLike): RawUsageLike | undefined {
+  if (hasOwn(usage, "iterations") && usage.iterations !== undefined) {
+    if (!Array.isArray(usage.iterations)) return undefined;
+    for (let index = usage.iterations.length - 1; index >= 0; index -= 1) {
+      const iteration = usage.iterations[index];
+      if (completeIterationUsage(iteration)) return iteration;
+    }
+    return undefined;
+  }
+  return completeInputSideUsage(usage) ? usage : undefined;
+}
+
+function contextUsageFields(usage: RawUsageLike): Pick<UsageRecord,
+  "contextInputTokens" | "contextCacheReadTokens" | "contextCacheCreationTokens" | "contextOutputTokens"> | Record<never, never> {
+  if (!completeInputSideUsage(usage)) return {};
+  return {
+    contextInputTokens: num(usage.input_tokens),
+    contextCacheReadTokens: num(usage.cache_read_input_tokens),
+    contextCacheCreationTokens: num(usage.cache_creation_input_tokens),
+    contextOutputTokens: num(usage.output_tokens),
+  };
+}
+
+function contextTokensFromUsage(usage: RawUsageLike): number {
+  return Math.max(0,
+    num(usage.input_tokens)
+      + num(usage.cache_read_input_tokens)
+      + num(usage.cache_creation_input_tokens)
+      + num(usage.output_tokens));
+}
+
 /**
  * Build a UsageRecord from a raw SDK usage object + context. Cost resolution
  * order (NewMax mode, 用户 7/21 拍板):
@@ -280,7 +348,6 @@ export function buildUsageRecord(usage: RawUsageLike, ctx: BuildUsageRecordCtx):
 }
 
 function buildModelUsageRecord(
-  mainUsage: RawUsageLike,
   modelUsage: Record<string, RawModelUsageLike>,
   ctx: NormalizeCtx,
   durationMs?: number,
@@ -324,9 +391,6 @@ function buildModelUsageRecord(
     costUsd: aggregate.costUsd.toFixed(6),
     costSource: "sdk",
     tokensEstimated: false,
-    contextInputTokens: num(mainUsage.input_tokens),
-    contextCacheReadTokens: num(mainUsage.cache_read_input_tokens),
-    contextCacheCreationTokens: num(mainUsage.cache_creation_input_tokens),
     modelBreakdown,
   };
 }
@@ -503,6 +567,9 @@ interface IncomingMsg extends SdkMessageLike {
   is_error?: boolean;
   total_cost_usd?: number;
   duration_ms?: number;
+  duration_api_ms?: number;
+  ttft_ms?: number;
+  time_to_request_ms?: number;
   usage?: RawUsageLike;
   modelUsage?: Record<string, RawModelUsageLike>;
   permission_denials?: Array<{ tool_name?: string; tool_use_id?: string; tool_input?: Record<string, unknown> }>;
@@ -512,7 +579,7 @@ interface IncomingMsg extends SdkMessageLike {
   aborted?: true;
   tool_name?: string;
   tool_use_id?: string;
-  message?: { role?: string; content?: unknown } | string;
+  message?: { role?: string; content?: unknown; usage?: RawUsageLike } | string;
   decision_reason?: string;
   tool_result_meta?: unknown;
   subagent_retry?: {
@@ -819,6 +886,7 @@ function* terminalEvents(
   streamError?: string,
   aborted = false,
   reportedPermissionDenials: ReadonlySet<string> = new Set(),
+  terminalContextUsage: ReturnType<typeof contextUsageFields> = {},
 ): Generator<LeemoEvent> {
   const classification = classifyRun(result, streamError, aborted);
   const cancelled = classification.outcome === "cancelled";
@@ -847,10 +915,25 @@ function* terminalEvents(
     };
   }
   if (result?.usage) {
+    const timing = {
+      ...(optionalNonNegativeNumber(result.duration_api_ms) !== undefined
+        ? { apiDurationMs: optionalNonNegativeNumber(result.duration_api_ms) }
+        : {}),
+      ...(optionalNonNegativeNumber(result.ttft_ms) !== undefined
+        ? { ttftMs: optionalNonNegativeNumber(result.ttft_ms) }
+        : {}),
+      ...(optionalNonNegativeNumber(result.time_to_request_ms) !== undefined
+        ? { timeToRequestMs: optionalNonNegativeNumber(result.time_to_request_ms) }
+        : {}),
+    };
     yield {
       type: "usage.final",
       usage: result.modelUsage && Object.keys(result.modelUsage).length > 0
-        ? buildModelUsageRecord(result.usage, result.modelUsage, ctx, result.duration_ms)
+        ? {
+            ...buildModelUsageRecord(result.modelUsage, ctx, result.duration_ms),
+            ...terminalContextUsage,
+            ...timing,
+          }
         : {
             ...buildUsageRecord(result.usage, {
               providerId: ctx.providerId,
@@ -859,9 +942,8 @@ function* terminalEvents(
               durationMs: result.duration_ms,
               pricing: ctx.pricing,
             }),
-            contextInputTokens: num(result.usage.input_tokens),
-            contextCacheReadTokens: num(result.usage.cache_read_input_tokens),
-            contextCacheCreationTokens: num(result.usage.cache_creation_input_tokens),
+            ...terminalContextUsage,
+            ...timing,
           },
     };
   }
@@ -923,6 +1005,18 @@ export async function* normalizeSdkStream(
   let pendingResult: IncomingMsg | undefined;
   let aborted = false;
   const reportedPermissionDenials = new Set<string>();
+  // Billing totals on the terminal result can aggregate several model calls.
+  // Track the latest main-loop frame separately so the persisted context meter
+  // reflects one current prompt, and let a later exact snapshot remain final.
+  let contextObservationOrder = 0;
+  let latestMainContextOrder = -1;
+  let latestExactContextOrder = -1;
+  let latestMainContextUsage: RawUsageLike | undefined;
+  const terminalContextUsage = (): ReturnType<typeof contextUsageFields> => (
+    latestMainContextUsage && latestMainContextOrder > latestExactContextOrder
+      ? contextUsageFields(latestMainContextUsage)
+      : {}
+  );
   try {
     for await (const raw of sdkMessages) {
       const msg = raw as IncomingMsg;
@@ -946,11 +1040,13 @@ export async function* normalizeSdkStream(
               maxTokens: Math.max(0, snapshot.maxTokens),
               rawMaxTokens: Math.max(0, snapshot.rawMaxTokens),
               isAutoCompactEnabled: snapshot.isAutoCompactEnabled === true,
+              providerId: ctx.providerId,
               model: typeof snapshot.model === "string" ? snapshot.model : ctx.modelId,
             };
             if (typeof snapshot.autoCompactThreshold === "number" && Number.isFinite(snapshot.autoCompactThreshold)) {
               event.autoCompactThreshold = Math.max(0, snapshot.autoCompactThreshold);
             }
+            latestExactContextOrder = ++contextObservationOrder;
             yield event;
           }
           break;
@@ -996,8 +1092,11 @@ export async function* normalizeSdkStream(
                 type: "compact.boundary",
                 trigger: meta.trigger ?? "unknown",
                 preTokens: meta.pre_tokens,
+                providerId: ctx.providerId,
+                model: ctx.modelId,
               };
               if (typeof meta.post_tokens === "number") ev.postTokens = meta.post_tokens;
+              latestExactContextOrder = ++contextObservationOrder;
               yield ev;
             }
           }
@@ -1013,6 +1112,25 @@ export async function* normalizeSdkStream(
         case "assistant":
         case "user": {
           if (msg.type === "assistant" && msg.aborted === true) aborted = true;
+          if (
+            msg.type === "assistant"
+            && !msg.parent_tool_use_id
+            && typeof msg.message === "object"
+            && msg.message !== null
+            && msg.message.usage
+          ) {
+            const currentWindowUsage = currentWindowUsageFrom(msg.message.usage);
+            if (currentWindowUsage) {
+              latestMainContextUsage = currentWindowUsage;
+              latestMainContextOrder = ++contextObservationOrder;
+              yield {
+                type: "context.live",
+                currentTokens: contextTokensFromUsage(currentWindowUsage),
+                providerId: ctx.providerId,
+                model: ctx.modelId,
+              };
+            }
+          }
           const messageContent = typeof msg.message === "object" && msg.message !== null
             ? msg.message.content
             : undefined;
@@ -1059,7 +1177,17 @@ export async function* normalizeSdkStream(
           break;
       }
     }
-    if (pendingResult) yield* terminalEvents(pendingResult, ctx, sessionId, undefined, aborted, reportedPermissionDenials);
+    if (pendingResult) {
+      yield* terminalEvents(
+        pendingResult,
+        ctx,
+        sessionId,
+        undefined,
+        aborted,
+        reportedPermissionDenials,
+        terminalContextUsage(),
+      );
+    }
   } catch (e) {
     yield* terminalEvents(
       pendingResult,
@@ -1068,6 +1196,7 @@ export async function* normalizeSdkStream(
       e instanceof Error ? e.message : String(e),
       aborted,
       reportedPermissionDenials,
+      terminalContextUsage(),
     );
   }
 }

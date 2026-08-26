@@ -69,7 +69,7 @@ export type TimelineItem =
       transcript: { kind: "text" | "thinking"; text: string; createdAt?: number }[];
     }
   | { kind: "result"; id: string; runId: string; isError: boolean; interrupted: boolean; finalText: string; pathAudit: PathAudit; outcome?: Extract<LeemoEvent, { type: "run.finished" }>["outcome"]; retryable?: boolean; statusCode?: number; createdAt?: number }
-  | { kind: "compact"; id: string; trigger: string; preTokens: number; postTokens?: number }
+  | { kind: "compact"; id: string; trigger: string; preTokens: number; postTokens?: number; providerId?: string; model?: string }
   | {
       kind: "context";
       id: string;
@@ -79,6 +79,8 @@ export type TimelineItem =
       rawMaxTokens: number;
       autoCompactThreshold?: number;
       isAutoCompactEnabled: boolean;
+      /** Missing only on records written before context identity included provider. */
+      providerId?: string;
       model: string;
     }
   | { kind: "usage"; id: string; runId: string; usage: UsageRecord }
@@ -549,6 +551,8 @@ export function applyEvent(
     case "compact.boundary": {
       const item: TimelineItem = { kind: "compact", id: `m${items.length}`, trigger: event.trigger, preTokens: event.preTokens };
       if (event.postTokens !== undefined) item.postTokens = event.postTokens;
+      if (event.providerId !== undefined) item.providerId = event.providerId;
+      if (event.model !== undefined) item.model = event.model;
       return [...items, item];
     }
     case "usage.final":
@@ -563,6 +567,7 @@ export function applyEvent(
         rawMaxTokens: event.rawMaxTokens,
         ...(event.autoCompactThreshold !== undefined ? { autoCompactThreshold: event.autoCompactThreshold } : {}),
         isAutoCompactEnabled: event.isAutoCompactEnabled,
+        providerId: event.providerId,
         model: event.model,
       }];
     case "file.changed": {

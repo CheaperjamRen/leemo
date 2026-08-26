@@ -442,6 +442,8 @@ describe("normalizeSdkStream — event-by-event mapping", () => {
       trigger: "auto",
       preTokens: 154000,
       postTokens: 12000,
+      providerId: "deepseek",
+      model: "deepseek-chat",
     });
   });
 
@@ -549,6 +551,358 @@ describe("normalizeSdkStream — event-by-event mapping", () => {
     expect(usageFinal.usage.outputTokens).toBe(200);
     expect(usageFinal.usage.cacheCreationTokens).toBe(50);
     expect(usageFinal.usage.cacheReadTokens).toBe(10);
+  });
+
+  it("emits a live context estimate only from the main assistant loop", async () => {
+    const msgs = [
+      {
+        type: "assistant",
+        parent_tool_use_id: null,
+        message: {
+          role: "assistant",
+          content: [{ type: "text", text: "在想" }],
+          usage: {
+            input_tokens: 120,
+            cache_read_input_tokens: 880,
+            cache_creation_input_tokens: 0,
+            output_tokens: 20,
+          },
+        },
+      },
+      {
+        type: "assistant",
+        parent_tool_use_id: "subagent-1",
+        message: {
+          role: "assistant",
+          content: [{ type: "text", text: "child" }],
+          usage: {
+            input_tokens: 9_999,
+            cache_read_input_tokens: 0,
+            cache_creation_input_tokens: 0,
+            output_tokens: 9_999,
+          },
+        },
+      },
+    ] as unknown as TestMsgB2[];
+
+    const events = await drain(
+      normalizeSdkStream(fakeStream(msgs), {
+        providerId: "deepseek",
+        modelId: "deepseek-v4-flash",
+        cwd: CWD,
+      }),
+    );
+
+    expect(events.filter((event) => event.type === "context.live")).toEqual([
+      { type: "context.live", currentTokens: 1_020, providerId: "deepseek", model: "deepseek-v4-flash" },
+    ]);
+  });
+
+  it("keeps context unknown when a provider supplies no numeric main-loop usage", async () => {
+    const msgs = [
+      {
+        type: "assistant",
+        parent_tool_use_id: null,
+        message: { role: "assistant", content: [{ type: "text", text: "继续" }], usage: {} },
+      },
+      {
+        type: "result",
+        subtype: "success",
+        is_error: false,
+        result: "继续",
+        usage: {},
+      },
+    ] as unknown as TestMsgB2[];
+
+    const events = await drain(
+      normalizeSdkStream(fakeStream(msgs), {
+        providerId: "custom",
+        modelId: "custom-model",
+        cwd: CWD,
+      }),
+    );
+    const usage = (events.find((event) => event.type === "usage.final") as Extract<LeemoEvent, { type: "usage.final" }>).usage;
+
+    expect(events.some((event) => event.type === "context.live")).toBe(false);
+    expect(usage).not.toHaveProperty("contextInputTokens");
+    expect(usage).not.toHaveProperty("contextOutputTokens");
+  });
+
+  it("keeps API timing separate from the whole interactive round", async () => {
+    const msgs = [{
+      type: "result",
+      subtype: "success",
+      is_error: false,
+      result: "完成",
+      duration_ms: 208_215,
+      duration_api_ms: 12_140,
+      ttft_ms: 3_180,
+      time_to_request_ms: 420,
+      usage: {
+        input_tokens: 42_781,
+        cache_read_input_tokens: 0,
+        cache_creation_input_tokens: 0,
+        output_tokens: 286,
+      },
+    }] as unknown as TestMsgB2[];
+
+    const events = await drain(
+      normalizeSdkStream(fakeStream(msgs), {
+        providerId: "deepseek",
+        modelId: "deepseek-v4-flash",
+        cwd: CWD,
+      }),
+    );
+    const usage = (events.find((event) => event.type === "usage.final") as Extract<LeemoEvent, { type: "usage.final" }>).usage;
+
+    expect(usage).toMatchObject({
+      durationMs: 208_215,
+      apiDurationMs: 12_140,
+      ttftMs: 3_180,
+      timeToRequestMs: 420,
+    });
+    expect(usage).not.toHaveProperty("contextInputTokens");
+    expect(usage).not.toHaveProperty("contextOutputTokens");
+  });
+
+  it("persists only the latest main-loop context estimate instead of aggregate result usage", async () => {
+    const msgs = [
+      {
+        type: "assistant",
+        parent_tool_use_id: null,
+        message: {
+          role: "assistant",
+          content: [{ type: "text", text: "第一步" }],
+          usage: {
+            input_tokens: 120,
+            cache_read_input_tokens: 880,
+            cache_creation_input_tokens: 0,
+            output_tokens: 20,
+          },
+        },
+      },
+      {
+        type: "assistant",
+        parent_tool_use_id: null,
+        message: {
+          role: "assistant",
+          content: [{ type: "text", text: "第二步" }],
+          usage: {
+            input_tokens: 140,
+            cache_read_input_tokens: 1_860,
+            cache_creation_input_tokens: 0,
+            output_tokens: 30,
+          },
+        },
+      },
+      {
+        type: "result",
+        subtype: "success",
+        is_error: false,
+        result: "完成",
+        usage: {
+          input_tokens: 90_000,
+          cache_read_input_tokens: 80_000,
+          cache_creation_input_tokens: 10_000,
+          output_tokens: 9_000,
+        },
+      },
+    ] as unknown as TestMsgB2[];
+
+    const events = await drain(normalizeSdkStream(fakeStream(msgs), {
+      providerId: "deepseek",
+      modelId: "deepseek-v4-flash",
+      cwd: CWD,
+    }));
+    const usage = (events.find((event) => event.type === "usage.final") as Extract<LeemoEvent, { type: "usage.final" }>).usage;
+
+    expect(events.filter((event) => event.type === "context.live")).toEqual([
+      { type: "context.live", currentTokens: 1_020, providerId: "deepseek", model: "deepseek-v4-flash" },
+      { type: "context.live", currentTokens: 2_030, providerId: "deepseek", model: "deepseek-v4-flash" },
+    ]);
+    expect(usage).toMatchObject({
+      inputTokens: 90_000,
+      cacheReadTokens: 80_000,
+      cacheCreationTokens: 10_000,
+      outputTokens: 9_000,
+      contextInputTokens: 140,
+      contextCacheReadTokens: 1_860,
+      contextCacheCreationTokens: 0,
+      contextOutputTokens: 30,
+    });
+  });
+
+  it("keeps a later exact context snapshot authoritative at terminal persistence", async () => {
+    const msgs = [
+      {
+        type: "assistant",
+        parent_tool_use_id: null,
+        message: {
+          role: "assistant",
+          content: [{ type: "text", text: "继续" }],
+          usage: {
+            input_tokens: 100,
+            cache_read_input_tokens: 900,
+            cache_creation_input_tokens: 0,
+            output_tokens: 25,
+          },
+        },
+      },
+      {
+        type: "result",
+        subtype: "success",
+        is_error: false,
+        result: "完成",
+        usage: {
+          input_tokens: 50_000,
+          cache_read_input_tokens: 45_000,
+          cache_creation_input_tokens: 0,
+          output_tokens: 5_000,
+        },
+      },
+      {
+        type: "leemo_context_snapshot",
+        contextUsage: {
+          totalTokens: 1_030,
+          maxTokens: 200_000,
+          rawMaxTokens: 200_000,
+          model: "deepseek-v4-flash",
+          isAutoCompactEnabled: true,
+          autoCompactThreshold: 180_000,
+        },
+      },
+    ] as unknown as TestMsgB2[];
+
+    const events = await drain(normalizeSdkStream(fakeStream(msgs), {
+      providerId: "deepseek",
+      modelId: "deepseek-v4-flash",
+      cwd: CWD,
+    }));
+    const usage = (events.find((event) => event.type === "usage.final") as Extract<LeemoEvent, { type: "usage.final" }>).usage;
+
+    expect(events.map((event) => event.type)).toEqual([
+      "context.live",
+      "context.snapshot",
+      "usage.final",
+      "text.final",
+      "run.finished",
+    ]);
+    expect(usage).not.toHaveProperty("contextInputTokens");
+    expect(usage).not.toHaveProperty("contextOutputTokens");
+  });
+
+  it("把 compact 作为终态顺序屏障，不让整理前估算回写 usage.final", async () => {
+    const msgs = [
+      {
+        type: "assistant",
+        parent_tool_use_id: null,
+        message: {
+          role: "assistant",
+          content: [{ type: "text", text: "整理前" }],
+          usage: {
+            input_tokens: 10,
+            cache_read_input_tokens: 150_000,
+            cache_creation_input_tokens: 0,
+            output_tokens: 0,
+          },
+        },
+      },
+      {
+        type: "system",
+        subtype: "compact_boundary",
+        compact_metadata: { trigger: "auto", pre_tokens: 150_010, post_tokens: 30_000 },
+      },
+      {
+        type: "result", subtype: "success", is_error: false, result: "完成",
+        usage: {
+          input_tokens: 10,
+          cache_read_input_tokens: 150_000,
+          cache_creation_input_tokens: 0,
+          output_tokens: 0,
+        },
+      },
+    ] as unknown as TestMsgB2[];
+
+    const events = await drain(normalizeSdkStream(fakeStream(msgs), {
+      providerId: "deepseek",
+      modelId: "deepseek-v4-flash",
+      cwd: CWD,
+    }));
+    const usage = (events.find((event) => event.type === "usage.final") as Extract<LeemoEvent, { type: "usage.final" }>).usage;
+
+    expect(events.map((event) => event.type)).toEqual([
+      "context.live", "compact.boundary", "usage.final", "text.final", "run.finished",
+    ]);
+    expect(usage).not.toHaveProperty("contextInputTokens");
+    expect(usage).not.toHaveProperty("contextOutputTokens");
+  });
+
+  it("用 BetaUsage 最后一个完整 iteration 计算当前窗口，账单仍保留顶层累计", async () => {
+    const aggregateUsage = {
+      input_tokens: 20_000,
+      cache_read_input_tokens: 200_000,
+      cache_creation_input_tokens: 0,
+      output_tokens: 100,
+      iterations: [
+        { input_tokens: 10_000, cache_read_input_tokens: 40_000, cache_creation_input_tokens: 0, output_tokens: 20 },
+        { input_tokens: 19_500, cache_read_input_tokens: 99_900, cache_creation_input_tokens: 0, output_tokens: 120 },
+      ],
+    };
+    const msgs = [
+      {
+        type: "assistant", parent_tool_use_id: null,
+        message: { role: "assistant", content: [{ type: "text", text: "完成" }], usage: aggregateUsage },
+      },
+      { type: "result", subtype: "success", is_error: false, result: "完成", usage: aggregateUsage },
+    ] as unknown as TestMsgB2[];
+
+    const events = await drain(normalizeSdkStream(fakeStream(msgs), {
+      providerId: "anthropic",
+      modelId: "claude-sonnet",
+      cwd: CWD,
+    }));
+    const live = events.find((event) => event.type === "context.live");
+    const usage = (events.find((event) => event.type === "usage.final") as Extract<LeemoEvent, { type: "usage.final" }>).usage;
+
+    expect(live).toEqual({
+      type: "context.live",
+      currentTokens: 119_520,
+      providerId: "anthropic",
+      model: "claude-sonnet",
+    });
+    expect(usage).toMatchObject({
+      inputTokens: 20_000,
+      cacheReadTokens: 200_000,
+      outputTokens: 100,
+      contextInputTokens: 19_500,
+      contextCacheReadTokens: 99_900,
+      contextCacheCreationTokens: 0,
+      contextOutputTokens: 120,
+    });
+  });
+
+  it("output-only 残缺帧保持 pending，不制造 context.live=0", async () => {
+    const msgs = [
+      {
+        type: "assistant", parent_tool_use_id: null,
+        message: { role: "assistant", content: [{ type: "text", text: "继续" }], usage: { output_tokens: 0 } },
+      },
+      {
+        type: "result", subtype: "success", is_error: false, result: "继续",
+        usage: { input_tokens: 100, cache_read_input_tokens: 0, cache_creation_input_tokens: 0, output_tokens: 1 },
+      },
+    ] as unknown as TestMsgB2[];
+
+    const events = await drain(normalizeSdkStream(fakeStream(msgs), {
+      providerId: "custom",
+      modelId: "custom-model",
+      cwd: CWD,
+    }));
+    const usage = (events.find((event) => event.type === "usage.final") as Extract<LeemoEvent, { type: "usage.final" }>).usage;
+
+    expect(events.some((event) => event.type === "context.live")).toBe(false);
+    expect(usage).not.toHaveProperty("contextInputTokens");
+    expect(usage).not.toHaveProperty("contextOutputTokens");
   });
 
   it("result:error stream still yields run.finished(isError=true) and an error event carrying the message", async () => {
@@ -1050,7 +1404,6 @@ describe("normalizeSdkStream — Claude Agent SDK 0.3.227 structured status", ()
       inputTokens: 150,
       outputTokens: 30,
       costUsd: "0.120000",
-      contextInputTokens: 80,
       modelBreakdown: [
         expect.objectContaining({ modelId: "claude-sonnet-4-6", inputTokens: 100, costUsd: "0.100000" }),
         expect.objectContaining({ modelId: "claude-haiku-helper", inputTokens: 50, costUsd: "0.020000" }),
@@ -1065,6 +1418,7 @@ describe("normalizeSdkStream — Claude Agent SDK 0.3.227 structured status", ()
         expect.objectContaining({ modelId: "claude-haiku-helper", inputTokens: 50 }),
       ],
     });
+    expect(usageOf(first).usage).not.toHaveProperty("contextInputTokens");
     expect(usageOf(second).usage.modelBreakdown).toHaveLength(2);
   });
 
@@ -1094,6 +1448,7 @@ describe("normalizeSdkStream — Claude Agent SDK 0.3.227 structured status", ()
       rawMaxTokens: 200_000,
       autoCompactThreshold: 180_000,
       isAutoCompactEnabled: true,
+      providerId: "kimi",
       model: "kimi-k3",
     }]);
   });

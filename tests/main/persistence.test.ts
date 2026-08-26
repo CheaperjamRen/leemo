@@ -461,6 +461,39 @@ describe("wiki entry workspace migration", () => {
 
 // ── 轮 7 A3: settings 表 ────────────────────────────────────────────────────
 describe("settings persistence (轮 7 A3)", () => {
+  it("commits a new relationship chapter and its pointer in one transaction", () => {
+    const db = makeDb();
+    const p = createPersistence(db);
+    p.saveSettings({ themeId: "c", relationshipConversationId: "old-chapter" });
+
+    p.saveRelationshipChapter({ ...meta, id: "new-chapter", title: "新话题" }, []);
+
+    expect(p.loadAll()).toMatchObject({
+      conversations: [{ meta: expect.objectContaining({ id: "new-chapter" }), timeline: [] }],
+      settings: { themeId: "c", relationshipConversationId: "new-chapter" },
+    });
+  });
+
+  it("rolls back both the chapter and pointer when the atomic relationship commit fails", () => {
+    const db = makeDb();
+    const p = createPersistence(db);
+    p.saveSettings({ themeId: "c", relationshipConversationId: "old-chapter" });
+    db.exec(`
+      CREATE TRIGGER reject_relationship_pointer
+      BEFORE INSERT ON settings
+      WHEN NEW.key = 'relationshipConversationId'
+      BEGIN
+        SELECT RAISE(ABORT, 'relationship pointer rejected');
+      END;
+    `);
+
+    expect(() => p.saveRelationshipChapter({ ...meta, id: "failed-chapter" }, [])).toThrow(/relationship pointer rejected/);
+    expect(p.loadAll()).toMatchObject({
+      conversations: [],
+      settings: { themeId: "c", relationshipConversationId: "old-chapter" },
+    });
+  });
+
   it("round-trips every JSON value shape a setting can hold", () => {
     const p = createPersistence(makeDb());
     p.saveSettings({
@@ -518,6 +551,37 @@ describe("settings persistence (轮 7 A3)", () => {
     const p = createPersistence(db);
     p.saveSettings({ webEnabled: true });
     expect(p.loadAll().settings).toEqual({ webEnabled: true });
+  });
+});
+
+describe("composer 草稿 persistence", () => {
+  it("按 scope 整体替换并在重启快照恢复", () => {
+    const db = makeDb();
+    const p = createPersistence(db);
+    p.saveComposerDrafts({
+      "workspace:leemo-home": { text: "第一句", attachments: [], workspaceFiles: [] },
+      "conversation:old": { text: "旧话题", attachments: [], workspaceFiles: [] },
+    });
+    p.saveComposerDrafts({
+      "workspace:leemo-home": { text: "更新后", attachments: [], workspaceFiles: [] },
+    });
+
+    expect(createPersistence(db).loadAll().composerDrafts).toEqual({
+      "workspace:leemo-home": { text: "更新后", attachments: [], workspaceFiles: [] },
+    });
+  });
+
+  it("坏草稿行不会拖垮对话与其它有效草稿恢复", () => {
+    const db = makeDb();
+    const p = createPersistence(db);
+    p.saveConversation(meta, items);
+    p.saveComposerDrafts({ valid: { text: "还在", attachments: [], workspaceFiles: [] } });
+    db.prepare("INSERT INTO composer_drafts (scope, draft_json, updated_at) VALUES (?, ?, ?)")
+      .run("broken", "{oops", Date.now());
+
+    const snap = p.loadAll();
+    expect(snap.composerDrafts).toEqual({ valid: { text: "还在", attachments: [], workspaceFiles: [] } });
+    expect(snap.conversations).toHaveLength(1);
   });
 });
 

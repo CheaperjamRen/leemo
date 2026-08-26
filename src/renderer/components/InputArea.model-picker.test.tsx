@@ -57,10 +57,17 @@ describe("InputArea model picker — only configured providers appear", () => {
       providers: [CONFIGURED],
       currentProviderId: "deepseek",
       currentModelId: "deepseek-v4-flash",
-      contextUsage: { currentTokens: 406_000, justCompacted: false },
+      contextUsage: {
+        currentTokens: 406_000,
+        providerId: "deepseek",
+        modelId: "deepseek-v4-flash",
+        accuracy: "exact",
+        updatedAt: 1,
+        justCompacted: false,
+      },
     });
 
-    const ring = screen.getByRole("button", { name: "上下文已用 84%" });
+    const ring = screen.getByRole("button", { name: "上下文已用 84%，整理前剩 80K" });
     expect(ring.closest(".leemo-composer-model-cluster"))
       .toContainElement(screen.getByRole("button", { name: "切换模型" }));
   });
@@ -109,7 +116,15 @@ describe("InputArea model picker — only configured providers appear", () => {
       providers: [CONFIGURED],
       currentProviderId: "deepseek",
       currentModelId: "deepseek-v4-flash",
-      contextUsage: { currentTokens: 406_000, capacityTokens: 486_000, justCompacted: false },
+      contextUsage: {
+        currentTokens: 406_000,
+        capacityTokens: 486_000,
+        providerId: "deepseek",
+        modelId: "deepseek-v4-flash",
+        accuracy: "exact",
+        updatedAt: 1,
+        justCompacted: false,
+      },
     });
 
     await user.click(screen.getByText(/deepseek-v4-flash/));

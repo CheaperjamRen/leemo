@@ -48,6 +48,12 @@ describe("Leemo shell color roles", () => {
     });
   });
 
+  it("gives inverse tooltips theme-aware surface and text roles", () => {
+    expect(source).toContain("--leemo-surface-inverse: var(--leemo-palette-ink-navy);");
+    expect(source).toContain("--leemo-text-on-inverse: var(--leemo-palette-white);");
+    expect(source).toContain("--leemo-text-on-inverse-muted:");
+  });
+
   it("uses one warm-white role system for Start and Workbench", () => {
     const roles = scopedDeclarations(
       '[data-shell="workbench"],',

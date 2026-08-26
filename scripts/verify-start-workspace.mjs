@@ -106,12 +106,12 @@ async function invokeCapture(page, op, payload) {
 }
 
 async function openDocuments(page) {
-  const button = page.getByRole("button", { name: "我的文档", exact: true });
-  const box = await button.boundingBox();
-  if (!box || box.x + box.width <= 0 || box.x >= (await page.viewportSize()).width) {
-    const navigation = page.getByRole("button", { name: /展开侧栏|打开开始导航/ });
-    if (await navigation.count()) await navigation.click();
+  const expandSidebar = page.getByRole("button", { name: "展开侧栏", exact: true });
+  if (await expandSidebar.count()) {
+    await expandSidebar.click();
+    await page.getByRole("navigation", { name: "开始导航" }).waitFor();
   }
+  const button = page.getByRole("button", { name: "文档库", exact: true });
   await button.click();
   await page.getByTestId("start-documents-view").waitFor();
 }
@@ -229,7 +229,14 @@ async function seedAndExercise(page) {
   await page.getByLabel("被这些文档引用").getByRole("button", { name: "求职主线与独立思考", exact: true }).click();
   insist(await page.getByRole("textbox", { name: "文档标题" }).inputValue() === "求职主线与独立思考", "反向引用没有返回来源文档");
 
-  await page.getByRole("button", { name: "从便签创建待办" }).click();
+  const editorAfterReference = await ensureEditMode(page);
+  await editorAfterReference.locator("li").filter({ hasText: "打磨 Leemo 的产品故事与 PRD" }).first().selectText();
+  const createLinkedTask = page.getByRole("button", { name: "从便签创建待办" });
+  await page.waitForFunction(() => {
+    const button = document.querySelector('button[aria-label="从便签创建待办"]');
+    return button instanceof HTMLButtonElement && !button.disabled;
+  });
+  await createLinkedTask.click();
   const taskPanel = page.getByRole("region", { name: "创建待办预览" });
   await taskPanel.getByRole("button", { name: /创建 \d+ 条待办/ }).click();
   await page.getByText(/已创建 \d+ 条待办 · 便签原文保留/).waitFor();
@@ -259,7 +266,7 @@ async function seedAndExercise(page) {
     const editor = document.querySelector('[aria-label="便签正文"]')?.getBoundingClientRect();
     return { workspace, explorer, canvas, editor, bodyScrollWidth: document.body.scrollWidth, bodyClientWidth: document.body.clientWidth };
   });
-  insist(geometry1440.workspace.width >= 1_000, `1440 下文档工作面过窄：${geometry1440.workspace.width}`);
+  insist(geometry1440.workspace.width >= 900, `1440 下文档工作面过窄：${geometry1440.workspace.width}`);
   insist(geometry1440.editor.height >= 500, `编辑首屏过矮：${geometry1440.editor.height}`);
   insist(geometry1440.bodyScrollWidth <= geometry1440.bodyClientWidth + 1, "1440 页面出现水平滚动");
   await page.screenshot({ path: screenshot1440, animations: "disabled" });

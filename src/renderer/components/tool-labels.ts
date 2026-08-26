@@ -1,3 +1,6 @@
+import { LEEMO_ASK_USER_TOOL_NAME } from "../bridge/tool-names";
+import { LEEMO_RELATIONSHIP_HISTORY_TOOL } from "../../bridge/relationship-history-tool";
+
 const NATIVE_TOOL_ACTIONS: Readonly<Record<string, string>> = {
   Read: "读取文件",
   Grep: "搜索文件内容",
@@ -67,6 +70,8 @@ export function toolOutcomeLabel(
 export function toolActionLabel(toolName: string): string {
   const native = NATIVE_TOOL_ACTIONS[toolName];
   if (native) return native;
+  if (toolName === LEEMO_ASK_USER_TOOL_NAME) return "向你确认";
+  if (toolName === LEEMO_RELATIONSHIP_HISTORY_TOOL) return "回想之前的聊天";
   if (!isMcpToolName(toolName)) return "使用工具";
 
   const action = mcpActionName(toolName);

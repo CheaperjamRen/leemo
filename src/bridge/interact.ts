@@ -43,6 +43,7 @@ import { LEEMO_SCHEDULED_TASK_TOOL_NAMES } from "./scheduled-task-mcp";
 import { LEEMO_CAPTURE_TASK_TOOL_NAMES } from "./capture-task-mcp";
 import { LEEMO_VISUALIZATION_TOOL_NAME } from "./visualization-spec";
 import { LEEMO_WORK_OVERVIEW_TOOL } from "./work-overview";
+import { LEEMO_RELATIONSHIP_HISTORY_TOOL } from "./relationship-history-tool";
 import { resolvePathWithinBoundary } from "./filesystem-boundary";
 
 // ===========================================================================
@@ -353,6 +354,7 @@ const BUILTIN_TOOL_CAPABILITIES: ReadonlyMap<string, CapabilityGate> = new Map([
   [LEEMO_CAPTURE_TASK_TOOL_NAMES.listNotes, "always"],
   [LEEMO_CAPTURE_TASK_TOOL_NAMES.listTasks, "always"],
   [LEEMO_WORK_OVERVIEW_TOOL, "always"],
+  [LEEMO_RELATIONSHIP_HISTORY_TOOL, "always"],
   ...Object.values(LEEMO_MEMORY_TOOL_NAMES).map((toolName) => [toolName, "rememberMode"] as const),
   ...Object.values(LEEMO_LEARNING_TOOL_NAMES).map((toolName) => [toolName, "always"] as const),
 ]);

@@ -135,6 +135,7 @@ export interface ConversationsStoreDeps {
    * still flow through the debounced persistence synchronizer. */
   persistence?: {
     saveConversation(meta: ConversationMeta, timeline: TimelineItem[]): Promise<void>;
+    saveRelationshipChapter?(meta: ConversationMeta, timeline: TimelineItem[]): Promise<void>;
     moveConversation(
       sourceWorkspaceId: string,
       meta: ConversationMeta,
@@ -191,6 +192,12 @@ export interface ConversationsState {
      * user is currently looking at. */
     workspaceId?: string;
     activate?: boolean;
+    /** Internal chapter creation can preserve the relationship's current
+     * model even though the user never sees a separate conversation shell. */
+    modelSelection?: { providerId: string; modelId: string };
+    /** Await the main-owned portable + SQLite relationship commit before this
+     * empty chapter becomes visible in renderer state. */
+    durableRelationshipChapter?: boolean;
   }) => Promise<string>;
   /** Remove a shell that never crossed the first-send acknowledgement boundary.
    *  This is intentionally narrower than a user-facing delete: any real
@@ -593,9 +600,18 @@ export function createConversationsStore(
     pendingSends: {},
     queuedTurns: {},
 
-    createConversation: async ({ source, bookId, workspaceId: requestedWorkspaceId, activate = true }) => {
+    createConversation: async ({
+      source,
+      bookId,
+      workspaceId: requestedWorkspaceId,
+      activate = true,
+      modelSelection,
+      durableRelationshipChapter = false,
+    }) => {
       await deps.ensureSkillsReady?.();
       const defaults = deps.resolveConversationDefaults();
+      const providerId = modelSelection?.providerId ?? defaults.providerId;
+      const modelId = modelSelection?.modelId ?? defaults.modelId;
       const persona = deps.resolvePersonaContext?.();
       const enabledSkills = deps.resolveEnabledSkills?.();
       const selectedWorkspaceId = requestedWorkspaceId ?? deps.resolveActiveWorkspaceId?.();
@@ -613,8 +629,8 @@ export function createConversationsStore(
           ? bookId
           : deps.resolveActiveNotebook?.() ?? null;
       const { conversationId } = await client.invoke("bridge:createConversation", {
-        providerId: defaults.providerId,
-        modelId: defaults.modelId,
+        providerId,
+        modelId,
         purpose: "main",
         ...(persona ?? {}),
         ...(enabledSkills !== undefined ? { enabledSkills } : {}),
@@ -631,8 +647,8 @@ export function createConversationsStore(
         bookId: notebookId,
         ...(workspaceId !== undefined ? { workspaceId } : {}),
         source,
-        providerId: defaults.providerId,
-        modelId: defaults.modelId,
+        providerId,
+        modelId,
         createdAt: timestamp,
         lastActivityAt: timestamp,
         lastOpenedAt: timestamp,
@@ -640,6 +656,18 @@ export function createConversationsStore(
         archived: false,
         unread: false,
       };
+      if (durableRelationshipChapter && deps.persistence) {
+        if (!deps.persistence.saveRelationshipChapter) {
+          await client.invoke("bridge:disposeConversation", { conversationId }).catch(() => undefined);
+          throw new Error("当前存储版本无法安全创建新话题，请重启 Leemo 后再试。");
+        }
+        try {
+          await deps.persistence.saveRelationshipChapter(meta, []);
+        } catch (error: unknown) {
+          await client.invoke("bridge:disposeConversation", { conversationId }).catch(() => undefined);
+          throw error;
+        }
+      }
       hostLive.add(conversationId);
       set((state) => ({
         byId: { ...state.byId, [conversationId]: meta },

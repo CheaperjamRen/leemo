@@ -6,6 +6,10 @@ import { pickPersistedSettings, type SettingsState } from "../stores/settings";
 import { pickPersistedWorkbenchUi, type UiState } from "../stores/ui";
 import { HOME_WORKSPACE_ID, type WorkspacesState } from "../stores/workspaces";
 import type { PersistenceClient } from "./client";
+import {
+  serializeComposerDrafts,
+  type ComposerDraftsState,
+} from "../stores/composer-drafts";
 
 export interface PersistenceSyncStores {
   conversations: StoreApi<ConversationsState>;
@@ -19,6 +23,7 @@ export interface PersistenceSyncStores {
    * pending. The registry is authoritative: once removed, do not write into
    * that folder again until the user opens it as a book another time. */
   workspaces?: StoreApi<WorkspacesState>;
+  composerDrafts?: StoreApi<ComposerDraftsState>;
 }
 
 export interface PersistenceSyncDeps {
@@ -153,14 +158,36 @@ export function startPersistenceSync(
   const unsubSettings = stores.settings?.subscribe(persistPreferences);
   const unsubUi = stores.ui?.subscribe(persistPreferences);
 
+  let seenDrafts = JSON.stringify(serializeComposerDrafts(stores.composerDrafts?.getState().drafts ?? {}));
+  let pendingDrafts: string | null = null;
+  let cancelDraftPending: (() => void) | null = null;
+  const flushDrafts = (): void => {
+    cancelDraftPending = null;
+    if (pendingDrafts === null) return;
+    const serialized = pendingDrafts;
+    pendingDrafts = null;
+    seenDrafts = serialized;
+    void client.saveComposerDrafts(JSON.parse(serialized)).catch(onError);
+  };
+  const unsubComposerDrafts = stores.composerDrafts?.subscribe((state) => {
+    const next = JSON.stringify(serializeComposerDrafts(state.drafts));
+    if (next === seenDrafts && pendingDrafts === null) return;
+    pendingDrafts = next;
+    cancelDraftPending?.();
+    cancelDraftPending = schedule(flushDrafts);
+  });
+
   return () => {
     cancelPending?.();
+    cancelDraftPending?.();
     // Best-effort final drain for non-terminal edits (rename, unread state).
     // The invoke is already dispatched before React unmount finishes.
     flush();
+    flushDrafts();
     unsubConversations();
     unsubWiki();
     unsubSettings?.();
     unsubUi?.();
+    unsubComposerDrafts?.();
   };
 }

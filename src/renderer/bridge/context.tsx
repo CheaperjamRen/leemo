@@ -480,6 +480,10 @@ export function BridgeProvider({ client, live, persist, workspace, scheduler, le
         ]);
         if (stopped) return;
         stores.conversations.getState().hydrate(snap.conversations);
+        stores.composerDrafts?.getState().hydrate(
+          snap.composerDrafts,
+          new Set(snap.conversations.map((conversation) => conversation.meta.id)),
+        );
         stores.contextUsage?.setState(
           deriveContextUsageFromTimelines(stores.conversations.getState().timelines),
         );
@@ -574,6 +578,7 @@ export function BridgeProvider({ client, live, persist, workspace, scheduler, le
           wikiEntries: stores.wikiEntries,
           settings: stores.settings,
           ui: stores.ui,
+          composerDrafts: stores.composerDrafts,
           ...(stores.workspaces ? { workspaces: stores.workspaces } : {}),
         },
         persist,

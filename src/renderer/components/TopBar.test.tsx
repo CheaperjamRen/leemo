@@ -40,6 +40,7 @@ describe("TopBar", () => {
           onOpenHistory={vi.fn()}
           onDailyReview={vi.fn()}
           onStartRelationship={vi.fn()}
+          onStartNewTopic={vi.fn()}
         />
       </BridgeProvider>,
     );
@@ -50,6 +51,7 @@ describe("TopBar", () => {
 
     expect(within(auxiliaryControls).getAllByRole("button").map((control) => control.getAttribute("aria-label"))).toEqual([
       "让 momo 认识我",
+      "新话题",
       "回顾今天",
     ]);
     expect(within(primaryControls).getAllByRole("button").map((control) => control.getAttribute("aria-label"))).toEqual([
@@ -59,6 +61,20 @@ describe("TopBar", () => {
       "设置",
       expect.stringMatching(/^通知，\d+ 条未读$/),
     ]);
+  });
+
+  it("keeps the new-topic action visible and truthfully disabled during an active interaction", () => {
+    render(
+      <BridgeProvider>
+        <TopBar
+          onOpenHistory={vi.fn()}
+          onStartNewTopic={vi.fn()}
+          newTopicDisabled
+        />
+      </BridgeProvider>,
+    );
+
+    expect(screen.getByRole("button", { name: "新话题" })).toBeDisabled();
   });
 
   it("uses the global top-left control as the only workbench sidebar toggle", async () => {

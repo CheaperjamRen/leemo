@@ -3,6 +3,9 @@ import type {
   RelationshipHistoryQuery,
 } from "../bridge/relationship-history-mcp";
 import type { PersistedConversation } from "./persistence/schema";
+import type { RelationshipHistoryCandidate } from "./persistence/relationship-history-query";
+
+export type { RelationshipHistoryCandidate } from "./persistence/relationship-history-query";
 
 const MAX_EXCERPT_CHARS = 520;
 const HOME_WORKSPACE_ID = "leemo-home";
@@ -47,8 +50,8 @@ function scoreText(text: string, query: string, terms: readonly string[]): numbe
   return exact * 100 + matched.length * 10;
 }
 
-export function searchRelationshipHistory(
-  conversations: readonly PersistedConversation[],
+export function searchRelationshipHistoryCandidates(
+  relationshipCandidates: readonly RelationshipHistoryCandidate[],
   input: RelationshipHistoryQuery,
 ): RelationshipHistoryHit[] {
   const query = normalize(input.query);
@@ -57,29 +60,19 @@ export function searchRelationshipHistory(
   const limit = Math.max(1, Math.min(8, Math.floor(input.limit)));
 
   const candidates: Array<RelationshipHistoryHit & { score: number; activityAt: number; order: number }> = [];
-  let order = 0;
-  for (const conversation of conversations) {
-    const { meta } = conversation;
-    if (
-      meta.source !== "buddy"
-      || meta.bookId !== null
-      || (meta.workspaceId ?? HOME_WORKSPACE_ID) !== HOME_WORKSPACE_ID
-    ) continue;
-    for (const item of conversation.timeline) {
-      if (item.kind !== "text" || item.streaming || !item.text.trim()) continue;
-      const score = scoreText(item.text, query, terms);
-      if (score <= 0) continue;
-      candidates.push({
-        conversationId: meta.id,
-        runId: item.runId,
-        role: item.role,
-        text: excerpt(item.text, terms),
-        ...(item.createdAt !== undefined ? { createdAt: item.createdAt } : {}),
-        score,
-        activityAt: item.createdAt ?? meta.lastActivityAt,
-        order: order++,
-      });
-    }
+  for (const candidate of relationshipCandidates) {
+    const score = scoreText(candidate.text, query, terms);
+    if (score <= 0) continue;
+    candidates.push({
+      conversationId: candidate.conversationId,
+      runId: candidate.runId,
+      role: candidate.role,
+      text: excerpt(candidate.text, terms),
+      ...(candidate.createdAt !== undefined ? { createdAt: candidate.createdAt } : {}),
+      score,
+      activityAt: candidate.activityAt,
+      order: candidate.order,
+    });
   }
 
   return candidates
@@ -89,4 +82,33 @@ export function searchRelationshipHistory(
       || left.order - right.order)
     .slice(0, limit)
     .map(({ score: _score, activityAt: _activityAt, order: _order, ...hit }) => hit);
+}
+
+export function searchRelationshipHistory(
+  conversations: readonly PersistedConversation[],
+  input: RelationshipHistoryQuery,
+): RelationshipHistoryHit[] {
+  const candidates: RelationshipHistoryCandidate[] = [];
+  for (const conversation of conversations) {
+    const { meta } = conversation;
+    if (
+      meta.source !== "buddy"
+      || meta.bookId !== null
+      || (meta.workspaceId ?? HOME_WORKSPACE_ID) !== HOME_WORKSPACE_ID
+      || meta.archived === true
+    ) continue;
+    for (const item of conversation.timeline) {
+      if (item.kind !== "text" || item.streaming || !item.text.trim()) continue;
+      candidates.push({
+        conversationId: meta.id,
+        runId: item.runId,
+        role: item.role,
+        text: item.text,
+        ...(item.createdAt !== undefined ? { createdAt: item.createdAt } : {}),
+        activityAt: item.createdAt ?? meta.lastActivityAt,
+        order: candidates.length,
+      });
+    }
+  }
+  return searchRelationshipHistoryCandidates(candidates, input);
 }

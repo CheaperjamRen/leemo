@@ -516,6 +516,7 @@ describe("capture persistence", () => {
       "conversations",
       "wikiEntries",
       "settings",
+      "composerDrafts",
     ]);
   });
 

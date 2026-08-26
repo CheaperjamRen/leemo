@@ -29,6 +29,7 @@ import { LEEMO_SCHEDULED_TASK_TOOL_NAMES } from "../../src/bridge/scheduled-task
 import { LEEMO_CAPTURE_TASK_TOOL_NAMES } from "../../src/bridge/capture-task-mcp";
 import { LEEMO_VISUALIZATION_TOOL_NAME } from "../../src/bridge/visualization-spec";
 import { LEEMO_WORK_OVERVIEW_TOOL } from "../../src/bridge/work-overview";
+import { LEEMO_RELATIONSHIP_HISTORY_TOOL } from "../../src/bridge/relationship-history-mcp";
 
 // B3 — interaction bridge: ApprovalBroker (canUseTool three-tier + danger
 // downgrade + concurrency) and ask_user MCP (blocking round-trip + timeout +
@@ -166,6 +167,7 @@ describe("classifyRisk — Bash danger seed list (non-exhaustive)", () => {
     expect(classifyRisk(LEEMO_SKILL_ADMIN_TOOL_NAMES.scan, { source: "https://github.com/example/skill" })).toBe("safe");
     expect(classifyRisk(LEEMO_SCHEDULED_TASK_TOOL_NAMES.list, {})).toBe("safe");
     expect(classifyRisk(LEEMO_WORK_OVERVIEW_TOOL, { focus: "PDF 阅读" })).toBe("safe");
+    expect(classifyRisk(LEEMO_RELATIONSHIP_HISTORY_TOOL, { query: "上次的选择", limit: 3 })).toBe("safe");
   });
 
   it("a write/exec tool with no dangerous pattern classifies as moderate", () => {

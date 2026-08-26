@@ -147,6 +147,7 @@ export interface PersistedSnapshot {
    *  keeps its own default, which is what makes adding a new setting a no-op
    *  here. Empty object on a fresh install. */
   settings: Record<string, unknown>;
+  composerDrafts: Record<string, unknown>;
   globalPendingOverview?: PersistedGlobalOverviewState;
 }
 
@@ -154,6 +155,10 @@ export interface Persistence extends ApprovalPersistence {
   /** Upsert a conversation's meta + replace its full message timeline. Also
    *  refreshes the derived usage rows for that conversation. */
   saveConversation(meta: ConversationMeta, timeline: TimelineItem[]): void;
+  /** Create an empty momo relationship chapter and advance the durable active
+   * chapter pointer in one SQLite transaction. Workspace wrappers stage the
+   * portable record before calling this boundary. */
+  saveRelationshipChapter(meta: ConversationMeta, timeline: TimelineItem[]): void;
   /** Move is an explicit durability boundary. Workspace wrappers use the
    * source id to clean the old portable archive after the new truth is safe. */
   moveConversation(sourceWorkspaceId: string, meta: ConversationMeta, timeline: TimelineItem[]): void;
@@ -178,6 +183,7 @@ export interface Persistence extends ApprovalPersistence {
    *  Whole-map replace, not per-key upsert: the renderer holds the authoritative
    *  state, so "what is in the store now" is the thing worth persisting. */
   saveSettings(settings: Record<string, unknown>): void;
+  saveComposerDrafts(drafts: Record<string, unknown>): void;
   loadGlobalOverviewState(): PersistedGlobalOverviewState | null;
   saveGlobalOverviewState(state: PersistedGlobalOverviewState): void;
   recordStandaloneUsage(event: StandaloneUsageEvent): void;
@@ -264,6 +270,11 @@ CREATE TABLE IF NOT EXISTS wiki_entries (
 CREATE TABLE IF NOT EXISTS settings (
   key TEXT PRIMARY KEY,
   value_json TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS composer_drafts (
+  scope TEXT PRIMARY KEY,
+  draft_json TEXT NOT NULL,
+  updated_at INTEGER NOT NULL
 );
 CREATE TABLE IF NOT EXISTS global_overview_state (
   singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
@@ -437,6 +448,11 @@ interface WikiRow {
 interface SettingRow {
   key: string;
   value_json: string;
+}
+
+interface ComposerDraftRow {
+  scope: string;
+  draft_json: string;
 }
 
 interface ScheduledTaskRow {
@@ -766,6 +782,19 @@ export function createPersistence(db: SqliteDatabase): Persistence & CapturePers
     saveConversationTx(meta, timeline);
   }
 
+  const upsertSetting = db.prepare(`
+    INSERT INTO settings (key, value_json) VALUES (?, ?)
+    ON CONFLICT(key) DO UPDATE SET value_json=excluded.value_json
+  `);
+  const saveRelationshipChapterTx = db.transaction((meta: ConversationMeta, timeline: TimelineItem[]) => {
+    writeConversation(meta, timeline);
+    upsertSetting.run("relationshipConversationId", JSON.stringify(meta.id));
+  });
+
+  function saveRelationshipChapter(meta: ConversationMeta, timeline: TimelineItem[]): void {
+    saveRelationshipChapterTx(meta, timeline);
+  }
+
   function moveConversation(_sourceWorkspaceId: string, meta: ConversationMeta, timeline: TimelineItem[]): void {
     saveConversationTx(meta, timeline);
   }
@@ -886,11 +915,24 @@ export function createPersistence(db: SqliteDatabase): Persistence & CapturePers
       }
     }
 
+    const composerDrafts: Record<string, unknown> = {};
+    for (const row of db.prepare(`SELECT scope, draft_json FROM composer_drafts ORDER BY updated_at ASC, scope ASC`).all() as ComposerDraftRow[]) {
+      try {
+        const draft: unknown = JSON.parse(row.draft_json);
+        if (draft !== null && typeof draft === "object" && !Array.isArray(draft)) {
+          composerDrafts[row.scope] = draft;
+        }
+      } catch {
+        // 一个坏草稿只丢该 scope；对话、设置和其它未发送文本继续恢复。
+      }
+    }
+
     const globalPendingOverview = loadGlobalOverviewState();
     return {
       conversations,
       wikiEntries,
       settings,
+      composerDrafts,
       ...(globalPendingOverview ? { globalPendingOverview } : {}),
     };
   }
@@ -907,6 +949,19 @@ export function createPersistence(db: SqliteDatabase): Persistence & CapturePers
         // "undefined", which would come back as a parse error on load.
         if (value === undefined) continue;
         ins.run(key, JSON.stringify(value));
+      }
+    })();
+  }
+
+  function saveComposerDrafts(drafts: Record<string, unknown>): void {
+    const del = db.prepare(`DELETE FROM composer_drafts`);
+    const ins = db.prepare(`INSERT INTO composer_drafts (scope, draft_json, updated_at) VALUES (?, ?, ?)`);
+    const updatedAt = Date.now();
+    db.transaction(() => {
+      del.run();
+      for (const [scope, draft] of Object.entries(drafts)) {
+        if (!scope || scope.length > 1_024 || draft === undefined) continue;
+        ins.run(scope, JSON.stringify(draft), updatedAt);
       }
     })();
   }
@@ -1292,12 +1347,14 @@ export function createPersistence(db: SqliteDatabase): Persistence & CapturePers
   return {
     ...capturePersistence,
     saveConversation,
+    saveRelationshipChapter,
     moveConversation,
     deleteConversation,
     isConversationDeleted,
     rebuildConversationIndex,
     saveWikiEntry,
     saveSettings,
+    saveComposerDrafts,
     loadGlobalOverviewState,
     saveGlobalOverviewState,
     recordStandaloneUsage,

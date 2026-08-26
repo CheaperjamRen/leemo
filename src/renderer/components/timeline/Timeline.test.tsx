@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 import { render, screen, fireEvent } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { BridgeProvider, useConversations } from "../../bridge/context";
 import Timeline from "./Timeline";
 import { FixtureBridgeClient } from "../../bridge/fixture-client";
@@ -85,6 +85,67 @@ describe("Timeline — scroll-out-of-view hint (卡 D §6): pill and BackToBotto
     await userEvent.click(screen.getByRole("button", { name: "加载更早记录（还有 3 段）" }));
     expect(screen.getByText("第 2 段记录")).toBeInTheDocument();
     expect(screen.getByText("第 3 段记录")).toBeInTheDocument();
+  });
+
+  it("由上游先投影最近窗口时，加载更早只请求扩大投影而不接收全量消息", async () => {
+    const onLoadOlder = vi.fn();
+    const items: TimelineItem[] = Array.from({ length: 2 }, (_, index) => ({
+      kind: "text",
+      id: `recent-${index}`,
+      runId: `recent-run-${index}`,
+      role: "momo",
+      text: `最近 ${index + 1}`,
+      streaming: false,
+    }));
+
+    render(
+      <BridgeProvider client={new FixtureBridgeClient()}>
+        <Timeline
+          items={items}
+          activeConversationId={null}
+          activeRunId={null}
+          hasOlder
+          onLoadOlder={onLoadOlder}
+        />
+      </BridgeProvider>,
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: "加载更早记录" }));
+    expect(onLoadOlder).toHaveBeenCalledOnce();
+  });
+
+  it("renders a quiet chapter marker before the chapter's first visible run", () => {
+    const items: TimelineItem[] = [
+      {
+        kind: "text", id: "old", runId: "run-old", role: "momo",
+        text: "前一个话题", streaming: false, createdAt: 1,
+      },
+      {
+        kind: "text", id: "new", runId: "run-new", role: "user",
+        text: "换个事情聊聊", streaming: false, createdAt: 2,
+      },
+    ];
+
+    render(
+      <BridgeProvider client={new FixtureBridgeClient()}>
+        <Timeline
+          items={items}
+          activeConversationId="chapter-new"
+          activeRunId={null}
+          chapterMarkers={[{
+            beforeRunId: "run-new",
+            title: "最近在想的事",
+            startedAt: new Date(2026, 7, 26, 14, 0).getTime(),
+          }]}
+        />
+      </BridgeProvider>,
+    );
+
+    const marker = screen.getByRole("separator", { name: "话题开始：最近在想的事" });
+    const nextTurn = screen.getByText("换个事情聊聊").closest("[data-run-id]");
+    expect(marker).toHaveTextContent("最近在想的事");
+    expect(marker).toHaveTextContent("8月26日");
+    expect(marker.nextElementSibling).toBe(nextTurn);
   });
   it("shows plain BackToBottom when scrolled up with no pending question", async () => {
     const client = new FixtureBridgeClient();

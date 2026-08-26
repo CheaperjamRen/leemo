@@ -1522,6 +1522,59 @@ describe("conversations store", () => {
     expect(foldConversationEnvelope(before, { conversationId: "unknown", event: { type: "text.delta", text: "ignored" } }, 1000)).toEqual({});
   });
 
+  it("publishes a relationship chapter only after its durable commit succeeds", async () => {
+    const bridge = makeClient(["relationship-durable"]);
+    let releaseSave!: () => void;
+    const saveGate = new Promise<void>((resolve) => { releaseSave = resolve; });
+    const persistence = {
+      saveConversation: vi.fn(async () => undefined),
+      saveRelationshipChapter: vi.fn(async () => saveGate),
+      moveConversation: vi.fn(async () => undefined),
+      deleteConversation: vi.fn(async () => undefined),
+    };
+    const store = createConversationsStore(bridge.client, {
+      resolveConversationDefaults: () => DEFAULTS,
+      persistence,
+    });
+
+    const creating = store.getState().createConversation({
+      source: "buddy",
+      durableRelationshipChapter: true,
+    });
+    await vi.waitFor(() => expect(persistence.saveRelationshipChapter).toHaveBeenCalledTimes(1));
+    expect(store.getState().byId["relationship-durable"]).toBeUndefined();
+
+    releaseSave();
+    await expect(creating).resolves.toBe("relationship-durable");
+    expect(store.getState().byId["relationship-durable"]).toBeDefined();
+  });
+
+  it("disposes the host and keeps renderer state unchanged when a relationship commit fails", async () => {
+    const bridge = makeClient(["relationship-failed"]);
+    const persistence = {
+      saveConversation: vi.fn(async () => undefined),
+      saveRelationshipChapter: vi.fn(async () => { throw new Error("磁盘不可写"); }),
+      moveConversation: vi.fn(async () => undefined),
+      deleteConversation: vi.fn(async () => undefined),
+    };
+    const store = createConversationsStore(bridge.client, {
+      resolveConversationDefaults: () => DEFAULTS,
+      persistence,
+    });
+
+    await expect(store.getState().createConversation({
+      source: "buddy",
+      durableRelationshipChapter: true,
+    })).rejects.toThrow("磁盘不可写");
+
+    expect(store.getState().byId["relationship-failed"]).toBeUndefined();
+    expect(store.getState().order).not.toContain("relationship-failed");
+    expect(bridge.calls).toContainEqual({
+      channel: "bridge:disposeConversation",
+      request: { conversationId: "relationship-failed" },
+    });
+  });
+
   it("persists the real envelope conversation id and receipt time on an overview revision", async () => {
     const bridge = makeClient(["conv-a"]);
     const store = createConversationsStore(bridge.client, { resolveConversationDefaults: () => DEFAULTS });

@@ -114,7 +114,8 @@ export default function HistoryDrawer({
   const conversations = order
     .flatMap((id) => byId[id] ?? [])
     .filter((conversation) =>
-      (conversation.workspaceId ?? HOME_WORKSPACE_ID) === HOME_WORKSPACE_ID
+      conversation.source === "buddy"
+        && (conversation.workspaceId ?? HOME_WORKSPACE_ID) === HOME_WORKSPACE_ID
         && conversation.bookId === null
     );
   const query = q.trim();

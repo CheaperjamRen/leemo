@@ -1,0 +1,4 @@
+export const LEEMO_RELATIONSHIP_HISTORY_SERVER = "leemo-relationship-history";
+export const LEEMO_RELATIONSHIP_HISTORY_ACTION = "search_relationship_history";
+export const LEEMO_RELATIONSHIP_HISTORY_TOOL =
+  `mcp__${LEEMO_RELATIONSHIP_HISTORY_SERVER}__${LEEMO_RELATIONSHIP_HISTORY_ACTION}`;

@@ -194,13 +194,56 @@ function persistence(snapshot: PersistedSnapshot | Error): PersistenceClient {
       return snapshot;
     }),
     saveConversation: vi.fn(async () => {}),
+    saveRelationshipChapter: vi.fn(async () => {}),
     moveConversation: vi.fn(async () => {}),
     deleteConversation: vi.fn(async () => {}),
     saveWikiEntry: vi.fn(async () => {}),
     saveSettings: vi.fn(async () => {}),
+    saveComposerDrafts: vi.fn(async () => {}),
     saveGlobalPendingOverview: vi.fn(async () => {}),
   };
 }
+
+describe("BridgeProvider composer 草稿恢复", () => {
+  it("重建 renderer 后恢复当前章节文本和安全引用且不调用模型", async () => {
+    const client = liveClient();
+    const persist = persistence({
+      conversations: [{
+        meta: {
+          id: "chapter-2", title: "新话题", titleManuallyUpdated: false, bookId: null,
+          workspaceId: "leemo-home", source: "buddy", providerId: "first-provider", modelId: "shared-model",
+          createdAt: 1, lastActivityAt: 1, unread: false,
+        },
+        timeline: [],
+      }],
+      wikiEntries: [],
+      settings: { relationshipConversationId: "chapter-2" },
+      composerDrafts: {
+        "workspace:leemo-home": {
+          text: "异常退出前没发完",
+          attachments: [{ id: "file-1", name: "岗位.md", path: "C:\\隔离\\岗位.md", size: 12 }],
+          workspaceFiles: [{ id: "workspace-1", name: "简历.md", workspaceId: "leemo-home", workspacePath: "求职/简历.md" }],
+          assignedConversationId: "chapter-2",
+        },
+      },
+    });
+    let stores!: BridgeStores;
+
+    render(
+      <BridgeProvider client={client} live persist={persist}>
+        <CaptureStores onReady={(value) => { stores = value; }} />
+      </BridgeProvider>,
+    );
+
+    await waitFor(() => expect(stores.composerDrafts?.getState().drafts["workspace:leemo-home"]).toMatchObject({
+      text: "异常退出前没发完",
+      assignedConversationId: "chapter-2",
+      attachments: [{ id: "file-1" }],
+      workspaceFiles: [{ id: "workspace-1" }],
+    }));
+    expect(client.invoke).not.toHaveBeenCalledWith("bridge:send", expect.anything());
+  });
+});
 
 describe("BridgeProvider settings wiring", () => {
   it("checks daily overview only on a visible foreground event and not when the switch merely changes", async () => {

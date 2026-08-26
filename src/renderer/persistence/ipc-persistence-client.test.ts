@@ -35,6 +35,8 @@ describe("IpcPersistenceClient", () => {
     const tl: TimelineItem[] = [{ kind: "text", id: "u0", runId: "r1", role: "user", text: "hi", streaming: false }];
     await c.saveConversation(META, tl);
     expect(api.invoke).toHaveBeenCalledWith("saveConversation", { meta: META, timeline: tl });
+    await c.saveRelationshipChapter(META, []);
+    expect(api.invoke).toHaveBeenCalledWith("saveRelationshipChapter", { meta: META, timeline: [] });
 
     const entry: WikiEntry = { id: "w1", filePath: "f", quotedText: "q", turns: [], createdAt: 1 };
     await c.saveWikiEntry(entry);
@@ -65,5 +67,15 @@ describe("IpcPersistenceClient", () => {
     await c.saveGlobalPendingOverview(state);
 
     expect(api.invoke).toHaveBeenCalledWith("saveGlobalPendingOverview", state);
+  });
+
+  it("通过独立操作保存 composer 草稿，不混入设置", async () => {
+    const api = { invoke: vi.fn(async () => ({ ok: true })) };
+    const c = new IpcPersistenceClient(api);
+    const drafts = { "workspace:leemo-home": { text: "未发送", attachments: [], workspaceFiles: [], assignedConversationId: null } };
+
+    await c.saveComposerDrafts(drafts);
+
+    expect(api.invoke).toHaveBeenCalledWith("saveComposerDrafts", drafts);
   });
 });
