@@ -64,10 +64,11 @@ export interface ConversationRoundOptions {
   tools?: string[];
 }
 
-/** Custom-spawn acknowledgement written synchronously by sdk-process.ts when
- * AbortController.abort() terminates an owned Claude process tree. Undefined
- * means no child process was active for that signal. */
+/** Custom-spawn cleanup state written by sdk-process.ts when abort begins.
+ * The boolean is fail-closed until verification finishes; the Promise lets the
+ * host await it without blocking Electron's main event loop. */
 export const PROCESS_TREE_STOP_RESULT_KEY = "__leemoProcessTreeStopped" as const;
+export const PROCESS_TREE_STOP_PROMISE_KEY = "__leemoProcessTreeStopPromise" as const;
 
 /** Params passed to the injected queryFn — mirrors `query({prompt, options})`. */
 export interface QueryParams {
@@ -144,9 +145,13 @@ export interface ConversationHandle<TMessage = SdkMessageLike> {
   send(prompt: string, options?: ConversationRoundOptions): AsyncIterable<TMessage>;
   /** Add guidance to the active round through the SDK's streaming-input API. */
   guide(prompt: string): Promise<"applied">;
-  /** Abort the active round. True means no owned process tree remains and the
-   * conversation may send again; false keeps the slot closed. */
+  /** Request cancellation of the active round. True means the request was
+   * accepted; waitForInterrupt() determines when the slot is safe to reuse. */
   interrupt(): boolean;
+  /** Await the host-owned process-tree verification started by interrupt().
+   * Fake/query-only transports resolve immediately; Windows CLI rounds keep
+   * the conversation locked until their descendants are gone. */
+  waitForInterrupt?(): Promise<boolean>;
   /** Change provider + model for the NEXT round (env-level; not retroactive). */
   setModel(provider: Provider, modelId: string, gatewayPort?: number): void;
   /** 轮 7 A3 —— point this conversation at the local search shim (or `undefined`
@@ -206,7 +211,7 @@ interface PersistentQueryTransport {
   query: QueryStream;
   iterator: AsyncIterator<SdkMessageLike>;
   input: PushInputQueue;
-  abortController?: AbortController;
+  abortController: AbortController;
   signature: string;
   idleTimer?: ReturnType<typeof setTimeout>;
   modelUsageCursor: Record<string, Record<string, unknown>>;
@@ -222,7 +227,22 @@ export interface Bridge {
   dispose(): void;
 }
 
-/** Is this the SDK's terminal "the run failed" message?
+const MISSING_RESUME_SESSION_PATTERNS = [
+  /no conversation found(?: with session id)?/i,
+  /conversation session[^\n]*(?:not found|does not exist)/i,
+  /resume session[^\n]*(?:not found|invalid|expired)/i,
+];
+
+function missingResumeSessionText(value: unknown): boolean {
+  const text = value instanceof Error
+    ? value.message
+    : typeof value === "string"
+      ? value
+      : "";
+  return MISSING_RESUME_SESSION_PATTERNS.some((pattern) => pattern.test(text));
+}
+
+/** Is this specifically the SDK's terminal "saved resume session is gone" message?
  *
  *  Used only to decide whether a re-claimed conversation's first round may be
  *  retried without resume: such a message reports a failure, it does not
@@ -230,8 +250,10 @@ export interface Bridge {
  *  other message shape means the round actually got going. Structural check
  *  (type + is_error) rather than message-text matching, which would break the
  *  moment a provider words the error differently. */
-function isTerminalErrorResult(msg: SdkMessageLike): boolean {
-  return msg?.type === "result" && (msg as { is_error?: boolean }).is_error === true;
+function isMissingResumeSessionResult(msg: SdkMessageLike): boolean {
+  if (msg?.type !== "result" || (msg as { is_error?: boolean }).is_error !== true) return false;
+  const result = (msg as { result?: unknown }).result;
+  return missingResumeSessionText(result);
 }
 
 class Conversation implements ConversationHandle {
@@ -257,6 +279,8 @@ class Conversation implements ConversationHandle {
    * into an apparently reusable conversation. Only dispose/restart replaces
    * the handle. */
   private processTreeStopFailed = false;
+  private pendingProcessTreeStop?: Promise<boolean>;
+  private readonly retiredTransportStops = new Set<Promise<boolean>>();
   /** Identifies the one round allowed to mutate conversation state/session.
    * Interrupt retires this id immediately, so an abort-ignoring iterator can
    * finish later without clobbering the replacement round. */
@@ -319,19 +343,40 @@ class Conversation implements ConversationHandle {
 
   interrupt(): boolean {
     if (this.processTreeStopFailed) return false;
+    if (this.pendingProcessTreeStop) return true;
     // Retire the round before notifying the producer. Abort listeners can wake
     // synchronously, and none of their late work may regain ownership after the
-    // UI has acknowledged Stop. A new send can start immediately.
+    // UI has acknowledged Stop. The conversation remains locked until the
+    // process-tree verification settles.
     const abort = this.currentAbort;
     if (this._state === "running") {
       this.activeRoundId = undefined;
       this.currentAbort = undefined;
       abort?.abort();
+      const stopPromise = abort
+        ? (abort.signal as AbortSignal & {
+            [PROCESS_TREE_STOP_PROMISE_KEY]?: Promise<boolean>;
+          })[PROCESS_TREE_STOP_PROMISE_KEY]
+        : undefined;
+      if (stopPromise) {
+        const pending = stopPromise.then((stopped) => {
+          if (this.pendingProcessTreeStop === pending) this.pendingProcessTreeStop = undefined;
+          if (stopped) {
+            void this.closePersistentTransport();
+            if (this.state !== "disposed") this.setState("idle");
+          } else {
+            this.processTreeStopFailed = true;
+          }
+          return stopped;
+        });
+        this.pendingProcessTreeStop = pending;
+        return true;
+      }
       const stopped = abort
         ? (abort.signal as AbortSignal & { [PROCESS_TREE_STOP_RESULT_KEY]?: boolean })[PROCESS_TREE_STOP_RESULT_KEY] ?? true
         : true;
       if (stopped) {
-        this.closePersistentTransport();
+        void this.closePersistentTransport();
         this.setState("idle");
       }
       else this.processTreeStopFailed = true;
@@ -339,6 +384,24 @@ class Conversation implements ConversationHandle {
     }
     abort?.abort();
     return true;
+  }
+
+  async waitForInterrupt(): Promise<boolean> {
+    // Cleanup can chain: resolving the active round's stop may retire its warm
+    // transport, and a transport replacement can already be waiting on an older
+    // retirement. A one-time snapshot can therefore report success before the
+    // newly registered cleanup settles. Keep sampling until the owned cleanup
+    // set is genuinely empty.
+    while (true) {
+      if (this.processTreeStopFailed) return false;
+      const pending = [
+        ...(this.pendingProcessTreeStop ? [this.pendingProcessTreeStop] : []),
+        ...this.retiredTransportStops,
+      ];
+      if (pending.length === 0) return true;
+      const results = await Promise.all(pending);
+      if (this.processTreeStopFailed || results.some((stopped) => !stopped)) return false;
+    }
   }
 
   async guide(prompt: string): Promise<"applied"> {
@@ -367,12 +430,41 @@ class Conversation implements ConversationHandle {
   }
 
   dispose(): void {
-    const abort = this.currentAbort;
+    const persistentAbort = this.persistentTransport?.abortController;
+    const retirement = this.closePersistentTransport();
+    const aborts = [...new Set([this.currentAbort]
+      .filter((candidate): candidate is AbortController => candidate !== undefined && candidate !== persistentAbort))];
+    const existingStop = this.pendingProcessTreeStop;
     this.activeRoundId = undefined;
     this.currentAbort = undefined;
     this.setState("disposed");
-    abort?.abort();
-    this.closePersistentTransport();
+    for (const abort of aborts) abort.abort();
+    const stopPromises = [
+      ...(existingStop ? [existingStop] : []),
+      retirement,
+      ...this.retiredTransportStops,
+      ...aborts.flatMap((abort) => {
+        const pending = (abort.signal as AbortSignal & {
+          [PROCESS_TREE_STOP_PROMISE_KEY]?: Promise<boolean>;
+        })[PROCESS_TREE_STOP_PROMISE_KEY];
+        return pending ? [pending] : [];
+      }),
+    ];
+    if (stopPromises.length > 0) {
+      const pending = Promise.all(stopPromises).then((results) => {
+        const stopped = results.every(Boolean);
+        if (this.pendingProcessTreeStop === pending) this.pendingProcessTreeStop = undefined;
+        if (!stopped) this.processTreeStopFailed = true;
+        return stopped;
+      });
+      this.pendingProcessTreeStop = pending;
+    } else {
+      const stopped = aborts.every((abort) => (
+        (abort.signal as AbortSignal & { [PROCESS_TREE_STOP_RESULT_KEY]?: boolean })
+          [PROCESS_TREE_STOP_RESULT_KEY] ?? true
+      ));
+      if (!stopped) this.processTreeStopFailed = true;
+    }
   }
 
   /** Build this round's options: a fresh AbortController, the dual-wiring env
@@ -427,11 +519,31 @@ class Conversation implements ConversationHandle {
     });
   }
 
-  private closePersistentTransport(expected?: PersistentQueryTransport): void {
+  private trackRetiredTransportStop(raw: Promise<boolean>): Promise<boolean> {
+    let tracked!: Promise<boolean>;
+    tracked = raw.catch(() => false).then((stopped) => {
+      this.retiredTransportStops.delete(tracked);
+      if (!stopped) this.processTreeStopFailed = true;
+      return stopped;
+    });
+    this.retiredTransportStops.add(tracked);
+    return tracked;
+  }
+
+  private closePersistentTransport(expected?: PersistentQueryTransport): Promise<boolean> {
     const transport = this.persistentTransport;
-    if (!transport || (expected && transport !== expected)) return;
+    if (!transport || (expected && transport !== expected)) return Promise.resolve(true);
     this.persistentTransport = undefined;
     if (transport.idleTimer) clearTimeout(transport.idleTimer);
+    transport.abortController.abort();
+    const signal = transport.abortController.signal as AbortSignal & {
+      [PROCESS_TREE_STOP_PROMISE_KEY]?: Promise<boolean>;
+      [PROCESS_TREE_STOP_RESULT_KEY]?: boolean;
+    };
+    const cleanup = this.trackRetiredTransportStop(
+      signal[PROCESS_TREE_STOP_PROMISE_KEY]
+        ?? Promise.resolve(signal[PROCESS_TREE_STOP_RESULT_KEY] ?? true),
+    );
     transport.input.close();
     try {
       transport.query.close?.();
@@ -439,24 +551,26 @@ class Conversation implements ConversationHandle {
       // The child may already have exited. Reaping an idle transport is best
       // effort and must not turn a completed user round into an error.
     }
+    return cleanup;
   }
 
   private schedulePersistentTransportRecycle(transport: PersistentQueryTransport): void {
     if (transport.idleTimer) clearTimeout(transport.idleTimer);
     if (this.persistentQueryIdleMs <= 0) {
-      this.closePersistentTransport(transport);
+      void this.closePersistentTransport(transport);
       return;
     }
     transport.idleTimer = setTimeout(() => {
-      if (this._state === "idle") this.closePersistentTransport(transport);
+      if (this._state === "idle") void this.closePersistentTransport(transport);
     }, this.persistentQueryIdleMs);
     transport.idleTimer.unref?.();
   }
 
-  private ensurePersistentTransport(
+  private async ensurePersistentTransport(
     options: QueryOptions,
+    roundId: number,
     roundOptions?: ConversationRoundOptions,
-  ): PersistentQueryTransport {
+  ): Promise<PersistentQueryTransport | undefined> {
     const signature = this.persistentSignature(roundOptions);
     const existing = this.persistentTransport;
     if (existing && existing.signature === signature) {
@@ -466,7 +580,24 @@ class Conversation implements ConversationHandle {
       }
       return existing;
     }
-    if (existing) this.closePersistentTransport(existing);
+    if (existing) {
+      const stopped = await this.closePersistentTransport(existing);
+      if (!stopped) throw new Error("previous persistent transport cleanup could not be verified");
+    } else if (this.retiredTransportStops.size > 0) {
+      const stopped = (await Promise.all([...this.retiredTransportStops])).every(Boolean);
+      if (!stopped) throw new Error("previous persistent transport cleanup could not be verified");
+    }
+
+    // Stop can arrive while the replacement is waiting for the old process tree
+    // to disappear. Re-check ownership after every await and immediately before
+    // the synchronous query() call that can spawn the next CLI. Once retired,
+    // this round is never allowed to create another process.
+    if (
+      this.activeRoundId !== roundId
+      || options.abortController?.signal.aborted === true
+      || this._state !== "running"
+      || this.processTreeStopFailed
+    ) return undefined;
 
     const input = new PushInputQueue();
     const query = this.queryFn({ prompt: input, options });
@@ -474,7 +605,7 @@ class Conversation implements ConversationHandle {
       query,
       iterator: query[Symbol.asyncIterator](),
       input,
-      abortController: options.abortController,
+      abortController: options.abortController!,
       signature,
       modelUsageCursor: {},
       totalCostCursor: 0,
@@ -577,7 +708,12 @@ class Conversation implements ConversationHandle {
     roundId: number,
     roundOptions?: ConversationRoundOptions,
   ): AsyncIterable<SdkMessageLike> {
-    const transport = this.ensurePersistentTransport(options, roundOptions);
+    const transport = await this.ensurePersistentTransport(options, roundId, roundOptions);
+    if (!transport) return;
+    if (this.activeRoundId !== roundId) {
+      await this.closePersistentTransport(transport);
+      return;
+    }
     this.currentAbort = transport.abortController;
     this.currentQuery = transport.query;
     transport.input.push({
@@ -600,7 +736,7 @@ class Conversation implements ConversationHandle {
           return;
         }
         if (next.done) {
-          this.closePersistentTransport(transport);
+          await this.closePersistentTransport(transport);
           return;
         }
         const message = this.normalizePersistentResult(next.value, transport);
@@ -622,7 +758,7 @@ class Conversation implements ConversationHandle {
         }
       }
     } catch (error) {
-      this.closePersistentTransport(transport);
+      await this.closePersistentTransport(transport);
       throw error;
     }
   }
@@ -690,6 +826,9 @@ class Conversation implements ConversationHandle {
   }
 
   send(prompt: string, roundOptions?: ConversationRoundOptions): AsyncIterable<SdkMessageLike> {
+    if (this.processTreeStopFailed) {
+      throw new Error("cannot send() after unverified process-tree cleanup");
+    }
     if (this._state === "disposed") {
       throw new Error("cannot send() on a disposed conversation");
     }
@@ -779,7 +918,7 @@ class Conversation implements ConversationHandle {
           self.currentQuery = query;
           for await (const msg of query) {
             if (self.activeRoundId !== roundId) return;
-            if (degradable && isTerminalErrorResult(msg)) {
+            if (degradable && isMissingResumeSessionResult(msg)) {
               held.push(msg); // might be the dead-resume round; decide at the end
               continue;
             }
@@ -804,7 +943,7 @@ class Conversation implements ConversationHandle {
             if (snapshot) yield snapshot;
           }
         } catch (e: unknown) {
-          if (!canDegradeNow()) {
+          if (!canDegradeNow() || (held.length === 0 && !missingResumeSessionText(e))) {
             yield* flushHeld(); // not degradable: the caller still owns these
             throw e;
           }

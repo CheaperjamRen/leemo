@@ -6,7 +6,10 @@ import {
   terminateWindowsProcessTree,
   type WindowsProcessTreeOps,
 } from "../../src/host/sdk-process";
-import { PROCESS_TREE_STOP_RESULT_KEY } from "../../src/bridge/pool";
+import {
+  PROCESS_TREE_STOP_PROMISE_KEY,
+  PROCESS_TREE_STOP_RESULT_KEY,
+} from "../../src/bridge/pool";
 
 function alive(pid: number): boolean {
   try {
@@ -30,20 +33,20 @@ function forceKillTree(pid: number | undefined): void {
 }
 
 describe("managed Claude process spawning", () => {
-  it("re-enumerates from every known PID until a late detached descendant is gone", () => {
+  it("re-enumerates from every known PID until a late detached descendant is gone", async () => {
     const alivePids = new Set([100, 200]);
     const snapshots: number[][] = [];
     const terminated: number[] = [];
     let lateChildSpawned = false;
     const ops: WindowsProcessTreeOps = {
-      snapshotDescendants(seedPids) {
+      async snapshotDescendants(seedPids) {
         snapshots.push([...seedPids]);
         if (snapshots.length === 1) return { ok: true, pids: [200] };
         if (alivePids.has(300)) return { ok: true, pids: [300] };
         return { ok: true, pids: [] };
       },
       isAlive: (pid) => alivePids.has(pid),
-      terminate(pid) {
+      async terminate(pid) {
         terminated.push(pid);
         alivePids.delete(pid);
         // The intermediate creates a detached child after the first snapshot,
@@ -56,26 +59,106 @@ describe("managed Claude process spawning", () => {
       },
     };
 
-    expect(terminateWindowsProcessTree(100, ops)).toBe(true);
+    await expect(terminateWindowsProcessTree(100, ops)).resolves.toBe(true);
     expect(alivePids).toEqual(new Set());
     expect(terminated).toContain(300);
     expect(snapshots.some((seeds) => seeds.includes(100) && seeds.includes(200))).toBe(true);
-    expect(snapshots.length).toBeGreaterThanOrEqual(4);
+    expect(snapshots.length).toBeGreaterThanOrEqual(3);
   });
 
-  it("fails closed when descendant enumeration cannot be verified", () => {
+  it("performs post-kill stable snapshots before accepting an empty process tree", async () => {
+    const alivePids = new Set([100]);
+    const snapshots: number[][] = [];
+    const terminated: number[] = [];
+    let lateChildVisible = false;
+    const ops: WindowsProcessTreeOps = {
+      async snapshotDescendants(seedPids) {
+        snapshots.push([...seedPids]);
+        return { ok: true, pids: lateChildVisible ? [200] : [] };
+      },
+      isAlive: (pid) => alivePids.has(pid),
+      async terminate(pid) {
+        terminated.push(pid);
+        alivePids.delete(pid);
+        if (pid === 100) {
+          lateChildVisible = true;
+          alivePids.add(200);
+        } else if (pid === 200) {
+          lateChildVisible = false;
+        }
+        return true;
+      },
+    };
+
+    await expect(terminateWindowsProcessTree(100, ops)).resolves.toBe(true);
+    expect(terminated).toContain(200);
+    expect(alivePids).toEqual(new Set());
+    expect(snapshots.length).toBeGreaterThanOrEqual(3);
+  });
+
+  it("does not accept pre-kill observations when the final known process spawns a child while terminating", async () => {
+    const alivePids = new Set([100, 200]);
+    let childTerminateAttempts = 0;
+    const terminated: number[] = [];
+    const ops: WindowsProcessTreeOps = {
+      async snapshotDescendants() {
+        return {
+          ok: true,
+          pids: [
+            ...(alivePids.has(200) ? [200] : []),
+            ...(alivePids.has(300) ? [300] : []),
+          ],
+          observations: 2,
+        };
+      },
+      isAlive: (pid) => alivePids.has(pid),
+      async terminate(pid) {
+        terminated.push(pid);
+        if (pid === 200 && childTerminateAttempts++ === 0) return false;
+        alivePids.delete(pid);
+        if (pid === 200) alivePids.add(300);
+        return true;
+      },
+    };
+
+    await expect(terminateWindowsProcessTree(100, ops)).resolves.toBe(true);
+    expect(terminated).toContain(300);
+    expect(alivePids).toEqual(new Set());
+  });
+
+  it("fails closed when descendant enumeration cannot be verified", async () => {
     const alivePids = new Set([100]);
     const ops: WindowsProcessTreeOps = {
-      snapshotDescendants: () => ({ ok: false, pids: [] }),
+      snapshotDescendants: async () => ({ ok: false, pids: [] }),
       isAlive: (pid) => alivePids.has(pid),
-      terminate(pid) {
+      async terminate(pid) {
         alivePids.delete(pid);
         return true;
       },
     };
 
-    expect(terminateWindowsProcessTree(100, ops)).toBe(false);
+    await expect(terminateWindowsProcessTree(100, ops)).resolves.toBe(false);
     expect(alivePids).toEqual(new Set());
+  });
+
+  it("does not block the host event loop while Windows process enumeration is pending", async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const ops: WindowsProcessTreeOps = {
+      snapshotDescendants: async () => {
+        await gate;
+        return { ok: true, pids: [] };
+      },
+      isAlive: () => false,
+      terminate: async () => true,
+    };
+
+    const stopping = terminateWindowsProcessTree(100, ops);
+    let microtaskRan = false;
+    await Promise.resolve().then(() => { microtaskRan = true; });
+    expect(microtaskRan).toBe(true);
+    release();
+    await expect(stopping).resolves.toBe(true);
   });
 
   it("drains stderr so a verbose CLI cannot block before producing stdout", async () => {
@@ -162,8 +245,11 @@ describe("managed Claude process spawning", () => {
         expect(alive(grandchildPid)).toBe(true);
 
         immediate.abort();
-        // abort() must not return while the old CLI tree can still race a
-        // replacement round against the same persisted session.
+        const stopPromise = (immediate.signal as AbortSignal & {
+          [PROCESS_TREE_STOP_PROMISE_KEY]?: Promise<boolean>;
+        })[PROCESS_TREE_STOP_PROMISE_KEY];
+        expect(stopPromise).toBeInstanceOf(Promise);
+        await expect(stopPromise).resolves.toBe(true);
         expect(parentPid && alive(parentPid)).toBe(false);
         expect(alive(grandchildPid!)).toBe(false);
         expect(
@@ -228,6 +314,11 @@ describe("managed Claude process spawning", () => {
         expect(alive(grandchildPid)).toBe(true);
 
         immediate.abort();
+        const stopPromise = (immediate.signal as AbortSignal & {
+          [PROCESS_TREE_STOP_PROMISE_KEY]?: Promise<boolean>;
+        })[PROCESS_TREE_STOP_PROMISE_KEY];
+        expect(stopPromise).toBeInstanceOf(Promise);
+        await expect(stopPromise).resolves.toBe(true);
         expect(alive(grandchildPid)).toBe(false);
         expect(
           (immediate.signal as AbortSignal & { [PROCESS_TREE_STOP_RESULT_KEY]?: boolean })[PROCESS_TREE_STOP_RESULT_KEY],

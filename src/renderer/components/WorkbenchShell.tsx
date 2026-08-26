@@ -216,6 +216,8 @@ export default function WorkbenchShell() {
   }, [activateScope, activeBookId, activeId, activeWorkspaceId, globalActiveId]);
   const timeline = activeId ? timelines[activeId] : undefined;
   const activeRunId = activeId ? runIds[activeId] ?? null : null;
+  const stopping = useConversations((s) => activeId ? s.stoppingById[activeId] === true : false);
+  const stopLocked = useConversations((s) => activeId ? s.stopLockedById[activeId] === true : false);
   const retryDraft = activeId ? pendingSends[activeId] : undefined;
   const queuedTurns = useConversations((s) => activeId ? s.queuedTurns[activeId] : undefined);
   // Model picker (轮 3 卡 F): the shell owns the subscription, InputArea renders.
@@ -545,6 +547,8 @@ export default function WorkbenchShell() {
                   ? (path) => workspace.releaseClipboardImage!(path)
                   : undefined}
                 busy={activeRunId !== null}
+                stopping={stopping}
+                stopLocked={stopLocked}
                 onStop={() => { if (activeId) void interrupt(activeId); }}
                 skills={enabledSkills}
                 workspaceFiles={workspaceFiles}

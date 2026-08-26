@@ -13,6 +13,7 @@ function makeFakeHost(): BridgeHost & { lastInvoke: { channel: string; req: unkn
       throw new Error(`unknown channel: ${String(channel)}`);
     },
     dispose() {},
+    async shutdown() {},
     inspect() { return undefined; },
   };
 }

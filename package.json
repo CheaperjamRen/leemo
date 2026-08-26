@@ -1,6 +1,6 @@
 {
   "name": "leemo",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "private": true,
   "type": "module",
   "main": "dist-electron/main.mjs",
@@ -43,6 +43,7 @@
     "verify:subagent-ui": "node scripts/verify-subagent-ui.mjs",
     "verify:packaged-computer-use": "node scripts/verify-packaged-computer-use.mjs",
     "verify:local-provider": "node scripts/verify-local-provider.mjs",
+    "verify:critical-runtime": "node scripts/verify-critical-runtime.mjs",
     "electron:dev": "node scripts/electron-dev.mjs",
     "electron:pack:base": "npm run verify:superpowers-bundle && npm run verify:bundled-skills && npm run verify:computer-runtime && npm run verify:electron-runtime && npm run build && npm run build:main && electron-builder",
     "electron:pack": "npm run verify:office-bundle:optional && npm run electron:pack:base",

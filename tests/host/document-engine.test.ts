@@ -8,6 +8,7 @@ import { strToU8, unzipSync, zipSync } from "fflate";
 import {
   DEFAULT_DOCUMENT_TEXT_LIMIT,
   DOCUMENT_INPUT_MAX_BYTES,
+  PDF_INPUT_MAX_BYTES,
   MAX_DOCUMENT_TEXT_LIMIT,
   DocumentToolError,
   createDocxBuffer,
@@ -188,11 +189,21 @@ describe("document engine contract", () => {
   it("refuses an oversized file from stat alone", async () => {
     const file = path.join(temporaryDirectory(), "huge.pdf");
     fs.writeFileSync(file, "%PDF-");
-    fs.truncateSync(file, DOCUMENT_INPUT_MAX_BYTES + 1);
+    fs.truncateSync(file, PDF_INPUT_MAX_BYTES + 1);
 
     await expect(readDocumentFile(file)).rejects.toMatchObject({
       code: "too_large",
-      userMessage: expect.stringContaining("30 MB"),
+      userMessage: expect.stringContaining("64 MB"),
+    });
+  });
+
+  it("allows a PDF larger than the Office limit to reach the parser", async () => {
+    const file = path.join(temporaryDirectory(), "large-but-supported.pdf");
+    fs.writeFileSync(file, "%PDF-1.4\ninvalid but within the PDF byte budget");
+    fs.truncateSync(file, DOCUMENT_INPUT_MAX_BYTES + 1);
+
+    await expect(readDocumentFile(file)).rejects.toMatchObject({
+      code: "corrupt",
     });
   });
 

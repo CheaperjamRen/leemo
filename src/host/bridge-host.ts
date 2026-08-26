@@ -113,7 +113,7 @@ import {
 import { probeMcpServer } from "./mcp-probe";
 import { ProviderRegistry } from "../gateway/registry";
 import { startGateway, type GatewayHandle } from "../gateway/server";
-import { formatPromptWithAttachments } from "./attachments";
+import { preparePromptWithAttachments } from "./attachments";
 import { providerApiKeyHeaderForKind, type CatalogEntry } from "./provider-catalog";
 import type { Bridge, ConversationHandle, ConversationRoundOptions } from "../bridge/pool";
 import type {
@@ -321,6 +321,8 @@ export interface BridgeHost {
     req: BridgeInvokeMap[K]["request"]
   ): Promise<BridgeInvokeMap[K]["response"]>;
   dispose(): void;
+  /** Await native child cleanup before application shutdown. */
+  shutdown(): Promise<void>;
   /** @internal test-only: reach into a conversation's ask MCP. */
   inspect(conversationId: string): { askMcp: AskUserMcp; memoryMcp?: MemoryMcp; mcpServerNames: string[]; systemPromptAppend?: string } | undefined;
 }
@@ -336,6 +338,9 @@ interface ConvRecord {
   skillAdminMcp?: SkillAdminMcp;
   memoryScope: MemoryScope;
   entry: CatalogEntry;
+  /** Semantic catalog fingerprint. A getter may clone entries every read; only
+   * actual runtime configuration changes should rebuild the persistent query. */
+  entryRuntimeSignature: string;
   /** Exact selected model; provider.models[0] is only the family default. */
   modelId: string;
   workspace: ConversationWorkspace;
@@ -372,6 +377,9 @@ interface ConvRecord {
   /** MCP ids last merged from encrypted user config. Internal ask/search MCPs
    * are intentionally absent so a refresh cannot delete them. */
   configuredMcpIds: Set<string>;
+  /** Canonical local files explicitly attached to the active turn. The
+   * document MCP reads this live set; arbitrary external paths remain denied. */
+  attachmentReadPaths: Set<string>;
   /** Host-owned turn lifecycle. The SDK can acknowledge abort without ever
    * yielding a terminal result (notably while Bash is active), so the UI must
    * not depend on a provider event to leave its running state. Object identity
@@ -388,12 +396,40 @@ interface ConvRecord {
     /** False means an owned child may still be writing. Preserve its private
      * cache for startup cleanup instead of racing it with reconciliation. */
     nativeCleanupSafe: boolean;
+    /** Shared barrier between the user-facing Stop IPC and drain finalization.
+     * File receipts and native-memory reconciliation may run only after it
+     * resolves true. A false result deliberately leaves the round locked. */
+    cleanup?: Promise<boolean>;
+    /** The interrupt IPC owns the visible terminal event for a user Stop. */
+    userStopRequested: boolean;
+    stopFailureReported: boolean;
+    /** Idempotent full-round settlement: cleanup barrier, file receipt, memory
+     * reconciliation, attachment revocation, then slot release. */
+    finalize: () => Promise<boolean>;
     finishFileChanges: () => Promise<void>;
   };
 }
 
 const PROCESS_STOP_UNCONFIRMED_MESSAGE =
   "未能确认后台命令已经停止。为避免继续写入，此对话已锁定；请关闭 Leemo 后检查任务管理器。";
+
+function canonicalRuntimeValue(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(canonicalRuntimeValue);
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>)
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([key, child]) => [key, canonicalRuntimeValue(child)]),
+    );
+  }
+  return value;
+}
+
+function catalogRuntimeSignature(entry: CatalogEntry): string {
+  return createHash("sha256")
+    .update(JSON.stringify(canonicalRuntimeValue(entry)))
+    .digest("hex");
+}
 
 const SUPERPOWERS_BOOTSTRAP = [
   "\n\n## 已启用的 Superpowers 开发流程",
@@ -928,6 +964,59 @@ export function createBridgeHost(deps: HostDeps): BridgeHost {
   }
 
   const conversations = new Map<string, ConvRecord>();
+  const teardownPromises = new Map<string, Promise<void>>();
+
+  async function interruptConversation(rec: ConvRecord): Promise<boolean> {
+    const accepted = await Promise.resolve(rec.handle.interrupt());
+    if (!accepted) return false;
+    return isClaudeAgentRecord(rec) ? rec.handle.waitForInterrupt?.() ?? true : true;
+  }
+
+  async function applyConfiguredModel(
+    rec: ConvRecord,
+    entry: CatalogEntry,
+    modelId: string,
+  ): Promise<void> {
+    if (!providerIsReady(entry)) throw new Error(setupMessage(entry, "。"));
+    await requireLiveSubscription(entry);
+    if (!entry.provider.models.includes(modelId)) {
+      throw new Error(`model "${modelId}" is not configured for provider "${entry.provider.id}"`);
+    }
+    if (entry.executionEngine !== rec.engine) {
+      throw new Error("这两个模型使用不同的本地执行方式，不能在同一条对话里无痕切换；请新建对话后再选择。");
+    }
+    if (isExternalAgentRecord(rec)) {
+      rec.handle.setModel(modelId);
+      rec.entry = entry;
+      rec.entryRuntimeSignature = catalogRuntimeSignature(entry);
+      rec.modelId = modelId;
+      return;
+    }
+    if (!isClaudeAgentRecord(rec)) throw new Error("当前对话的执行引擎不可用。");
+
+    const gatewayPort = entry.provider.apiFormat !== "anthropic"
+      ? (await ensureGateway())?.port
+      : undefined;
+    if (entry.provider.apiFormat !== "anthropic" && gatewayPort === undefined) {
+      throw new Error("OpenAI 兼容网关启动失败，请重试或切换 Anthropic 兼容服务商。");
+    }
+    rec.handle.setModel(entry.provider, modelId, gatewayPort);
+    rec.entry = entry;
+    rec.entryRuntimeSignature = catalogRuntimeSignature(entry);
+    rec.modelId = modelId;
+
+    const liveShim = providerNeedsAnthropicShim(entry, rec.personaCtx.webSearchEnabled)
+      ? await ensureSearchShim()
+      : undefined;
+    const shimServes = rec.personaCtx.webSearchEnabled
+      && liveShim !== undefined
+      && entry.provider.apiFormat === "anthropic";
+    rec.handle.setSearchShimPort(liveShim?.port);
+    applySearchCapabilityWiring(rec.extras, rec.personaCtx, chooseSearchWiring({
+      enabled: rec.personaCtx.webSearchEnabled,
+      shimServesThisConversation: shimServes,
+    }));
+  }
   let latestSkillSyncRequestId = 0;
 
   function bundledSkillForQualifiedName(name: string): BundledSkillDefinition | undefined {
@@ -1989,9 +2078,11 @@ export function createBridgeHost(deps: HostDeps): BridgeHost {
       && routeRootArtifactPath !== undefined
       ? { routeRootWritePath: routeRootArtifactPath }
       : {};
+    const attachmentReadPaths = new Set<string>();
     const documentMcp = createDocumentMcp({
       workspaceRoot: conversationWorkspace.root,
       cwd: conversationCwd,
+      allowedExternalReadPaths: () => attachmentReadPaths,
       ...rootWriteRouting,
     });
     const visualizationMcp = createVisualizationMcp({
@@ -2404,7 +2495,8 @@ export function createBridgeHost(deps: HostDeps): BridgeHost {
 
     const commonRecord = {
       purpose: isWiki ? "wiki" : "main",
-      broker, askMcp, memoryMcp, skillAdminMcp, memoryScope, entry, modelId: r.modelId,
+      broker, askMcp, memoryMcp, skillAdminMcp, memoryScope, entry,
+      entryRuntimeSignature: catalogRuntimeSignature(entry), modelId: r.modelId,
       workspace: conversationWorkspace,
       cwd: conversationCwd,
       // 轮 7 A3: keep the live containers so updateContext can rewrite them.
@@ -2413,6 +2505,7 @@ export function createBridgeHost(deps: HostDeps): BridgeHost {
       // already understands.
       extras, policy, personaCtx, notebookId: r.notebookId ?? undefined,
       configuredMcpIds: new Set(Object.keys(initialConfiguredMcps)),
+      attachmentReadPaths,
       nextRoundId: 0,
       queuedGuidanceFollowUp: false,
     } satisfies Omit<ConvRecord, "engine" | "handle" | "bridge">;
@@ -2617,12 +2710,24 @@ export function createBridgeHost(deps: HostDeps): BridgeHost {
 
     let resolveInterrupted!: () => void;
     const interrupted = new Promise<void>((resolve) => { resolveInterrupted = resolve; });
-    const round = {
+    let finalizeRound!: () => Promise<boolean>;
+    const round: NonNullable<ConvRecord["activeRound"]> = {
       id: ++rec.nextRoundId,
       interrupted,
       resolveInterrupted,
       nativeCleanupSafe: true,
+      userStopRequested: false,
+      stopFailureReported: false,
+      finalize: () => finalizeRound(),
       finishFileChanges,
+    };
+    const pushCleanupLock = (): void => {
+      if (round.stopFailureReported) return;
+      round.stopFailureReported = true;
+      push("bridge:event", {
+        conversationId: cid,
+        event: { type: "error", message: PROCESS_STOP_UNCONFIRMED_MESSAGE },
+      });
     };
     rec.activeRound = round;
     rec.memoryMcp?.beginRound(sourceMessageId);
@@ -2660,6 +2765,29 @@ export function createBridgeHost(deps: HostDeps): BridgeHost {
         console.error("[leemo:host] native memory reconciliation failed; ledger remains authoritative:", error);
       }
     };
+    let finalizePromise: Promise<boolean> | undefined;
+    finalizeRound = (): Promise<boolean> => {
+      finalizePromise ??= (async () => {
+        // A persistent transport may be retired by a model/settings hot refresh
+        // without going through the explicit Stop IPC. Its verified process-tree
+        // cleanup is still part of this turn's terminal barrier.
+        if (!round.cleanup && isClaudeAgentRecord(rec)) {
+          round.cleanup = rec.handle.waitForInterrupt?.();
+        }
+        const cleanupSafe = round.cleanup ? await round.cleanup.catch(() => false) : true;
+        if (!cleanupSafe) round.nativeCleanupSafe = false;
+        if (!round.nativeCleanupSafe) {
+          rec.attachmentReadPaths.clear();
+          return false;
+        }
+        await finishFileChanges();
+        reconcileRoundMemory();
+        rec.attachmentReadPaths.clear();
+        if (rec.activeRound === round) rec.activeRound = undefined;
+        return true;
+      })();
+      return finalizePromise;
+    };
 
     void (async () => {
       let iterator: AsyncIterator<LeemoEvent> | undefined;
@@ -2669,6 +2797,7 @@ export function createBridgeHost(deps: HostDeps): BridgeHost {
           : normalizeSdkStream(source, {
               providerId: entry.provider.id,
               modelId,
+              contextPolicy: entry.provider.modelContextPolicies?.[modelId],
               cwd: auditCwd,
               pricing,
               browserOutputDir: path.join(dataDir, "mcp", "playwright", "browser-output"),
@@ -2677,7 +2806,7 @@ export function createBridgeHost(deps: HostDeps): BridgeHost {
         const timeoutMs = Math.max(1, firstProgressTimeoutMs ?? 45_000);
         const timeoutMessage = `服务商在 ${Math.ceil(timeoutMs / 1_000)} 秒内没有返回可显示的内容，请检查网络和模型配置后重试。`;
         const interruptForTimeout = async (): Promise<Error> => {
-          const stopped = await Promise.resolve(handle.interrupt());
+          const stopped = await (round.cleanup ??= interruptConversation(rec));
           if (!stopped) round.nativeCleanupSafe = false;
           return new Error(stopped ? timeoutMessage : PROCESS_STOP_UNCONFIRMED_MESSAGE);
         };
@@ -2722,7 +2851,7 @@ export function createBridgeHost(deps: HostDeps): BridgeHost {
             }
           }
 
-          if (!next || rec.activeRound !== round) {
+          if (!next || rec.activeRound !== round || round.userStopRequested) {
             const closing = iterator.return?.();
             if (closing) void closing.catch(() => {});
             return;
@@ -2735,9 +2864,13 @@ export function createBridgeHost(deps: HostDeps): BridgeHost {
           }
           const ev = next.value;
           if (ev.type === "tool.started") await beginFileTracking(ev);
-          if (ev.type === "run.finished") reconcileRoundMemory();
-          if (ev.type === "run.finished") await finishFileChanges();
-          if (ev.type === "run.finished") rec.activeRound = undefined;
+          if (ev.type === "run.finished") {
+            const finalized = await round.finalize();
+            if (!finalized) {
+              pushCleanupLock();
+              return;
+            }
+          }
           push("bridge:event", { conversationId: cid, event: ev });
           if (ev.type === "run.finished") {
             const closing = iterator.return?.();
@@ -2756,13 +2889,15 @@ export function createBridgeHost(deps: HostDeps): BridgeHost {
         // trustworthy terminal event. Abort errors and late provider results
         // from it must never repaint that turn as failed or successful.
         if (rec.activeRound !== round) return;
-        await finishFileChanges();
-        rec.activeRound = undefined;
+        const finalized = await round.finalize();
+        if (round.userStopRequested) return;
+        if (!finalized) {
+          pushCleanupLock();
+          return;
+        }
         pushFailure(e);
       } finally {
-        await finishFileChanges();
-        reconcileRoundMemory();
-        if (rec.activeRound === round) rec.activeRound = undefined;
+        await round.finalize();
       }
     })();
   }
@@ -2790,14 +2925,42 @@ export function createBridgeHost(deps: HostDeps): BridgeHost {
     }
   }
 
-  function teardown(cid: string): void {
+  function teardownAsync(cid: string): Promise<void> {
+    const existing = teardownPromises.get(cid);
+    if (existing) return existing;
     const rec = conversations.get(cid);
-    if (!rec) return;
-    void rec.activeRound?.finishFileChanges();
-    rec.handle.dispose();
-    rec.bridge?.dispose();
-    releasePending(cid, "conversation disposed");
-    conversations.delete(cid);
+    if (!rec) return Promise.resolve();
+    const pending = (async () => {
+      // releasePending needs the live record to settle askMcp before removal.
+      releasePending(cid, "conversation disposed");
+      conversations.delete(cid);
+      rec.attachmentReadPaths.clear();
+      const round = rec.activeRound;
+      rec.handle.dispose();
+      const cleanup = isClaudeAgentRecord(rec)
+        ? rec.handle.waitForInterrupt?.() ?? Promise.resolve(true)
+        : Promise.resolve(true);
+      if (round) {
+        round.cleanup ??= cleanup;
+        round.resolveInterrupted();
+      }
+      const cleanupSafe = await cleanup.catch(() => false);
+      if (round) {
+        round.nativeCleanupSafe = cleanupSafe;
+        await round.finalize();
+      }
+      rec.bridge?.dispose();
+    })();
+    teardownPromises.set(cid, pending);
+    const forget = () => {
+      if (teardownPromises.get(cid) === pending) teardownPromises.delete(cid);
+    };
+    void pending.then(forget, forget);
+    return pending;
+  }
+
+  function teardown(cid: string): void {
+    void teardownAsync(cid);
   }
 
   function requireProviderStore(): ProviderConfigStore {
@@ -3305,13 +3468,30 @@ export function createBridgeHost(deps: HostDeps): BridgeHost {
         // stream. A rejected invoke gives the renderer a real acknowledgement
         // failure it can keep the draft for; failing inside drain would arrive
         // later as a generic event after the composer had already cleared.
-        const prompt = formatPromptWithAttachments(
+        if (rec.activeRound) {
+          throw new Error("cannot send() while a round is in progress (turns are sequential)");
+        }
+        const liveEntry = getCatalog().find((entry) => entry.provider.id === rec.entry.provider.id);
+        if (!liveEntry) throw new Error(`unknown provider: ${rec.entry.provider.id}`);
+        // Saving a provider rebuilds the catalog. Apply that new credential,
+        // endpoint and context policy exactly once on the next turn; ordinary
+        // turns keep the same handle and byte-stable cache prefix.
+        const liveSignature = catalogRuntimeSignature(liveEntry);
+        if (liveSignature !== rec.entryRuntimeSignature) {
+          await applyConfiguredModel(rec, liveEntry, rec.modelId);
+        } else {
+          rec.entry = liveEntry;
+        }
+        rec.attachmentReadPaths.clear();
+        const prepared = preparePromptWithAttachments(
           r.prompt,
           r.attachments,
           r.workspaceFiles,
           rec.workspace.root,
           rec.workspace.id,
         );
+        for (const filePath of prepared.readablePaths) rec.attachmentReadPaths.add(filePath);
+        const prompt = prepared.prompt;
         const promptWithNotes = formatPromptWithNoteReferences(prompt, r.noteReferences, captures);
         const promptWithGoal = formatPromptWithGoal(promptWithNotes, r.goalText);
         // A manual next message lets an engine consume its own queued guidance.
@@ -3342,25 +3522,32 @@ export function createBridgeHost(deps: HostDeps): BridgeHost {
         const r = req as BridgeInvokeMap["bridge:interrupt"]["request"];
         const rec = conversations.get(r.conversationId);
         const round = rec?.activeRound;
+        // Release a parked approval/question before aborting the child. That
+        // promise may be the only thing allowing the engine to unwind.
+        releasePending(r.conversationId, "interrupted by user");
         if (rec && round) {
           // Fence the round immediately and wake drain even if the SDK never
           // yields after abort. Do not publish the visible terminal yet: the UI
           // may only say "stopped" after the owned process tree is gone.
-          rec.activeRound = undefined;
+          round.userStopRequested = true;
+          round.cleanup ??= interruptConversation(rec);
           round.resolveInterrupted();
         }
-        // Order matters: release the parked approval/question FIRST, then abort.
-        // The round is usually blocked inside canUseTool, so settling that
-        // promise is what actually lets the turn unwind; the abort then stops
-        // whatever the SDK is still streaming.
-        releasePending(r.conversationId, "interrupted by user");
         const processTreeStopped = rec
-          ? await Promise.resolve(rec.handle.interrupt())
+          ? await (round?.cleanup ?? interruptConversation(rec))
           : true;
         if (!processTreeStopped && round) round.nativeCleanupSafe = false;
         if (rec && round) {
-          await round.finishFileChanges();
           if (processTreeStopped) {
+            const finalized = await round.finalize();
+            if (!finalized) {
+              const message = PROCESS_STOP_UNCONFIRMED_MESSAGE;
+              if (!round.stopFailureReported) {
+                round.stopFailureReported = true;
+                push("bridge:event", { conversationId: r.conversationId, event: { type: "error", message } });
+              }
+              return { state: "locked" } as R<"bridge:interrupt"> as R<K>;
+            }
             push("bridge:event", {
               conversationId: r.conversationId,
               event: {
@@ -3371,22 +3558,17 @@ export function createBridgeHost(deps: HostDeps): BridgeHost {
                 pathAudit: { claimed: [] },
               },
             });
+            return { state: "stopped" } as R<"bridge:interrupt"> as R<K>;
           } else {
             const message = PROCESS_STOP_UNCONFIRMED_MESSAGE;
-            push("bridge:event", { conversationId: r.conversationId, event: { type: "error", message } });
-            push("bridge:event", {
-              conversationId: r.conversationId,
-              event: {
-                type: "run.finished",
-                subtype: "error",
-                isError: true,
-                finalText: "",
-                pathAudit: { claimed: [] },
-              },
-            });
+            if (!round.stopFailureReported) {
+              round.stopFailureReported = true;
+              push("bridge:event", { conversationId: r.conversationId, event: { type: "error", message } });
+            }
+            return { state: "locked" } as R<"bridge:interrupt"> as R<K>;
           }
         }
-        return undefined as R<"bridge:interrupt"> as R<K>;
+        return { state: "idle" } as R<"bridge:interrupt"> as R<K>;
       }
 
       case "bridge:setModel": {
@@ -3395,47 +3577,7 @@ export function createBridgeHost(deps: HostDeps): BridgeHost {
         if (!rec) throw new Error(`unknown conversation: ${r.conversationId}`);
         const entry = getCatalog().find((candidate) => candidate.provider.id === r.providerId);
         if (!entry) throw new Error(`unknown provider: ${r.providerId}`);
-        if (!providerIsReady(entry)) {
-          throw new Error(setupMessage(entry, "。"));
-        }
-        await requireLiveSubscription(entry);
-        if (!entry.provider.models.includes(r.modelId)) {
-          throw new Error(`model "${r.modelId}" is not configured for provider "${r.providerId}"`);
-        }
-        if (entry.executionEngine !== rec.engine) {
-          throw new Error("这两个模型使用不同的本地执行方式，不能在同一条对话里无痕切换；请新建对话后再选择。");
-        }
-        if (isExternalAgentRecord(rec)) {
-          rec.handle.setModel(r.modelId);
-          rec.entry = entry;
-          rec.modelId = r.modelId;
-          return undefined as R<"bridge:setModel"> as R<K>;
-        }
-
-        const gatewayPort = entry.provider.apiFormat !== "anthropic"
-          ? (await ensureGateway())?.port
-          : undefined;
-        if (entry.provider.apiFormat !== "anthropic" && gatewayPort === undefined) {
-          throw new Error("OpenAI 兼容网关启动失败，请重试或切换 Anthropic 兼容服务商。");
-        }
-
-        const claudeHandle = rec.handle as ConversationHandle;
-        claudeHandle.setModel(entry.provider, r.modelId, gatewayPort);
-        rec.entry = entry;
-        rec.modelId = r.modelId;
-
-        const liveShim = providerNeedsAnthropicShim(entry, rec.personaCtx.webSearchEnabled)
-          ? await ensureSearchShim()
-          : undefined;
-        const shimServes = rec.personaCtx.webSearchEnabled
-          && liveShim !== undefined
-          && entry.provider.apiFormat === "anthropic";
-        claudeHandle.setSearchShimPort(liveShim?.port);
-        const wiring = chooseSearchWiring({
-          enabled: rec.personaCtx.webSearchEnabled,
-          shimServesThisConversation: shimServes,
-        });
-        applySearchCapabilityWiring(rec.extras, rec.personaCtx, wiring);
+        await applyConfiguredModel(rec, entry, r.modelId);
         return undefined as R<"bridge:setModel"> as R<K>;
       }
 
@@ -3525,7 +3667,7 @@ export function createBridgeHost(deps: HostDeps): BridgeHost {
 
       case "bridge:disposeConversation": {
         const r = req as BridgeInvokeMap["bridge:disposeConversation"]["request"];
-        teardown(r.conversationId);
+        await teardownAsync(r.conversationId);
         return undefined as R<"bridge:disposeConversation"> as R<K>;
       }
 
@@ -3794,6 +3936,15 @@ export function createBridgeHost(deps: HostDeps): BridgeHost {
     void gatewayPromise?.then((gateway) => gateway?.close()).catch(() => {});
   }
 
+  async function shutdown(): Promise<void> {
+    const started = [...conversations.keys()].map(teardownAsync);
+    await Promise.all([...started, ...teardownPromises.values()]);
+    await Promise.all([
+      shimPromise?.then((service) => service?.close()),
+      gatewayPromise?.then((gateway) => gateway?.close()),
+    ].filter((pending): pending is Promise<void> => pending !== undefined).map((pending) => pending.catch(() => {})));
+  }
+
   function inspect(conversationId: string): { askMcp: AskUserMcp; memoryMcp?: MemoryMcp; mcpServerNames: string[]; systemPromptAppend?: string } | undefined {
     const rec = conversations.get(conversationId);
     return rec
@@ -3806,5 +3957,5 @@ export function createBridgeHost(deps: HostDeps): BridgeHost {
       : undefined;
   }
 
-  return { handleInvoke, dispose, inspect };
+  return { handleInvoke, dispose, shutdown, inspect };
 }

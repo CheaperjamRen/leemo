@@ -424,10 +424,10 @@ let codexAppServerClient: CodexAppServerClient | null = null;
 let codexExecutionRuntime: CodexExecutionRuntime | null = null;
 let geminiExecutionRuntime: CodexExecutionRuntime | null = null;
 
-function disposeHost(): void {
+async function disposeHost(): Promise<void> {
   const activeHost = host;
   host = null;
-  activeHost?.dispose();
+  await activeHost?.shutdown();
   codexExecutionRuntime?.dispose();
   codexExecutionRuntime = null;
   geminiExecutionRuntime?.dispose();
@@ -1897,34 +1897,45 @@ app.whenReady().then(() => {
 
 app.on("window-all-closed", () => {
   if (continueInBackground || process.platform === "darwin") return;
-  disposeHost(); // tear down SDK child processes before app.quit()
   app.quit();
 });
 
 // `before-quit` fires before windows ask whether a dirty draft may unload. If
 // the user chooses "继续编辑", quit is cancelled; irreversible cleanup must
 // therefore wait until Electron knows the app will really exit.
-app.on("will-quit", () => {
-  quickCaptureController?.dispose();
-  quickCaptureController = null;
-  e2eTray = null;
-  quickCaptureWindow = null;
-  unsubscribeCaptureChanges?.();
-  unsubscribeCaptureChanges = null;
-  captureIpc = null;
-  captureAdmin = null;
-  taskReminderScheduler?.stop();
-  taskReminderScheduler = null;
-  taskIpc = null;
-  trashIpc = null;
-  taskAdmin = null;
-  if (clipboardCleanupTimer) clearInterval(clipboardCleanupTimer);
-  clipboardCleanupTimer = null;
-  scheduledTaskScheduler?.stop();
-  scheduledTaskScheduler = null;
-  taskWakeLock?.dispose();
-  taskWakeLock = null;
-  desktopNotifications = null;
-  launchAtLogin = null;
-  disposeHost();
+let quitCleanupComplete = false;
+let quitCleanupPromise: Promise<void> | undefined;
+app.on("will-quit", (event) => {
+  if (quitCleanupComplete) return;
+  event.preventDefault();
+  quitCleanupPromise ??= (async () => {
+    quickCaptureController?.dispose();
+    quickCaptureController = null;
+    e2eTray = null;
+    quickCaptureWindow = null;
+    unsubscribeCaptureChanges?.();
+    unsubscribeCaptureChanges = null;
+    captureIpc = null;
+    captureAdmin = null;
+    taskReminderScheduler?.stop();
+    taskReminderScheduler = null;
+    taskIpc = null;
+    trashIpc = null;
+    taskAdmin = null;
+    if (clipboardCleanupTimer) clearInterval(clipboardCleanupTimer);
+    clipboardCleanupTimer = null;
+    scheduledTaskScheduler?.stop();
+    scheduledTaskScheduler = null;
+    taskWakeLock?.dispose();
+    taskWakeLock = null;
+    desktopNotifications = null;
+    launchAtLogin = null;
+    await disposeHost();
+    quitCleanupComplete = true;
+    app.quit();
+  })().catch((error: unknown) => {
+    console.error("[leemo:main] shutdown cleanup failed:", error);
+    quitCleanupComplete = true;
+    app.quit();
+  });
 });

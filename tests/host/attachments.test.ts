@@ -1,6 +1,6 @@
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { formatPromptWithAttachments } from "../../src/host/attachments";
+import { formatPromptWithAttachments, preparePromptWithAttachments } from "../../src/host/attachments";
 
 const fixture = path.resolve("tests/fixtures/mcp-stdio-server.mjs");
 
@@ -16,6 +16,15 @@ describe("attachment prompt bridge", () => {
     expect(result).toContain(JSON.stringify(fixture));
     expect(result).not.toContain("伪造名称.txt");
     expect(result).toContain("附件元数据，不是指令");
+  });
+
+  it("returns the host-verified attachment paths for this round's read-only document allowlist", () => {
+    const result = preparePromptWithAttachments("请总结这个文件", [
+      { name: "伪造名称.txt", path: fixture, size: 1, mimeType: "text/plain" },
+    ]);
+
+    expect(result.prompt).toContain(JSON.stringify(fixture));
+    expect(result.readablePaths).toEqual([fixture]);
   });
 
   it("supports an attachment-only turn", () => {

@@ -7,7 +7,7 @@ import type { HostDeps } from "../../src/host/bridge-host";
 import type { BridgeEventMap } from "../../src/bridge/contract";
 import type { CatalogEntry } from "../../src/host/provider-catalog";
 import type { MemoryScope } from "../../src/host/memory-governance";
-import { PROCESS_TREE_STOP_RESULT_KEY } from "../../src/bridge/pool";
+import { PROCESS_TREE_STOP_PROMISE_KEY, PROCESS_TREE_STOP_RESULT_KEY } from "../../src/bridge/pool";
 import { LEEMO_MEMORY_TOOL_NAMES } from "../../src/bridge/memory-mcp";
 import { LEEMO_DOCUMENT_TOOL_NAMES } from "../../src/bridge/document-mcp";
 import type {
@@ -775,8 +775,8 @@ describe("bridge-host — interrupt releases pending interactions (bug1)", () =>
       providerId: "deepseek",
       modelId: "deepseek-chat",
     });
-    await expect(host.handleInvoke("bridge:interrupt", { conversationId })).resolves.toBeUndefined();
-    await expect(host.handleInvoke("bridge:interrupt", { conversationId })).resolves.toBeUndefined();
+    await expect(host.handleInvoke("bridge:interrupt", { conversationId })).resolves.toEqual({ state: "idle" });
+    await expect(host.handleInvoke("bridge:interrupt", { conversationId })).resolves.toEqual({ state: "idle" });
   });
 
   it("finishes an active round locally and ignores provider events that arrive after interrupt", async () => {
@@ -845,8 +845,8 @@ describe("bridge-host — interrupt releases pending interactions (bug1)", () =>
       expect(events).toContainEqual(expect.objectContaining({ type: "tool.started" }));
     });
 
-    await host.handleInvoke("bridge:interrupt", { conversationId });
-    await host.handleInvoke("bridge:interrupt", { conversationId });
+    await expect(host.handleInvoke("bridge:interrupt", { conversationId })).resolves.toEqual({ state: "stopped" });
+    await expect(host.handleInvoke("bridge:interrupt", { conversationId })).resolves.toEqual({ state: "idle" });
 
     const eventsAfterInterrupt = pushed
       .filter((entry) => entry.channel === "bridge:event")
@@ -912,22 +912,104 @@ describe("bridge-host — interrupt releases pending interactions (bug1)", () =>
       expect(events).toContainEqual(expect.objectContaining({ type: "tool.started" }));
     });
 
-    await host.handleInvoke("bridge:interrupt", { conversationId });
-    await host.handleInvoke("bridge:interrupt", { conversationId });
+    await expect(host.handleInvoke("bridge:interrupt", { conversationId })).resolves.toEqual({ state: "locked" });
+    await expect(host.handleInvoke("bridge:interrupt", { conversationId })).resolves.toEqual({ state: "locked" });
     const events = pushed
       .filter((entry) => entry.channel === "bridge:event")
       .map((entry) => (entry.payload as { event: { type: string; subtype?: string; message?: string } }).event);
-    expect(events.filter((event) => event.type === "run.finished")).toEqual([
-      expect.objectContaining({ type: "run.finished", subtype: "error" }),
-    ]);
+    expect(events.filter((event) => event.type === "run.finished")).toEqual([]);
     expect(events).toContainEqual(expect.objectContaining({
       type: "error",
       message: expect.stringContaining("此对话已锁定"),
     }));
+    expect(events.filter((event) => event.type === "error" && event.message?.includes("此对话已锁定"))).toHaveLength(1);
     await expect(
       host.handleInvoke("bridge:send", { conversationId, prompt: "must not unlock" }),
     ).rejects.toThrow("in progress");
     release();
+  });
+
+  it("waits for verified native cleanup before host shutdown resolves", async () => {
+    let releaseCleanup!: (stopped: boolean) => void;
+    const cleanup = new Promise<boolean>((resolve) => { releaseCleanup = resolve; });
+    const { deps, pushed } = makeDeps((params) =>
+      (async function* () {
+        const signal = (params.options as { abortController?: AbortController }).abortController?.signal;
+        signal?.addEventListener("abort", () => {
+          (signal as AbortSignal & { [PROCESS_TREE_STOP_PROMISE_KEY]?: Promise<boolean> })
+            [PROCESS_TREE_STOP_PROMISE_KEY] = cleanup;
+        }, { once: true });
+        yield { type: "system", subtype: "init", session_id: "shutdown-pending" };
+        await new Promise(() => undefined);
+      })() as never,
+    );
+    const host = createBridgeHost(deps);
+    const { conversationId } = await host.handleInvoke("bridge:createConversation", {
+      providerId: "deepseek",
+      modelId: "deepseek-chat",
+    });
+    await host.handleInvoke("bridge:send", { conversationId, prompt: "keep running" });
+    await vi.waitFor(() => expect(pushed.some((entry) =>
+      entry.channel === "bridge:event"
+      && (entry.payload as { event?: { type?: string } }).event?.type === "conversation.started")).toBe(true));
+
+    let settled = false;
+    host.dispose();
+    const shuttingDown = host.shutdown().then(() => { settled = true; });
+    await Promise.resolve();
+    expect(settled).toBe(false);
+    releaseCleanup(true);
+    await shuttingDown;
+    expect(settled).toBe(true);
+  });
+
+  it("emits interrupted-round memory receipts before the stopped terminal", async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const { deps, pushed } = makeDeps(() => (async function* () {
+      yield { type: "system", subtype: "init", session_id: "stop-memory" };
+      await gate;
+    })() as never);
+    const memoryRecord = {
+      id: "memory-stop",
+      scope: { type: "global" as const },
+      kind: "preference" as const,
+      topic: "回答方式",
+      statement: "用户希望终止前完成记忆收尾",
+      learnedAt: 1,
+      lastConfirmedAt: 1,
+      sourceType: "explicit-user" as const,
+      sourceConversationId: "conversation-stop",
+      sourceMessageId: "u-stop",
+      status: "current" as const,
+      pinned: false,
+    };
+    const memoryGovernance = {
+      prepareNative: vi.fn(() => ({ scope: { type: "global" }, currentView: "" })),
+      reconcileNative: vi.fn(() => ({
+        changes: [{ changeId: "change-stop", action: "remembered", label: memoryRecord.statement, record: memoryRecord }],
+        diagnostics: [],
+      })),
+    } as unknown as NonNullable<HostDeps["memoryGovernance"]>;
+    const host = createBridgeHost({ ...deps, memoryGovernance });
+    const { conversationId } = await host.handleInvoke("bridge:createConversation", {
+      providerId: "deepseek",
+      modelId: "deepseek-chat",
+    });
+    await host.handleInvoke("bridge:send", { conversationId, prompt: "start", sourceMessageId: "u-stop" });
+    await vi.waitFor(() => expect(pushed.some((entry) =>
+      entry.channel === "bridge:event"
+      && (entry.payload as { event?: { type?: string } }).event?.type === "conversation.started")).toBe(true));
+
+    await host.handleInvoke("bridge:interrupt", { conversationId });
+
+    const events = pushed
+      .filter((entry) => entry.channel === "bridge:event")
+      .map((entry) => (entry.payload as { event: { type: string } }).event);
+    expect(events.findIndex((event) => event.type === "memory.changed"))
+      .toBeLessThan(events.findIndex((event) => event.type === "run.finished"));
+    release();
+    await host.shutdown();
   });
 
   it("fails a pending ask_user card on interrupt too", async () => {
@@ -951,9 +1033,139 @@ describe("bridge-host — interrupt releases pending interactions (bug1)", () =>
     const res = (await asked) as { isError?: boolean };
     expect(res.isError).toBe(true);
   });
+
+  it("settles a pending ask_user card before disposing its conversation record", async () => {
+    const { deps } = makeDeps((_p) => (async function* () {
+      yield { type: "result", subtype: "success", result: "", is_error: false };
+    })() as never);
+    const host = createBridgeHost(deps);
+    const { conversationId } = await host.handleInvoke("bridge:createConversation", {
+      providerId: "deepseek",
+      modelId: "deepseek-chat",
+    });
+    const asked = host.inspect(conversationId)!.askMcp.handle({
+      questions: [{ question: "pick", header: "h", options: [{ label: "a" }], multiSelect: false }],
+    });
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    await host.handleInvoke("bridge:disposeConversation", { conversationId });
+
+    await expect(asked).resolves.toMatchObject({ isError: true });
+  });
 });
 
 describe("bridge-host — provider and model switch stay aligned", () => {
+  it("keeps a persistent conversation across cloned catalog reads and rebuilds it once after a real hot-save", async () => {
+    let liveCatalog = makeCatalog();
+    let queryStarts = 0;
+    const { deps, pushed } = makeDeps(((params: { prompt: AsyncIterable<unknown> }) => {
+      queryStarts += 1;
+      return (async function* () {
+        let turn = 0;
+        for await (const _input of params.prompt) {
+          turn += 1;
+          yield { type: "system", subtype: "init", session_id: "stable-session" };
+          yield {
+            type: "assistant",
+            session_id: "stable-session",
+            parent_tool_use_id: null,
+            message: { content: [{ type: "text", text: `turn ${turn}` }] },
+          };
+          yield { type: "result", subtype: "success", result: `turn ${turn}`, is_error: false, session_id: "stable-session" };
+          yield { type: "system", subtype: "session_state_changed", state: "idle", session_id: "stable-session" };
+        }
+      })() as never;
+    }) as never);
+    const host = createBridgeHost({
+      ...deps,
+      catalog: () => liveCatalog.map((entry) => structuredClone(entry)),
+    });
+    const { conversationId } = await host.handleInvoke("bridge:createConversation", {
+      providerId: "deepseek",
+      modelId: "deepseek-chat",
+    });
+    const finishedCount = () => pushed.filter((entry) =>
+      entry.channel === "bridge:event"
+      && (entry.payload as { event?: { type?: string } }).event?.type === "run.finished").length;
+
+    await host.handleInvoke("bridge:send", { conversationId, prompt: "one" });
+    await vi.waitFor(() => expect(finishedCount()).toBe(1));
+    await host.handleInvoke("bridge:send", { conversationId, prompt: "two" });
+    await vi.waitFor(() => expect(finishedCount()).toBe(2));
+    expect(queryStarts).toBe(1);
+
+    liveCatalog = liveCatalog.map((entry) => ({
+      ...entry,
+      provider: { ...entry.provider, apiKey: "hot-saved-key" },
+    }));
+    await host.handleInvoke("bridge:send", { conversationId, prompt: "three" });
+    await vi.waitFor(() => expect(finishedCount()).toBe(3));
+    expect(queryStarts).toBe(2);
+    await host.shutdown();
+  });
+
+  it("keeps the turn locked when hot-refresh cannot verify retirement of the old process", async () => {
+    let liveCatalog = makeCatalog();
+    let queryStarts = 0;
+    let firstSignal: AbortSignal | undefined;
+    const { deps, pushed } = makeDeps(((params: {
+      prompt: AsyncIterable<unknown>;
+      options?: { abortController?: AbortController };
+    }) => {
+      queryStarts += 1;
+      if (queryStarts === 1) {
+        firstSignal = params.options?.abortController?.signal;
+        firstSignal?.addEventListener("abort", () => {
+          (firstSignal as AbortSignal & { [PROCESS_TREE_STOP_RESULT_KEY]?: boolean })
+            [PROCESS_TREE_STOP_RESULT_KEY] = false;
+        }, { once: true });
+      }
+      return (async function* () {
+        for await (const _input of params.prompt) {
+          yield { type: "system", subtype: "init", session_id: "failed-retirement-session" };
+          yield { type: "result", subtype: "success", result: "done", is_error: false, session_id: "failed-retirement-session" };
+          yield { type: "system", subtype: "session_state_changed", state: "idle", session_id: "failed-retirement-session" };
+        }
+      })() as never;
+    }) as never);
+    const host = createBridgeHost({
+      ...deps,
+      catalog: () => liveCatalog.map((entry) => structuredClone(entry)),
+    });
+    const { conversationId } = await host.handleInvoke("bridge:createConversation", {
+      providerId: "deepseek",
+      modelId: "deepseek-chat",
+    });
+    const events = () => pushed
+      .filter((entry) => entry.channel === "bridge:event")
+      .map((entry) => (entry.payload as {
+        event: { type: string; message?: string; subtype?: string };
+      }).event);
+
+    await host.handleInvoke("bridge:send", { conversationId, prompt: "one" });
+    await vi.waitFor(() => expect(events().filter((event) => event.type === "run.finished")).toHaveLength(1));
+
+    liveCatalog = liveCatalog.map((entry) => ({
+      ...entry,
+      provider: { ...entry.provider, apiKey: "hot-saved-key" },
+    }));
+    await host.handleInvoke("bridge:send", { conversationId, prompt: "two" });
+    await vi.waitFor(() => {
+      expect(events()).toContainEqual(expect.objectContaining({
+        type: "error",
+        message: expect.stringContaining("此对话已锁定"),
+      }));
+    });
+
+    expect(firstSignal?.aborted).toBe(true);
+    expect(queryStarts).toBe(1);
+    expect(events().filter((event) => event.type === "run.finished")).toHaveLength(1);
+    await expect(
+      host.handleInvoke("bridge:send", { conversationId, prompt: "must stay locked" }),
+    ).rejects.toThrow("in progress");
+    await host.shutdown();
+  });
+
   it("routes the next round through the selected provider and attributes usage to the selected model", async () => {
     const deepseek = makeCatalog()[0]!;
     const qwen: CatalogEntry = {
@@ -1071,7 +1283,7 @@ describe("bridge-host — provider and model switch stay aligned", () => {
       expect(seen[1]).toMatchObject({
         ANTHROPIC_BASE_URL: expect.stringMatching(/^http:\/\/127\.0\.0\.1:\d+$/),
         ANTHROPIC_AUTH_TOKEN: "leemo-gw:relay-switch",
-        ANTHROPIC_MODEL: "claude-relay-main",
+        ANTHROPIC_MODEL: "relay-main",
       });
     } finally {
       host.dispose();
@@ -3067,8 +3279,8 @@ describe("bridge-host — skills (轮 2 卡 E)", () => {
 
       expect(env.ANTHROPIC_BASE_URL).toMatch(/^http:\/\/127\.0\.0\.1:\d+$/);
       expect(env.ANTHROPIC_AUTH_TOKEN).toBe("leemo-gw:relay-owned");
-      expect(env.ANTHROPIC_MODEL).toBe("claude-relay-main");
-      expect(env.ANTHROPIC_DEFAULT_HAIKU_MODEL).toBe("claude-relay-mini");
+      expect(env.ANTHROPIC_MODEL).toBe("relay-main");
+      expect(env.ANTHROPIC_DEFAULT_HAIKU_MODEL).toBe("relay-mini");
       await expect(fetch(`${env.ANTHROPIC_BASE_URL}/health`).then((response) => response.json()))
         .resolves.toEqual({ status: "ok" });
     } finally {
@@ -3499,7 +3711,7 @@ describe("bridge-host", () => {
         type: "error",
         message: expect.stringContaining("此对话已锁定"),
       }));
-      expect(events).toContainEqual(expect.objectContaining({ type: "run.finished" }));
+      expect(events.some((event) => event.type === "run.finished")).toBe(false);
     }, { timeout: 500 });
     await expect(
       host.handleInvoke("bridge:send", { conversationId, prompt: "must remain locked" }),
@@ -3508,10 +3720,8 @@ describe("bridge-host", () => {
   });
 
   it("does not apply the first-progress deadline after real tool work has started", async () => {
-    let controller: AbortController | undefined;
-    const { deps, pushed } = makeDeps((params) =>
+    const { deps, pushed } = makeDeps((_params) =>
       (async function* () {
-        controller = (params.options as { abortController?: AbortController }).abortController;
         yield { type: "system", subtype: "init", session_id: "long-tool-session" };
         yield {
           type: "assistant",
@@ -3537,7 +3747,10 @@ describe("bridge-host", () => {
       expect(events).toContainEqual(expect.objectContaining({ type: "tool.started" }));
       expect(events).toContainEqual(expect.objectContaining({ type: "run.finished", isError: false }));
     }, { timeout: 500 });
-    expect(controller?.signal.aborted).toBe(false);
+    const events = pushed
+      .filter((entry) => entry.channel === "bridge:event")
+      .map((entry) => (entry.payload as { event: { type: string } }).event);
+    expect(events.some((event) => event.type === "error")).toBe(false);
   });
 
   it("approval round-trip: canUseTool → approvalRequest push → approvalDecision → allow", async () => {

@@ -1106,6 +1106,62 @@ describe("normalizeSdkStream — Claude Agent SDK 0.3.227 structured status", ()
     expect(JSON.stringify(events)).not.toMatch(/Claude Code|overloaded_error|API Error/i);
   });
 
+  it("keeps a configuration-shaped 400 terminal and non-retryable", async () => {
+    const messages = [{
+      type: "result",
+      subtype: "error_during_execution",
+      is_error: true,
+      api_error_status: 400,
+      errors: ["API Error: 400 invalid request"],
+      result: "",
+      usage: resultUsage,
+      modelUsage: {},
+      permission_denials: [],
+      session_id: "status-400",
+    }] as unknown as TestMsgB2[];
+
+    const events = await drain(normalizeSdkStream(fakeStream(messages), {
+      providerId: "custom",
+      modelId: "configured-model",
+      cwd: CWD,
+    }));
+
+    expect(events.at(-1)).toMatchObject({
+      type: "run.finished",
+      outcome: "failed",
+      retryable: false,
+      statusCode: 400,
+      isError: true,
+    });
+  });
+
+  it("detects a terminal 400 carried only in the legacy result text", async () => {
+    const messages = [{
+      type: "result",
+      subtype: "error_during_execution",
+      is_error: true,
+      result: "API Error: 400 invalid request",
+      usage: resultUsage,
+      modelUsage: {},
+      permission_denials: [],
+      session_id: "legacy-status-400",
+    }] as unknown as TestMsgB2[];
+
+    const events = await drain(normalizeSdkStream(fakeStream(messages), {
+      providerId: "custom",
+      modelId: "configured-model",
+      cwd: CWD,
+    }));
+
+    expect(events.at(-1)).toMatchObject({
+      type: "run.finished",
+      outcome: "failed",
+      retryable: false,
+      statusCode: 400,
+      isError: true,
+    });
+  });
+
   it("does not turn a recovered api_error_status on a success result into a failed run", async () => {
     const messages = [{
       type: "result",
@@ -1450,6 +1506,103 @@ describe("normalizeSdkStream — Claude Agent SDK 0.3.227 structured status", ()
       isAutoCompactEnabled: true,
       providerId: "kimi",
       model: "kimi-k3",
+    }]);
+  });
+
+  it("keeps the selected provider/model identity on an exact configured runtime snapshot", async () => {
+    const events = await drain(normalizeSdkStream(fakeStream([{
+      type: "leemo_context_snapshot",
+      contextUsage: {
+        totalTokens: 41_000,
+        maxTokens: 950_000,
+        rawMaxTokens: 1_000_000,
+        percentage: 20.5,
+        model: "claude-deepseek-v4-flash",
+        isAutoCompactEnabled: true,
+        autoCompactThreshold: 950_000,
+      },
+    }] as unknown as TestMsgB2[]), {
+      providerId: "tokenflux",
+      modelId: "deepseek-v4-flash",
+      cwd: CWD,
+    }));
+
+    expect(events).toEqual([{
+      type: "context.snapshot",
+      currentTokens: 41_000,
+      maxTokens: 950_000,
+      rawMaxTokens: 1_000_000,
+      autoCompactThreshold: 950_000,
+      isAutoCompactEnabled: true,
+      providerId: "tokenflux",
+      model: "deepseek-v4-flash",
+    }]);
+  });
+
+  it("preserves a runtime 200K report instead of relabelling it as the configured 1M target", async () => {
+    const events = await drain(normalizeSdkStream(fakeStream([{
+      type: "leemo_context_snapshot",
+      contextUsage: {
+        totalTokens: 41_000,
+        maxTokens: 200_000,
+        rawMaxTokens: 200_000,
+        percentage: 20.5,
+        model: "claude-deepseek-v4-flash",
+        isAutoCompactEnabled: true,
+        autoCompactThreshold: 167_000,
+      },
+    }] as unknown as TestMsgB2[]), {
+      providerId: "tokenflux",
+      modelId: "deepseek-v4-flash",
+      contextPolicy: {
+        contextWindowTokens: 1_000_000,
+        autoCompactWindowTokens: 950_000,
+      },
+      cwd: CWD,
+    }));
+
+    expect(events).toEqual([{
+      type: "context.snapshot",
+      currentTokens: 41_000,
+      maxTokens: 200_000,
+      rawMaxTokens: 200_000,
+      autoCompactThreshold: 167_000,
+      isAutoCompactEnabled: true,
+      providerId: "tokenflux",
+      model: "deepseek-v4-flash",
+    }]);
+  });
+
+  it("keeps an applied compact window separate from the configured model ceiling", async () => {
+    const events = await drain(normalizeSdkStream(fakeStream([{
+      type: "leemo_context_snapshot",
+      contextUsage: {
+        totalTokens: 41_000,
+        maxTokens: 950_000,
+        rawMaxTokens: 950_000,
+        model: "deepseek-v4-flash",
+        isAutoCompactEnabled: true,
+        autoCompactThreshold: 917_000,
+      },
+    }] as unknown as TestMsgB2[]), {
+      providerId: "tokenflux",
+      modelId: "deepseek-v4-flash",
+      contextPolicy: {
+        contextWindowTokens: 1_000_000,
+        autoCompactWindowTokens: 950_000,
+      },
+      cwd: CWD,
+    }));
+
+    expect(events).toEqual([{
+      type: "context.snapshot",
+      currentTokens: 41_000,
+      maxTokens: 950_000,
+      rawMaxTokens: 1_000_000,
+      autoCompactThreshold: 917_000,
+      isAutoCompactEnabled: true,
+      providerId: "tokenflux",
+      model: "deepseek-v4-flash",
     }]);
   });
 });

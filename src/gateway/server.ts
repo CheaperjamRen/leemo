@@ -170,13 +170,17 @@ async function handleMessages(
     sendError(res, 400, "invalid_request_error", `request translation failed: ${errMessage(e)}`);
     return;
   }
-  // buildConversationEnv disguises every raw model as `claude-<raw>` so the
-  // Claude SDK accepts third-party ids. Restore the exact conversation/role
-  // choice here; the registry model is only a compatibility fallback.
-  const disguisedModel = anthropicReq.model?.trim();
-  openaiBody.model = disguisedModel?.startsWith("claude-") && disguisedModel.length > "claude-".length
-    ? disguisedModel.slice("claude-".length)
-    : provider.model;
+  // New runtimes accept a raw third-party id and then honor its configured
+  // context-window env. Older sessions may still resume with the historical
+  // `claude-` disguise, so accept both spellings at this boundary.
+  const requestedModel = anthropicReq.model?.trim();
+  const exactConfiguredModel = requestedModel !== undefined
+    && new Set([provider.model, ...(provider.models ?? [])]).has(requestedModel);
+  openaiBody.model = !exactConfiguredModel
+    && requestedModel?.startsWith("claude-")
+    && requestedModel.length > "claude-".length
+    ? requestedModel.slice("claude-".length)
+    : requestedModel || provider.model;
   if (stripped.length) {
     registry.logger.info(`stripped ${stripped.length} server tool(s): ${stripped.map((t) => t.name ?? t.type ?? "?").join(", ")}`);
   }

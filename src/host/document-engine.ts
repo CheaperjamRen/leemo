@@ -102,6 +102,7 @@ export interface AtomicWriteIO {
 }
 
 export const DOCUMENT_INPUT_MAX_BYTES = 30 * 1024 * 1024;
+export const PDF_INPUT_MAX_BYTES = 64 * 1024 * 1024;
 export const DEFAULT_DOCUMENT_TEXT_LIMIT = 50_000;
 export const MAX_DOCUMENT_TEXT_LIMIT = 100_000;
 const MIN_DOCUMENT_TEXT_LIMIT = 1_000;
@@ -318,6 +319,8 @@ export async function readDocumentFile(
 ): Promise<DocumentReadResult> {
   const kind = documentKindFromPath(filePath);
   const normalized = normalizeReadOptions(options);
+  const inputLimit = kind === "pdf" ? PDF_INPUT_MAX_BYTES : DOCUMENT_INPUT_MAX_BYTES;
+  const inputLimitLabel = kind === "pdf" ? "64 MB" : "30 MB";
 
   let stat;
   try {
@@ -326,8 +329,8 @@ export async function readDocumentFile(
     throw asIoError(filePath, error);
   }
   if (!stat.isFile()) throw asIoError(filePath, new Error("not a file"));
-  if (stat.size > DOCUMENT_INPUT_MAX_BYTES) {
-    throw new DocumentToolError("too_large", "这份文件超过 30 MB，当前版本暂不读取。");
+  if (stat.size > inputLimit) {
+    throw new DocumentToolError("too_large", `这份文件超过 ${inputLimitLabel}，当前版本暂不读取。`);
   }
   if (stat.size === 0) {
     throw new DocumentToolError("corrupt", "这份文件是空的，无法解析。");
@@ -339,8 +342,8 @@ export async function readDocumentFile(
   } catch (error) {
     throw asIoError(filePath, error);
   }
-  if (buffer.byteLength > DOCUMENT_INPUT_MAX_BYTES) {
-    throw new DocumentToolError("too_large", "这份文件超过 30 MB，当前版本暂不读取。");
+  if (buffer.byteLength > inputLimit) {
+    throw new DocumentToolError("too_large", `这份文件超过 ${inputLimitLabel}，当前版本暂不读取。`);
   }
 
   return readDocumentBuffer(buffer, kind, normalized);

@@ -30,6 +30,7 @@ export interface ResolvedProvider {
   baseUrl: string;
   apiKey: string;
   model: string;
+  models?: string[];
   apiFormat: "openai" | "openai-responses";
   headers?: Record<string, string>;
   opts: Partial<ProviderOpts>;
@@ -108,6 +109,7 @@ export class ProviderRegistry {
       baseUrl: rec.baseUrl,
       apiKey: rec.apiKey,
       model: rec.model,
+      ...(rec.models ? { models: [...rec.models] } : {}),
       apiFormat: rec.apiFormat,
       ...(rec.headers ? { headers: { ...rec.headers } } : {}),
       opts: rec.opts ?? {},

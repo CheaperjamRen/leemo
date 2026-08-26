@@ -22,6 +22,16 @@
 
 import type { ProviderApiFormat, ProviderAuthMode } from "./contract";
 
+/** Validation contract shared by Settings persistence and runtime env wiring. */
+export const MIN_CONTEXT_WINDOW_TOKENS = 8_000;
+export const MAX_CONTEXT_WINDOW_TOKENS = 2_000_000;
+export const MIN_AUTO_COMPACT_WINDOW_TOKENS = 8_000;
+export const MAX_AUTO_COMPACT_WINDOW_TOKENS = 1_000_000;
+
+export function validIntegerInRange(value: unknown, min: number, max: number): value is number {
+  return typeof value === "number" && Number.isInteger(value) && value >= min && value <= max;
+}
+
 /** Per-model capability flags (06 §3.1). */
 export interface ModelCapabilities {
   thinking: boolean;
@@ -121,6 +131,8 @@ const HARNESS_ENV_OVERRIDE_NAMES = new Set([
   "CLAUDE_CODE_USE_VERTEX",
   "CLAUDE_CODE_USE_FOUNDRY",
   "CLAUDE_CODE_SUBAGENT_MODEL",
+  "CLAUDE_CODE_MAX_CONTEXT_TOKENS",
+  "CLAUDE_CODE_AUTO_COMPACT_WINDOW",
 ]);
 
 /** True if an env var name looks like it carries a secret. */
@@ -181,9 +193,10 @@ export function buildConversationEnv(
   // 详见 src/host/search-shim.ts 顶部注释。
   const shim = !nativeSubscription && !gateway && searchShimPort !== undefined;
 
-  // Direct/shim sends raw model ids. Gateway disguises each raw id with a
-  // claude- prefix, then restores it before the OpenAI upstream call.
-  const slotDefault = gateway ? `claude-${modelId}` : modelId;
+  // Keep the real model id in every wiring mode. Unknown third-party ids are
+  // how the Harness applies CLAUDE_CODE_MAX_CONTEXT_TOKENS; a `claude-` disguise
+  // makes it assume the built-in 200K family window instead.
+  const slotDefault = modelId;
 
   let baseUrl: string | undefined;
   let authToken: string | undefined;
@@ -238,27 +251,37 @@ export function buildConversationEnv(
       continue;
     }
     const pinned = provider.envTemplate[slot]?.trim();
-    env[slot] = pinned ? (gateway ? `claude-${pinned}` : pinned) : slotDefault;
+    env[slot] = pinned || slotDefault;
   }
 
   const subagentModel = provider.envTemplate.CLAUDE_CODE_SUBAGENT_MODEL?.trim();
   if (subagentModel) {
-    env.CLAUDE_CODE_SUBAGENT_MODEL = gateway ? `claude-${subagentModel}` : subagentModel;
+    env.CLAUDE_CODE_SUBAGENT_MODEL = subagentModel;
   }
 
   const contextPolicy = provider.modelContextPolicies?.[modelId];
   const modelMaximum = contextPolicy?.contextWindowTokens;
   const requestedCompactWindow = contextPolicy?.autoCompactWindowTokens ?? modelMaximum;
   if (
-    Number.isInteger(requestedCompactWindow)
-    && requestedCompactWindow !== undefined
-    && requestedCompactWindow >= 100_000
-    && requestedCompactWindow <= 1_000_000
+    validIntegerInRange(modelMaximum, MIN_CONTEXT_WINDOW_TOKENS, MAX_CONTEXT_WINDOW_TOKENS)
   ) {
-    const effectiveWindow = Number.isInteger(modelMaximum) && modelMaximum !== undefined
+    env.CLAUDE_CODE_MAX_CONTEXT_TOKENS = String(modelMaximum);
+  }
+  if (
+    validIntegerInRange(
+      requestedCompactWindow,
+      MIN_AUTO_COMPACT_WINDOW_TOKENS,
+      MAX_AUTO_COMPACT_WINDOW_TOKENS,
+    )
+  ) {
+    const effectiveWindow = validIntegerInRange(
+      modelMaximum,
+      MIN_CONTEXT_WINDOW_TOKENS,
+      MAX_CONTEXT_WINDOW_TOKENS,
+    )
       ? Math.min(requestedCompactWindow, modelMaximum)
       : requestedCompactWindow;
-    if (effectiveWindow >= 100_000) {
+    if (effectiveWindow >= MIN_AUTO_COMPACT_WINDOW_TOKENS) {
       env.CLAUDE_CODE_AUTO_COMPACT_WINDOW = String(effectiveWindow);
     }
   }

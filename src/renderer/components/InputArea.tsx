@@ -10,6 +10,7 @@ import {
   CornerUpRight,
   FileText,
   LoaderCircle,
+  LockKeyhole,
   Paperclip,
   Pause,
   Pencil,
@@ -124,6 +125,8 @@ export interface InputAreaProps {
   onRetry?: () => void | Promise<void>;
   onDismissRetry?: () => void;
   busy?: boolean;
+  stopping?: boolean;
+  stopLocked?: boolean;
   onStop?: () => void;
   /** ENABLED skills, for the `/` menu. Passed in rather than pulled from the
    *  store so this component stays usable (and testable) without a
@@ -196,6 +199,8 @@ export default function InputArea({
   onRetry,
   onDismissRetry,
   busy = false,
+  stopping = false,
+  stopLocked = false,
   onStop,
   skills = [],
   workspaceFiles = [],
@@ -1661,17 +1666,29 @@ export default function InputArea({
             data-testid="composer-shortcut-hint"
             className={`leemo-composer-shortcut ${surface === "buddy" ? "max-[900px]:hidden" : ""} text-[10.5px] text-[var(--leemo-ink-4)]`}
           >
-            {busy ? "Ctrl+Enter 引导当前任务 · Shift+Enter 换行" : "Enter 发送 · Shift+Enter 换行"}
+            {stopLocked
+              ? "后台状态未确认，请重启 Leemo"
+              : stopping
+              ? "正在停止…"
+              : busy
+                ? "Ctrl+Enter 引导当前任务 · Shift+Enter 换行"
+                : "Enter 发送 · Shift+Enter 换行"}
           </span>
 
           {busy ? (
             <button
               type="button"
-              aria-label="停止"
+              aria-label={stopLocked ? "任务已锁定，请重启 Leemo" : stopping ? "正在停止" : "停止"}
+              title={stopLocked ? "后台状态未确认，请重启 Leemo" : stopping ? "正在停止后台任务" : "停止"}
+              disabled={stopping || stopLocked}
               onClick={() => onStop?.()}
-              className="ml-auto grid h-10 w-10 shrink-0 place-items-center rounded-full bg-[var(--leemo-ink)] text-white shadow-sm transition-colors hover:bg-black"
+              className="ml-auto grid h-10 w-10 shrink-0 place-items-center rounded-full bg-[var(--leemo-ink)] text-white shadow-sm transition-colors hover:bg-black disabled:cursor-wait disabled:opacity-70"
             >
-              <Square className="h-3.5 w-3.5 fill-current" aria-hidden />
+              {stopLocked
+                ? <LockKeyhole className="h-4 w-4" aria-hidden />
+                : stopping
+                ? <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden />
+                : <Square className="h-3.5 w-3.5 fill-current" aria-hidden />}
             </button>
           ) : (
             <button

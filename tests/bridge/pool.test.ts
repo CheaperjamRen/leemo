@@ -2,7 +2,11 @@ import { describe, it, expect, afterEach, vi } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { createBridge, PROCESS_TREE_STOP_RESULT_KEY } from "../../src/bridge/pool";
+import {
+  createBridge,
+  PROCESS_TREE_STOP_PROMISE_KEY,
+  PROCESS_TREE_STOP_RESULT_KEY,
+} from "../../src/bridge/pool";
 import type { QueryFn, QueryParams, QueryStream, SdkMessageLike } from "../../src/bridge/pool";
 import { deepseekDirect, relay2Gateway, glmDirect } from "./fixtures/providers";
 import { oneTurnStream, type TestMsg } from "./fixtures/sdk-messages";
@@ -273,7 +277,7 @@ describe("pool — GATEWAY wiring never leaks the real key", () => {
     const env = calls[0].options.env!;
     expect(env.ANTHROPIC_BASE_URL).toBe("http://127.0.0.1:61340");
     expect(env.ANTHROPIC_AUTH_TOKEN).toBe("leemo-gw:relay2");
-    expect(env.ANTHROPIC_MODEL).toBe("claude-gpt-5.6-luna");
+    expect(env.ANTHROPIC_MODEL).toBe("gpt-5.6-luna");
 
     // Sharp leak assertion: the real key sentinel appears in NO env value.
     const realKey = relay2Gateway.apiKey;
@@ -625,6 +629,83 @@ describe("pool — persistent SDK multi-turn transport", () => {
     bridge.dispose();
   });
 
+  it("waits for the retired persistent process tree before starting a replacement", async () => {
+    const first = persistentQueryFn();
+    const secondOutput = new AsyncTestQueue<SdkMessageLike>();
+    const queryFn = Object.assign(((params: QueryParams): QueryStream => {
+      if (first.calls.length === 0) return first.queryFn(params);
+      first.calls.push({ prompt: params.prompt, options: params.options ?? {} });
+      return Object.assign(secondOutput, { close: vi.fn(() => secondOutput.close()) });
+    }) as QueryFn, { supportsPersistentInput: true as const });
+    const bridge = createBridge({ queryFn, dataDir: freshDataDir() });
+    const convo = bridge.createConversation({ provider: deepseekDirect, modelId: "kimi-k3" });
+    const firstRound = drain(convo.send("one"));
+    await vi.waitFor(() => expect(first.calls).toHaveLength(1));
+    const signal = first.calls[0].options.abortController!.signal;
+    let releaseCleanup!: (stopped: boolean) => void;
+    const cleanup = new Promise<boolean>((resolve) => { releaseCleanup = resolve; });
+    signal.addEventListener("abort", () => {
+      (signal as AbortSignal & { [PROCESS_TREE_STOP_PROMISE_KEY]?: Promise<boolean> })
+        [PROCESS_TREE_STOP_PROMISE_KEY] = cleanup;
+    }, { once: true });
+    finishTurn(first.output, "retire-session", 100, 0.1);
+    await firstRound;
+
+    convo.setModel(deepseekDirect, "kimi-k2.6");
+    const secondRound = drain(convo.send("two"));
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(first.calls).toHaveLength(1);
+    releaseCleanup(true);
+    await vi.waitFor(() => expect(first.calls).toHaveLength(2));
+    secondOutput.push({ type: "result", subtype: "success", session_id: "retire-session", is_error: false } as SdkMessageLike);
+    secondOutput.push({ type: "system", subtype: "session_state_changed", state: "idle", session_id: "retire-session" } as SdkMessageLike);
+    await secondRound;
+  });
+
+  it("does not start a replacement after Stop retires a round waiting on old cleanup", async () => {
+    const first = persistentQueryFn();
+    const secondOutput = new AsyncTestQueue<SdkMessageLike>();
+    const queryFn = Object.assign(((params: QueryParams): QueryStream => {
+      if (first.calls.length === 0) return first.queryFn(params);
+      first.calls.push({ prompt: params.prompt, options: params.options ?? {} });
+      return Object.assign(secondOutput, { close: vi.fn(() => secondOutput.close()) });
+    }) as QueryFn, { supportsPersistentInput: true as const });
+    const bridge = createBridge({ queryFn, dataDir: freshDataDir() });
+    const convo = bridge.createConversation({ provider: deepseekDirect, modelId: "kimi-k3" });
+    const firstRound = drain(convo.send("one"));
+    await vi.waitFor(() => expect(first.calls).toHaveLength(1));
+
+    const signal = first.calls[0].options.abortController!.signal;
+    let releaseCleanup!: (stopped: boolean) => void;
+    const cleanup = new Promise<boolean>((resolve) => { releaseCleanup = resolve; });
+    signal.addEventListener("abort", () => {
+      (signal as AbortSignal & { [PROCESS_TREE_STOP_PROMISE_KEY]?: Promise<boolean> })
+        [PROCESS_TREE_STOP_PROMISE_KEY] = cleanup;
+    }, { once: true });
+    finishTurn(first.output, "retire-stop-session", 100, 0.1);
+    await firstRound;
+
+    convo.setModel(deepseekDirect, "kimi-k2.6");
+    const replacementRound = drain(convo.send("two"));
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(first.calls).toHaveLength(1);
+
+    expect(convo.interrupt()).toBe(true);
+    let stopSettled = false;
+    const stopping = convo.waitForInterrupt!().then((stopped) => {
+      stopSettled = true;
+      return stopped;
+    });
+    await Promise.resolve();
+    expect(stopSettled).toBe(false);
+
+    releaseCleanup(true);
+    await expect(stopping).resolves.toBe(true);
+    await replacementRound;
+    expect(first.calls).toHaveLength(1);
+    expect(convo.state).toBe("idle");
+  });
+
   it("restarts on prompt/tool runtime invalidation without losing the session", async () => {
     const first = persistentQueryFn();
     const nextOutput = new AsyncTestQueue<SdkMessageLike>();
@@ -785,17 +866,113 @@ describe("pool — interrupt aborts the active round", () => {
     expect(convo.state).toBe("running");
     expect(convo.interrupt()).toBe(false);
     expect(convo.state).toBe("running");
-    expect(() => convo.send("must stay locked")).toThrow("in progress");
+    expect(() => convo.send("must stay locked")).toThrow("unverified process-tree cleanup");
 
     release();
     await iterator.next();
     expect(convo.state).toBe("running");
+  });
+
+  it("keeps repeated Stop calls on the same asynchronous cleanup promise", async () => {
+    let release!: (stopped: boolean) => void;
+    const cleanup = new Promise<boolean>((resolve) => { release = resolve; });
+    const queryFn = async function* (params: QueryParams): AsyncIterable<SdkMessageLike> {
+      const signal = params.options?.abortController?.signal;
+      signal?.addEventListener("abort", () => {
+        const state = signal as AbortSignal & {
+          [PROCESS_TREE_STOP_PROMISE_KEY]?: Promise<boolean>;
+          [PROCESS_TREE_STOP_RESULT_KEY]?: boolean;
+        };
+        state[PROCESS_TREE_STOP_PROMISE_KEY] = cleanup;
+        state[PROCESS_TREE_STOP_RESULT_KEY] = false;
+      }, { once: true });
+      yield { type: "system", subtype: "init", session_id: "stop-pending" } as SdkMessageLike;
+      await new Promise(() => undefined);
+    };
+    const bridge = createBridge({ queryFn, dataDir: freshDataDir() });
+    const convo = bridge.createConversation({ provider: deepseekDirect, modelId: "deepseek-v4pro" });
+    const iterator = convo.send("first")[Symbol.asyncIterator]();
+    await iterator.next();
+
+    expect(convo.interrupt()).toBe(true);
+    expect(convo.interrupt()).toBe(true);
+    expect(convo.state).toBe("running");
+    expect(() => convo.send("still locked")).toThrow("in progress");
+
+    release(true);
+    await expect(convo.waitForInterrupt?.()).resolves.toBe(true);
+    expect(convo.state).toBe("idle");
   });
 });
 
 // ---- dispose ---------------------------------------------------------------
 
 describe("pool — dispose", () => {
+  it("aborts and verifies an idle warm persistent transport during disposal", async () => {
+    const persistent = persistentQueryFn();
+    const bridge = createBridge({ queryFn: persistent.queryFn, dataDir: freshDataDir() });
+    const convo = bridge.createConversation({ provider: deepseekDirect, modelId: "deepseek-v4pro" });
+    const round = drain(convo.send("one"));
+    await vi.waitFor(() => expect(persistent.calls).toHaveLength(1));
+    const signal = persistent.calls[0].options.abortController!.signal;
+    let release!: (stopped: boolean) => void;
+    const cleanup = new Promise<boolean>((resolve) => { release = resolve; });
+    signal.addEventListener("abort", () => {
+      (signal as AbortSignal & { [PROCESS_TREE_STOP_PROMISE_KEY]?: Promise<boolean> })
+        [PROCESS_TREE_STOP_PROMISE_KEY] = cleanup;
+    }, { once: true });
+    persistent.output.push({
+      type: "result",
+      subtype: "success",
+      session_id: "warm-session",
+      is_error: false,
+      total_cost_usd: 0.1,
+      usage: { input_tokens: 100, output_tokens: 5 },
+    } as SdkMessageLike);
+    persistent.output.push({
+      type: "system",
+      subtype: "session_state_changed",
+      state: "idle",
+      session_id: "warm-session",
+    } as SdkMessageLike);
+    await round;
+    expect(convo.state).toBe("idle");
+
+    convo.dispose();
+    let settled = false;
+    const pending = convo.waitForInterrupt?.().then((value) => { settled = true; return value; });
+    await Promise.resolve();
+    expect(settled).toBe(false);
+    release(true);
+    await expect(pending).resolves.toBe(true);
+  });
+
+  it("keeps the native cleanup promise observable during disposal", async () => {
+    let release!: (stopped: boolean) => void;
+    const cleanup = new Promise<boolean>((resolve) => { release = resolve; });
+    const queryFn = async function* (params: QueryParams): AsyncIterable<SdkMessageLike> {
+      const signal = params.options?.abortController?.signal;
+      signal?.addEventListener("abort", () => {
+        (signal as AbortSignal & { [PROCESS_TREE_STOP_PROMISE_KEY]?: Promise<boolean> })
+          [PROCESS_TREE_STOP_PROMISE_KEY] = cleanup;
+      }, { once: true });
+      yield { type: "system", subtype: "init", session_id: "dispose-pending" } as SdkMessageLike;
+      await new Promise(() => undefined);
+    };
+    const bridge = createBridge({ queryFn, dataDir: freshDataDir() });
+    const convo = bridge.createConversation({ provider: deepseekDirect, modelId: "deepseek-v4pro" });
+    const iterator = convo.send("go")[Symbol.asyncIterator]();
+    await iterator.next();
+
+    convo.dispose();
+    let settled = false;
+    const pending = convo.waitForInterrupt?.().then((value) => { settled = true; return value; });
+    await Promise.resolve();
+    expect(settled).toBe(false);
+    release(true);
+    await expect(pending).resolves.toBe(true);
+  });
+
   it("send() after dispose throws and state becomes 'disposed'", async () => {
     const { queryFn } = makeFakeQuery({ scripts: [oneTurnStream("s", "x")] });
     const bridge = createBridge({ queryFn, dataDir: freshDataDir() });
@@ -1226,6 +1403,31 @@ describe("pool — resume failure degrades instead of killing the chat", () => {
     expect((msgs[0] as TestMsg).is_error).toBe(true);
   });
 
+  it("does not replay a reclaimed turn when the provider returns a terminal 400", async () => {
+    const calls: FakeCall[] = [];
+    const queryFn = async function* (params: QueryParams): AsyncIterable<SdkMessageLike> {
+      calls.push({ prompt: params.prompt, options: params.options ?? {} });
+      yield {
+        type: "result",
+        subtype: "error_during_execution",
+        is_error: true,
+        result: "服务商返回错误（400）。请检查模型配置。",
+      } as TestMsg;
+    };
+    const bridge = createBridge({ queryFn, dataDir: freshDataDir() });
+    const convo = bridge.createConversation({
+      provider: deepseekDirect,
+      modelId: "deepseek-v4pro",
+      resume: "sess-still-present",
+    });
+
+    const msgs = await drain(convo.send("继续"));
+
+    expect(calls).toHaveLength(1);
+    expect(msgs).toHaveLength(1);
+    expect((msgs[0] as TestMsg).is_error).toBe(true);
+  });
+
   it("does NOT swallow an error result that arrives AFTER the round did real work", async () => {
     const calls: FakeCall[] = [];
     const queryFn = async function* (params: QueryParams): AsyncIterable<SdkMessageLike> {
@@ -1249,7 +1451,7 @@ describe("pool — resume failure degrades instead of killing the chat", () => {
     expect((msgs[2] as TestMsg).is_error).toBe(true);
   });
 
-  it("propagates the retry's own failure (no infinite fallback loop)", async () => {
+  it("does not replay an unrecognized pre-output failure from a reclaimed conversation", async () => {
     const calls: FakeCall[] = [];
     const queryFn = async function* (params: QueryParams): AsyncIterable<SdkMessageLike> {
       calls.push({ prompt: params.prompt, options: params.options ?? {} });
@@ -1262,7 +1464,7 @@ describe("pool — resume failure degrades instead of killing the chat", () => {
       resume: "sess-old",
     });
     await expect(drain(convo.send("go"))).rejects.toThrow("endpoint is simply down");
-    expect(calls).toHaveLength(2);
+    expect(calls).toHaveLength(1);
     expect(convo.state).toBe("idle");
   });
 });

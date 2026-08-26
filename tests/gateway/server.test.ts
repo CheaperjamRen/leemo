@@ -242,6 +242,44 @@ describe("gateway shell (G3)", () => {
     }
   });
 
+  it("routes a raw third-party model id exactly so context-window env remains effective", async () => {
+    const mock = await startMock((_req, res) => sendJson(res, 200, NON_STREAM_OK));
+    cleanups.push(mock.close);
+    const { url } = await makeRegistryAndGateway(mock.url, []);
+
+    const resp = await fetch(`${url}/v1/messages`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: "Bearer leemo-gw:p1" },
+      body: JSON.stringify({
+        model: "deepseek-v4-flash",
+        max_tokens: 100,
+        messages: [{ role: "user", content: "hi" }],
+      }),
+    });
+
+    expect(resp.status).toBe(200);
+    expect(mock.captured[0].body.model).toBe("deepseek-v4-flash");
+  });
+
+  it("preserves a configured real model id that itself begins with claude-", async () => {
+    const mock = await startMock((_req, res) => sendJson(res, 200, NON_STREAM_OK));
+    cleanups.push(mock.close);
+    const { url } = await makeRegistryAndGateway(mock.url, [], "claude-real-upstream-model");
+
+    const resp = await fetch(`${url}/v1/messages`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: "Bearer leemo-gw:p1" },
+      body: JSON.stringify({
+        model: "claude-real-upstream-model",
+        max_tokens: 100,
+        messages: [{ role: "user", content: "hi" }],
+      }),
+    });
+
+    expect(resp.status).toBe(200);
+    expect(mock.captured[0].body.model).toBe("claude-real-upstream-model");
+  });
+
   it("routes Responses-native providers through /responses and translates the result", async () => {
     const logs: string[] = [];
     const mock = await startMock((_req, res) => sendJson(res, 200, {

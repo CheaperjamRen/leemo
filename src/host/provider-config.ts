@@ -33,6 +33,13 @@ import type {
   TaskModelRouting,
 } from "../bridge/contract";
 import {
+  MAX_AUTO_COMPACT_WINDOW_TOKENS,
+  MAX_CONTEXT_WINDOW_TOKENS,
+  MIN_AUTO_COMPACT_WINDOW_TOKENS,
+  MIN_CONTEXT_WINDOW_TOKENS,
+  validIntegerInRange,
+} from "../bridge/providers";
+import {
   cloneStoredMcpServers,
   sanitizeStoredMcpServers,
   type StoredMcpServers,
@@ -246,15 +253,6 @@ function cloneModelCapabilities(
   return Object.fromEntries(
     Object.entries(value).map(([modelId, capabilities]) => [modelId, { ...capabilities }]),
   );
-}
-
-const MIN_CONTEXT_WINDOW_TOKENS = 8_000;
-const MAX_CONTEXT_WINDOW_TOKENS = 2_000_000;
-const MIN_AUTO_COMPACT_WINDOW_TOKENS = 100_000;
-const MAX_AUTO_COMPACT_WINDOW_TOKENS = 1_000_000;
-
-function validIntegerInRange(value: unknown, min: number, max: number): value is number {
-  return typeof value === "number" && Number.isInteger(value) && value >= min && value <= max;
 }
 
 function sanitizeModelContextPolicies(

@@ -184,6 +184,12 @@ export interface ConversationsState {
    * still pending; a present one means the exact draft can be retried. */
   pendingSends: Record<string, PendingSendDraft | undefined>;
   queuedTurns: Record<string, QueuedTurn[] | undefined>;
+  /** Ephemeral acknowledgement that one Stop request is already in flight.
+   * Prevents repeated clicks while the host verifies the owned process tree. */
+  stoppingById: Record<string, true | undefined>;
+  /** Native cleanup could not be verified. The composer stays locked until the
+   * process restarts, and repeated Stop clicks are disabled. */
+  stopLockedById: Record<string, true | undefined>;
 
   createConversation: (opts: {
     source: "buddy" | "workbench";
@@ -517,6 +523,9 @@ export function foldConversationEnvelope(
     order: moveToFront(state.order, conversationId),
     timelines: { ...state.timelines, [conversationId]: timeline },
     pendingSends,
+    stopLockedById: finished
+      ? withoutConversation(state.stopLockedById, conversationId)
+      : state.stopLockedById,
     runIds: finished
       ? { ...state.runIds, [conversationId]: null }
       : state.runIds,
@@ -599,6 +608,8 @@ export function createConversationsStore(
     runIds: {},
     pendingSends: {},
     queuedTurns: {},
+    stoppingById: {},
+    stopLockedById: {},
 
     createConversation: async ({
       source,
@@ -1158,7 +1169,22 @@ export function createConversationsStore(
 
     interrupt: async (conversationId) => {
       if (!get().byId[conversationId]) throw unknownConversation(conversationId);
-      await client.invoke("bridge:interrupt", { conversationId });
+      if (get().stoppingById[conversationId] || get().stopLockedById[conversationId]) return;
+      set((state) => ({
+        stoppingById: { ...state.stoppingById, [conversationId]: true },
+      }));
+      try {
+        const result = await client.invoke("bridge:interrupt", { conversationId });
+        if (result.state === "locked") {
+          set((state) => ({
+            stopLockedById: { ...state.stopLockedById, [conversationId]: true },
+          }));
+        }
+      } finally {
+        set((state) => ({
+          stoppingById: withoutConversation(state.stoppingById, conversationId),
+        }));
+      }
     },
 
     activateWorkspace: (workspaceId) => {
@@ -1565,6 +1591,8 @@ export function createConversationsStore(
         runIds,
         pendingSends: {},
         queuedTurns: {},
+        stoppingById: {},
+        stopLockedById: {},
         // A restart must not reopen a conversation the user deliberately
         // archived. The exact visible 本子 will call activateScope after its
         // own restoration; this fallback is only for the shared bootstrap.

@@ -91,6 +91,8 @@ export default function BuddyShell() {
   const dismissRetry = useConversations((s) => s.dismissRetry);
   const interrupt = useConversations((s) => s.interrupt);
   const activeRunId = useConversations((s) => activeId ? s.runIds[activeId] : null);
+  const stopping = useConversations((s) => activeId ? s.stoppingById[activeId] === true : false);
+  const stopLocked = useConversations((s) => activeId ? s.stopLockedById[activeId] === true : false);
   const pendingInteraction = useApprovals((s) => activeId ? s.pendingByConversation[activeId] : null);
   const retryDraft = useConversations((s) => activeId ? s.pendingSends[activeId] : undefined);
   const queuedTurns = useConversations((s) => activeId ? s.queuedTurns[activeId] : undefined);
@@ -528,7 +530,10 @@ export default function BuddyShell() {
               retryRecoveryRendered={retryRecoveryRendered}
               onRetry={() => activeId ? retry(activeId) : undefined}
               onDismissRetry={dismissRetryAndRelease}
-              busy={activeRunId !== null} onStop={() => { if (activeId) void interrupt(activeId); }}
+              busy={activeRunId !== null}
+              stopping={stopping}
+              stopLocked={stopLocked}
+              onStop={() => { if (activeId) void interrupt(activeId); }}
               resolveFilePath={workspace ? (file) => workspace.pathForFile(file) : undefined}
               stageClipboardImage={workspace?.stageClipboardImage
                 ? () => workspace.stageClipboardImage!()

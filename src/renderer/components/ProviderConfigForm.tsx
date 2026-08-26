@@ -41,6 +41,12 @@ import {
   resolveCapabilityDisplay,
   setUserCapabilitySupported,
 } from "../../bridge/model-capabilities";
+import {
+  MAX_AUTO_COMPACT_WINDOW_TOKENS,
+  MAX_CONTEXT_WINDOW_TOKENS,
+  MIN_AUTO_COMPACT_WINDOW_TOKENS,
+  MIN_CONTEXT_WINDOW_TOKENS,
+} from "../../bridge/providers";
 
 export interface PresetOffer {
   id?: string;
@@ -866,8 +872,8 @@ export default function ProviderConfigForm({
                               <input
                                 aria-label={`${row.id} 模型上限`}
                                 type="number"
-                                min={8_000}
-                                max={2_000_000}
+                                min={MIN_CONTEXT_WINDOW_TOKENS}
+                                max={MAX_CONTEXT_WINDOW_TOKENS}
                                 step={1_000}
                                 value={contextPolicy.contextWindowTokens ?? ""}
                                 onChange={(event) => setModelContextPolicies((current) => ({
@@ -886,8 +892,8 @@ export default function ProviderConfigForm({
                               <input
                                 aria-label={`${row.id} 自动整理窗口`}
                                 type="number"
-                                min={100_000}
-                                max={1_000_000}
+                                min={MIN_AUTO_COMPACT_WINDOW_TOKENS}
+                                max={MAX_AUTO_COMPACT_WINDOW_TOKENS}
                                 step={1_000}
                                 value={contextPolicy.autoCompactWindowTokens ?? ""}
                                 onChange={(event) => setModelContextPolicies((current) => ({

@@ -1,4 +1,5 @@
 import path from "node:path";
+import fsSync from "node:fs";
 import fs from "node:fs/promises";
 import { z } from "zod";
 import {
@@ -77,6 +78,9 @@ export interface DocumentMcpOptions {
   workspaceRoot: string;
   cwd: string;
   routeRootWritePath?: (relativePath: string) => string;
+  /** Canonical external files explicitly attached to the current round. Read
+   * only; writes retain the workspace boundary. */
+  allowedExternalReadPaths?: () => ReadonlySet<string> | readonly string[];
 }
 
 export interface DocumentMcp {
@@ -133,10 +137,16 @@ export function createDocumentMcp(options: DocumentMcpOptions): DocumentMcp {
     const requested = rawPath.trim();
     if (!requested) throw new DocumentToolError("invalid_input", "请选择要读取的文档。");
     const resolved = resolvePathWithinBoundary(options.workspaceRoot, options.cwd, requested);
-    if (!resolved) {
-      throw new DocumentToolError("io", "这个文档不在当前工作区内；请先打开它所在的文件夹。");
+    if (resolved) return resolved;
+    let canonical: string;
+    try {
+      canonical = fsSync.realpathSync(requested);
+    } catch {
+      throw new DocumentToolError("io", "这个文档不存在或无法读取，请重新添加附件。");
     }
-    return resolved;
+    const allowed = options.allowedExternalReadPaths?.() ?? [];
+    if ([...allowed].some((candidate) => samePath(candidate, canonical))) return canonical;
+    throw new DocumentToolError("io", "这个文档不在当前工作区内；请先打开它所在的文件夹，或重新添加为本轮附件。");
   };
 
   const requireDocxPath = (actualPath: string, label: string): void => {
@@ -197,8 +207,8 @@ export function createDocumentMcp(options: DocumentMcpOptions): DocumentMcp {
 
       const requestedOutput = input.output_path?.trim();
       const outputPath = requestedOutput
-        ? resolvePathWithinBoundary(options.workspaceRoot, options.cwd, requestedOutput)
-        : path.join(path.dirname(sourcePath), path.basename(defaultWordEditOutputPath(sourcePath)));
+        ? resolveWritePath(requestedOutput, ".docx")
+        : resolveWritePath(path.basename(defaultWordEditOutputPath(sourcePath)), ".docx");
       if (!outputPath) throw new DocumentToolError("io", "修改后的 Word 副本只能保存到当前工作区内。");
       requireDocxPath(outputPath, "修改后的 Word 副本");
       if (samePath(sourcePath, outputPath)) {
@@ -273,10 +283,10 @@ export function createDocumentMcp(options: DocumentMcpOptions): DocumentMcp {
 
   const readTool = tool(
     TOOL_NAMES.read,
-    "Read and extract text from a local PDF, DOCX, PPTX, or XLSX inside the current workspace. " +
+    "Read and extract text from a local PDF, DOCX, PPTX, or XLSX inside the current workspace or explicitly attached to this turn. " +
       "Use this instead of treating Office files as plain text. It never edits the source file.",
     {
-      file_path: z.string().min(1).describe("Path inside the current workspace"),
+      file_path: z.string().min(1).describe("Path inside the current workspace or an exact path from LEEMO_ATTACHMENTS_JSON"),
       max_chars: z.number().int().min(1_000).max(MAX_DOCUMENT_TEXT_LIMIT).optional(),
     },
     async (args) => {

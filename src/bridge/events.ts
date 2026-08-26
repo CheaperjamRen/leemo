@@ -527,6 +527,13 @@ export function auditClaimedPaths(
 export interface NormalizeCtx {
   providerId: string;
   modelId: string;
+  /** User/provider configured upstream context policy. The Harness control
+   * response reports the applied compact window as rawMaxTokens on custom
+   * models; the configured upstream ceiling remains a separate product fact. */
+  contextPolicy?: {
+    contextWindowTokens?: number;
+    autoCompactWindowTokens?: number;
+  };
   cwd: string;
   pricing?: ModelPricing;
   existsSyncFn?: (p: string) => boolean;
@@ -852,7 +859,7 @@ function classifyRun(result: IncomingMsg | undefined, streamError: string | unde
   const statusCode = typeof result?.api_error_status === "number"
     ? result.api_error_status
     : (() => {
-        const haystack = `${streamError ?? ""} ${(result?.errors ?? []).join(" ")}`;
+        const haystack = `${streamError ?? ""} ${(result?.errors ?? []).join(" ")} ${result?.is_error ? result.result ?? "" : ""}`;
         const match = haystack.match(/(?:API\s+Error:\s*)?(\d{3})(?:\b|\D)/i);
         return match ? Number(match[1]) : undefined;
       })();
@@ -875,7 +882,12 @@ function classifyRun(result: IncomingMsg | undefined, streamError: string | unde
   if ((result?.permission_denials?.length ?? 0) > 0 && (result?.errors?.length ?? 0) === 0) {
     return { outcome: "permission-denied", retryable: false, ...(statusCode !== undefined ? { statusCode } : {}) };
   }
-  const apiRetryable = result?.terminal_reason === "api_error" || result?.subtype === "error_during_execution";
+  const terminalClientError = statusCode !== undefined
+    && statusCode >= 400
+    && statusCode < 500
+    && ![408, 425, 429].includes(statusCode);
+  const apiRetryable = !terminalClientError
+    && (result?.terminal_reason === "api_error" || result?.subtype === "error_during_execution");
   return { outcome: "failed", retryable: apiRetryable, ...(statusCode !== undefined ? { statusCode } : {}) };
 }
 
@@ -1034,14 +1046,28 @@ export async function* normalizeSdkStream(
             && typeof snapshot.rawMaxTokens === "number"
             && Number.isFinite(snapshot.rawMaxTokens)
           ) {
+            const configuredMaximum = ctx.contextPolicy?.contextWindowTokens;
+            const configuredCompact = ctx.contextPolicy?.autoCompactWindowTokens ?? configuredMaximum;
+            const runtimeMatchesConfiguredCompact = configuredMaximum !== undefined
+              && configuredCompact !== undefined
+              && (snapshot.rawMaxTokens === configuredCompact || snapshot.maxTokens === configuredCompact);
             const event: Extract<LeemoEvent, { type: "context.snapshot" }> = {
               type: "context.snapshot",
               currentTokens: Math.max(0, snapshot.totalTokens),
+              // Preserve the actual working window. When it exactly matches the
+              // configured compact window, the control response proves that
+              // policy was applied; expose the distinct configured model ceiling
+              // for the tooltip. A 200K fallback still remains 200K.
               maxTokens: Math.max(0, snapshot.maxTokens),
-              rawMaxTokens: Math.max(0, snapshot.rawMaxTokens),
+              rawMaxTokens: Math.max(0, runtimeMatchesConfiguredCompact
+                ? configuredMaximum
+                : snapshot.rawMaxTokens),
               isAutoCompactEnabled: snapshot.isAutoCompactEnabled === true,
               providerId: ctx.providerId,
-              model: typeof snapshot.model === "string" ? snapshot.model : ctx.modelId,
+              // The SDK may expose its gateway disguise or a stale model from
+              // the compatibility session. The host-selected identity is the
+              // semantic source shared with Settings and the model picker.
+              model: ctx.modelId,
             };
             if (typeof snapshot.autoCompactThreshold === "number" && Number.isFinite(snapshot.autoCompactThreshold)) {
               event.autoCompactThreshold = Math.max(0, snapshot.autoCompactThreshold);

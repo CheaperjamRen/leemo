@@ -514,6 +514,28 @@ describe("InputArea", () => {
     expect(onStop).toHaveBeenCalled();
   });
 
+  it("acknowledges one stop click immediately and disables repeated clicks while cleanup runs", async () => {
+    const user = userEvent.setup();
+    const onStop = vi.fn();
+    const { rerender } = render(<InputArea {...defaultProps} busy onStop={onStop} />);
+
+    await user.click(screen.getByRole("button", { name: "停止" }));
+    rerender(<InputArea {...defaultProps} busy stopping onStop={onStop} />);
+
+    const stopping = screen.getByRole("button", { name: "正在停止" });
+    expect(stopping).toBeDisabled();
+    expect(screen.getByText("正在停止…")).toBeInTheDocument();
+    await user.click(stopping);
+    expect(onStop).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows a stable restart-required state when native cleanup could not be verified", () => {
+    render(<InputArea {...defaultProps} busy stopLocked onStop={vi.fn()} />);
+
+    expect(screen.getByRole("button", { name: "任务已锁定，请重启 Leemo" })).toBeDisabled();
+    expect(screen.getByText("后台状态未确认，请重启 Leemo")).toBeInTheDocument();
+  });
+
   it("shows attachment row when files selected", async () => {
     const user = userEvent.setup();
     const file = new File(["content"], "test.txt", { type: "text/plain" });

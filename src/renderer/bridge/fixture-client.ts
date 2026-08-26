@@ -273,7 +273,7 @@ function sameMemoryScope(left: MemoryScopeView, right: MemoryScopeView): boolean
          const request = req as BridgeInvokeMap["bridge:interrupt"]["request"];
          const state = this.requireActive(request.conversationId);
          this.doInterrupt(state);
-         return undefined as BridgeInvokeMap[K]["response"];
+         return { state: "stopped" } as BridgeInvokeMap[K]["response"];
        }
        case "bridge:setModel": {
          const request = req as BridgeInvokeMap["bridge:setModel"]["request"];

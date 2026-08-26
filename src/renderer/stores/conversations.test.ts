@@ -27,6 +27,7 @@ function makeClient(ids = ["conv-a", "conv-b", "conv-c", "conv-d", "conv-e", "co
       calls.push({ channel, request });
       if (channel === "bridge:createConversation") return { conversationId: ids[nextId++] };
       if (channel === "bridge:guide") return { delivery: "applied" };
+      if (channel === "bridge:interrupt") return { state: "stopped" };
       if (
         channel === "bridge:updateContext" &&
         failingUpdates.has((request as { conversationId: string }).conversationId)
@@ -77,7 +78,7 @@ function latestByKind(items: TimelineItem[], kind: TimelineItem["kind"]) {
 }
 
 describe("conversations store", () => {
-  it("starts as a true six-field empty registry without a fabricated conv-1", () => {
+  it("starts as a true empty registry without a fabricated conv-1", () => {
     const { client } = makeClient();
     const state = createConversationsStore(client, { resolveConversationDefaults: () => DEFAULTS }).getState();
 
@@ -87,6 +88,8 @@ describe("conversations store", () => {
     expect(state.openTabs).toEqual([]);
     expect(state.timelines).toEqual({});
     expect(state.runIds).toEqual({});
+    expect(state.stoppingById).toEqual({});
+    expect(state.stopLockedById).toEqual({});
   });
 
   it("keeps buddy conversations global even when the workbench still has an active book", async () => {
@@ -1488,6 +1491,52 @@ describe("conversations store", () => {
     await expect(store.getState().setModelForConversation("missing", "provider", "m")).rejects.toThrow(/unknown conversation/i);
     expect(bridge.calls).toHaveLength(callsBefore);
     expect(store.getState().timelines.missing).toBeUndefined();
+  });
+
+  it("deduplicates Stop while host cleanup is pending and clears the stopping acknowledgement afterward", async () => {
+    let releaseStop!: () => void;
+    const stopGate = new Promise<void>((resolve) => { releaseStop = resolve; });
+    const invoke = vi.fn(async (channel: string) => {
+      if (channel === "bridge:createConversation") return { conversationId: "conv-stop" };
+      if (channel === "bridge:interrupt") {
+        await stopGate;
+        return { state: "stopped" };
+      }
+      return undefined;
+    });
+    const store = createConversationsStore({
+      invoke,
+      subscribe: vi.fn(() => () => undefined),
+    } as unknown as BridgeClient, { resolveConversationDefaults: () => DEFAULTS });
+    const conversationId = await store.getState().createConversation({ source: "buddy" });
+
+    const firstStop = store.getState().interrupt(conversationId);
+    await Promise.resolve();
+    expect(store.getState().stoppingById[conversationId]).toBe(true);
+    await store.getState().interrupt(conversationId);
+    expect(invoke.mock.calls.filter(([channel]) => channel === "bridge:interrupt")).toHaveLength(1);
+
+    releaseStop();
+    await firstStop;
+    expect(store.getState().stoppingById[conversationId]).toBeUndefined();
+  });
+
+  it("keeps an unverified Stop visibly locked and ignores later Stop clicks", async () => {
+    const invoke = vi.fn(async (channel: string) => {
+      if (channel === "bridge:createConversation") return { conversationId: "conv-locked" };
+      if (channel === "bridge:interrupt") return { state: "locked" };
+      return undefined;
+    });
+    const store = createConversationsStore({
+      invoke,
+      subscribe: vi.fn(() => () => undefined),
+    } as unknown as BridgeClient, { resolveConversationDefaults: () => DEFAULTS });
+    const conversationId = await store.getState().createConversation({ source: "buddy" });
+
+    await store.getState().interrupt(conversationId);
+    expect(store.getState().stopLockedById[conversationId]).toBe(true);
+    await store.getState().interrupt(conversationId);
+    expect(invoke.mock.calls.filter(([channel]) => channel === "bridge:interrupt")).toHaveLength(1);
   });
 
   it("keeps failed setModel updates out of state", async () => {

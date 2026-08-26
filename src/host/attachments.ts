@@ -14,6 +14,13 @@ interface VerifiedAttachment {
   workspacePath?: string;
 }
 
+export interface PreparedAttachmentPrompt {
+  prompt: string;
+  /** Canonical host-verified files that the document MCP may read during this
+   * round. The renderer-supplied path/name/size never enters this allowlist. */
+  readablePaths: string[];
+}
+
 function verifyWorkspaceFile(
   ref: WorkspaceFileRef,
   workspaceRoot: string,
@@ -87,16 +94,16 @@ function verifyAttachment(ref: AttachmentRef): VerifiedAttachment {
  * before starting the round, so moved/deleted files fail visibly instead of
  * leaving the conversation stuck in a fake running state.
  */
-export function formatPromptWithAttachments(
+export function preparePromptWithAttachments(
   prompt: string,
   attachments: readonly AttachmentRef[] | undefined,
   workspaceFiles: readonly WorkspaceFileRef[] | undefined = undefined,
   workspaceRoot: string | undefined = undefined,
   workspaceId: string | undefined = undefined,
-): string {
+): PreparedAttachmentPrompt {
   const attachmentCount = attachments?.length ?? 0;
   const workspaceFileCount = workspaceFiles?.length ?? 0;
-  if (attachmentCount === 0 && workspaceFileCount === 0) return prompt;
+  if (attachmentCount === 0 && workspaceFileCount === 0) return { prompt, readablePaths: [] };
   if (attachmentCount + workspaceFileCount > MAX_ATTACHMENTS_PER_TURN) {
     throw new Error(`一次最多添加 ${MAX_ATTACHMENTS_PER_TURN} 个附件。`);
   }
@@ -115,5 +122,24 @@ export function formatPromptWithAttachments(
     JSON.stringify(verified, null, 2),
     "END_LEEMO_ATTACHMENTS_JSON",
   ].join("\n");
-  return prompt.trim() ? `${prompt.trim()}\n\n${block}` : block;
+  return {
+    prompt: prompt.trim() ? `${prompt.trim()}\n\n${block}` : block,
+    readablePaths: verified.map((attachment) => attachment.path),
+  };
+}
+
+export function formatPromptWithAttachments(
+  prompt: string,
+  attachments: readonly AttachmentRef[] | undefined,
+  workspaceFiles: readonly WorkspaceFileRef[] | undefined = undefined,
+  workspaceRoot: string | undefined = undefined,
+  workspaceId: string | undefined = undefined,
+): string {
+  return preparePromptWithAttachments(
+    prompt,
+    attachments,
+    workspaceFiles,
+    workspaceRoot,
+    workspaceId,
+  ).prompt;
 }

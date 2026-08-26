@@ -46,10 +46,12 @@ describe("buildConversationEnv — DIRECT wiring (apiFormat=anthropic)", () => {
       },
     };
 
-    expect(buildConversationEnv(provider, "deepseek-v4pro").CLAUDE_CODE_AUTO_COMPACT_WINDOW)
-      .toBe("480000");
-    expect(buildConversationEnv(provider, "deepseek-v4flash").CLAUDE_CODE_AUTO_COMPACT_WINDOW)
-      .toBe("240000");
+    const pro = buildConversationEnv(provider, "deepseek-v4pro");
+    const flash = buildConversationEnv(provider, "deepseek-v4flash");
+    expect(pro.CLAUDE_CODE_MAX_CONTEXT_TOKENS).toBe("512000");
+    expect(pro.CLAUDE_CODE_AUTO_COMPACT_WINDOW).toBe("480000");
+    expect(flash.CLAUDE_CODE_MAX_CONTEXT_TOKENS).toBe("258000");
+    expect(flash.CLAUDE_CODE_AUTO_COMPACT_WINDOW).toBe("240000");
   });
 
   it("caps the effective auto-compact capacity at the model's declared maximum", () => {
@@ -63,11 +65,30 @@ describe("buildConversationEnv — DIRECT wiring (apiFormat=anthropic)", () => {
       },
     }, "deepseek-v4pro");
 
+    expect(env.CLAUDE_CODE_MAX_CONTEXT_TOKENS).toBe("372000");
     expect(env.CLAUDE_CODE_AUTO_COMPACT_WINDOW).toBe("372000");
+  });
+
+  it("passes every context-policy boundary that Settings can persist", () => {
+    const provider = {
+      ...deepseekDirect,
+      modelContextPolicies: {
+        compact: { contextWindowTokens: 8_000, autoCompactWindowTokens: 8_000 },
+        huge: { contextWindowTokens: 2_000_000, autoCompactWindowTokens: 1_000_000 },
+      },
+    };
+
+    const compact = buildConversationEnv(provider, "compact");
+    const huge = buildConversationEnv(provider, "huge");
+    expect(compact.CLAUDE_CODE_MAX_CONTEXT_TOKENS).toBe("8000");
+    expect(compact.CLAUDE_CODE_AUTO_COMPACT_WINDOW).toBe("8000");
+    expect(huge.CLAUDE_CODE_MAX_CONTEXT_TOKENS).toBe("2000000");
+    expect(huge.CLAUDE_CODE_AUTO_COMPACT_WINDOW).toBe("1000000");
   });
 
   it("leaves native auto-detection untouched when the selected model has no policy", () => {
     const env = buildConversationEnv(deepseekDirect, "deepseek-v4pro");
+    expect(env.CLAUDE_CODE_MAX_CONTEXT_TOKENS).toBeUndefined();
     expect(env.CLAUDE_CODE_AUTO_COMPACT_WINDOW).toBeUndefined();
   });
 
@@ -169,7 +190,7 @@ describe("buildConversationEnv — GATEWAY wiring (apiFormat=openai)", () => {
     const env = buildConversationEnv({ ...relay2Gateway, id: "tokenflux", apiFormat: "openai-responses" }, "gpt-5.6-sol", 61340);
     expect(env.ANTHROPIC_BASE_URL).toBe("http://127.0.0.1:61340");
     expect(env.ANTHROPIC_AUTH_TOKEN).toBe("leemo-gw:tokenflux");
-    expect(env.ANTHROPIC_MODEL).toBe("claude-gpt-5.6-sol");
+    expect(env.ANTHROPIC_MODEL).toBe("gpt-5.6-sol");
     expect(JSON.stringify(env)).not.toContain(relay2Gateway.apiKey);
   });
 
@@ -183,13 +204,13 @@ describe("buildConversationEnv — GATEWAY wiring (apiFormat=openai)", () => {
     expect(env.ANTHROPIC_AUTH_TOKEN).toBe("leemo-gw:relay2");
   });
 
-  it("disguises the model with the claude- prefix (G3 /v1/models semantics)", () => {
+  it("keeps the raw model id so the runtime honors its configured context window", () => {
     const env = buildConversationEnv(relay2Gateway, "gpt-5.6-luna", 61340);
-    for (const slot of ORDINARY_SLOTS) expect(env[slot]).toBe("claude-gpt-5.6-luna");
+    for (const slot of ORDINARY_SLOTS) expect(env[slot]).toBe("gpt-5.6-luna");
     expect(env).not.toHaveProperty(SLOT_SUBAGENT);
   });
 
-  it("disguises each configured task-role override for gateway routing", () => {
+  it("keeps each configured task-role override exact for gateway routing", () => {
     const env = buildConversationEnv({
       ...relay2Gateway,
       envTemplate: {
@@ -198,9 +219,9 @@ describe("buildConversationEnv — GATEWAY wiring (apiFormat=openai)", () => {
       },
     }, "gpt-5.6-luna", 61340);
 
-    expect(env.ANTHROPIC_MODEL).toBe("claude-gpt-5.6-luna");
-    expect(env.ANTHROPIC_DEFAULT_HAIKU_MODEL).toBe("claude-gpt-5.6-mini");
-    expect(env.CLAUDE_CODE_SUBAGENT_MODEL).toBe("claude-gpt-5.6-worker");
+    expect(env.ANTHROPIC_MODEL).toBe("gpt-5.6-luna");
+    expect(env.ANTHROPIC_DEFAULT_HAIKU_MODEL).toBe("gpt-5.6-mini");
+    expect(env.CLAUDE_CODE_SUBAGENT_MODEL).toBe("gpt-5.6-worker");
   });
 
   it("carries NO real key anywhere in the env (leak assertion)", () => {
@@ -351,6 +372,8 @@ describe("sanitizeHostEnv — strip secret-shaped host vars before spread", () =
       ANTHROPIC_DEFAULT_HAIKU_MODEL: "stale-fast",
       ANTHROPIC_SMALL_FAST_MODEL: "older-fast",
       CLAUDE_CODE_SUBAGENT_MODEL: "stale-worker",
+      CLAUDE_CODE_MAX_CONTEXT_TOKENS: "200000",
+      CLAUDE_CODE_AUTO_COMPACT_WINDOW: "167000",
       PATH: "/usr/bin",
     });
 
@@ -358,6 +381,8 @@ describe("sanitizeHostEnv — strip secret-shaped host vars before spread", () =
     expect(clean.ANTHROPIC_DEFAULT_HAIKU_MODEL).toBeUndefined();
     expect(clean.ANTHROPIC_SMALL_FAST_MODEL).toBeUndefined();
     expect(clean.CLAUDE_CODE_SUBAGENT_MODEL).toBeUndefined();
+    expect(clean.CLAUDE_CODE_MAX_CONTEXT_TOKENS).toBeUndefined();
+    expect(clean.CLAUDE_CODE_AUTO_COMPACT_WINDOW).toBeUndefined();
     expect(clean.PATH).toBe("/usr/bin");
   });
 

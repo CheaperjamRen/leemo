@@ -1,7 +1,10 @@
-import { spawn, spawnSync } from "node:child_process";
+import { spawn } from "node:child_process";
 import path from "node:path";
 import type { SpawnOptions, SpawnedProcess } from "@anthropic-ai/claude-agent-sdk";
-import { PROCESS_TREE_STOP_RESULT_KEY } from "../bridge/pool";
+import {
+  PROCESS_TREE_STOP_PROMISE_KEY,
+  PROCESS_TREE_STOP_RESULT_KEY,
+} from "../bridge/pool";
 
 /** Kill only the CLI process tree owned by one SDK round.
  *
@@ -21,12 +24,16 @@ function processAlive(pid: number): boolean {
 export interface DescendantSnapshot {
   ok: boolean;
   pids: number[];
+  /** Independent process-table observations represented by this result. The
+   * Windows implementation samples twice inside one PowerShell process so the
+   * second stability check does not pay another shell startup. */
+  observations?: number;
 }
 
 export interface WindowsProcessTreeOps {
-  snapshotDescendants(seedPids: readonly number[]): DescendantSnapshot;
+  snapshotDescendants(seedPids: readonly number[]): Promise<DescendantSnapshot>;
   isAlive(pid: number): boolean;
-  terminate(pid: number): boolean;
+  terminate(pid: number): Promise<boolean>;
 }
 
 function windowsSystemTool(...segments: string[]): string {
@@ -34,46 +41,104 @@ function windowsSystemTool(...segments: string[]): string {
   return path.join(systemRoot, "System32", ...segments);
 }
 
+function runHiddenProcess(
+  executable: string,
+  args: string[],
+  captureStdout: boolean,
+  timeoutMs = 5_000,
+): Promise<{ ok: boolean; stdout: string }> {
+  return new Promise((resolve) => {
+    const child = spawn(executable, args, {
+      windowsHide: true,
+      stdio: ["ignore", captureStdout ? "pipe" : "ignore", "ignore"],
+    });
+    let stdout = "";
+    let settled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const finish = (ok: boolean): void => {
+      if (settled) return;
+      settled = true;
+      if (timer) clearTimeout(timer);
+      resolve({ ok, stdout });
+    };
+    child.stdout?.on("data", (chunk) => { stdout += chunk.toString(); });
+    child.once("error", () => finish(false));
+    child.once("exit", (code, signal) => finish(code === 0 && signal === null));
+    timer = setTimeout(() => {
+      try { child.kill(); } catch { /* already exited */ }
+      finish(false);
+    }, timeoutMs);
+  });
+}
+
 /** Capture the process family before taskkill runs. `taskkill /T` can return
  * non-zero after the root exits even though a command grandchild is still
  * alive; Win32_Process retains the creator PID, so the family can still be
- * reconstructed from ParentProcessId and each known survivor checked. */
-function snapshotWindowsDescendants(seedPids: readonly number[]): DescendantSnapshot {
+ * reconstructed from ParentProcessId and each known survivor checked. The
+ * command is asynchronous so main-process IPC stays responsive. */
+async function snapshotWindowsDescendants(seedPids: readonly number[]): Promise<DescendantSnapshot> {
   const seeds = [...new Set(seedPids.filter((pid) => Number.isSafeInteger(pid) && pid > 0))];
   if (seeds.length === 0) return { ok: true, pids: [] };
   const seedLiteral = seeds.join(",");
   const command = [
     `$seed=@(${seedLiteral})`,
-    "$all=@(Get-CimInstance Win32_Process -ErrorAction Stop)",
+    "$first=@(Get-CimInstance Win32_Process -ErrorAction Stop)",
+    "Start-Sleep -Milliseconds 75",
+    "$second=@(Get-CimInstance Win32_Process -ErrorAction Stop)",
+    "$all=@($first+$second | Sort-Object ProcessId -Unique)",
     "$ids=@($seed)",
     "do {$children=@($all | Where-Object {$ids -contains $_.ParentProcessId -and $ids -notcontains $_.ProcessId} | Select-Object -ExpandProperty ProcessId);$before=$ids.Count;$ids=@($ids+$children | Select-Object -Unique)} while($ids.Count -gt $before)",
     "$ids | Where-Object {$seed -notcontains $_}",
   ].join("; ");
-  const result = spawnSync(
+  const result = await runHiddenProcess(
     windowsSystemTool("WindowsPowerShell", "v1.0", "powershell.exe"),
     ["-NoProfile", "-NonInteractive", "-Command", command],
-    {
-      encoding: "utf8",
-      windowsHide: true,
-      stdio: ["ignore", "pipe", "ignore"],
-      timeout: 5_000,
-    },
+    true,
   );
-  if (result.error || result.signal !== null || result.status !== 0) return { ok: false, pids: [] };
-  const pids = String(result.stdout ?? "")
+  if (!result.ok) return { ok: false, pids: [] };
+  const pids = result.stdout
     .split(/\r?\n/)
     .map((value) => Number(value.trim()))
     .filter((value) => Number.isSafeInteger(value) && value > 0 && !seeds.includes(value));
-  return { ok: true, pids: [...new Set(pids)] };
+  return { ok: true, pids: [...new Set(pids)], observations: 2 };
 }
 
-function runWindowsTaskkill(pid: number): boolean {
-  const result = spawnSync(windowsSystemTool("taskkill.exe"), ["/PID", String(pid), "/T", "/F"], {
-    windowsHide: true,
-    stdio: "ignore",
-    timeout: 5_000,
-  });
-  return !result.error && result.signal === null && result.status === 0;
+async function runWindowsTaskkill(pid: number): Promise<boolean> {
+  const result = await runHiddenProcess(
+    windowsSystemTool("taskkill.exe"),
+    ["/PID", String(pid), "/T", "/F"],
+    false,
+  );
+  return result.ok;
+}
+
+/** Production Windows fast path: keep pre-kill discovery, taskkill, and two
+ * post-kill process-table observations inside one hidden PowerShell process.
+ * PowerShell startup dominated Stop latency when each observation spawned a
+ * separate shell; this preserves the verification contract without freezing
+ * main-process IPC or making the user wait through three startups. */
+async function terminateWindowsProcessTreeVerified(rootPid: number): Promise<boolean> {
+  const command = [
+    "$ErrorActionPreference='Stop'",
+    `$rootPid=${rootPid}`,
+    "$owned=[System.Collections.Generic.HashSet[int]]::new()",
+    "[void]$owned.Add($rootPid)",
+    "function Add-Family($table,$ids){do{$added=$false;foreach($proc in $table){$parent=[int]$proc.ParentProcessId;$child=[int]$proc.ProcessId;if($ids.Contains($parent)-and -not $ids.Contains($child)){[void]$ids.Add($child);$added=$true}}}while($added)}",
+    "$initial=@(Get-CimInstance Win32_Process -ErrorAction Stop)",
+    "Add-Family $initial $owned",
+    "$taskkill=Join-Path $env:SystemRoot 'System32\\taskkill.exe'",
+    "foreach($ownedPid in @($owned)){if(Get-Process -Id $ownedPid -ErrorAction SilentlyContinue){& $taskkill /PID $ownedPid /T /F 2>$null | Out-Null}}",
+    "$verified=$false",
+    "for($attempt=0;$attempt -lt 6;$attempt++){Start-Sleep -Milliseconds 60;$first=@(Get-CimInstance Win32_Process -ErrorAction Stop);$beforeFirst=$owned.Count;Add-Family $first $owned;$discoveredFirst=$owned.Count -gt $beforeFirst;$killed=$false;foreach($ownedPid in @($owned)){if(Get-Process -Id $ownedPid -ErrorAction SilentlyContinue){$killed=$true;& $taskkill /PID $ownedPid /T /F 2>$null | Out-Null}};Start-Sleep -Milliseconds 60;$second=@(Get-CimInstance Win32_Process -ErrorAction Stop);$beforeSecond=$owned.Count;Add-Family $second $owned;$discoveredSecond=$owned.Count -gt $beforeSecond;$alive=@(foreach($ownedPid in $owned){if(Get-Process -Id $ownedPid -ErrorAction SilentlyContinue){$ownedPid}});if(-not $discoveredFirst -and -not $killed -and -not $discoveredSecond -and $alive.Count -eq 0){$verified=$true;break}}",
+    "if($verified){Write-Output 'LEEMO_STOP_OK';exit 0}else{exit 1}",
+  ].join("; ");
+  const result = await runHiddenProcess(
+    windowsSystemTool("WindowsPowerShell", "v1.0", "powershell.exe"),
+    ["-NoProfile", "-NonInteractive", "-Command", command],
+    true,
+    8_000,
+  );
+  return result.ok && result.stdout.includes("LEEMO_STOP_OK");
 }
 
 const DEFAULT_WINDOWS_PROCESS_TREE_OPS: WindowsProcessTreeOps = {
@@ -87,22 +152,31 @@ const DEFAULT_WINDOWS_PROCESS_TREE_OPS: WindowsProcessTreeOps = {
  * A single pre-kill snapshot has a TOCTOU hole: a known intermediate process
  * can spawn a detached child after enumeration and then exit. Retaining every
  * known PID as a future enumeration seed preserves that ancestry even after
- * the intermediate disappears. Two consecutive stable snapshots are required
- * because CIM visibility can lag process creation. Any failed snapshot or
- * bounded-loop exhaustion is fail-closed. */
-export function terminateWindowsProcessTree(
+ * the intermediate disappears. One stable pass after the latest discovery is
+ * sufficient because taskkill /T performs its own live descendant traversal.
+ * Any failed snapshot or bounded-loop exhaustion is fail-closed. */
+export async function terminateWindowsProcessTree(
   rootPid: number,
   ops: WindowsProcessTreeOps = DEFAULT_WINDOWS_PROCESS_TREE_OPS,
-): boolean {
+): Promise<boolean> {
   const ownedPids = new Set<number>([rootPid]);
-  let stablePasses = 0;
+  let stableEmptyPasses = 0;
 
   for (let attempt = 0; attempt < 8; attempt += 1) {
     const beforeSize = ownedPids.size;
-    const snapshot = ops.snapshotDescendants([...ownedPids]);
+    let terminatedAny = false;
+    // On the common active-round path, start taskkill /T at the same time as
+    // the ancestry snapshot. The snapshot still preserves any child whose
+    // parent exits during cleanup, while IPC no longer waits for two serial
+    // system commands before Stop can settle.
+    const snapshotPromise = ops.snapshotDescendants([...ownedPids]);
+    const rootStopPromise = attempt === 0 && ops.isAlive(rootPid)
+      ? ops.terminate(rootPid)
+      : Promise.resolve(true);
+    const [snapshot] = await Promise.all([snapshotPromise, rootStopPromise]);
     if (!snapshot.ok) {
       for (const ownedPid of ownedPids) {
-        if (ops.isAlive(ownedPid)) ops.terminate(ownedPid);
+        if (ops.isAlive(ownedPid)) await ops.terminate(ownedPid);
       }
       return false;
     }
@@ -110,26 +184,32 @@ export function terminateWindowsProcessTree(
       if (Number.isSafeInteger(descendant) && descendant > 0) ownedPids.add(descendant);
     }
     for (const ownedPid of ownedPids) {
-      if (ops.isAlive(ownedPid)) ops.terminate(ownedPid);
+      if (ops.isAlive(ownedPid)) {
+        terminatedAny = true;
+        await ops.terminate(ownedPid);
+      }
     }
 
     const allKnownProcessesStopped = [...ownedPids].every((ownedPid) => !ops.isAlive(ownedPid));
     const discoveredNothingNew = ownedPids.size === beforeSize;
-    stablePasses = allKnownProcessesStopped && discoveredNothingNew ? stablePasses + 1 : 0;
-    if (stablePasses >= 2) return true;
+    // Attempt zero's snapshot overlaps root termination for responsiveness, so
+    // it can only collect candidates. A child may appear after that snapshot.
+    // Require two later stable empty observations before releasing the round.
+    if (attempt > 0 && allKnownProcessesStopped && discoveredNothingNew && !terminatedAny) {
+      stableEmptyPasses += Math.max(1, snapshot.observations ?? 1);
+      if (stableEmptyPasses >= 2) return true;
+    } else {
+      stableEmptyPasses = 0;
+    }
   }
   return false;
 }
 
-function terminateProcessTree(pid: number): boolean {
+async function terminateProcessTree(pid: number): Promise<boolean> {
   if (!Number.isSafeInteger(pid) || pid <= 0) return true;
 
   if (process.platform === "win32") {
-    // Keep this synchronous. The pool releases the conversation for a new
-    // round immediately after AbortController.abort() returns; an async
-    // taskkill would let the replacement CLI resume the same transcript while
-    // the old process tree is still writing it.
-    return terminateWindowsProcessTree(pid);
+    return terminateWindowsProcessTreeVerified(pid);
   }
 
   try {
@@ -163,12 +243,23 @@ export function createManagedClaudeProcessSpawner(
     // and deadlock before it can produce another protocol message on stdout.
     child.stderr.resume();
     const signal = immediateAbort ?? options.signal;
+    const stopState = signal as AbortSignal & {
+      [PROCESS_TREE_STOP_RESULT_KEY]?: boolean;
+      [PROCESS_TREE_STOP_PROMISE_KEY]?: Promise<boolean>;
+    };
     // Managed spawns start fail-closed. The abort listener must replace this
     // with a verified result before the pool can release the conversation.
-    (signal as AbortSignal & { [PROCESS_TREE_STOP_RESULT_KEY]?: boolean })[PROCESS_TREE_STOP_RESULT_KEY] = false;
+    stopState[PROCESS_TREE_STOP_RESULT_KEY] = false;
     const stopTree = (): void => {
-      const stopped = child.pid === undefined ? true : terminateProcessTree(child.pid);
-      (signal as AbortSignal & { [PROCESS_TREE_STOP_RESULT_KEY]?: boolean })[PROCESS_TREE_STOP_RESULT_KEY] = stopped;
+      const pending = (child.pid === undefined
+        ? Promise.resolve(true)
+        : terminateProcessTree(child.pid))
+        .catch(() => false)
+        .then((stopped) => {
+          stopState[PROCESS_TREE_STOP_RESULT_KEY] = stopped;
+          return stopped;
+        });
+      stopState[PROCESS_TREE_STOP_PROMISE_KEY] = pending;
     };
 
     if (signal.aborted) stopTree();

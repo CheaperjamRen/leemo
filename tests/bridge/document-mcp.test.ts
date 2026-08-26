@@ -19,12 +19,61 @@ function workspace(): string {
   return root;
 }
 
+function simplePdf(text: string): Buffer {
+  const escaped = text.replace(/([\\()])/g, "\\$1");
+  const stream = `BT /F1 16 Tf 72 720 Td (${escaped}) Tj ET`;
+  const objects = [
+    "<< /Type /Catalog /Pages 2 0 R >>",
+    "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+    "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>",
+    "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+    `<< /Length ${Buffer.byteLength(stream)} >>\nstream\n${stream}\nendstream`,
+  ];
+  let output = "%PDF-1.4\n";
+  const offsets = [0];
+  objects.forEach((body, index) => {
+    offsets.push(Buffer.byteLength(output));
+    output += `${index + 1} 0 obj\n${body}\nendobj\n`;
+  });
+  const xref = Buffer.byteLength(output);
+  output += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
+  for (const offset of offsets.slice(1)) output += `${String(offset).padStart(10, "0")} 00000 n \n`;
+  output += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
+  return Buffer.from(output, "binary");
+}
+
 afterEach(() => {
   for (const directory of temporaryDirectories.splice(0)) {
     fs.rmSync(directory, { recursive: true, force: true });
   }
 });
 describe("document MCP", () => {
+
+  it("reads a host-verified external attachment while keeping arbitrary outside paths blocked", async () => {
+    const root = workspace();
+    const cwd = path.join(root, "默认工作区");
+    const externalRoot = fs.mkdtempSync(path.join(os.tmpdir(), "leemo-document-attachment-"));
+    temporaryDirectories.push(externalRoot);
+    const attached = path.join(externalRoot, "attached.pdf");
+    const blocked = path.join(externalRoot, "blocked.pdf");
+    fs.writeFileSync(attached, simplePdf("attached document"));
+    fs.writeFileSync(blocked, simplePdf("blocked document"));
+    const allowed = new Set([fs.realpathSync(attached)]);
+    const documents = createDocumentMcp({
+      workspaceRoot: root,
+      cwd,
+      allowedExternalReadPaths: () => allowed,
+    });
+
+    await expect(documents.runReadDocument({ file_path: attached })).resolves.toMatchObject({
+      isError: false,
+      text: expect.stringContaining("attached document"),
+    });
+    await expect(documents.runReadDocument({ file_path: blocked })).resolves.toMatchObject({
+      isError: true,
+      text: expect.stringContaining("工作区"),
+    });
+  });
   it("uses stable, exact qualified tool names", () => {
     expect(LEEMO_DOCUMENT_TOOL_NAMES).toEqual({
       read: "mcp__leemo-documents__read_document",
@@ -91,6 +140,31 @@ describe("document MCP", () => {
       expect(failed.isError, output_path).toBe(true);
     }
     expect(fs.readFileSync(path.join(cwd, "已存在.docx"), "utf8")).toBe("keep");
+  });
+
+  it("saves the default edited copy of an attached external Word file inside the workspace", async () => {
+    const root = workspace();
+    const cwd = path.join(root, "默认工作区");
+    const externalDir = fs.mkdtempSync(path.join(os.tmpdir(), "leemo-external-word-"));
+    temporaryDirectories.push(externalDir);
+    const source = path.join(externalDir, "外部简历.docx");
+    fs.writeFileSync(source, await Packer.toBuffer(new Document({
+      sections: [{ children: [new Paragraph("旧内容")] }],
+    })));
+    const documents = createDocumentMcp({
+      workspaceRoot: root,
+      cwd,
+      allowedExternalReadPaths: () => new Set([source]),
+    });
+
+    const edited = await documents.runEditWordDocument({
+      file_path: source,
+      replacements: [{ find: "旧内容", replace: "新内容" }],
+    });
+
+    expect(edited).toMatchObject({ isError: false });
+    expectSameExistingPath(edited.actualPath, path.join(cwd, "外部简历-修改版.docx"));
+    expect(fs.existsSync(path.join(externalDir, "外部简历-修改版.docx"))).toBe(false);
   });
 
   it("does not create a copy when exact-match validation fails, then recovers on the next request", async () => {
