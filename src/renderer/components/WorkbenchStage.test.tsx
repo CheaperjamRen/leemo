@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 import { BridgeProvider, useUi } from "../bridge/context";
@@ -176,6 +176,35 @@ describe("WorkbenchStage", () => {
       expect(screen.getByTestId("workbench-stage")).toHaveAttribute("data-layout", "conversation");
       expect(screen.queryByRole("tab", { name: /文件/ })).not.toBeInTheDocument();
       expect(screen.queryByTestId("workbench-stage-split-handle")).not.toBeInTheDocument();
+    } finally {
+      Object.defineProperty(window, "innerWidth", { configurable: true, value: originalWidth });
+    }
+  });
+
+  it("moves focus into a newly opened narrow file and restores the composer after close", async () => {
+    const originalWidth = window.innerWidth;
+    Object.defineProperty(window, "innerWidth", { configurable: true, value: 800 });
+    const conversation = <textarea aria-label="输入消息" />;
+    try {
+      const { rerender } = render(
+        <BridgeProvider>
+          <WorkbenchStage conversation={conversation} file={null} hasFile={false} />
+        </BridgeProvider>,
+      );
+
+      rerender(
+        <BridgeProvider>
+          <WorkbenchStage conversation={conversation} file={<div>文件内容</div>} hasFile fileKey="first.md" />
+        </BridgeProvider>,
+      );
+      await waitFor(() => expect(screen.getByTestId("file-surface")).toHaveFocus());
+
+      rerender(
+        <BridgeProvider>
+          <WorkbenchStage conversation={conversation} file={null} hasFile={false} />
+        </BridgeProvider>,
+      );
+      await waitFor(() => expect(screen.getByRole("textbox", { name: "输入消息" })).toHaveFocus());
     } finally {
       Object.defineProperty(window, "innerWidth", { configurable: true, value: originalWidth });
     }

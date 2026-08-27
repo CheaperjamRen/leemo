@@ -58,6 +58,10 @@ export default function WorkbenchStage({
   conversationMarker,
 }: WorkbenchStageProps): React.JSX.Element {
   const stageRef = useRef<HTMLDivElement>(null);
+  const conversationSurfaceRef = useRef<HTMLElement>(null);
+  const fileSurfaceRef = useRef<HTMLElement>(null);
+  const focusFileKeyRef = useRef<string | null | undefined>(undefined);
+  const focusHadFileRef = useRef(false);
   const width = useStageWidth(stageRef);
   const activeScopeKey = useUi((state) => state.activeScopeKey);
   const session = useUi((state) => state.scopeSessions[state.activeScopeKey]);
@@ -164,6 +168,27 @@ export default function WorkbenchStage({
   const conversationVisible = layout !== "tabs" || effectiveTabSurface === "conversation";
   const fileVisible = hasFile && (layout !== "tabs" || effectiveTabSurface === "file");
 
+  useEffect(() => {
+    const openedOrReplaced = hasFile
+      && layout === "tabs"
+      && (!focusHadFileRef.current || focusFileKeyRef.current !== fileKey);
+    const closed = focusHadFileRef.current && !hasFile;
+    focusHadFileRef.current = hasFile;
+    focusFileKeyRef.current = fileKey;
+    if (!openedOrReplaced && !closed) return undefined;
+
+    const frame = window.requestAnimationFrame(() => {
+      if (openedOrReplaced) {
+        fileSurfaceRef.current?.focus({ preventScroll: true });
+        return;
+      }
+      const conversation = conversationSurfaceRef.current;
+      const composer = conversation?.querySelector<HTMLElement>('textarea[aria-label="输入消息"]:not([disabled])');
+      (composer ?? conversation)?.focus({ preventScroll: true });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [fileKey, hasFile, layout]);
+
   return (
     <div
       ref={stageRef}
@@ -213,6 +238,7 @@ export default function WorkbenchStage({
         style={layout === "split" ? { gridTemplateColumns: `${conversationWidth}px ${WORKBENCH_STAGE_SPLIT_HANDLE_WIDTH}px minmax(0, 1fr)` } : undefined}
       >
         <section
+          ref={conversationSurfaceRef}
           className={`${layout === "split" ? "min-w-0" : "absolute inset-0"} flex min-h-0 flex-col ${conversationVisible ? "opacity-100" : "pointer-events-none opacity-0"}`}
           data-testid="conversation-surface"
           aria-hidden={!conversationVisible || undefined}
@@ -241,12 +267,14 @@ export default function WorkbenchStage({
 
         {hasFile && (
           <section
+            ref={fileSurfaceRef}
             className={`${layout === "split" ? "min-w-0 border-l border-[var(--leemo-line-soft)]" : "absolute inset-0"} flex min-h-0 flex-col ${fileVisible ? "opacity-100" : "pointer-events-none opacity-0"}`}
             data-testid="file-surface"
             data-preview-column="true"
             aria-label="文件预览"
             aria-hidden={!fileVisible || undefined}
             inert={!fileVisible || undefined}
+            tabIndex={layout === "tabs" ? -1 : undefined}
           >
             {file}
           </section>
