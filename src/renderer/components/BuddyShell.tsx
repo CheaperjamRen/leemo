@@ -4,7 +4,6 @@ import ChipRow from "./ChipRow";
 import InputArea from "./InputArea";
 import PinnedPlan from "./PinnedPlan";
 import HistoryDrawer from "./HistoryDrawer";
-import NewTopicDialog from "./NewTopicDialog";
 import Timeline from "./timeline/Timeline";
 import LiveStatusBar from "./timeline/LiveStatusBar";
 import DropClassifyBar from "./DropClassifyBar";
@@ -88,7 +87,6 @@ function BuddyRelationshipTimeline({
 export default function BuddyShell() {
   const [drawer, setDrawer] = useState(false);
   const [historyVisible, setHistoryVisible] = useState(false);
-  const [newTopicOpen, setNewTopicOpen] = useState(false);
   const [newTopicBusy, setNewTopicBusy] = useState(false);
   const [newTopicError, setNewTopicError] = useState<string | null>(null);
   const [dailyReviewBusy, setDailyReviewBusy] = useState(false);
@@ -111,6 +109,17 @@ export default function BuddyShell() {
     [conversations, relationshipConversationId],
   );
   const activeId = relationshipConversation?.id ?? null;
+  const previousRelationshipId = useMemo(() => Object.values(conversations)
+    .filter((conversation) => isGlobalBuddyConversation(conversation) && conversation.id !== activeId)
+    .sort((left, right) => right.createdAt - left.createdAt || right.lastActivityAt - left.lastActivityAt)[0]?.id ?? null,
+  [activeId, conversations]);
+  const activeChapterEmpty = useConversations((state) => Boolean(
+    activeId
+      && (state.timelines[activeId]?.length ?? 0) === 0
+      && (state.queuedTurns[activeId]?.length ?? 0) === 0
+      && !state.runIds[activeId]
+      && !state.pendingSends[activeId],
+  ));
   const activeIdRef = useRef(activeId);
   activeIdRef.current = activeId;
   const composerDrafts = useComposerDrafts((state) => state.drafts);
@@ -123,6 +132,7 @@ export default function BuddyShell() {
   const composerDraft = composerDrafts[draftScope] ?? EMPTY_COMPOSER_DRAFT;
   const draft = composerDraft.text;
   const createConversation = useConversations((s) => s.createConversation);
+  const discardEmptyConversation = useConversations((s) => s.discardEmptyConversation);
   const conversationsApi = useConversationsApi();
   const switchActive = useConversations((s) => s.switchActive);
   const send = useConversations((s) => s.send);
@@ -341,14 +351,8 @@ export default function BuddyShell() {
     send,
   ]);
 
-  const openNewTopic = useCallback(() => {
-    if (newTopicUnavailable) return;
-    setNewTopicError(null);
-    setNewTopicOpen(true);
-  }, [newTopicUnavailable]);
-
-  const confirmNewTopic = useCallback(async () => {
-    if (newTopicInFlight.current || activeRunId || pendingInteraction) return;
+  const startNewTopic = useCallback(async () => {
+    if (newTopicInFlight.current || newTopicUnavailable) return;
     newTopicInFlight.current = true;
     setNewTopicBusy(true);
     setNewTopicError(null);
@@ -379,8 +383,8 @@ export default function BuddyShell() {
       assignComposerConversation(sourceDraftScope, conversationId);
       setRelationshipConversationId(conversationId);
       switchActive(conversationId);
-      setHistoryVisible(false);
-      setNewTopicOpen(false);
+      setHistoryVisible(true);
+      setHistoryFocus(null);
     } catch (error: unknown) {
       setNewTopicError(error instanceof Error ? error.message : "暂时无法准备新话题，请稍后再试。");
     } finally {
@@ -388,13 +392,48 @@ export default function BuddyShell() {
       setNewTopicBusy(false);
     }
   }, [
-    activeRunId,
     activeId,
     activeMeta,
     assignComposerConversation,
     createConversation,
     pendingInteraction,
     conversationsApi,
+    newTopicUnavailable,
+    setRelationshipConversationId,
+    switchActive,
+  ]);
+
+  const undoNewTopic = useCallback(async () => {
+    if (
+      newTopicInFlight.current
+      || !activeId
+      || !previousRelationshipId
+      || !activeChapterEmpty
+    ) return;
+    newTopicInFlight.current = true;
+    setNewTopicBusy(true);
+    setNewTopicError(null);
+    const sourceDraftScope = draftScopeRef.current;
+    try {
+      const discarded = await discardEmptyConversation(activeId);
+      if (!discarded) throw new Error("这个新话题已经有内容，无法撤销章节边界。");
+      assignComposerConversation(sourceDraftScope, previousRelationshipId);
+      setRelationshipConversationId(previousRelationshipId);
+      switchActive(previousRelationshipId);
+      setHistoryVisible(true);
+      setHistoryFocus(null);
+    } catch (error: unknown) {
+      setNewTopicError(error instanceof Error ? error.message : "暂时无法撤销新话题，请稍后重试。");
+    } finally {
+      newTopicInFlight.current = false;
+      setNewTopicBusy(false);
+    }
+  }, [
+    activeChapterEmpty,
+    activeId,
+    assignComposerConversation,
+    discardEmptyConversation,
+    previousRelationshipId,
     setRelationshipConversationId,
     switchActive,
   ]);
@@ -429,7 +468,7 @@ export default function BuddyShell() {
         dailyReviewBusy={dailyReviewBusy}
         onStartRelationship={() => { void startRelationshipOnboarding(); }}
         relationshipBusy={relationshipBusy}
-        onStartNewTopic={openNewTopic}
+        onStartNewTopic={() => { void startNewTopic(); }}
         newTopicDisabled={newTopicUnavailable}
       />
       <main className="leemo-buddy-main relative z-10 flex min-h-0 flex-1 flex-col px-4 sm:px-6">
@@ -447,6 +486,14 @@ export default function BuddyShell() {
             className="mx-auto mt-3 max-w-[720px] rounded-md border border-[var(--leemo-danger)]/20 bg-[var(--leemo-card)] px-3 py-2 text-[12.5px] text-[var(--leemo-danger)]"
           >
             {relationshipError}
+          </div>
+        )}
+        {newTopicError && (
+          <div
+            role="alert"
+            className="mx-auto mt-3 max-w-[720px] rounded-md border border-[var(--leemo-danger)]/20 bg-[var(--leemo-card)] px-3 py-2 text-[12.5px] text-[var(--leemo-danger)]"
+          >
+            {newTopicError}
           </div>
         )}
         {showTimeline ? (
@@ -490,13 +537,28 @@ export default function BuddyShell() {
                   type="button"
                   className="leemo-buddy-new-topic"
                   disabled={newTopicUnavailable}
-                  onClick={openNewTopic}
+                  onClick={() => { void startNewTopic(); }}
                 >
                   新话题
                 </button>
               </div>
             )}
           </section>
+        )}
+        {showTimeline && activeChapterEmpty && previousRelationshipId && (
+          <div className="leemo-buddy-topic-boundary" data-testid="buddy-topic-boundary">
+            <span aria-hidden />
+            <p>新话题从这里开始</p>
+            <button
+              type="button"
+              aria-label="撤销新话题"
+              disabled={newTopicBusy}
+              onClick={() => { void undoNewTopic(); }}
+            >
+              {newTopicBusy ? "正在撤销…" : "撤销"}
+            </button>
+            <span aria-hidden />
+          </div>
         )}
         <div className="leemo-buddy-composer-dock mt-auto shrink-0" data-testid="buddy-composer-dock">
           <div className="leemo-buddy-composer-track mx-auto w-full px-1 sm:px-6">
@@ -620,17 +682,6 @@ export default function BuddyShell() {
           }
           setHistoryVisible(true);
           setHistoryFocus({ runId: target.runId, nonce: Date.now() });
-        }}
-      />
-      <NewTopicDialog
-        open={newTopicOpen}
-        busy={newTopicBusy}
-        error={newTopicError}
-        onConfirm={() => { void confirmNewTopic(); }}
-        onCancel={() => {
-          if (newTopicBusy) return;
-          setNewTopicOpen(false);
-          setNewTopicError(null);
         }}
       />
     </div>

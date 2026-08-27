@@ -504,14 +504,11 @@ describe("BuddyShell", () => {
 
     const landing = screen.getByTestId("buddy-landing");
     await user.click(within(landing).getByRole("button", { name: "新话题" }));
-    expect(screen.getByRole("alertdialog", { name: "开始新话题？" })).toBeInTheDocument();
-    expect(client.invoke.mock.calls.filter(([channel]) => channel === "bridge:createConversation")).toHaveLength(0);
-    expect(client.invoke.mock.calls.filter(([channel]) => channel === "bridge:send")).toHaveLength(0);
-
-    await user.click(screen.getByRole("button", { name: "开始" }));
     await waitFor(() => expect(screen.getByTestId("relationship-state")).toHaveTextContent("conv-1|conv-1"));
     expect(input).toHaveValue("我刚想到另一件事");
-    expect(screen.getByTestId("buddy-landing")).toBeInTheDocument();
+    expect(screen.queryByRole("alertdialog", { name: "开始新话题？" })).not.toBeInTheDocument();
+    expect(screen.getByTestId("buddy-topic-boundary")).toHaveTextContent("新话题从这里开始");
+    expect(screen.getByText("这件事我们已经聊过一会儿了。")).toBeInTheDocument();
     expect(client.invoke.mock.calls.filter(([channel]) => channel === "bridge:createConversation")).toHaveLength(1);
     expect(client.invoke.mock.calls.find(([channel]) => channel === "bridge:createConversation")?.[1]).toEqual(
       expect.objectContaining({ providerId: "glm", modelId: "glm-5.2" }),
@@ -519,9 +516,14 @@ describe("BuddyShell", () => {
     expect(client.invoke.mock.calls.filter(([channel]) => channel === "bridge:send")).toHaveLength(0);
 
     await user.click(within(screen.getByRole("banner")).getByRole("button", { name: "新话题" }));
-    await user.click(screen.getByRole("button", { name: "开始" }));
-    await waitFor(() => expect(screen.queryByRole("alertdialog", { name: "开始新话题？" })).not.toBeInTheDocument());
+    await waitFor(() => expect(screen.getByTestId("relationship-state")).toHaveTextContent("conv-1|conv-1"));
     expect(client.invoke.mock.calls.filter(([channel]) => channel === "bridge:createConversation")).toHaveLength(1);
+
+    await user.click(screen.getByRole("button", { name: "撤销新话题" }));
+    await waitFor(() => expect(screen.getByTestId("relationship-state")).toHaveTextContent("buddy-current|buddy-current"));
+    expect(screen.queryByTestId("buddy-topic-boundary")).not.toBeInTheDocument();
+    expect(input).toHaveValue("我刚想到另一件事");
+    expect(client.invoke).toHaveBeenCalledWith("bridge:disposeConversation", { conversationId: "conv-1" });
   });
 
   it("keeps the current chapter and draft when creating a new topic fails", async () => {
@@ -584,11 +586,10 @@ describe("BuddyShell", () => {
     const user = userEvent.setup();
     expect(await screen.findByPlaceholderText("输入消息…")).toHaveValue("这句还没发");
     await user.click(within(screen.getByRole("banner")).getByRole("button", { name: "新话题" }));
-    await user.click(screen.getByRole("button", { name: "开始" }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent("暂时无法准备新话题");
     expect(screen.getByPlaceholderText("输入消息…")).toHaveValue("这句还没发");
-    expect(screen.getByRole("alertdialog", { name: "开始新话题？" })).toBeInTheDocument();
+    expect(screen.queryByRole("alertdialog", { name: "开始新话题？" })).not.toBeInTheDocument();
   });
 
   it("keeps the welcome draft and disposes the host when the durable chapter commit fails", async () => {
@@ -602,11 +603,10 @@ describe("BuddyShell", () => {
     await user.type(input, "先留住这句草稿");
 
     await user.click(within(screen.getByRole("banner")).getByRole("button", { name: "新话题" }));
-    await user.click(screen.getByRole("button", { name: "开始" }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent("本地记录暂时无法保存");
     expect(input).toHaveValue("先留住这句草稿");
-    expect(screen.getByRole("alertdialog", { name: "开始新话题？" })).toBeInTheDocument();
+    expect(screen.queryByRole("alertdialog", { name: "开始新话题？" })).not.toBeInTheDocument();
     expect(persist.saveRelationshipChapter).toHaveBeenCalledTimes(1);
     expect(client.invoke).toHaveBeenCalledWith("bridge:disposeConversation", { conversationId: "conv-1" });
     expect(client.invoke.mock.calls.filter(([channel]) => channel === "bridge:send")).toHaveLength(0);

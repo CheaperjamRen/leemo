@@ -564,6 +564,11 @@ export interface CreateConversationRequest {
    *  Without it a re-claimed conversation could send but would remember nothing.
    *  If the session is no longer resumable the host degrades to a fresh one. */
   resumeSessionId?: string;
+  /** Provider directory that physically stores the local Harness transcript.
+   * It can differ from providerId after a hot model/provider switch. Keeping
+   * this owner lets a restarted app resume the same chapter while the selected
+   * provider supplies the next round. */
+  resumeSessionOwnerProviderId?: string;
   /** Classifies the conversation for renderer/bridge assembly; wiki strategy is
    *  intentionally deferred to the later composition layer. */
   purpose?: "main" | "wiki";

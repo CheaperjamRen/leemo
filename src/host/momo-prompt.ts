@@ -123,7 +123,7 @@ const MODE_VOICE = "表达自然。中文禁用“不是/不只是 X，而是/�
 const MODE_BLOCK: Record<MomoPromptOptions["mode"], string> = {
   buddy: `## 当前模式：搭子态
 温暖聊天。${MODE_VOICE}工具过程一行；轻产物卡优先，审批/问询用暖样式。
-Relationship history search is on demand; never call it every turn.`,
+Current chapter. Search earlier details once; ask if unclear.`,
   workbench: `## 当前模式：工作台态
 产出守纪律、标来源，完成后简报。${MODE_VOICE}完整展示工具过程、审批路径和危险角标。`,
 };

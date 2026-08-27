@@ -293,7 +293,7 @@ describe("HistoryDrawer — real conversations, not fixtures", () => {
     });
   });
 
-  it("keeps buddy history global and puts archived conversations in a separate section", async () => {
+  it("keeps buddy history global and leaves archived conversations in settings", async () => {
     const user = userEvent.setup();
     const persist = persistenceWith(
       storedConversation("global", "今晚聊聊", { lastOpenedAt: 2 }),
@@ -312,8 +312,7 @@ describe("HistoryDrawer — real conversations, not fixtures", () => {
     expect(screen.queryByRole("button", { name: "高数第三章" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "工作台执行记录" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "旧想法" })).not.toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "已归档 1" }));
-    expect(screen.getByRole("button", { name: "旧想法" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "已归档 1" })).not.toBeInTheDocument();
   });
 
   it("persists pin, archive and delete actions from buddy history", async () => {
@@ -321,6 +320,7 @@ describe("HistoryDrawer — real conversations, not fixtures", () => {
     const persist = persistenceWith(
       storedConversation("active", "当前对话", { lastOpenedAt: 5 }),
       storedConversation("older", "稍后整理", { lastOpenedAt: 1 }),
+      storedConversation("delete-me", "准备删除", { lastOpenedAt: 0 }),
     );
     render(<BridgeProvider client={createClient()} persist={persist}><BuddyShell /></BridgeProvider>);
     await screen.findByRole("button", { name: "继续上次聊天" });
@@ -335,13 +335,18 @@ describe("HistoryDrawer — real conversations, not fixtures", () => {
 
     await user.click(screen.getByRole("button", { name: "更多操作：稍后整理" }));
     await user.click(screen.getByRole("button", { name: "归档" }));
-    await user.click(await screen.findByRole("button", { name: "已归档 1" }));
-    await user.click(screen.getByRole("button", { name: "更多操作：稍后整理" }));
+    await waitFor(() => expect(persist.saveConversation).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "older", archived: true }),
+      expect.any(Array),
+    ));
+    expect(screen.queryByRole("button", { name: "稍后整理" })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "更多操作：准备删除" }));
     await user.click(screen.getByRole("button", { name: "删除对话" }));
     await user.click(screen.getByRole("button", { name: "确认删除对话" }));
 
-    await waitFor(() => expect(persist.deleteConversation).toHaveBeenCalledWith("older"));
-    expect(screen.queryByRole("button", { name: "稍后整理" })).not.toBeInTheDocument();
+    await waitFor(() => expect(persist.deleteConversation).toHaveBeenCalledWith("delete-me"));
+    expect(screen.queryByRole("button", { name: "准备删除" })).not.toBeInTheDocument();
   });
 
   it("moves a global buddy conversation into a chosen book", async () => {

@@ -2277,6 +2277,9 @@ export function createBridgeHost(deps: HostDeps): BridgeHost {
         ...(shim ? { searchShimPort: shim.port } : {}),
         id: cid,
         ...(r.resumeSessionId !== undefined ? { resume: r.resumeSessionId } : {}),
+        ...(r.resumeSessionId !== undefined && r.resumeSessionOwnerProviderId !== undefined
+          ? { sessionOwnerProviderId: r.resumeSessionOwnerProviderId }
+          : {}),
       });
       cid = claudeHandle.id;
     }
@@ -2525,7 +2528,9 @@ export function createBridgeHost(deps: HostDeps): BridgeHost {
       purpose: isWiki ? "wiki" : "main",
       broker, askMcp, memoryMcp, skillAdminMcp, memoryScope, entry,
       entryRuntimeSignature: catalogRuntimeSignature(entry), modelId: r.modelId,
-      sessionOwnerProviderId: entry.provider.id,
+      sessionOwnerProviderId: r.resumeSessionId && r.resumeSessionOwnerProviderId
+        ? r.resumeSessionOwnerProviderId
+        : entry.provider.id,
       workspace: conversationWorkspace,
       cwd: conversationCwd,
       // 轮 7 A3: keep the live containers so updateContext can rewrite them.

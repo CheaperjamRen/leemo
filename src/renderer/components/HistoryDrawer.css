@@ -191,8 +191,7 @@
   stroke-width: 1.7;
 }
 
-.buddy-history-group ul,
-.buddy-history-archive ul {
+.buddy-history-group ul {
   margin: 0;
   padding: 0;
   list-style: none;
@@ -255,44 +254,6 @@
   border-radius: 9px;
   padding: 6px;
   box-shadow: 0 16px 34px -14px rgba(43, 33, 25, 0.3);
-}
-
-.buddy-history-archive {
-  flex: 0 0 auto;
-  margin: 0 14px 12px;
-  border: 1px solid color-mix(in srgb, var(--leemo-line) 72%, transparent);
-  border-radius: 8px;
-  background: color-mix(in srgb, white 36%, transparent);
-}
-
-.buddy-history-archive > ul {
-  max-height: 148px;
-  overflow-y: auto;
-  padding: 5px;
-  border-bottom: 1px solid var(--leemo-line-soft);
-}
-
-.buddy-history-archive > button {
-  display: flex;
-  width: 100%;
-  height: 36px;
-  align-items: center;
-  justify-content: space-between;
-  border: 0;
-  padding: 0 12px;
-  background: transparent;
-  color: var(--leemo-ink-2);
-  font-size: 12px;
-  font-weight: 560;
-}
-
-.buddy-history-archive > button:hover {
-  background: color-mix(in srgb, var(--leemo-hover) 66%, transparent);
-}
-
-.buddy-history-archive > button svg {
-  width: 13px;
-  height: 13px;
 }
 
 @media (max-width: 520px) {

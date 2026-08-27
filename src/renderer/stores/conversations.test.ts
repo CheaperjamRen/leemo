@@ -988,6 +988,33 @@ describe("conversations store", () => {
     expect(store.getState().timelines[b]).toHaveLength(1);
   });
 
+  it("removes a discarded durable relationship chapter from portable storage", async () => {
+    const bridge = makeClient(["empty-chapter"]);
+    const persistence = {
+      saveConversation: vi.fn(async () => undefined),
+      saveRelationshipChapter: vi.fn(async () => undefined),
+      moveConversation: vi.fn(async () => undefined),
+      deleteConversation: vi.fn(async () => undefined),
+    };
+    const store = createConversationsStore(bridge.client, {
+      resolveConversationDefaults: () => DEFAULTS,
+      persistence,
+    });
+    const id = await store.getState().createConversation({
+      source: "buddy",
+      durableRelationshipChapter: true,
+    });
+
+    await expect(store.getState().discardEmptyConversation(id)).resolves.toBe(true);
+
+    expect(persistence.saveRelationshipChapter).toHaveBeenCalledWith(
+      expect.objectContaining({ id }),
+      [],
+    );
+    expect(persistence.deleteConversation).toHaveBeenCalledWith(id);
+    expect(store.getState().byId[id]).toBeUndefined();
+  });
+
   it("restores the previous retry draft when a replacement send is rejected before acknowledgement", async () => {
     const { bridge, store, a } = await registerTwo();
     const originalAttachments = [{
@@ -2336,6 +2363,7 @@ describe("conversations store", () => {
           modelId: "deepseek-v4-flash",
           purpose: "main",
           resumeSessionId: "sess-before-restart",
+          resumeSessionOwnerProviderId: "deepseek",
         },
       });
       // The cid must NOT change — the timeline and the SQLite primary key are
@@ -2496,7 +2524,7 @@ describe("conversations store", () => {
       });
     });
 
-    it("does not resume a session that belongs to another provider", async () => {
+    it("reclaims the same local session after a provider switch", async () => {
       const bridge = makeClient();
       const store = createConversationsStore(bridge.client, {
         resolveConversationDefaults: () => DEFAULTS,
@@ -2514,8 +2542,11 @@ describe("conversations store", () => {
 
       await store.getState().send("c-restart", "继续");
 
-      expect(bridge.calls[0].request).not.toHaveProperty("resumeSessionId");
-      expect(bridge.calls[0].request).toMatchObject({ providerId: "glm" });
+      expect(bridge.calls[0].request).toMatchObject({
+        providerId: "glm",
+        resumeSessionId: "session-owned-by-tokenflux",
+        resumeSessionOwnerProviderId: "tokenflux",
+      });
     });
 
     it("does not resume a legacy session whose provider ownership is unknown", async () => {
@@ -2604,6 +2635,51 @@ describe("conversations store", () => {
         role: "user",
         text: "继续",
       });
+    });
+
+    it("grounds an ambiguous continuation in the current chapter even when the provider session resumes", async () => {
+      const bridge = makeClient();
+      const store = createConversationsStore(bridge.client, {
+        resolveConversationDefaults: () => DEFAULTS,
+      });
+      store.getState().hydrate([{
+        meta: {
+          ...persisted,
+          providerId: "deepseek",
+          modelId: "deepseek-v4-flash",
+          sessionId: "session-current-provider",
+          sessionProviderId: "deepseek",
+        },
+        timeline: [
+          {
+            kind: "text",
+            id: "u0",
+            runId: "run-interview",
+            role: "user",
+            text: "根据这份简历帮我准备面试，把实习经历整理成能讲清楚的故事。",
+            streaming: false,
+            attachments: [{ name: "AI产品简历.docx", size: 100 }],
+          },
+          {
+            kind: "text",
+            id: "m1",
+            runId: "run-interview",
+            role: "momo",
+            text: "材料已经读完，下一步先梳理数据分析实习的故事。",
+            streaming: false,
+          },
+        ],
+      }]);
+
+      await store.getState().send("c-restart", "继续");
+
+      expect(bridge.calls[0].request).toMatchObject({
+        resumeSessionId: "session-current-provider",
+      });
+      const sent = bridge.calls.find((call) => call.channel === "bridge:send")?.request as { prompt: string };
+      expect(sent.prompt).toContain("[Leemo 章节续接]");
+      expect(sent.prompt).toContain("准备面试");
+      expect(sent.prompt).toContain("下一步先梳理数据分析实习的故事");
     });
 
     it("keeps the previous sessionId when a run reports none", async () => {

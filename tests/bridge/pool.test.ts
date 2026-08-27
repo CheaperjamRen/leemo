@@ -448,6 +448,27 @@ describe("pool — CLAUDE_CONFIG_DIR isolation per provider", () => {
     expect(calls[0].options.env!.CLAUDE_CONFIG_DIR).toBe(dir);
     expect(calls[1].options.env!.CLAUDE_CONFIG_DIR).toBe(dir);
   });
+
+  it("resumes a switched conversation from its transcript owner while using the selected provider", async () => {
+    const dataDir = freshDataDir();
+    const { queryFn, calls } = makeFakeQuery({
+      scripts: [oneTurnStream("sess-cross-provider", "continued")],
+    });
+    const bridge = createBridge({ queryFn, dataDir });
+    const conversation = bridge.createConversation({
+      provider: glmDirect,
+      modelId: "glm-5",
+      resume: "sess-cross-provider",
+      sessionOwnerProviderId: "deepseek",
+    });
+
+    await drain(conversation.send("继续"));
+
+    expect(calls[0].options.resume).toBe("sess-cross-provider");
+    expect(calls[0].options.env!.CLAUDE_CONFIG_DIR).toBe(path.join(dataDir, "providers", "deepseek"));
+    expect(calls[0].options.env!.ANTHROPIC_MODEL).toBe("glm-5");
+    expect(calls[0].options.env!.ANTHROPIC_AUTH_TOKEN).toBe(glmDirect.apiKey);
+  });
 });
 
 // ---- resume ----------------------------------------------------------------

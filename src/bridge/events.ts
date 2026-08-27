@@ -187,8 +187,9 @@ export type LeemoEvent =
       finalText: string;
       pathAudit: PathAudit;
       sessionId?: string;
-      /** Provider that owns sessionId. A session token is opaque and cannot be
-       * resumed by a different provider after a model switch. */
+      /** Provider directory that physically owns the local Harness transcript.
+       * It remains stable across compatible provider switches so restart can
+       * reopen the same session from the correct CLAUDE_CONFIG_DIR. */
       sessionProviderId?: string;
       outcome?: RunOutcome;
       retryable?: boolean;

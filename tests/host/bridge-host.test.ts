@@ -3621,6 +3621,23 @@ describe("bridge-host — re-claiming a persisted conversation (轮 2 卡 C)", (
     expect(optionsSeen[0]?.resume).toBe("sess-before-restart");
   });
 
+  it("reopens a persisted transcript from its original provider directory", async () => {
+    const { host, optionsSeen } = makeRecordingHost();
+    const { conversationId } = await host.handleInvoke("bridge:createConversation", {
+      providerId: "deepseek",
+      modelId: "deepseek-chat",
+      conversationId: "cid-switched-before-restart",
+      resumeSessionId: "sess-cross-provider",
+      resumeSessionOwnerProviderId: "glm",
+    });
+    await host.handleInvoke("bridge:send", { conversationId, prompt: "继续" });
+    await new Promise((resolve) => setTimeout(resolve, 30));
+
+    expect(optionsSeen[0]?.resume).toBe("sess-cross-provider");
+    expect((optionsSeen[0]?.env as Record<string, string>).CLAUDE_CONFIG_DIR)
+      .toMatch(/[\\/]providers[\\/]glm$/u);
+  });
+
   it("omits resume when no resumeSessionId is supplied (fresh conversation)", async () => {
     const { host, optionsSeen } = makeRecordingHost();
     const { conversationId } = await host.handleInvoke("bridge:createConversation", {

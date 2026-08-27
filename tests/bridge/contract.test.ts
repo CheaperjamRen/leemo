@@ -144,7 +144,7 @@ describe("contract — policy-driven approval types (07/21 B3 revision)", () => 
     expect(withPersona.personaText).toContain("momo");
   });
 
-  it("CreateConversationRequest accepts OPTIONAL conversationId + resumeSessionId (轮2卡C)", () => {
+  it("CreateConversationRequest carries the persisted session and its local transcript owner", () => {
     // Restart continuity: the renderer re-claims a persisted conversation id
     // (host Maps are memory-only) and hands back the persisted session id as
     // the resume start point. Both optional — an ordinary create omits them.
@@ -154,11 +154,13 @@ describe("contract — policy-driven approval types (07/21 B3 revision)", () => 
       modelId: "deepseek-chat",
       conversationId: "cid-from-sqlite",
       resumeSessionId: "sess-from-sqlite",
+      resumeSessionOwnerProviderId: "deepseek",
     };
     expect(fresh.conversationId).toBeUndefined();
     expect(fresh.resumeSessionId).toBeUndefined();
     expect(reclaimed.conversationId).toBe("cid-from-sqlite");
     expect(reclaimed.resumeSessionId).toBe("sess-from-sqlite");
+    expect(reclaimed.resumeSessionOwnerProviderId).toBe("deepseek");
   });
 
   it("SendRequest carries an optional renderer message id for memory provenance", () => {

@@ -104,7 +104,6 @@ export default function HistoryDrawer({
   onPickChapter?: (conversationId: string) => void;
 }) {
   const [q, setQ] = useState("");
-  const [showArchived, setShowArchived] = useState(false);
   const [collapsedGroups, setCollapsedGroups] = useState<Partial<Record<HistoryGroupId, boolean>>>({});
   const byId = useConversations((s) => s.byId);
   const order = useConversations((s) => s.order);
@@ -124,7 +123,6 @@ export default function HistoryDrawer({
     const closeOnEscape = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
       setQ("");
-      setShowArchived(false);
       setCollapsedGroups({});
       onClose();
     };
@@ -151,11 +149,6 @@ export default function HistoryDrawer({
     ));
   const visible = conversations.filter((conversation) => !conversation.archived && matchesQuery(conversation));
   const groups = groupConversations(visible, now);
-  const archived = conversations
-    .filter((conversation) => conversation.archived && matchesQuery(conversation))
-    .sort((left, right) => activityTime(right) - activityTime(left));
-  const archivedCount = conversations.filter((conversation) => conversation.archived).length;
-  const archiveOpen = showArchived || query !== "";
   const moveTargets = [
     ...notebookList.map((book) => ({ workspaceId: HOME_WORKSPACE_ID, bookId: book.id, label: book.title })),
     ...workspaceList
@@ -165,7 +158,6 @@ export default function HistoryDrawer({
 
   const dismiss = () => {
     setQ("");
-    setShowArchived(false);
     setCollapsedGroups({});
     onClose();
   };
@@ -234,7 +226,7 @@ export default function HistoryDrawer({
         <div className="buddy-history-list" data-testid="buddy-history-list">
           {conversations.length === 0 ? (
             <p className="buddy-history-empty">还没有记录</p>
-          ) : groups.length === 0 && archived.length === 0 ? (
+          ) : groups.length === 0 ? (
             <p className="buddy-history-empty">没有匹配的记录</p>
           ) : (
             groups.map((group) => {
@@ -258,20 +250,6 @@ export default function HistoryDrawer({
           )}
         </div>
 
-        {archivedCount > 0 && (
-          <div className="buddy-history-archive">
-            {archiveOpen && archived.length > 0 && <ul>{archived.map(row)}</ul>}
-            <button
-              type="button"
-              aria-label={`已归档 ${archivedCount}`}
-              aria-expanded={archiveOpen}
-              onClick={() => setShowArchived((shown) => !shown)}
-            >
-              <span>已归档</span>
-              {archiveOpen ? <ChevronDown aria-hidden /> : <ChevronRight aria-hidden />}
-            </button>
-          </div>
-        )}
       </aside>
     </>
   );

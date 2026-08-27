@@ -136,6 +136,9 @@ export interface ConversationConfig {
    *  session id is injected here. If it turns out to be unusable the first
    *  round degrades to a fresh session — see send(). */
   resume?: string;
+  /** Physical CLAUDE_CONFIG_DIR owner for a resumed local transcript. The
+   * selected provider still owns this round's endpoint, credentials and model. */
+  sessionOwnerProviderId?: string;
 }
 
 export type ConversationState = "idle" | "running" | "disposed";
@@ -173,6 +176,11 @@ export interface ConversationHandle<TMessage = SdkMessageLike> {
 
 const DEFAULT_PERSISTENT_QUERY_IDLE_MS = 5 * 60_000;
 const DEFAULT_PERSISTENT_TURN_BOUNDARY_GRACE_MS = 750;
+
+function safeProviderStorageSegment(providerId: string): string {
+  if (!/^[a-zA-Z0-9._-]+$/.test(providerId)) throw new Error("invalid provider id");
+  return providerId;
+}
 
 type PersistentNextResult =
   | { ok: true; value: IteratorResult<SdkMessageLike> }
@@ -306,7 +314,9 @@ class Conversation implements ConversationHandle {
     this.id = cfg.id ?? randomUUID();
     this.provider = cfg.provider;
     this.modelId = cfg.modelId;
-    this.configDirProviderId = cfg.provider.id;
+    this.configDirProviderId = safeProviderStorageSegment(
+      cfg.resume && cfg.sessionOwnerProviderId ? cfg.sessionOwnerProviderId : cfg.provider.id,
+    );
     this.gatewayPort = cfg.gatewayPort;
     this.searchShimPort = cfg.searchShimPort;
     if (cfg.resume) {

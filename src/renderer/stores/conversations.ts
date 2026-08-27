@@ -47,8 +47,8 @@ export interface ConversationMeta {
    *  instead of just re-opening an empty shell. Optional: conversations that
    *  never finished a round — and every row written before 卡 C — have none. */
   sessionId?: string | null;
-  /** Provider that minted sessionId. Missing on legacy rows keeps the original
-   * same-provider resume behavior; a known mismatch starts a fresh transport. */
+  /** Provider directory that stores sessionId's local Harness transcript.
+   * Missing on legacy rows is intentionally not guessed. */
   sessionProviderId?: string | null;
   /** One user-authored durable objective for this conversation. It is shown as
    * a compact composer card and reaches the model only while active. */
@@ -612,8 +612,11 @@ export function createConversationsStore(
       providerId: meta.providerId,
       modelId: meta.modelId,
       purpose: "main",
-      ...(meta.sessionId && meta.sessionProviderId === meta.providerId
-        ? { resumeSessionId: meta.sessionId }
+      ...(meta.sessionId && meta.sessionProviderId
+        ? {
+            resumeSessionId: meta.sessionId,
+            resumeSessionOwnerProviderId: meta.sessionProviderId,
+          }
         : {}),
       ...(meta.workspaceId ? { workspaceId: meta.workspaceId } : {}),
       // 轮 3 卡 G: re-claiming after a restart must carry the notebook binding
@@ -738,6 +741,7 @@ export function createConversationsStore(
       conversationLocks.add(conversationId);
       try {
         await client.invoke("bridge:disposeConversation", { conversationId }).catch(() => undefined);
+        hostLive.delete(conversationId);
         const current = get();
         const currentRun = current.runIds[conversationId];
         if (
@@ -749,7 +753,10 @@ export function createConversationsStore(
           return false;
         }
 
-        hostLive.delete(conversationId);
+        // A durable empty relationship chapter is written synchronously when
+        // it is created. Undo must remove that portable row before the UI says
+        // the boundary disappeared, otherwise it returns after restart.
+        await deps.persistence?.deleteConversation(conversationId);
         set((state) => {
           const byId = { ...state.byId };
           const timelines = { ...state.timelines };
@@ -773,6 +780,7 @@ export function createConversationsStore(
             activeId: state.activeId === conversationId ? order[0] ?? null : state.activeId,
           };
         });
+        deps.onConversationDeleted?.(conversationId);
         return true;
       } finally {
         conversationLocks.delete(conversationId);
@@ -819,16 +827,13 @@ export function createConversationsStore(
         const runId = `run-${++runSeq}`;
         const timeline = state.timelines[conversationId] ?? [];
         const timestamp = now();
-        const lastResult = [...timeline].reverse().find(
-          (item): item is Extract<TimelineItem, { kind: "result" }> => item.kind === "result",
-        );
-        const sessionCannotBeResumed = Boolean(
-          meta.sessionId
-          && meta.sessionProviderId !== meta.providerId,
-        );
+        // “继续” carries too little intent to let a provider-side session pick
+        // the branch on its own. Always ground this weak instruction in the
+        // latest meaningful turn from the active local chapter. The provider
+        // session still resumes for tool/cache continuity; the checkpoint only
+        // resolves which piece of work the user means.
         const needsLocalRecovery = meta.source === "buddy"
-          && isContinuationOnlyMessage(text)
-          && (sessionCannotBeResumed || !meta.sessionId || lastResult?.isError === true);
+          && isContinuationOnlyMessage(text);
         const checkpoint = needsLocalRecovery
           ? deriveRelationshipContinuationCheckpoint({
               chapterId: meta.id,

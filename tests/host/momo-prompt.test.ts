@@ -93,11 +93,11 @@ describe("buildMomoSystemPrompt — seven layers", () => {
 describe("buildMomoSystemPrompt — dynamic branches", () => {
   it("layer ③ branches on mode", () => {
     expect(build({ mode: "buddy" })).toContain("搭子态");
-    expect(build({ mode: "buddy" })).toContain("Relationship history search is on demand");
-    expect(build({ mode: "buddy" })).toContain("never call it every turn");
+    expect(build({ mode: "buddy" })).toContain("Current chapter");
+    expect(build({ mode: "buddy" })).toContain("Search earlier details once");
     expect(build({ mode: "buddy" })).not.toContain("工作台态");
     expect(build({ mode: "workbench" })).toContain("工作台态");
-    expect(build({ mode: "workbench" })).not.toContain("Relationship history search");
+    expect(build({ mode: "workbench" })).not.toContain("Search earlier details");
     expect(build({ mode: "workbench" })).not.toContain("搭子态");
   });
 
