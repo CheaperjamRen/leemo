@@ -58,7 +58,9 @@ describe("bridge-host MCP channels", () => {
 
     expect(host.inspect(buddy.conversationId)?.mcpServerNames).toContain("leemo-relationship-history");
     expect(host.inspect(workbench.conversationId)?.mcpServerNames).not.toContain("leemo-relationship-history");
-    expect(host.inspect(buddy.conversationId)?.systemPromptAppend).toContain("Relationship history search is on demand");
+    expect(host.inspect(buddy.conversationId)?.systemPromptAppend).toContain(
+      "Current chapter. Search earlier details once; ask if unclear.",
+    );
   });
 
   it("lists and enables the built-in browser by default without persisting a synthetic choice", async () => {
