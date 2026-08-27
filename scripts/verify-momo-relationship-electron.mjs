@@ -555,20 +555,28 @@ try {
   await page.getByRole("option", { name: /draft-reference\.md/ }).click();
   await page.getByRole("button", { name: "移除引用 draft-reference.md" }).waitFor();
   await page.getByRole("banner").getByRole("button", { name: "新话题" }).click();
-  await page.getByRole("alertdialog", { name: "开始新话题？" }).waitFor();
-  evidence.push(await screenshot(page, "new-topic-dialog-1280x720.png", 1280, 720));
-  await page.getByRole("alertdialog", { name: "开始新话题？" })
-    .getByRole("button", { name: "开始", exact: true })
-    .click();
-  await page.getByTestId("buddy-landing").waitFor();
+  await page.getByTestId("buddy-topic-boundary").waitFor();
+  evidence.push(await screenshot(page, "new-topic-boundary-1280x720.png", 1280, 720));
   insist((await composer.inputValue()).trim() === "这个想法先留在输入框里", "新话题切换丢失了输入草稿。");
-  insist(upstreamRequests.length === 0, "新话题确认触发了模型请求。");
+  insist(upstreamRequests.length === 0, "新话题切换触发了模型请求。");
   checks.newTopicNoModelCall = upstreamRequests.length === 0;
-  const { snapshot: persisted, currentId: newRelationshipId } = await waitForChangedRelationship(page, "momo-history");
+  const { snapshot: firstPersisted, currentId: firstNewRelationshipId } = await waitForChangedRelationship(page, "momo-history");
   insist(
-    persisted.conversations.some((entry) => entry.meta.id === newRelationshipId),
+    firstPersisted.conversations.some((entry) => entry.meta.id === firstNewRelationshipId),
     "新话题章节没有写入本地持久化。",
   );
+  await page.getByRole("button", { name: "撤销新话题" }).click();
+  await page.getByTestId("buddy-topic-boundary").waitFor({ state: "detached" });
+  const undoneSnapshot = await waitForPersistedRelationship(page, "momo-history");
+  checks.newTopicUndoRestoredPriorChapter = !undoneSnapshot.conversations.some((entry) => entry.meta.id === firstNewRelationshipId)
+    && (await composer.inputValue()).trim() === "这个想法先留在输入框里"
+    && await page.getByRole("button", { name: "移除引用 draft-reference.md" }).isVisible()
+    && await page.getByTestId("buddy-topic-boundary").count() === 0;
+  insist(checks.newTopicUndoRestoredPriorChapter, "撤销新话题没有恢复上一章节、草稿或附件引用。");
+
+  await page.getByRole("banner").getByRole("button", { name: "新话题" }).click();
+  await page.getByTestId("buddy-topic-boundary").waitFor();
+  const { snapshot: persisted, currentId: newRelationshipId } = await waitForChangedRelationship(page, "momo-history");
   const newTopicMeta = persisted.conversations.find((entry) => entry.meta.id === newRelationshipId)?.meta;
   checks.newTopicPreservedModel = newTopicMeta?.providerId === seeded.secondProviderId
     && newTopicMeta?.modelId === "deepseek-v4-flash";
@@ -659,6 +667,7 @@ try {
     "sameModelProviderStale",
     "iterationsAndCompact",
     "newTopicNoModelCall",
+    "newTopicUndoRestoredPriorChapter",
     "newTopicPreservedModel",
     "restartRestoredDraft",
     "restartRestoredCurrentChapter",
