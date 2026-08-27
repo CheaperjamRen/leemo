@@ -42,6 +42,9 @@ export interface ConversationMeta {
    *  instead of just re-opening an empty shell. Optional: conversations that
    *  never finished a round — and every row written before 卡 C — have none. */
   sessionId?: string | null;
+  /** Provider that minted sessionId. Missing on legacy rows keeps the original
+   * same-provider resume behavior; a known mismatch starts a fresh transport. */
+  sessionProviderId?: string | null;
   /** One user-authored durable objective for this conversation. It is shown as
    * a compact composer card and reaches the model only while active. */
   goal?: ConversationGoal;
@@ -514,8 +517,13 @@ export function foldConversationEnvelope(
   // reference check watches, so the id reaches SQLite with no extra plumbing.
   // A round that reports none leaves the previous value alone (never regress a
   // known session to undefined).
-  if (event.type === "run.finished" && event.sessionId) {
+  const commitsSession = event.type === "run.finished"
+    && !event.isError
+    && event.subtype !== "interrupted"
+    && (event.outcome === undefined || event.outcome === "completed");
+  if (commitsSession && event.sessionId) {
     nextMeta.sessionId = event.sessionId;
+    nextMeta.sessionProviderId = event.sessionProviderId ?? meta.providerId;
   }
 
   return {
@@ -584,7 +592,9 @@ export function createConversationsStore(
       providerId: meta.providerId,
       modelId: meta.modelId,
       purpose: "main",
-      ...(meta.sessionId ? { resumeSessionId: meta.sessionId } : {}),
+      ...(meta.sessionId && (!meta.sessionProviderId || meta.sessionProviderId === meta.providerId)
+        ? { resumeSessionId: meta.sessionId }
+        : {}),
       ...(meta.workspaceId ? { workspaceId: meta.workspaceId } : {}),
       // 轮 3 卡 G: re-claiming after a restart must carry the notebook binding
       // too, or a hydrated conversation silently loses prompt layer ⑨ — the

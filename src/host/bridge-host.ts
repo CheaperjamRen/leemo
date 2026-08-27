@@ -2863,6 +2863,9 @@ export function createBridgeHost(deps: HostDeps): BridgeHost {
             break;
           }
           const ev = next.value;
+          if (ev.type === "run.finished" && ev.sessionId && !ev.sessionProviderId) {
+            ev.sessionProviderId = entry.provider.id;
+          }
           if (ev.type === "tool.started") await beginFileTracking(ev);
           if (ev.type === "run.finished") {
             const finalized = await round.finalize();

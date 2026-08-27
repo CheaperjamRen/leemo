@@ -2421,12 +2421,74 @@ describe("conversations store", () => {
         event: {
           type: "run.finished", subtype: "success", isError: false,
           finalText: "记住了", pathAudit: { claimed: [] }, sessionId: "sess-just-minted",
+          sessionProviderId: "provider-a",
         },
       });
 
       // meta is a NEW object → the persistence sync's reference check fires and
       // the session id reaches SQLite without any extra save plumbing.
       expect(store.getState().byId[cid].sessionId).toBe("sess-just-minted");
+      expect(store.getState().byId[cid].sessionProviderId).toBe("provider-a");
+    });
+
+    it("keeps the last trusted session when a later provider run fails", async () => {
+      const bridge = makeClient(["conv-trusted"]);
+      const store = createConversationsStore(bridge.client, {
+        resolveConversationDefaults: () => DEFAULTS,
+      });
+      const cid = await store.getState().createConversation({ source: "buddy" });
+      store.setState((state) => ({
+        byId: {
+          ...state.byId,
+          [cid]: {
+            ...state.byId[cid],
+            sessionId: "session-interview",
+            sessionProviderId: "glm",
+          },
+        },
+      }));
+
+      store.setState((state) => foldConversationEnvelope(state, {
+        conversationId: cid,
+        event: {
+          type: "run.finished",
+          subtype: "error",
+          isError: true,
+          outcome: "failed",
+          retryable: false,
+          finalText: "",
+          pathAudit: { claimed: [] },
+          sessionId: "session-permission-failure",
+          sessionProviderId: "tokenflux",
+        },
+      }, 1_000));
+
+      expect(store.getState().byId[cid]).toMatchObject({
+        sessionId: "session-interview",
+        sessionProviderId: "glm",
+      });
+    });
+
+    it("does not resume a session that belongs to another provider", async () => {
+      const bridge = makeClient();
+      const store = createConversationsStore(bridge.client, {
+        resolveConversationDefaults: () => DEFAULTS,
+      });
+      store.getState().hydrate([{
+        meta: {
+          ...persisted,
+          providerId: "glm",
+          modelId: "glm-5.3-flash",
+          sessionId: "session-owned-by-tokenflux",
+          sessionProviderId: "tokenflux",
+        },
+        timeline: tl,
+      }]);
+
+      await store.getState().send("c-restart", "继续");
+
+      expect(bridge.calls[0].request).not.toHaveProperty("resumeSessionId");
+      expect(bridge.calls[0].request).toMatchObject({ providerId: "glm" });
     });
 
     it("keeps the previous sessionId when a run reports none", async () => {

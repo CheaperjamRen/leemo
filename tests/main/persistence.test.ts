@@ -251,8 +251,15 @@ describe("persistence schema", () => {
   // remember; without persisting it, re-claiming only restores the ability to
   // send, not the context.
   it("round-trips a conversation's sessionId", () => {
-    p.saveConversation({ ...meta, sessionId: "sess-abc-123" }, items);
-    expect(p.loadAll().conversations[0].meta.sessionId).toBe("sess-abc-123");
+    p.saveConversation({
+      ...meta,
+      sessionId: "sess-abc-123",
+      sessionProviderId: "deepseek",
+    }, items);
+    expect(p.loadAll().conversations[0].meta).toMatchObject({
+      sessionId: "sess-abc-123",
+      sessionProviderId: "deepseek",
+    });
   });
 
   it("loads a conversation that has no sessionId without inventing one", () => {
@@ -374,6 +381,7 @@ describe("persistence schema — migration of an existing (pre-卡C) database", 
     createPersistence(db);
     const cols = (db.prepare("PRAGMA table_info(conversations)").all() as { name: string }[]).map((c) => c.name);
     expect(cols).toContain("session_id");
+    expect(cols).toContain("session_provider_id");
     expect(cols).toContain("workspace_id");
     expect(cols).toContain("pinned");
     expect(cols).toContain("archived");
@@ -387,6 +395,7 @@ describe("persistence schema — migration of an existing (pre-卡C) database", 
     expect(snap.conversations).toHaveLength(1);
     expect(snap.conversations[0].meta.title).toBe("重启前就存在的对话");
     expect(snap.conversations[0].meta.sessionId).toBeUndefined();
+    expect(snap.conversations[0].meta.sessionProviderId).toBeUndefined();
     expect(snap.conversations[0].meta.workspaceId).toBeUndefined();
     expect(snap.conversations[0].meta).toMatchObject({
       pinned: false,
@@ -411,6 +420,7 @@ describe("persistence schema — migration of an existing (pre-卡C) database", 
     expect(() => createPersistence(db)).not.toThrow();
     const cols = (db.prepare("PRAGMA table_info(conversations)").all() as { name: string }[]).map((c) => c.name);
     expect(cols.filter((c) => c === "session_id")).toHaveLength(1);
+    expect(cols.filter((c) => c === "session_provider_id")).toHaveLength(1);
     expect(cols.filter((c) => c === "workspace_id")).toHaveLength(1);
     expect(cols.filter((c) => c === "pinned")).toHaveLength(1);
     expect(cols.filter((c) => c === "archived")).toHaveLength(1);
@@ -422,6 +432,7 @@ describe("persistence schema — migration of an existing (pre-卡C) database", 
     createPersistence(db);
     const cols = (db.prepare("PRAGMA table_info(conversations)").all() as { name: string }[]).map((c) => c.name);
     expect(cols).toContain("session_id");
+    expect(cols).toContain("session_provider_id");
     expect(cols).toContain("workspace_id");
     expect(cols).toContain("pinned");
     expect(cols).toContain("archived");

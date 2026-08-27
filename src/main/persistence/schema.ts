@@ -232,6 +232,7 @@ CREATE TABLE IF NOT EXISTS conversations (
   unread INTEGER NOT NULL,
   workspace_id TEXT,
   session_id TEXT,
+  session_provider_id TEXT,
   pinned INTEGER,
   archived INTEGER,
   last_opened_at INTEGER,
@@ -370,6 +371,7 @@ interface ConversationRow {
   workspace_id: string | null;
   /** Absent on rows written before the 卡 C migration ran. */
   session_id: string | null;
+  session_provider_id: string | null;
   pinned: number | null;
   archived: number | null;
   last_opened_at: number | null;
@@ -396,6 +398,9 @@ function migrate(db: SqliteDatabase): void {
   );
   if (!columns.has("session_id")) {
     db.exec(`ALTER TABLE conversations ADD COLUMN session_id TEXT`);
+  }
+  if (!columns.has("session_provider_id")) {
+    db.exec(`ALTER TABLE conversations ADD COLUMN session_provider_id TEXT`);
   }
   if (!columns.has("workspace_id")) {
     db.exec(`ALTER TABLE conversations ADD COLUMN workspace_id TEXT`);
@@ -579,8 +584,8 @@ export function createPersistence(db: SqliteDatabase): Persistence & CapturePers
 
   const upsertConv = db.prepare(`
     INSERT INTO conversations
-      (id, title, title_manually_updated, book_id, source, provider_id, model_id, created_at, last_activity_at, unread, workspace_id, session_id, pinned, archived, last_opened_at, goal_json)
-    VALUES (@id, @title, @title_manually_updated, @book_id, @source, @provider_id, @model_id, @created_at, @last_activity_at, @unread, @workspace_id, @session_id, @pinned, @archived, @last_opened_at, @goal_json)
+      (id, title, title_manually_updated, book_id, source, provider_id, model_id, created_at, last_activity_at, unread, workspace_id, session_id, session_provider_id, pinned, archived, last_opened_at, goal_json)
+    VALUES (@id, @title, @title_manually_updated, @book_id, @source, @provider_id, @model_id, @created_at, @last_activity_at, @unread, @workspace_id, @session_id, @session_provider_id, @pinned, @archived, @last_opened_at, @goal_json)
     ON CONFLICT(id) DO UPDATE SET
       title=excluded.title,
       title_manually_updated=excluded.title_manually_updated,
@@ -593,6 +598,7 @@ export function createPersistence(db: SqliteDatabase): Persistence & CapturePers
       unread=excluded.unread,
       workspace_id=excluded.workspace_id,
       session_id=excluded.session_id,
+      session_provider_id=excluded.session_provider_id,
       pinned=excluded.pinned,
       archived=excluded.archived,
       last_opened_at=excluded.last_opened_at,
@@ -729,6 +735,7 @@ export function createPersistence(db: SqliteDatabase): Persistence & CapturePers
         unread: meta.unread ? 1 : 0,
         workspace_id: meta.workspaceId ?? null,
         session_id: meta.sessionId ?? null,
+        session_provider_id: meta.sessionProviderId ?? null,
         pinned: ((meta as ConversationMeta & { pinned?: boolean }).pinned ?? false) ? 1 : 0,
         archived: ((meta as ConversationMeta & { archived?: boolean }).archived ?? false) ? 1 : 0,
         last_opened_at: (meta as ConversationMeta & { lastOpenedAt?: number }).lastOpenedAt ?? meta.lastActivityAt,
@@ -870,6 +877,7 @@ export function createPersistence(db: SqliteDatabase): Persistence & CapturePers
       // any conversation that never finished a round) must come back with no
       // sessionId rather than a null the re-claim path would have to special-case.
       if (r.session_id != null) meta.sessionId = r.session_id;
+      if (r.session_provider_id != null) meta.sessionProviderId = r.session_provider_id;
       if (r.workspace_id != null) meta.workspaceId = r.workspace_id;
       if (r.goal_json != null) {
         try {
