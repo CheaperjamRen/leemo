@@ -14,6 +14,7 @@ const CONTENT: Record<string, PreviewPayload> = {
   "math/c.pdf": { kind: "binary", mimeType: "application/pdf", base64: "JVBERi0=", size: 8 },
   "math/d.bin": { kind: "unpreviewable", reason: "这是二进制文件，没法当文本预览", size: 4 },
   "math/e.log": { kind: "text", text: "line 1\nline 2", truncated: false, size: 13 },
+  "math/chart.png": { kind: "binary", mimeType: "image/png", base64: "iVBORw0KGgo=", size: 8 },
 };
 
 function fakeWorkspace(over?: Partial<Record<string, PreviewPayload>>, fail?: string) {
@@ -49,6 +50,7 @@ function TabSetup() {
       <button onClick={() => openPreview("math/c.pdf", "File C", "pdf")}>open-c</button>
       <button onClick={() => openPreview("math/d.bin", "File D", "other")}>open-d</button>
       <button onClick={() => openPreview("math/e.log", "File E", "other")}>open-e</button>
+      <button onClick={() => openPreview("math/chart.png", "研究流程图", "other")}>open-image</button>
       <PreviewPane />
     </div>
   );
@@ -195,6 +197,16 @@ describe("PreviewPane — 真文件内容", () => {
     await user.click(screen.getByText("open-e"));
     await waitFor(() => expect(screen.getByTestId("preview-plaintext")).toBeInTheDocument());
     expect(screen.getByTestId("preview-plaintext").textContent).toBe("line 1\nline 2");
+  });
+
+  it("renders a workspace image inside Leemo with the real guarded bytes", async () => {
+    const user = userEvent.setup();
+    setup();
+    await user.click(screen.getByText("open-image"));
+
+    const image = await screen.findByRole("img", { name: "研究流程图" });
+    expect(image).toHaveAttribute("src", "data:image/png;base64,iVBORw0KGgo=");
+    expect(image).toHaveAttribute("data-workspace-preview-image", "true");
   });
 
   it("says WHY a binary file can't be previewed instead of going blank", async () => {

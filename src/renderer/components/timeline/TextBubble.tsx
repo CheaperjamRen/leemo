@@ -17,11 +17,13 @@ function TextBubble({
   density = "workbench",
   showCaret = item.streaming,
   showAvatar = true,
+  onOpenLocalLink,
 }: {
   item: Extract<TimelineItem, { kind: "text" }>;
   density?: "workbench" | "buddy";
   showCaret?: boolean;
   showAvatar?: boolean;
+  onOpenLocalLink?: (href: string) => void;
 }) {
   if (item.role === "user") {
     return (
@@ -68,7 +70,7 @@ function TextBubble({
           ? "leemo-buddy-momo-bubble max-w-[620px] rounded-[13px] px-4 py-2.5 text-[15.5px] leading-[1.7] text-[var(--leemo-ink)]"
           : "max-w-[700px] pt-[1px] text-[15px] leading-[1.72] text-[var(--leemo-ink)]"}
       >
-        <MarkdownContent text={item.text} variant="answer" />
+        <MarkdownContent text={item.text} variant="answer" onOpenLocalLink={onOpenLocalLink} />
         {showCaret && (
           <span aria-hidden
             className="leemo-caret ml-[3px] inline-block h-[14px] w-[3px] translate-y-[2px] rounded-[1.5px] bg-[var(--leemo-amber)]" />
@@ -83,4 +85,5 @@ export default memo(TextBubble, (previous, next) => (
   && previous.density === next.density
   && previous.showCaret === next.showCaret
   && previous.showAvatar === next.showAvatar
+  && previous.onOpenLocalLink === next.onOpenLocalLink
 ));

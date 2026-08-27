@@ -22,7 +22,7 @@ import { pairAskUserQuestions } from "./ask-user-pairing";
 import { resolveComposerScope } from "../../stores/composer-drafts";
 import { HOME_WORKSPACE_ID } from "../../stores/workspaces";
 import MomoAvatar from "../momo/MomoAvatar";
-import { memo } from "react";
+import { memo, useCallback } from "react";
 
 function fileName(filePath: string): string {
   return filePath.split("/").filter(Boolean).at(-1) ?? filePath;
@@ -34,6 +34,30 @@ function previewKind(filePath: string): "markdown" | "pdf" | "html" | "other" {
   if (lower.endsWith(".pdf")) return "pdf";
   if (lower.endsWith(".html") || lower.endsWith(".htm")) return "html";
   return "other";
+}
+
+export function resolveConversationWorkspaceLink(href: string): string | null {
+  const rawPath = href.split(/[?#]/, 1)[0]?.trim();
+  if (!rawPath) return null;
+  let decoded: string;
+  try {
+    decoded = decodeURIComponent(rawPath).replaceAll("\\", "/");
+  } catch {
+    return null;
+  }
+  if (decoded.startsWith("/") || decoded.startsWith("//") || /^[a-z][a-z\d+.-]*:/i.test(decoded)) return null;
+  const parts: string[] = [];
+  for (const part of decoded.split("/")) {
+    if (!part || part === ".") continue;
+    if (part === "..") {
+      if (parts.length === 0) return null;
+      parts.pop();
+      continue;
+    }
+    if (/[\u0000-\u001f\u007f]/.test(part)) return null;
+    parts.push(part);
+  }
+  return parts.join("/") || null;
 }
 
 const isProcess = (i: TimelineItem) =>
@@ -73,6 +97,18 @@ function TurnBlock({
   const setMode = useSettings((s) => s.setMode);
   const workspace = useWorkspace();
   const activeWorkspaceId = useWorkspaces((s) => s.activeId);
+  const openTimelineLocalLink = useCallback((href: string): void => {
+    const target = resolveConversationWorkspaceLink(href);
+    if (!target) return;
+    const rawPath = href.split(/[?#]/, 1)[0] ?? "";
+    if (rawPath.endsWith("/") || rawPath.endsWith("\\")) {
+      void workspace?.reveal(target, activeWorkspaceId).catch(() => {});
+    } else {
+      setView("chat");
+      openPreview(target, fileName(target), previewKind(target));
+    }
+    if (density === "buddy") setMode("workbench");
+  }, [activeWorkspaceId, density, openPreview, setMode, setView, workspace]);
 
   // Which tool calls in THIS turn have an approval card to show? Approvals are
   // rendered next to the tool that raised them (see ProcessFold) instead of
@@ -299,6 +335,7 @@ function TurnBlock({
           density={density}
           showCaret={it.streaming && !hasLaterTurnContent}
           showAvatar={it.role !== "momo" || (!processOwnsIdentity && idx === firstMomoTextIndex)}
+          onOpenLocalLink={openTimelineLocalLink}
         />,
       );
     }

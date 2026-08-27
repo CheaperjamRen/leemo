@@ -125,6 +125,21 @@ describe("MarkdownContent", () => {
     expect(onOpenLocalLink).toHaveBeenCalledWith("../%E9%9D%A2%E7%BB%8F/%E9%A2%98%E5%BA%93%E4%B8%8E%E5%8F%82%E8%80%83%E7%AD%94%E6%A1%88/");
   });
 
+  it("turns a local Markdown image into a reliable Leemo preview action", async () => {
+    const onOpenLocalLink = vi.fn();
+    render(
+      <MarkdownContent
+        text="![研究流程图](默认工作区/流程图.png)"
+        variant="answer"
+        onOpenLocalLink={onOpenLocalLink}
+      />,
+    );
+
+    expect(screen.queryByRole("img", { name: "研究流程图" })).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "打开图片 研究流程图" }));
+    expect(onOpenLocalLink).toHaveBeenCalledWith("%E9%BB%98%E8%AE%A4%E5%B7%A5%E4%BD%9C%E5%8C%BA/%E6%B5%81%E7%A8%8B%E5%9B%BE.png");
+  });
+
   it.each(["answer", "process", "preview"] as const)(
     "exposes a stable %s density hook",
     (variant) => {

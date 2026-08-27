@@ -677,12 +677,37 @@ describe("readPreview", () => {
     expect(out.size).toBe(huge.length);
   });
 
-  it("refuses a binary file with a reason rather than returning mojibake", () => {
-    const { io } = fakeFs({ dirs: [ROOT], bytes: { [j("a.png")]: Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x00, 0x01]) } });
+  it("returns a real raster image as guarded base64 bytes", () => {
+    const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x01]);
+    const { io } = fakeFs({ dirs: [ROOT], bytes: { [j("a.png")]: png } });
     const out = readPreview(ROOT, "a.png", io);
-    expect(out.kind).toBe("unpreviewable");
-    if (out.kind !== "unpreviewable") throw new Error("unreachable");
-    expect(out.reason).toContain("二进制");
+    expect(out).toEqual({
+      kind: "binary",
+      mimeType: "image/png",
+      base64: png.toString("base64"),
+      size: png.length,
+      mtimeMs: 0,
+    });
+  });
+
+  it("rejects a renamed non-image and an oversized image without reading the oversized bytes", () => {
+    const renamed = fakeFs({ dirs: [ROOT], bytes: { [j("fake.png")]: Buffer.from("not an image") } });
+    const invalid = readPreview(ROOT, "fake.png", renamed.io);
+    expect(invalid.kind).toBe("unpreviewable");
+    if (invalid.kind !== "unpreviewable") throw new Error("unreachable");
+    expect(invalid.reason).toContain("图片");
+
+    const readBinary = vi.fn();
+    const huge = fakeFs({ dirs: [ROOT], files: { [j("huge.jpg")]: "x" } });
+    const oversized = readPreview(ROOT, "huge.jpg", {
+      ...huge.io,
+      stat: () => ({ mtimeMs: 0, size: PREVIEW_BINARY_MAX_BYTES + 1 }),
+      readBinary,
+    });
+    expect(oversized.kind).toBe("unpreviewable");
+    if (oversized.kind !== "unpreviewable") throw new Error("unreachable");
+    expect(oversized.reason).toContain("太大");
+    expect(readBinary).not.toHaveBeenCalled();
   });
 
   it("returns a PDF as base64 bytes — the utf8 path is LOSSY and PDF.js needs the real bytes", () => {

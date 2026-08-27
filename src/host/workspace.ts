@@ -821,6 +821,29 @@ export type PreviewPayload =
   | { kind: "unpreviewable"; reason: string; size: number };
 
 const PDF_MAGIC = Buffer.from("%PDF-");
+const RASTER_IMAGE_MIME_BY_EXTENSION: Readonly<Record<string, string>> = {
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".gif": "image/gif",
+  ".webp": "image/webp",
+  ".bmp": "image/bmp",
+};
+
+function rasterImageMime(buf: Buffer): string | null {
+  if (buf.length >= 8 && buf.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) {
+    return "image/png";
+  }
+  if (buf.length >= 3 && buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) return "image/jpeg";
+  if (buf.length >= 6 && (buf.subarray(0, 6).toString("ascii") === "GIF87a" || buf.subarray(0, 6).toString("ascii") === "GIF89a")) {
+    return "image/gif";
+  }
+  if (buf.length >= 12 && buf.subarray(0, 4).toString("ascii") === "RIFF" && buf.subarray(8, 12).toString("ascii") === "WEBP") {
+    return "image/webp";
+  }
+  if (buf.length >= 2 && buf[0] === 0x42 && buf[1] === 0x4d) return "image/bmp";
+  return null;
+}
 
 /**
  * Is this buffer text? A NUL byte is the classic tell (no text encoding we care
@@ -849,9 +872,8 @@ export function looksLikeText(buf: Buffer): boolean {
  * Read a workspace file for the preview pane, deciding text vs binary vs
  * "don't preview this" from the actual bytes.
  *
- * PDFs are the only binary kind that comes back with a payload, because they
- * are the only one 02 §九 asks us to render. Everything else binary is an
- * explicit refusal with a human reason — never a silent blank pane.
+ * PDFs and common raster images come back as bounded base64 payloads. Other
+ * binary formats remain an explicit refusal with a human reason.
  */
 export function readPreview(root: string, relPath: string, io: WorkspaceIO): PreviewPayload {
   const abs = resolveInside(root, relPath);
@@ -860,7 +882,9 @@ export function readPreview(root: string, relPath: string, io: WorkspaceIO): Pre
 
   const metadata = io.stat(abs);
   const { size, mtimeMs } = metadata;
-  const isPdf = relPath.toLowerCase().endsWith(".pdf");
+  const extension = path.extname(relPath).toLowerCase();
+  const isPdf = extension === ".pdf";
+  const expectedImageMime = RASTER_IMAGE_MIME_BY_EXTENSION[extension];
 
   if (isPdf) {
     if (size > PREVIEW_BINARY_MAX_BYTES) {
@@ -877,6 +901,22 @@ export function readPreview(root: string, relPath: string, io: WorkspaceIO): Pre
       return { kind: "unpreviewable", reason: "文件名是 .pdf，但内容不是 PDF", size };
     }
     return { kind: "binary", mimeType: "application/pdf", base64: buf.toString("base64"), size, mtimeMs };
+  }
+
+  if (expectedImageMime) {
+    if (size > PREVIEW_BINARY_MAX_BYTES) {
+      return {
+        kind: "unpreviewable",
+        reason: `图片太大了（${formatSize(size)}），超过 ${formatSize(PREVIEW_BINARY_MAX_BYTES)} 不在这里预览`,
+        size,
+      };
+    }
+    const buf = io.readBinary(abs);
+    const detectedMime = rasterImageMime(buf);
+    if (!detectedMime || detectedMime !== expectedImageMime) {
+      return { kind: "unpreviewable", reason: "文件名看起来是图片，但内容不是对应的图片格式", size };
+    }
+    return { kind: "binary", mimeType: detectedMime, base64: buf.toString("base64"), size, mtimeMs };
   }
 
   // Read at most one byte past the cap: that extra byte is how we know whether

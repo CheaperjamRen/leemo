@@ -3,7 +3,7 @@ import { describe, it, expect, vi } from "vitest";
 import { useContext } from "react";
 import type { TimelineItem } from "../../stores/message-model";
 import type { PendingInteraction, ResolvedInteraction } from "../../stores/approvals";
-import TurnBlock from "./TurnBlock";
+import TurnBlock, { resolveConversationWorkspaceLink } from "./TurnBlock";
 import { BridgeProvider, BridgeContext, type BridgeStores } from "../../bridge/context";
 import { FixtureBridgeClient } from "../../bridge/fixture-client";
 import { LEEMO_VISUALIZATION_TOOL_NAME, LEEMO_ASK_USER_TOOL_NAME } from "../../bridge/tool-names";
@@ -80,6 +80,14 @@ function renderTurnBlock(
 }
 
 describe("TurnBlock — approval cards live inline in the conversation flow", () => {
+  it("accepts workspace-relative links and rejects paths that escape the active workspace", () => {
+    expect(resolveConversationWorkspaceLink("%E9%BB%98%E8%AE%A4%E5%B7%A5%E4%BD%9C%E5%8C%BA/%E6%B5%81%E7%A8%8B%E5%9B%BE.png"))
+      .toBe("默认工作区/流程图.png");
+    expect(resolveConversationWorkspaceLink("../../secret.png")).toBeNull();
+    expect(resolveConversationWorkspaceLink("C:/Users/me/secret.png")).toBeNull();
+    expect(resolveConversationWorkspaceLink("https://example.com/image.png")).toBeNull();
+  });
+
   it("immediately acknowledges a submitted first message before the first host event arrives", () => {
     renderTurnBlock([user], true, [], [], "buddy");
     expect(screen.getByText("整理笔记")).toBeInTheDocument();
@@ -425,6 +433,23 @@ describe("TurnBlock strict-chronological rendering", () => {
     expect(screen.getByRole("button", { name: "在文件夹中显示 报告.md" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "在文件夹中显示 报告.md" }));
     expect(reveal).toHaveBeenCalledWith("默认工作区/报告.md", "leemo-home");
+  });
+
+  it("opens a local image link from momo in the guarded workspace preview", () => {
+    const imageReply: TimelineItem = {
+      kind: "text",
+      id: "image-reply",
+      runId: R,
+      role: "momo",
+      text: "流程图在这里：\n\n![研究流程图](默认工作区/流程图.png)",
+      streaming: false,
+    };
+    const { getStores } = renderTurnBlock([user, imageReply], false, [], [], "buddy");
+
+    fireEvent.click(screen.getByRole("button", { name: "打开图片 研究流程图" }));
+
+    expect(getStores().ui.getState().previewActivePath).toBe("默认工作区/流程图.png");
+    expect(getStores().settings.getState().mode).toBe("workbench");
   });
 
   it("keeps the process receipt aligned with interrupted and failed turn outcomes", () => {

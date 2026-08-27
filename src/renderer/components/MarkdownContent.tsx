@@ -1,5 +1,5 @@
 import { memo, useEffect, useId, useRef, useState, type MouseEvent, type ReactNode } from "react";
-import { Check, CircleAlert, Copy, Info, Lightbulb, OctagonAlert, TriangleAlert } from "lucide-react";
+import { Check, CircleAlert, Copy, Image as ImageIcon, Info, Lightbulb, OctagonAlert, TriangleAlert } from "lucide-react";
 import { Highlight, themes, type Language } from "prism-react-renderer";
 import ReactMarkdown, { defaultUrlTransform } from "react-markdown";
 import rehypeKatex from "rehype-katex";
@@ -352,7 +352,32 @@ function MarkdownContent({
               </a>
             );
           },
-          img: ({ src, alt }) => <img src={src} alt={alt ?? ""} loading="lazy" className="my-2 h-auto max-w-full rounded-[6px]" />,
+          img: ({ src, alt }) => {
+            const external = Boolean(src && (/^https?:\/\//i.test(src) || src.startsWith("//") || src.startsWith("data:image/")));
+            if (external || !src) {
+              return <img src={src} alt={alt ?? ""} loading="lazy" className="my-2 h-auto max-w-full rounded-[6px]" />;
+            }
+            let fallback = src.split(/[?#]/, 1)[0]?.split("/").filter(Boolean).at(-1) ?? "图片";
+            try { fallback = decodeURIComponent(fallback); } catch { /* keep the safe encoded name */ }
+            const label = alt?.trim() || fallback;
+            return (
+              <button
+                type="button"
+                aria-label={`打开图片 ${label}`}
+                disabled={!onOpenLocalLink}
+                onClick={() => onOpenLocalLink?.(src)}
+                className="my-2 flex min-h-12 w-full max-w-[420px] items-center gap-3 rounded-[9px] border border-[var(--leemo-line)] bg-[var(--leemo-card)] px-3 py-2 text-left text-[var(--leemo-ink-2)] transition-colors hover:border-[var(--leemo-amber-line)] hover:bg-[var(--leemo-amber-bg)] disabled:cursor-default disabled:opacity-60"
+              >
+                <span className="grid h-8 w-8 shrink-0 place-items-center rounded-[7px] bg-[var(--leemo-bg-deep)] text-[var(--leemo-ink-3)]">
+                  <ImageIcon className="h-4 w-4" aria-hidden />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-[12.5px] font-medium text-[var(--leemo-ink)]">{label}</span>
+                  <span className="block text-[10.5px] text-[var(--leemo-ink-3)]">在 Leemo 中预览</span>
+                </span>
+              </button>
+            );
+          },
           table: ({ children }) => (
             <div className="my-2 max-w-full overflow-x-auto rounded-[6px] border border-[var(--leemo-line)]"><table className="w-full min-w-[420px] border-collapse text-left text-[0.92em]">{children}</table></div>
           ),

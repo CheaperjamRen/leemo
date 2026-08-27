@@ -175,7 +175,8 @@ export default function PreviewPane({ onRewriteSelection }: PreviewPaneProps) {
     ? viewModes[activeDraftKey] ?? (activeDraft ? "edit" : "preview")
     : "preview";
   const editingMarkdown = canEditMarkdown && activeViewMode === "edit" && Boolean(activeDraft);
-  const activePdf = entry?.payload?.kind === "binary" && activeTab?.kind === "pdf";
+  const activePdf = entry?.payload?.kind === "binary"
+    && entry.payload.mimeType === "application/pdf";
 
   const setPdfFocused = (focused: boolean) => {
     if (focused) {
@@ -294,6 +295,39 @@ export default function PreviewPane({ onRewriteSelection }: PreviewPaneProps) {
     }
 
     if (payload.kind === "binary") {
+      if (payload.mimeType.startsWith("image/")) {
+        return (
+          <figure className="flex min-h-[240px] flex-1 items-center justify-center bg-[var(--leemo-bg-deep)] p-5" data-testid="preview-image">
+            <img
+              src={`data:${payload.mimeType};base64,${payload.base64}`}
+              alt={activeTab.title}
+              data-workspace-preview-image="true"
+              draggable={false}
+              className="max-h-full max-w-full rounded-[8px] object-contain shadow-[var(--leemo-shadow-resting)]"
+            />
+          </figure>
+        );
+      }
+      if (payload.mimeType !== "application/pdf") {
+        return (
+          <PreviewProblem
+            testId="preview-unpreviewable"
+            title="暂时不能在 Leemo 里预览"
+            detail="这个文件的二进制格式还没有对应的阅读器。"
+            path={activeTab.path}
+            actions={(
+              <button
+                type="button"
+                className="inline-flex h-8 items-center gap-1.5 rounded-[6px] border border-[var(--leemo-line)] px-2.5 text-xs text-[var(--leemo-ink-2)] hover:bg-[var(--leemo-side-hover)]"
+                onClick={() => void workspace?.openFile?.(activeTab.path, activeWorkspaceId)}
+              >
+                <ExternalLink className="h-3.5 w-3.5" aria-hidden />
+                用默认应用打开
+              </button>
+            )}
+          />
+        );
+      }
       return (
         <Suspense fallback={<Notice testId="preview-pdf-loading">正在载入 PDF 阅读器…</Notice>}>
           <PdfView
