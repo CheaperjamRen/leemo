@@ -1,10 +1,80 @@
-import { useEffect, useMemo, useState, type CSSProperties } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { ChevronDown, ChevronRight, Clock3, FileText, Inbox, Pin, Plus, Search, X } from "lucide-react";
 import type { Note } from "../../captures";
 import { NOTE_DRAG_MIME, noteIdFromDragPayload } from "../notes/note-references";
 import { buildNoteTree, noteSystemViews, type NoteTreeNode } from "../notes/note-tree";
 
 type ExplorerLens = "documents" | "inbox" | "pinned" | "recent";
+export type NoteDropPosition = "before" | "inside" | "after";
+
+interface NoteDropIntent {
+  sourceId: string;
+  targetId: string;
+  position: NoteDropPosition;
+  parentId: string | null;
+  index: number;
+}
+
+export function noteDropPosition(pointerY: number, rect: Pick<DOMRect, "top" | "height">): NoteDropPosition {
+  if (rect.height <= 0) return "inside";
+  const ratio = (pointerY - rect.top) / rect.height;
+  if (ratio < 0.28) return "before";
+  if (ratio > 0.72) return "after";
+  return "inside";
+}
+
+function wouldCreateCycle(
+  sourceId: string,
+  parentId: string | null,
+  noteById: ReadonlyMap<string, Note>,
+): boolean {
+  let currentId = parentId;
+  const seen = new Set<string>();
+  while (currentId) {
+    if (currentId === sourceId || seen.has(currentId)) return true;
+    seen.add(currentId);
+    currentId = noteById.get(currentId)?.parentId ?? null;
+  }
+  return false;
+}
+
+function resolveDropIntent({
+  sourceId,
+  target,
+  siblings,
+  position,
+  noteById,
+}: {
+  sourceId: string;
+  target: NoteTreeNode;
+  siblings: readonly NoteTreeNode[];
+  position: NoteDropPosition;
+  noteById: ReadonlyMap<string, Note>;
+}): NoteDropIntent | null {
+  const source = noteById.get(sourceId);
+  if (!source || sourceId === target.note.id) return null;
+  const parentId = position === "inside" ? target.note.id : target.note.parentId;
+  if (wouldCreateCycle(sourceId, parentId, noteById)) return null;
+  if (position === "inside") {
+    return {
+      sourceId,
+      targetId: target.note.id,
+      position,
+      parentId,
+      index: target.children.filter((child) => child.note.id !== sourceId).length,
+    };
+  }
+  const remaining = siblings.filter((sibling) => sibling.note.id !== sourceId);
+  const targetIndex = remaining.findIndex((sibling) => sibling.note.id === target.note.id);
+  if (targetIndex < 0) return null;
+  return {
+    sourceId,
+    targetId: target.note.id,
+    position,
+    parentId,
+    index: targetIndex + (position === "after" ? 1 : 0),
+  };
+}
 
 function filterTree(nodes: readonly NoteTreeNode[], query: string): NoteTreeNode[] {
   if (!query) return nodes.map((node) => ({ ...node, children: filterTree(node.children, query) }));
@@ -23,6 +93,11 @@ function TreeRows({
   onToggle,
   onSelect,
   onMove,
+  noteById,
+  dropIntent,
+  onDropIntent,
+  onDragStartNote,
+  onDragEndNote,
   readOnly,
 }: {
   nodes: readonly NoteTreeNode[];
@@ -32,6 +107,11 @@ function TreeRows({
   onToggle(id: string): void;
   onSelect(note: Note): void;
   onMove(noteId: string, parentId: string | null, index: number): void;
+  noteById: ReadonlyMap<string, Note>;
+  dropIntent: NoteDropIntent | null;
+  onDropIntent(intent: NoteDropIntent | null): void;
+  onDragStartNote(noteId: string): void;
+  onDragEndNote(): void;
   readOnly: boolean;
 }) {
   return nodes.map((node) => {
@@ -45,6 +125,7 @@ function TreeRows({
           aria-selected={selectedId === node.note.id}
           aria-expanded={hasChildren ? isExpanded : undefined}
           data-depth={depth}
+          data-drop-position={dropIntent?.targetId === node.note.id ? dropIntent.position : undefined}
           className="leemo-note-tree__row"
           style={{ "--note-depth": depth } as CSSProperties}
           draggable={!readOnly}
@@ -52,18 +133,48 @@ function TreeRows({
             if (readOnly) return;
             event.dataTransfer.effectAllowed = "move";
             event.dataTransfer.setData(NOTE_DRAG_MIME, JSON.stringify({ noteId: node.note.id }));
+            onDragStartNote(node.note.id);
           }}
           onDragOver={(event) => {
             if (readOnly) return;
-            if (Array.from(event.dataTransfer.types).includes(NOTE_DRAG_MIME)) event.preventDefault();
+            if (!Array.from(event.dataTransfer.types).includes(NOTE_DRAG_MIME)) return;
+            const noteId = noteIdFromDragPayload(event.dataTransfer);
+            if (!noteId) return;
+            const intent = resolveDropIntent({
+              sourceId: noteId,
+              target: node,
+              siblings: nodes,
+              position: noteDropPosition(event.clientY, event.currentTarget.getBoundingClientRect()),
+              noteById,
+            });
+            if (!intent) {
+              event.dataTransfer.dropEffect = "none";
+              onDropIntent(null);
+              return;
+            }
+            event.preventDefault();
+            event.dataTransfer.dropEffect = "move";
+            onDropIntent(intent);
           }}
           onDrop={(event) => {
             if (readOnly) return;
             const noteId = noteIdFromDragPayload(event.dataTransfer);
             if (!noteId || noteId === node.note.id) return;
+            const intent = resolveDropIntent({
+              sourceId: noteId,
+              target: node,
+              siblings: nodes,
+              position: noteDropPosition(event.clientY, event.currentTarget.getBoundingClientRect()),
+              noteById,
+            });
+            if (!intent) return;
             event.preventDefault();
-            onMove(noteId, node.note.id, node.children.length);
+            event.stopPropagation();
+            onMove(intent.sourceId, intent.parentId, intent.index);
+            onDropIntent(null);
+            onDragEndNote();
           }}
+          onDragEnd={onDragEndNote}
         >
           {hasChildren ? (
             <button
@@ -93,6 +204,11 @@ function TreeRows({
             onToggle={onToggle}
             onSelect={onSelect}
             onMove={onMove}
+            noteById={noteById}
+            dropIntent={dropIntent}
+            onDropIntent={onDropIntent}
+            onDragStartNote={onDragStartNote}
+            onDragEndNote={onDragEndNote}
             readOnly={readOnly}
           />
         ) : null}
@@ -125,8 +241,35 @@ export default function NoteExplorer({
   const [query, setQuery] = useState("");
   const [lens, setLens] = useState<ExplorerLens>("documents");
   const baseTree = useMemo(() => buildNoteTree(notes), [notes]);
+  const noteById = useMemo(() => new Map(notes.map((note) => [note.id, note])), [notes]);
   const views = useMemo(() => noteSystemViews(notes, Date.now()), [notes]);
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
+  const [draggingId, setDraggingId] = useState<string | null>(null);
+  const [dropIntent, setDropIntent] = useState<NoteDropIntent | null>(null);
+  const expandTimer = useRef<number | null>(null);
+
+  const clearExpandTimer = (): void => {
+    if (expandTimer.current !== null) window.clearTimeout(expandTimer.current);
+    expandTimer.current = null;
+  };
+
+  const updateDropIntent = (intent: NoteDropIntent | null): void => {
+    clearExpandTimer();
+    setDropIntent(intent);
+    if (intent?.position !== "inside" || expanded.has(intent.targetId)) return;
+    expandTimer.current = window.setTimeout(() => {
+      setExpanded((current) => new Set(current).add(intent.targetId));
+      expandTimer.current = null;
+    }, 550);
+  };
+
+  const finishDrag = (): void => {
+    clearExpandTimer();
+    setDraggingId(null);
+    setDropIntent(null);
+  };
+
+  useEffect(() => () => clearExpandTimer(), []);
 
   useEffect(() => {
     setExpanded((current) => {
@@ -191,7 +334,7 @@ export default function NoteExplorer({
         </button>
       </div>
       <div
-        className="leemo-note-tree"
+        className={`leemo-note-tree${draggingId ? " is-dragging" : ""}`}
         role="tree"
         aria-label="文档库"
         data-testid="note-tree-root-drop"
@@ -205,7 +348,11 @@ export default function NoteExplorer({
           const noteId = noteIdFromDragPayload(event.dataTransfer);
           if (!noteId) return;
           event.preventDefault();
-          onMove(noteId, null, baseTree.length);
+          onMove(noteId, null, baseTree.filter((node) => node.note.id !== noteId).length);
+          finishDrag();
+        }}
+        onDragLeave={(event) => {
+          if (!event.currentTarget.contains(event.relatedTarget as Node | null)) updateDropIntent(null);
         }}
       >
         {shownTree.length > 0 ? (
@@ -221,9 +368,15 @@ export default function NoteExplorer({
             })}
             onSelect={onSelect}
             onMove={onMove}
+            noteById={noteById}
+            dropIntent={dropIntent}
+            onDropIntent={updateDropIntent}
+            onDragStartNote={setDraggingId}
+            onDragEndNote={finishDrag}
             readOnly={readOnly}
           />
         ) : <p>{query ? "没有匹配的文档" : "还没有文档"}</p>}
+        {draggingId ? <div className="leemo-note-tree__root-target" aria-hidden>移到文档树顶层</div> : null}
       </div>
     </aside>
   );

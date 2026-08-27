@@ -1093,9 +1093,9 @@ export function SettingsPage({
               <article className="settings-storage__location-card">
                 <div className="settings-storage__location-copy">
                   <h4>Leemo 文件<span className="sr-only">存储位置</span></h4>
-                  <p className="settings-storage__path">{captureStorageRoot ?? "尚未选择；首次保存图片或文件副本时再选择位置。"}</p>
+                  <p className="settings-storage__path">{captureStorageRoot ?? "跟随 Leemo 文档目录"}</p>
                   <p>便签图片、文件副本和可清理缓存保存在这里。</p>
-                  <small>首次保存时再选择也可以，不会默认塞进系统盘。</small>
+                  <small>首次使用已有默认位置；更改位置时会复制现有文件并保留原文件。</small>
                 </div>
                 <div className="settings-storage__location-actions">
                   {captureStorageRoot ? <button type="button" disabled={desktopSettingBusy} onClick={() => void openCaptureStorageRoot()}>打开文件夹</button> : null}

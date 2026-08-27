@@ -28,6 +28,7 @@ import { MAIN_WINDOW_OPTIONS, QUICK_CAPTURE_WINDOW_OPTIONS } from "./window-conf
 import { createCaptureAdmin, type CaptureAdminWithTrash } from "./capture-admin";
 import { createCaptureIpcDispatcher, type CaptureIpcDispatcher } from "./capture-ipc";
 import { createCaptureStorage } from "./capture-storage";
+import { resolveCaptureStorageRoot } from "./capture-storage-root";
 import { createTaskAdmin, type TaskAdminWithTrash } from "./task-admin";
 import { createTaskIpcDispatcher, type TaskIpcDispatcher } from "./task-ipc";
 import { createTrashIpcDispatcher, type TrashIpcDispatcher } from "./trash-ipc";
@@ -472,13 +473,6 @@ function quickCaptureShortcutSetting(settings: Record<string, unknown>): string 
   return typeof value === "string" && value.trim() ? value.trim() : "Alt+N";
 }
 
-function captureStorageRootSetting(settings: Record<string, unknown>): string | undefined {
-  const value = settings.captureStorageRoot;
-  if (typeof value !== "string" || !value.trim()) return undefined;
-  const root = value.trim();
-  return path.isAbsolute(root) ? root : undefined;
-}
-
 function captureFileDropModeSetting(settings: Record<string, unknown>): "reference" | "copy" {
   return settings.captureFileDropMode === "copy" ? "copy" : "reference";
 }
@@ -811,7 +805,17 @@ async function setupHost(): Promise<void> {
   }
   continueInBackground = continueInBackgroundSetting(initialSettings);
   quickCaptureShortcut = quickCaptureShortcutSetting(initialSettings);
-  captureStorageRoot = captureStorageRootSetting(initialSettings);
+  const captureStorageResolution = resolveCaptureStorageRoot(initialSettings, memoryDir());
+  captureStorageRoot = captureStorageResolution.root;
+  if (captureStorageResolution.usedDefault) {
+    persistedSettingsCache = { ...persistedSettingsCache, captureStorageRoot };
+    sqlitePersistence.saveSettings(persistedSettingsCache);
+  }
+  try {
+    await fs.promises.mkdir(captureStorageRoot, { recursive: true });
+  } catch (error) {
+    console.warn("[leemo:main] document attachment folder is not writable:", error);
+  }
   const persistCaptureStorageRoot = (root: string): void => {
     const nextSettings = { ...persistedSettingsCache, captureStorageRoot: root };
     persistence!.saveSettings(nextSettings);

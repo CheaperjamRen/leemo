@@ -57,6 +57,13 @@ interface PendingTreeAction {
   childCount: number;
 }
 
+interface DocumentMoveUndo {
+  noteId: string;
+  title: string;
+  parentId: string | null;
+  index: number;
+}
+
 interface DocumentRecoveryConflict {
   noteId: string;
   recovery: DocumentRecoveryRecord;
@@ -179,6 +186,7 @@ export default function StartDocumentsView({
   const [taskSelection, setTaskSelection] = useState("");
   const [taskReceipt, setTaskReceipt] = useState<string | null>(null);
   const [pendingTreeAction, setPendingTreeAction] = useState<PendingTreeAction | null>(null);
+  const [moveUndo, setMoveUndo] = useState<DocumentMoveUndo | null>(null);
   const [saveState, setSaveState] = useState<DocumentSaveState>("idle");
   const [recoveryConflict, setRecoveryConflict] = useState<DocumentRecoveryConflict | null>(null);
   const newDraftNumber = useRef(0);
@@ -503,6 +511,13 @@ export default function StartDocumentsView({
   const moveDocument = async (noteId: string, parentId: string | null, index: number) => {
     const source = noteById.get(noteId);
     if (!source) return;
+    const originalSiblings = notes
+      .filter((note) => note.parentId === source.parentId)
+      .sort((left, right) => left.sortOrder - right.sortOrder
+        || right.updatedAt - left.updatedAt
+        || right.createdAt - left.createdAt
+        || left.id.localeCompare(right.id));
+    const originalIndex = Math.max(0, originalSiblings.findIndex((note) => note.id === source.id));
     setLocalError(null);
     try {
       const affected = await moveNote({ id: noteId, expectedRevision: source.revision, parentId, index });
@@ -513,8 +528,39 @@ export default function StartDocumentsView({
       if (moved && draft?.noteId === moved.id) {
         setDraft((current) => current ? { ...current, revision: moved!.revision } : current);
       }
+      setMoveUndo({
+        noteId: source.id,
+        title: visibleTitle(source),
+        parentId: source.parentId,
+        index: originalIndex,
+      });
     } catch {
       // The store exposes the concrete validation or revision error.
+    }
+  };
+
+  const undoDocumentMove = async (): Promise<void> => {
+    if (!moveUndo) return;
+    const current = noteById.get(moveUndo.noteId);
+    if (!current) {
+      setMoveUndo(null);
+      return;
+    }
+    setLocalError(null);
+    try {
+      const affected = await moveNote({
+        id: current.id,
+        expectedRevision: current.revision,
+        parentId: moveUndo.parentId,
+        index: moveUndo.index,
+      });
+      const restored = affected.find((note) => note.id === current.id);
+      if (restored && draft?.noteId === restored.id) {
+        setDraft((currentDraft) => currentDraft ? { ...currentDraft, revision: restored.revision } : currentDraft);
+      }
+      setMoveUndo(null);
+    } catch {
+      setLocalError("这次移动暂时无法撤销，文档仍保留在当前位置。");
     }
   };
 
@@ -763,6 +809,8 @@ export default function StartDocumentsView({
     }
     return result;
   }, [currentNote?.parentId, noteById]);
+  const immediateParent = ancestors.at(-1) ?? null;
+  const immediateParentTitle = immediateParent?.title.trim() || "无标题文档";
 
   return (
     <div className={`leemo-start-documents${explorerOpen ? " is-explorer-open" : ""}`} data-testid="start-documents-view" data-explorer-open={String(explorerOpen)}>
@@ -778,13 +826,32 @@ export default function StartDocumentsView({
         onRequestClose={narrowLayout ? closeExplorer : undefined}
         collapsed={narrowLayout && !explorerOpen}
       />
+      {moveUndo ? (
+        <div className="leemo-document-move-undo" role="status" aria-label="文档移动结果">
+          <span>已移动「{moveUndo.title}」</span>
+          <button type="button" onClick={() => void undoDocumentMove()} aria-label="撤销移动">撤销</button>
+          <button type="button" className="is-dismiss" onClick={() => setMoveUndo(null)} aria-label="关闭移动提示"><X aria-hidden /></button>
+        </div>
+      ) : null}
       <section className="leemo-document-workspace" aria-label="文档阅读与编辑">
         {draft ? (
           <>
             <header className="leemo-document-header">
               <button ref={explorerToggleRef} type="button" className="leemo-document-explorer-toggle" aria-label={explorerOpen ? "文档列表已打开" : "打开文档列表"} title={explorerOpen ? "文档列表已打开" : "打开文档列表"} onClick={() => explorerOpen ? closeExplorer() : setExplorerOpen(true)}><PanelLeftOpen aria-hidden /></button>
               <div className={`leemo-document-header__identity${ancestors.length === 0 ? " is-bare" : ""}`}>
-                {ancestors.length > 0 ? <p>{ancestors.map((note) => visibleTitle(note)).join(" / ")}</p> : null}
+                {immediateParent ? (
+                  <nav className="leemo-document-location" aria-label="文档位置">
+                    {ancestors.length > 1 ? <span aria-hidden>… /</span> : null}
+                    <button
+                      type="button"
+                      aria-label={`打开父文档 ${immediateParentTitle}`}
+                      title={immediateParentTitle}
+                      onClick={() => openDocument(immediateParent)}
+                    >
+                      {immediateParentTitle}
+                    </button>
+                  </nav>
+                ) : null}
                 <input
                   type="text"
                   aria-label="文档标题"

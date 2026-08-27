@@ -1367,6 +1367,7 @@ html:has(.leemo-start-shell) {
 }
 
 .leemo-start-documents {
+  position: relative;
   display: grid;
   width: 100%;
   max-width: 100%;
@@ -1376,6 +1377,57 @@ html:has(.leemo-start-shell) {
   grid-template-columns: 248px minmax(0, 1fr);
   background: var(--start-surface);
   animation: leemo-start-enter 160ms ease-out both;
+}
+
+.leemo-document-move-undo {
+  position: absolute;
+  z-index: 24;
+  right: 24px;
+  bottom: 42px;
+  display: flex;
+  min-height: 40px;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 8px 6px 12px;
+  border: 1px solid var(--start-line);
+  border-radius: 10px;
+  color: var(--start-ink-2);
+  background: var(--start-surface);
+  box-shadow: var(--leemo-shadow-raised);
+  font-size: 12px;
+}
+
+.leemo-document-move-undo > span {
+  max-width: 280px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.leemo-document-move-undo > button {
+  height: 28px;
+  padding: 0 8px;
+  border-radius: 7px;
+  color: var(--start-accent-strong);
+  font-weight: 650;
+}
+
+.leemo-document-move-undo > button:hover,
+.leemo-document-move-undo > button:focus-visible {
+  background: var(--start-nav-active);
+}
+
+.leemo-document-move-undo > button.is-dismiss {
+  display: grid;
+  width: 28px;
+  padding: 0;
+  place-items: center;
+  color: var(--start-ink-3);
+}
+
+.leemo-document-move-undo > button.is-dismiss svg {
+  width: 14px;
+  height: 14px;
 }
 
 .leemo-note-explorer {
@@ -1625,6 +1677,44 @@ html:has(.leemo-start-shell) {
   background: color-mix(in srgb, var(--start-surface) 68%, var(--start-bg));
 }
 
+.leemo-note-tree__row[data-drop-position="inside"] {
+  outline: 1px solid var(--start-accent);
+  outline-offset: -1px;
+  background: var(--start-nav-active);
+}
+
+.leemo-note-tree__row[data-drop-position="before"]::after,
+.leemo-note-tree__row[data-drop-position="after"]::after {
+  position: absolute;
+  z-index: 2;
+  right: 5px;
+  left: calc(var(--note-depth) * 16px + 4px);
+  height: 2px;
+  border-radius: 2px;
+  background: var(--start-accent);
+  content: "";
+}
+
+.leemo-note-tree__row[data-drop-position="before"]::after {
+  top: -1px;
+}
+
+.leemo-note-tree__row[data-drop-position="after"]::after {
+  bottom: -1px;
+}
+
+.leemo-note-tree__root-target {
+  display: grid;
+  min-height: 34px;
+  margin: 7px 4px 0;
+  place-items: center;
+  border: 1px dashed color-mix(in srgb, var(--start-accent) 48%, var(--start-line));
+  border-radius: 8px;
+  color: var(--start-ink-3);
+  background: color-mix(in srgb, var(--start-surface) 72%, var(--start-bg));
+  font-size: 11.5px;
+}
+
 .leemo-note-tree__row[aria-selected="true"] {
   color: var(--start-ink);
   background: var(--start-nav-active);
@@ -1709,14 +1799,37 @@ html:has(.leemo-start-shell) {
   align-items: center;
 }
 
-.leemo-document-header__identity p {
+.leemo-document-location {
+  display: flex;
+  min-width: 0;
+  max-width: min(420px, 100%);
+  align-items: center;
+  gap: 4px;
   margin: 0 0 1px;
   overflow: hidden;
   color: var(--start-ink-3);
   font-size: 11.5px;
   line-height: 16px;
+  white-space: nowrap;
+}
+
+.leemo-document-location > span {
+  flex: 0 0 auto;
+}
+
+.leemo-document-location > button {
+  min-width: 0;
+  overflow: hidden;
+  border-radius: 4px;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.leemo-document-location > button:hover,
+.leemo-document-location > button:focus-visible {
+  color: var(--start-ink-2);
+  text-decoration: underline;
+  text-underline-offset: 2px;
 }
 
 .leemo-document-header__identity input {

@@ -461,7 +461,7 @@ describe("SettingsPage", () => {
       );
 
       await user.click(screen.getByRole("tab", { name: "数据与存储" }));
-      expect(screen.getByText(/尚未选择；首次保存图片或文件副本时再选择位置/)).toBeInTheDocument();
+      expect(screen.getByText("跟随 Leemo 文档目录")).toBeInTheDocument();
       expect(screen.queryByRole("button", { name: "打开文件夹" })).not.toBeInTheDocument();
       await user.click(screen.getByRole("button", { name: "选择文件夹" }));
       expect(await screen.findByText("E:/Leemo-files")).toBeInTheDocument();

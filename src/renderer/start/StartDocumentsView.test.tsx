@@ -114,6 +114,18 @@ function selectText(node: Node, start?: number, end?: number): void {
   fireEvent(document, new Event("selectionchange"));
 }
 
+function noteDataTransfer(noteId: string): DataTransfer {
+  const payload = JSON.stringify({ noteId });
+  return {
+    files: [] as unknown as FileList,
+    types: ["application/x-leemo-note"],
+    effectAllowed: "move",
+    dropEffect: "move",
+    setData: vi.fn(),
+    getData: (type: string) => type === "application/x-leemo-note" ? payload : "",
+  } as unknown as DataTransfer;
+}
+
 describe("StartDocumentsView", () => {
   beforeEach(() => localStorage.clear());
   afterEach(() => {
@@ -152,6 +164,56 @@ describe("StartDocumentsView", () => {
       id: story.id,
       title: "产品故事 v2",
     })));
+  });
+
+  it("offers one-step undo after moving a document in the tree", async () => {
+    const first = note("first", { title: "第一章", sortOrder: 0 });
+    const second = note("second", { title: "第二章", sortOrder: 1 });
+    const captures = captureClient([first, second]);
+    captures.client.moveNote = vi.fn()
+      .mockResolvedValueOnce([{ ...first, parentId: second.id, sortOrder: 0, revision: 2 }])
+      .mockResolvedValueOnce([{ ...first, parentId: null, sortOrder: 0, revision: 3 }]);
+    render(<BridgeProvider capture={captures.client}><StartDocumentsView selectedNoteId={first.id} /></BridgeProvider>);
+
+    fireEvent.drop(await screen.findByRole("treeitem", { name: /第二章/ }), {
+      dataTransfer: noteDataTransfer(first.id),
+    });
+    await waitFor(() => expect(captures.client.moveNote).toHaveBeenNthCalledWith(1, {
+      id: first.id,
+      expectedRevision: first.revision,
+      parentId: second.id,
+      index: 0,
+    }));
+
+    expect(screen.getByRole("status", { name: "文档移动结果" })).toHaveTextContent("已移动「第一章」");
+    await userEvent.click(screen.getByRole("button", { name: "撤销移动" }));
+    await waitFor(() => expect(captures.client.moveNote).toHaveBeenNthCalledWith(2, {
+      id: first.id,
+      expectedRevision: 2,
+      parentId: null,
+      index: 0,
+    }));
+    expect(screen.queryByRole("button", { name: "撤销移动" })).not.toBeInTheDocument();
+  });
+
+  it("shows only the immediate parent in a compact document location without leaking ancestor body text", async () => {
+    const grandparent = note("grandparent", {
+      title: "",
+      markdown: "这段祖先正文不该泄露到当前文档标题栏",
+    });
+    const parent = note("parent", {
+      title: "求职材料整理与面试故事",
+      parentId: grandparent.id,
+    });
+    const child = note("child", { title: "数据分析实习", parentId: parent.id });
+    const captures = captureClient([grandparent, parent, child]);
+    render(<BridgeProvider capture={captures.client}><StartDocumentsView selectedNoteId={child.id} /></BridgeProvider>);
+
+    const location = await screen.findByRole("navigation", { name: "文档位置" });
+    expect(within(location).getByRole("button", { name: "打开父文档 求职材料整理与面试故事" })).toBeInTheDocument();
+    expect(location).toHaveTextContent("…");
+    expect(location).not.toHaveTextContent("这段祖先正文不该泄露到当前文档标题栏");
+    expect(screen.getByDisplayValue("数据分析实习")).toBeInTheDocument();
   });
 
   it("buffers unsaved edits immediately and restores them after switching documents and remounting", async () => {
