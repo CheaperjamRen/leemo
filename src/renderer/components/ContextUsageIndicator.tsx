@@ -47,7 +47,13 @@ export default function ContextUsageIndicator({
       || (Boolean(modelId) && usage.modelId !== modelId));
   const current = stale ? undefined : usage;
   const capacity = current?.capacityTokens ?? effectiveContextCapacity(policy);
-  const modelMaximum = current?.rawMaxTokens ?? policy?.contextWindowTokens;
+  const configuredMaximum = policy?.contextWindowTokens;
+  const runtimeMaximum = current?.rawMaxTokens;
+  const modelMaximum = runtimeMaximum ?? configuredMaximum;
+  const runtimeMismatch = current !== undefined
+    && configuredMaximum !== undefined
+    && runtimeMaximum !== undefined
+    && configuredMaximum !== runtimeMaximum;
   const used = current === undefined ? undefined : Math.max(0, current.currentTokens);
   const percent = used !== undefined && capacity
     ? Math.min(100, Math.round((used / capacity) * 100))
@@ -57,19 +63,22 @@ export default function ContextUsageIndicator({
     : undefined;
   const estimated = current?.accuracy === "estimated";
   const approximate = estimated ? "约" : "";
-  const accessibleLabel = stale
+  const baseAccessibleLabel = stale
     ? "上下文等待新模型更新"
     : current === undefined
       ? updating ? "上下文正在更新" : "上下文尚未读取"
       : percent === undefined
         ? `上下文${approximate}已用 ${formatContextTokens(used ?? 0)}`
         : `上下文${approximate}已用 ${percent}%${remaining === undefined ? "" : `，整理前${approximate}剩 ${formatContextTokens(remaining)}`}`;
+  const accessibleLabel = runtimeMismatch
+    ? `${baseAccessibleLabel}，设置目标 ${formatContextTokens(configuredMaximum)}，当前运行 ${formatContextTokens(runtimeMaximum)}`
+    : baseAccessibleLabel;
   const ringDegrees = percent === undefined ? 0 : percent * 3.6;
   const pendingCopy = stale
     ? "模型已切换，下一条消息后更新"
     : updating
       ? "正在读取本轮背景信息"
-      : "尚未读取当前话题的背景信息";
+      : "尚未读取当前话题的背景信息 · 等待首轮确认";
 
   return (
     <span className="leemo-context-meter group relative inline-grid h-8 w-7 shrink-0 place-items-center">
@@ -116,7 +125,16 @@ export default function ContextUsageIndicator({
             {current.justCompacted && <span className="mt-1 block text-[11px] text-[var(--leemo-text-on-inverse-muted)]">刚刚整理过</span>}
           </>
         )}
-        {modelMaximum && modelMaximum !== capacity && (
+        {runtimeMismatch && (
+          <>
+            <span className="mt-1.5 block text-[11px] text-[var(--leemo-text-on-inverse-muted)]">设置目标 {formatContextTokens(configuredMaximum)}</span>
+            <span className="mt-0.5 block text-[11px] text-[var(--leemo-text-on-inverse-muted)]">当前运行上限 {formatContextTokens(runtimeMaximum)}</span>
+          </>
+        )}
+        {!runtimeMismatch && current === undefined && configuredMaximum && (
+          <span className="mt-1.5 block text-[11px] text-[var(--leemo-text-on-inverse-muted)]">设置目标 {formatContextTokens(configuredMaximum)}</span>
+        )}
+        {!runtimeMismatch && current !== undefined && modelMaximum && modelMaximum !== capacity && (
           <span className="mt-1 block text-[11px] text-[var(--leemo-text-on-inverse-muted)]">模型上限 {formatContextTokens(modelMaximum)}</span>
         )}
       </span>

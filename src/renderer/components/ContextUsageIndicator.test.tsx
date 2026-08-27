@@ -126,4 +126,42 @@ describe("ContextUsageIndicator", () => {
     expect(screen.getByRole("button", { name: "上下文等待新模型更新" })).toBeInTheDocument();
     expect(screen.queryByText(/26%/)).not.toBeInTheDocument();
   });
+
+  it("shows a configured 1M target beside a smaller active runtime window", () => {
+    render(
+      <ContextUsageIndicator
+        usage={{
+          currentTokens: 41_000,
+          capacityTokens: 167_000,
+          rawMaxTokens: 200_000,
+          providerId: "tokenflux",
+          modelId: "deepseek-v4-flash",
+          accuracy: "exact",
+          updatedAt: 1,
+          justCompacted: false,
+        }}
+        providerId="tokenflux"
+        modelId="deepseek-v4-flash"
+        policy={{ contextWindowTokens: 1_000_000, autoCompactWindowTokens: 950_000 }}
+      />,
+    );
+
+    expect(screen.getByRole("button")).toHaveAccessibleName(/设置目标 1M.*当前运行 200K/);
+    expect(screen.getByRole("tooltip")).toHaveTextContent("设置目标 1M");
+    expect(screen.getByRole("tooltip")).toHaveTextContent("当前运行上限 200K");
+    expect(screen.getByRole("tooltip")).toHaveTextContent("41K / 167K");
+  });
+
+  it("shows the configured target while waiting for the first new-model snapshot", () => {
+    render(
+      <ContextUsageIndicator
+        providerId="glm"
+        modelId="glm-5.3-flash"
+        policy={{ contextWindowTokens: 1_000_000, autoCompactWindowTokens: 950_000 }}
+      />,
+    );
+
+    expect(screen.getByRole("tooltip")).toHaveTextContent("等待首轮确认");
+    expect(screen.getByRole("tooltip")).toHaveTextContent("设置目标 1M");
+  });
 });
