@@ -381,6 +381,35 @@ describe("workspace-backed persistence", () => {
 });
 
 describe("registered workspace persistence", () => {
+  it("keeps a repaired session owner when an older portable record lacks that derived field", () => {
+    const homeRoot = tempWorkspace();
+    const externalRoot = tempWorkspace();
+    const portable = conversation({
+      id: "legacy-session-owner",
+      bookId: null,
+      workspaceId: HOME_WORKSPACE_ID,
+      providerId: "deepseek",
+      sessionId: "session-tokenflux",
+      sessionProviderId: undefined,
+    });
+    const repairedIndex = conversation({
+      ...portable.meta,
+      sessionProviderId: "tokenflux",
+    });
+    const archive = createWorkspaceConversationArchive(homeRoot);
+    archive.save(portable);
+    archive.markMigrationComplete();
+    const fixture = fakeIndex([repairedIndex]);
+
+    const loaded = createRegisteredWorkspacePersistence(
+      fixture.index,
+      fakeRegistry(homeRoot, externalRoot),
+    ).loadAll();
+
+    expect(loaded.conversations[0]?.meta.sessionProviderId).toBe("tokenflux");
+    expect(archive.loadAll().conversations[0]?.meta.sessionProviderId).toBe("tokenflux");
+  });
+
   it("delegates global overview state and standalone usage to the app index", () => {
     const root = tempWorkspace();
     const fixture = fakeIndex();

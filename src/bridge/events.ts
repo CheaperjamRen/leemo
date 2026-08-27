@@ -832,6 +832,9 @@ export function toUserFacingRunError(error: unknown): string {
   if (status === "404") {
     return "服务商找不到模型或接口（404）。请检查模型名称和接口地址后重试。";
   }
+  if (status === "414") {
+    return "本轮上下文或附件超出服务商可接受的大小（414）。现有记录已保留，请开启新话题或新对话后重试。";
+  }
   if (status === "408" || /\b(?:ETIMEDOUT|timed?\s*out|timeout)\b/i.test(unwrapped)) {
     return "服务商响应超时。请检查网络后重试，或换一个模型。";
   }

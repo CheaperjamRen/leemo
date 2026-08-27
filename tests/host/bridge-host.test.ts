@@ -1273,6 +1273,70 @@ describe("bridge-host — provider and model switch stay aligned", () => {
     });
   });
 
+  it("keeps reporting the provider directory that owns a session after the model provider changes", async () => {
+    const deepseek = makeCatalog()[0]!;
+    const qwen: CatalogEntry = {
+      ...deepseek,
+      provider: {
+        ...deepseek.provider,
+        id: "qwen",
+        name: "Qwen",
+        baseUrl: "https://dashscope.example/anthropic",
+        apiKey: "sk-qwen-test",
+        models: ["qwen3.7-flash"],
+      },
+      spec: {
+        ...deepseek.spec,
+        id: "qwen",
+        kind: "qwen",
+        name: "Qwen",
+        baseUrl: "https://dashscope.example/anthropic",
+        models: ["qwen3.7-flash"],
+      },
+    };
+    const { deps, pushed } = makeDeps(() =>
+      (async function* () {
+        yield {
+          type: "result",
+          subtype: "success",
+          result: "ok",
+          is_error: false,
+          session_id: "session-in-deepseek-directory",
+          usage: { input_tokens: 1, output_tokens: 1 },
+        };
+      })() as never,
+    );
+    const host = createBridgeHost({ ...deps, catalog: [deepseek, qwen] });
+    const { conversationId } = await host.handleInvoke("bridge:createConversation", {
+      providerId: "deepseek",
+      modelId: "deepseek-chat",
+    });
+
+    await host.handleInvoke("bridge:send", { conversationId, prompt: "one" });
+    await vi.waitFor(() => expect(pushed.filter((entry) => (
+      entry.channel === "bridge:event"
+      && (entry.payload as { event?: { type?: string } }).event?.type === "run.finished"
+    ))).toHaveLength(1));
+    await host.handleInvoke("bridge:setModel", {
+      conversationId,
+      providerId: "qwen",
+      modelId: "qwen3.7-flash",
+    } as never);
+    await host.handleInvoke("bridge:send", { conversationId, prompt: "two" });
+    await vi.waitFor(() => expect(pushed.filter((entry) => (
+      entry.channel === "bridge:event"
+      && (entry.payload as { event?: { type?: string } }).event?.type === "run.finished"
+    ))).toHaveLength(2));
+
+    const finished = pushed
+      .filter((entry) => entry.channel === "bridge:event")
+      .map((entry) => (entry.payload as BridgeEventMap["bridge:event"]).event)
+      .filter((event) => event.type === "run.finished");
+    expect(finished).toHaveLength(2);
+    expect(finished[0]).toMatchObject({ sessionProviderId: "deepseek" });
+    expect(finished[1]).toMatchObject({ sessionProviderId: "deepseek" });
+  });
+
   it("starts the local gateway when an existing direct conversation switches to an OpenAI provider", async () => {
     const deepseek = makeCatalog()[0]!;
     const relay: CatalogEntry = {

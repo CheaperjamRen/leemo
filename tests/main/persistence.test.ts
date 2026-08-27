@@ -1,5 +1,8 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import Database from "better-sqlite3";
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { createPersistence } from "../../src/main/persistence/schema";
 import type { ConversationMeta } from "../../src/renderer/stores/conversations";
 import type { TimelineItem } from "../../src/renderer/stores/message-model";
@@ -260,6 +263,36 @@ describe("persistence schema", () => {
       sessionId: "sess-abc-123",
       sessionProviderId: "deepseek",
     });
+  });
+
+  it("repairs a legacy session owner from the provider directory before loading it", () => {
+    const root = mkdtempSync(path.join(tmpdir(), "leemo-session-owner-"));
+    try {
+      const db = makeDb();
+      const first = createPersistence(db);
+      first.saveConversation({
+        ...meta,
+        providerId: "deepseek",
+        sessionId: "session-owned-by-tokenflux",
+        sessionProviderId: undefined,
+      }, items);
+      const projectDir = path.join(root, "providers", "tokenflux", "projects", "leemo-home");
+      mkdirSync(projectDir, { recursive: true });
+      writeFileSync(path.join(projectDir, "session-owned-by-tokenflux.jsonl"), "{}\n", "utf8");
+
+      const createWithSessionRepair = createPersistence as unknown as (
+        database: Parameters<typeof createPersistence>[0],
+        options: { sessionDataDir: string },
+      ) => ReturnType<typeof createPersistence>;
+      const reopened = createWithSessionRepair(db, { sessionDataDir: root });
+
+      expect(reopened.loadAll().conversations[0]?.meta).toMatchObject({
+        sessionId: "session-owned-by-tokenflux",
+        sessionProviderId: "tokenflux",
+      });
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 
   it("loads a conversation that has no sessionId without inventing one", () => {

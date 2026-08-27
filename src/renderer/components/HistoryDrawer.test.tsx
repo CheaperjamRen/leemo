@@ -243,6 +243,7 @@ describe("HistoryDrawer — real conversations, not fixtures", () => {
               bookId: null, source: "buddy" as const, providerId: "deepseek",
               modelId: "deepseek-v4pro", createdAt: 1, lastActivityAt: 2, unread: false,
               sessionId: "sess-abc",
+              sessionProviderId: "deepseek",
             },
             timeline: [
               { kind: "text" as const, id: "u0", runId: "run-1", role: "user" as const, text: "上次没聊完的事", streaming: false },

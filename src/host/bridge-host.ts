@@ -345,6 +345,9 @@ interface ConvRecord {
   entryRuntimeSignature: string;
   /** Exact selected model; provider.models[0] is only the family default. */
   modelId: string;
+  /** Provider directory that physically owns this SDK transcript. It stays
+   * stable when the next round switches models/providers. */
+  sessionOwnerProviderId: string;
   workspace: ConversationWorkspace;
   /** 轮 7 A1 —— this conversation's own cwd (its 本子 dir, or the workspace root
    *  for momo 主人格). `drain` hands it to the path auditor, which decides
@@ -2522,6 +2525,7 @@ export function createBridgeHost(deps: HostDeps): BridgeHost {
       purpose: isWiki ? "wiki" : "main",
       broker, askMcp, memoryMcp, skillAdminMcp, memoryScope, entry,
       entryRuntimeSignature: catalogRuntimeSignature(entry), modelId: r.modelId,
+      sessionOwnerProviderId: entry.provider.id,
       workspace: conversationWorkspace,
       cwd: conversationCwd,
       // 轮 7 A3: keep the live containers so updateContext can rewrite them.
@@ -2889,7 +2893,7 @@ export function createBridgeHost(deps: HostDeps): BridgeHost {
           }
           const ev = next.value;
           if (ev.type === "run.finished" && ev.sessionId && !ev.sessionProviderId) {
-            ev.sessionProviderId = entry.provider.id;
+            ev.sessionProviderId = rec.sessionOwnerProviderId;
           }
           if (ev.type === "tool.started") await beginFileTracking(ev);
           if (ev.type === "run.finished") {

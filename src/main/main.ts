@@ -789,7 +789,7 @@ async function setupHost(): Promise<void> {
   // exact same instance later exposed through the renderer persistence IPC.
   const dbPath = path.join(app.getPath("userData"), "leemo.db");
   const database = openDatabase(dbPath);
-  const sqlitePersistence = createPersistence(database);
+  const sqlitePersistence = createPersistence(database, { sessionDataDir: dataDir });
   const activePersistence = createRegisteredWorkspacePersistence(sqlitePersistence, workspaceRegistry);
   const learningService = createLearningService(activePersistence);
   persistence = activePersistence;

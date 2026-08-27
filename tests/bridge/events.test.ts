@@ -45,6 +45,12 @@ describe("provider recovery messages", () => {
       "当前账号没有所选模型的访问权限（403）。请在模型设置中换一个可用模型，或确认服务商已开通权限。",
     );
   });
+
+  it("explains a 414 as an oversized or invalid restored request without blaming the balance", () => {
+    expect(toUserFacingRunError("API Error: 414 URI Too Long")).toBe(
+      "本轮上下文或附件超出服务商可接受的大小（414）。现有记录已保留，请开启新话题或新对话后重试。",
+    );
+  });
 });
 
 describe("normalizeSdkStream — event-by-event mapping", () => {

@@ -2136,6 +2136,7 @@ describe("conversations store", () => {
             lastActivityAt: 1,
             unread: false,
             sessionId: "sess-1",
+            sessionProviderId: DEFAULTS.providerId,
           },
           timeline: [],
         },
@@ -2298,6 +2299,7 @@ describe("conversations store", () => {
       source: "buddy", providerId: "deepseek", modelId: "deepseek-v4-flash",
       createdAt: 1000, lastActivityAt: 3000, unread: false,
       sessionId: "sess-before-restart",
+      sessionProviderId: "deepseek",
     };
     const tl: TimelineItem[] = [
       { kind: "text", id: "u0", runId: "r1", role: "user", text: "我养了一只叫团子的猫", streaming: false },
@@ -2500,6 +2502,47 @@ describe("conversations store", () => {
 
       expect(bridge.calls[0].request).not.toHaveProperty("resumeSessionId");
       expect(bridge.calls[0].request).toMatchObject({ providerId: "glm" });
+    });
+
+    it("does not resume a legacy session whose provider ownership is unknown", async () => {
+      const bridge = makeClient();
+      const store = createConversationsStore(bridge.client, {
+        resolveConversationDefaults: () => DEFAULTS,
+      });
+      store.getState().hydrate([{
+        meta: {
+          ...persisted,
+          providerId: "deepseek",
+          modelId: "deepseek-v4-flash",
+          sessionId: "session-without-an-owner",
+          sessionProviderId: undefined,
+        },
+        timeline: [
+          {
+            kind: "text",
+            id: "u0",
+            runId: "run-1",
+            role: "user",
+            text: "结合简历和实习材料帮我准备面试故事",
+            streaming: false,
+          },
+          {
+            kind: "text",
+            id: "m1",
+            runId: "run-1",
+            role: "momo",
+            text: "我先把材料读起来。",
+            streaming: false,
+          },
+        ],
+      }]);
+
+      await store.getState().send("c-restart", "继续");
+
+      expect(bridge.calls[0].request).not.toHaveProperty("resumeSessionId");
+      const sent = bridge.calls.find((call) => call.channel === "bridge:send")?.request as { prompt: string };
+      expect(sent.prompt).toContain("[Leemo 章节续接]");
+      expect(sent.prompt).toContain("结合简历和实习材料帮我准备面试故事");
     });
 
     it("adds the local chapter checkpoint when a short continuation crosses providers", async () => {

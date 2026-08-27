@@ -603,7 +603,7 @@ export function createConversationsStore(
       providerId: meta.providerId,
       modelId: meta.modelId,
       purpose: "main",
-      ...(meta.sessionId && (!meta.sessionProviderId || meta.sessionProviderId === meta.providerId)
+      ...(meta.sessionId && meta.sessionProviderId === meta.providerId
         ? { resumeSessionId: meta.sessionId }
         : {}),
       ...(meta.workspaceId ? { workspaceId: meta.workspaceId } : {}),
@@ -813,14 +813,13 @@ export function createConversationsStore(
         const lastResult = [...timeline].reverse().find(
           (item): item is Extract<TimelineItem, { kind: "result" }> => item.kind === "result",
         );
-        const crossesProvider = Boolean(
+        const sessionCannotBeResumed = Boolean(
           meta.sessionId
-          && meta.sessionProviderId
           && meta.sessionProviderId !== meta.providerId,
         );
         const needsLocalRecovery = meta.source === "buddy"
           && isContinuationOnlyMessage(text)
-          && (crossesProvider || !meta.sessionId || lastResult?.isError === true);
+          && (sessionCannotBeResumed || !meta.sessionId || lastResult?.isError === true);
         const checkpoint = needsLocalRecovery
           ? deriveRelationshipContinuationCheckpoint({
               chapterId: meta.id,

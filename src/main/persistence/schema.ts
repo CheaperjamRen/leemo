@@ -11,6 +11,8 @@
  * wiki_entries / settings / approval_whitelist.
  */
 import type { UsageSummary, UsageSummaryQuery } from "../../bridge/contract";
+import fs from "node:fs";
+import path from "node:path";
 import {
   normalizePersistedGlobalOverviewState,
   type PersistedGlobalOverviewState,
@@ -132,6 +134,12 @@ export interface SqliteDatabase {
    *  own `transaction` (which returns a callable `Transaction<F>`), so the real
    *  Database satisfies this interface without a cast. */
   transaction<Args extends unknown[]>(fn: (...args: Args) => unknown): (...args: Args) => unknown;
+}
+
+export interface PersistenceOptions {
+  /** Root containing per-provider Claude Agent SDK state. Packaged builds pass
+   *  `<userData>/workspace/data`; tests and non-desktop callers may omit it. */
+  sessionDataDir?: string;
 }
 
 export interface PersistedConversation {
@@ -434,6 +442,72 @@ function migrate(db: SqliteDatabase): void {
   `);
 }
 
+/** Recover the physical owner of sessions written before session_provider_id
+ * existed. Provider switches keep an SDK transcript in the directory that
+ * created it, so the current conversation provider is not reliable evidence.
+ * Resolve by filename only; transcript contents can contain large attachments
+ * and must never be read during startup. Ambiguous or missing files stay
+ * unknown and will take the renderer's bounded local-recovery path. */
+function repairLegacySessionProviders(db: SqliteDatabase, dataDir: string): void {
+  const rows = db.prepare(`
+    SELECT id, session_id
+    FROM conversations
+    WHERE session_id IS NOT NULL AND session_provider_id IS NULL
+  `).all() as Array<{ id: string; session_id: string }>;
+  if (rows.length === 0) return;
+
+  const targets = new Set(rows.map((row) => row.session_id));
+  const owners = new Map<string, Set<string>>();
+  const providersRoot = path.join(dataDir, "providers");
+  let providerEntries: fs.Dirent[];
+  try {
+    providerEntries = fs.readdirSync(providersRoot, { withFileTypes: true });
+  } catch {
+    return;
+  }
+
+  for (const providerEntry of providerEntries) {
+    if (!providerEntry.isDirectory()) continue;
+    const projectsRoot = path.join(providersRoot, providerEntry.name, "projects");
+    const pending = [projectsRoot];
+    while (pending.length > 0) {
+      const directory = pending.pop()!;
+      let entries: fs.Dirent[];
+      try {
+        entries = fs.readdirSync(directory, { withFileTypes: true });
+      } catch {
+        continue;
+      }
+      for (const entry of entries) {
+        const target = path.join(directory, entry.name);
+        if (entry.isDirectory()) {
+          pending.push(target);
+          continue;
+        }
+        if (!entry.isFile() || path.extname(entry.name).toLowerCase() !== ".jsonl") continue;
+        const sessionId = path.basename(entry.name, path.extname(entry.name));
+        if (!targets.has(sessionId)) continue;
+        const set = owners.get(sessionId) ?? new Set<string>();
+        set.add(providerEntry.name);
+        owners.set(sessionId, set);
+      }
+    }
+  }
+
+  const update = db.prepare(`
+    UPDATE conversations
+    SET session_provider_id = ?
+    WHERE id = ? AND session_id = ? AND session_provider_id IS NULL
+  `);
+  db.transaction(() => {
+    for (const row of rows) {
+      const matches = owners.get(row.session_id);
+      if (matches?.size !== 1) continue;
+      update.run([...matches][0], row.id, row.session_id);
+    }
+  })();
+}
+
 interface MessageRow {
   conversation_id: string;
   seq: number;
@@ -574,12 +648,16 @@ function decodeScheduledTaskRun(row: ScheduledTaskRunRow): ScheduledTaskRun {
   };
 }
 
-export function createPersistence(db: SqliteDatabase): Persistence & CapturePersistence {
+export function createPersistence(
+  db: SqliteDatabase,
+  options: PersistenceOptions = {},
+): Persistence & CapturePersistence {
   db.exec(SCHEMA);
   // Order matters: SCHEMA creates the tables on a fresh install, migrate() then
   // patches an install that already had them. Both run before any prepare(),
   // since prepared statements naming session_id would otherwise fail to compile.
   migrate(db);
+  if (options.sessionDataDir) repairLegacySessionProviders(db, options.sessionDataDir);
   const capturePersistence = createCapturePersistence(db);
 
   const upsertConv = db.prepare(`

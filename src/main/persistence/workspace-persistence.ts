@@ -429,6 +429,7 @@ export function createRegisteredWorkspacePersistence(
 
     loadAll(): PersistedSnapshot {
       const indexed = index.loadAll();
+      const indexedById = new Map(indexed.conversations.map((conversation) => [conversation.meta.id, conversation]));
       const homeArchive = archiveFor(HOME_WORKSPACE_ID);
 
       // Existing releases put every conversation in the home archive. Only
@@ -471,9 +472,29 @@ export function createRegisteredWorkspacePersistence(
         }
         for (const conversation of portable.conversations) {
           if (index.isConversationDeleted(conversation.meta.id)) continue;
-          const previous = byId.get(conversation.meta.id);
-          if (!previous || conversation.meta.lastActivityAt >= previous.meta.lastActivityAt) {
-            byId.set(conversation.meta.id, conversation);
+          const indexedConversation = indexedById.get(conversation.meta.id);
+          const recoveredSessionOwner = conversation.meta.sessionId
+            && !conversation.meta.sessionProviderId
+            && indexedConversation?.meta.sessionId === conversation.meta.sessionId
+            && indexedConversation.meta.sessionProviderId
+            ? indexedConversation.meta.sessionProviderId
+            : undefined;
+          const effectiveConversation = recoveredSessionOwner
+            ? {
+                ...conversation,
+                meta: { ...conversation.meta, sessionProviderId: recoveredSessionOwner },
+              }
+            : conversation;
+          if (recoveredSessionOwner) {
+            try {
+              archive.save(effectiveConversation);
+            } catch (error: unknown) {
+              reportError(`[leemo:persist] could not persist repaired session ownership: ${error instanceof Error ? error.message : String(error)}`);
+            }
+          }
+          const previous = byId.get(effectiveConversation.meta.id);
+          if (!previous || effectiveConversation.meta.lastActivityAt >= previous.meta.lastActivityAt) {
+            byId.set(effectiveConversation.meta.id, effectiveConversation);
           }
         }
       }
