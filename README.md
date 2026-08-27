@@ -1,8 +1,7 @@
 <div align="center">
-  <p><strong>本地优先 · Claude Code 级 Agent 能力</strong></p>
-  <h1>会陪你聊，也真的会干活。</h1>
-  <p>Leemo 是一个记得我们聊到哪、也能进入真实文件夹把事情做完的个人 AI 搭子。<br />它能读写文件、调用工具、做研究、处理长任务，并把成果留在你的电脑里。</p>
-  <p><strong>真实文件与工具执行 · 长期关系与话题章节 · Skills、MCP 与多模型</strong></p>
+  <h1>Leemo</h1>
+  <p><strong>本地优先的 Windows AI Agent</strong></p>
+  <p>把长期对话、本地文档和真实文件夹里的执行放在一个桌面应用里。<br />基于 Claude Agent SDK，支持工具调用、Skills、MCP、子 Agent 与多模型。</p>
   <p>
     <a href="https://github.com/CheaperjamRen/leemo/releases/latest"><strong>下载 Windows 版</strong></a> ·
     <a href="https://github.com/CheaperjamRen/leemo/issues">反馈问题</a>
@@ -20,8 +19,8 @@
 <table>
   <thead>
     <tr>
-      <th width="50%">真的能干活</th>
-      <th width="50%">真的能聊下去</th>
+      <th width="50%">Agent 执行</th>
+      <th width="50%">长期对话</th>
     </tr>
   </thead>
   <tbody>
