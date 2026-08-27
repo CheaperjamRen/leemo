@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { ArchiveRestore, Check, ChevronDown, Folder, FolderOpen, House, Plus, X } from "lucide-react";
+import { Check, ChevronDown, Folder, FolderOpen, House, Plus, X } from "lucide-react";
 import {
   useConversations,
   useFileTree,
@@ -35,13 +35,11 @@ export default function WorkspaceSwitcher({ compact = false }: { compact?: boole
   const openFolder = useWorkspaces((state) => state.openFolder);
   const selectWorkspace = useWorkspaces((state) => state.select);
   const forgetWorkspace = useWorkspaces((state) => state.forget);
-  const setWorkspaceArchived = useWorkspaces((state) => state.setArchived);
   const notebooks = useNotebooks((state) => state.list);
   const activeNotebookId = useNotebooks((state) => state.activeId);
   const notebookError = useNotebooks((state) => state.error);
   const setNotebook = useNotebooks((state) => state.setActive);
   const createNotebook = useNotebooks((state) => state.createNotebook);
-  const setNotebookArchived = useNotebooks((state) => state.setNotebookArchived);
   const activateScope = useConversations((state) => state.activateScope);
   const refreshTree = useFileTree((state) => state.refresh);
   const activateWorkbenchScope = useUi((state) => state.activateWorkbenchScope);
@@ -66,8 +64,6 @@ export default function WorkspaceSwitcher({ compact = false }: { compact?: boole
     : undefined;
   const managedBooks = notebooks.filter((entry) => !entry.archived);
   const externalBooks = workspaces.filter((entry) => entry.kind === "external" && !entry.archived);
-  const archivedManagedBooks = notebooks.filter((entry) => entry.archived);
-  const archivedExternalBooks = workspaces.filter((entry) => entry.kind === "external" && entry.archived);
   const currentLabel = activeWorkspace?.kind === "external"
     ? activeWorkspace.name
     : activeManagedBook?.title ?? "Leemo 工作台";
@@ -385,35 +381,6 @@ export default function WorkspaceSwitcher({ compact = false }: { compact?: boole
 
             {managedBooks.length + externalBooks.length === 0 && (
               <p className="px-2 py-5 text-center text-xs text-[var(--leemo-ink-3)]">还没有本子</p>
-            )}
-            {archivedManagedBooks.length + archivedExternalBooks.length > 0 && (
-              <div className="mt-1 border-t border-[var(--leemo-line-soft)] pt-1">
-                <p className="px-2 py-1 text-[10px] font-medium text-[var(--leemo-ink-3)]">已归档</p>
-                {archivedManagedBooks.map((entry) => (
-                  <button
-                    key={`archived-managed:${entry.id}`}
-                    type="button"
-                    role="menuitem"
-                    onClick={() => void setNotebookArchived(entry.id, false)}
-                    className="flex h-8 w-full items-center gap-2 rounded-md px-2 text-left text-xs text-[var(--leemo-ink-2)] hover:bg-[var(--leemo-work-hover)]"
-                  >
-                    <ArchiveRestore className="h-3.5 w-3.5" aria-hidden />
-                    <span className="min-w-0 flex-1 truncate">恢复 {entry.title}</span>
-                  </button>
-                ))}
-                {archivedExternalBooks.map((entry) => (
-                  <button
-                    key={`archived-external:${entry.id}`}
-                    type="button"
-                    role="menuitem"
-                    onClick={() => void setWorkspaceArchived(entry.id, false)}
-                    className="flex h-8 w-full items-center gap-2 rounded-md px-2 text-left text-xs text-[var(--leemo-ink-2)] hover:bg-[var(--leemo-work-hover)]"
-                  >
-                    <ArchiveRestore className="h-3.5 w-3.5" aria-hidden />
-                    <span className="min-w-0 flex-1 truncate">恢复 {entry.name}</span>
-                  </button>
-                ))}
-              </div>
             )}
           </div>
 

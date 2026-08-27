@@ -92,6 +92,33 @@ describe("WorkspaceSwitcher", () => {
     expect(screen.queryByText("工作区")).not.toBeInTheDocument();
   });
 
+  it("keeps archived notebooks and folders out of the everyday scope menu", async () => {
+    const archivedProject = { ...PROJECT, id: "workspace-archived", name: "旧项目", archived: true };
+    render(
+      <BridgeProvider workspace={workspace({
+        listWorkspaces: async () => [HOME, PROJECT, archivedProject],
+        listNotebooks: async () => ({
+          root: HOME.displayPath,
+          notebooks: [{
+            id: "旧本子",
+            title: "旧本子",
+            dir: `${HOME.displayPath}/旧本子`,
+            color: "blue",
+            hasMemory: false,
+            archived: true,
+          }],
+        }),
+      })}>
+        <WorkspaceSwitcher />
+      </BridgeProvider>,
+    );
+
+    await userEvent.click(await screen.findByRole("button", { name: "选择本子，当前 Leemo 工作台" }));
+    expect(screen.queryByText("旧本子")).not.toBeInTheDocument();
+    expect(screen.queryByText("旧项目")).not.toBeInTheDocument();
+    expect(screen.queryByText("已归档")).not.toBeInTheDocument();
+  });
+
   it("opens a managed book and activates only that book's conversation scope", async () => {
     let stores!: BridgeStores;
     render(

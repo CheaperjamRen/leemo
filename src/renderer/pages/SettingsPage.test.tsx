@@ -145,6 +145,7 @@ describe("SettingsPage", () => {
     await user.click(screen.getByRole("tab", { name: "数据与存储" }));
     expect(screen.getByText("Leemo 文件")).toBeInTheDocument();
     expect(screen.getByLabelText("拖入文件时保存副本")).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "已归档内容" })).toBeInTheDocument();
 
     await user.click(screen.getByRole("tab", { name: "快捷键" }));
     expect(screen.getByLabelText("快速记录快捷键")).toBeInTheDocument();

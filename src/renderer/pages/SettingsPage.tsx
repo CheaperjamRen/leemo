@@ -14,6 +14,7 @@ import { ComputerUseSection } from "../components/ComputerUseSection";
 import { permissionToolLabel } from "../components/tool-labels";
 import LeemoMark from "../components/brand/LeemoMark";
 import LeemoSwitch from "../components/LeemoSwitch";
+import ArchivedContentSettings from "../components/ArchivedContentSettings";
 import type { ConnectionTestResult, ProviderSpec, UsageSummary } from "../../bridge/contract";
 import { orderConfiguredProviders } from "../components/model-picker";
 import {
@@ -1117,6 +1118,7 @@ export function SettingsPage({
                 onCheckedChange={(checked) => setCaptureFileDropMode(checked ? "copy" : "reference")}
               />
             </div>
+            <ArchivedContentSettings />
             {desktopSettingError ? <p role="alert" className="settings-storage__error">{desktopSettingError}</p> : null}
           </section>}
 
