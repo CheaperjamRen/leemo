@@ -2491,6 +2491,53 @@ describe("conversations store", () => {
       expect(bridge.calls[0].request).toMatchObject({ providerId: "glm" });
     });
 
+    it("adds the local chapter checkpoint when a short continuation crosses providers", async () => {
+      const bridge = makeClient();
+      const store = createConversationsStore(bridge.client, {
+        resolveConversationDefaults: () => DEFAULTS,
+      });
+      store.getState().hydrate([{
+        meta: {
+          ...persisted,
+          providerId: "glm",
+          modelId: "glm-5.3-flash",
+          sessionId: "session-tokenflux",
+          sessionProviderId: "tokenflux",
+        },
+        timeline: [
+          {
+            kind: "text",
+            id: "u0",
+            runId: "run-1",
+            role: "user",
+            text: "结合简历和实习材料帮我准备面试故事",
+            streaming: false,
+            attachments: [{ name: "简历.docx", size: 100 }],
+          },
+          {
+            kind: "text",
+            id: "m1",
+            runId: "run-1",
+            role: "momo",
+            text: "我先把材料读起来。",
+            streaming: false,
+          },
+        ],
+      }]);
+
+      await store.getState().send("c-restart", "继续");
+
+      const sent = bridge.calls.find((call) => call.channel === "bridge:send")?.request as { prompt: string };
+      expect(sent.prompt).toContain("[Leemo 章节续接]");
+      expect(sent.prompt).toContain("结合简历和实习材料帮我准备面试故事");
+      expect(sent.prompt).toContain("我先把材料读起来");
+      expect(store.getState().timelines["c-restart"].at(-1)).toMatchObject({
+        kind: "text",
+        role: "user",
+        text: "继续",
+      });
+    });
+
     it("keeps the previous sessionId when a run reports none", async () => {
       const bridge = makeClient(["conv-y"]);
       const store = createConversationsStore(bridge.client, {

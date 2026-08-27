@@ -9,6 +9,11 @@ import {
 } from "../../bridge/work-overview";
 import type { BridgeClient } from "../bridge/client";
 import { applyEvent, type TimelineItem, RENDERER_RUN_ID_INITIAL } from "./message-model";
+import {
+  buildRelationshipRecoveryPrompt,
+  deriveRelationshipContinuationCheckpoint,
+  isContinuationOnlyMessage,
+} from "./relationship-continuity";
 import { HOME_WORKSPACE_ID } from "./workspaces";
 
 export interface ConversationGoal {
@@ -799,6 +804,28 @@ export function createConversationsStore(
         const runId = `run-${++runSeq}`;
         const timeline = state.timelines[conversationId] ?? [];
         const timestamp = now();
+        const lastResult = [...timeline].reverse().find(
+          (item): item is Extract<TimelineItem, { kind: "result" }> => item.kind === "result",
+        );
+        const crossesProvider = Boolean(
+          meta.sessionId
+          && meta.sessionProviderId
+          && meta.sessionProviderId !== meta.providerId,
+        );
+        const needsLocalRecovery = meta.source === "buddy"
+          && isContinuationOnlyMessage(text)
+          && (crossesProvider || !meta.sessionId || lastResult?.isError === true);
+        const checkpoint = needsLocalRecovery
+          ? deriveRelationshipContinuationCheckpoint({
+              chapterId: meta.id,
+              timeline,
+              updatedAt: timestamp,
+              ...(meta.goal?.status === "active" ? { currentGoal: meta.goal.text } : {}),
+            })
+          : undefined;
+        const outgoingPrompt = checkpoint
+          ? buildRelationshipRecoveryPrompt(text, checkpoint)
+          : text;
         const displayFiles = [
           ...(attachments ?? []).map(({ name, size, mimeType }) => ({
             name,
@@ -873,7 +900,7 @@ export function createConversationsStore(
             : "";
           await client.invoke("bridge:send", {
             conversationId,
-            prompt: text,
+            prompt: outgoingPrompt,
             sourceMessageId: userMessage.id,
             ...(attachments && attachments.length > 0 ? { attachments } : {}),
             ...(workspaceFiles && workspaceFiles.length > 0 ? { workspaceFiles } : {}),
