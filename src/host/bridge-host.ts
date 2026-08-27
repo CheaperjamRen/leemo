@@ -199,6 +199,8 @@ export interface HostDeps {
   geminiRuntime?: CodexExecutionRuntime;
   /** HTTP seam for connection tests / model discovery. Omit → global fetch. */
   fetchFn?: typeof fetch;
+  /** Per-round subprocess proxy environment owned by the main process. */
+  resolveProcessEnv?: () => Record<string, string>;
   dataDir: string;
   /** 轮 7 A1 —— **用户可见工作区的根**（`~/Leemo`），不再是隔离沙箱。
    *
@@ -756,7 +758,7 @@ function parseResolvedTaskFields(
 }
 
 export function createBridgeHost(deps: HostDeps): BridgeHost {
-  const { catalog, providerStore, subscriptionAuth, codexRuntime, geminiRuntime, fetchFn, dataDir, workspaceRoot, routeRootArtifactPath, filesystemBoundary, firstProgressTimeoutMs, approvalTimeoutMs, push, queryImpl, toolGovernanceHookUrl, readGlobalMemory, memoryDir, memoryGovernance, skillsIO, skillAdmin, officeSkills, bundledSkills, superpowersSkills, openPath, resolveNotebook, readNotebookMemory, cliExecutablePath, builtinMcpRuntime, readUsageSummary, runOneShotInference, recordStandaloneUsage, learningService, scheduledTasks, captures, tasks } = deps;
+  const { catalog, providerStore, subscriptionAuth, codexRuntime, geminiRuntime, fetchFn, resolveProcessEnv, dataDir, workspaceRoot, routeRootArtifactPath, filesystemBoundary, firstProgressTimeoutMs, approvalTimeoutMs, push, queryImpl, toolGovernanceHookUrl, readGlobalMemory, memoryDir, memoryGovernance, skillsIO, skillAdmin, officeSkills, bundledSkills, superpowersSkills, openPath, resolveNotebook, readNotebookMemory, cliExecutablePath, builtinMcpRuntime, readUsageSummary, runOneShotInference, recordStandaloneUsage, learningService, scheduledTasks, captures, tasks } = deps;
   const toolGovernanceHookPath = `/__leemo/hooks/tool-governance-${randomUUID()}`;
 
   const homeWorkspace: ConversationWorkspace = {
@@ -951,6 +953,7 @@ export function createBridgeHost(deps: HostDeps): BridgeHost {
   let gatewayPromise: Promise<GatewayHandle | undefined> | undefined;
   function ensureGateway(): Promise<GatewayHandle | undefined> {
     gatewayPromise ??= startGateway(gatewayRegistry, {
+      fetchFn: httpFetch(),
       hook: {
         path: toolGovernanceHookPath,
         handle: handleNativeToolGovernanceHook,
@@ -2239,7 +2242,11 @@ export function createBridgeHost(deps: HostDeps): BridgeHost {
     // renderer's timeline and its SQLite primary key untouched.
     let cid = r.conversationId ?? randomUUID();
     if (!useExternalAgentRuntime) {
-      bridge = createBridge({ queryFn: queryFn!, dataDir });
+      bridge = createBridge({
+        queryFn: queryFn!,
+        dataDir,
+        ...(resolveProcessEnv ? { resolveEnvOverlay: resolveProcessEnv } : {}),
+      });
       claudeHandle = bridge.createConversation({
         provider: entry.provider,
         modelId: r.modelId,

@@ -10,6 +10,7 @@ import {
   Notification,
   powerSaveBlocker,
   safeStorage,
+  session,
   shell,
   Tray,
   type OpenDialogOptions,
@@ -40,6 +41,8 @@ import {
   type QuickCaptureController,
 } from "./quick-capture-window";
 import { createBridgeHost, type BridgeHost } from "../host/bridge-host";
+import { normalizeNetworkConfig } from "../host/network-runtime";
+import { createElectronNetworkRuntime } from "./network-runtime";
 import { searchRelationshipHistoryCandidates } from "./relationship-history-search";
 import { loadRelationshipHistoryCandidates } from "./persistence/relationship-history-query";
 import { buildCatalog } from "../host/provider-catalog";
@@ -520,7 +523,7 @@ if (HAS_SINGLE_INSTANCE_LOCK) {
 
 /** One-time backend assembly: reuse the transport-agnostic bridge host, swap
  *  the WS transport edge for ipcMain/webContents. Runs once on app ready. */
-function setupHost(): void {
+async function setupHost(): Promise<void> {
   if (!E2E_ISOLATION) {
     try {
       process.loadEnvFile(); // first-run migration source; not required afterwards
@@ -794,6 +797,18 @@ function setupHost(): void {
   // second portable-workspace scan before the renderer hydrates.
   const initialSettings = sqlitePersistence.loadAll().settings;
   persistedSettingsCache = { ...initialSettings };
+  const networkRuntime = createElectronNetworkRuntime(session.fromPartition("leemo-network-runtime"));
+  try {
+    await networkRuntime.apply(normalizeNetworkConfig({
+      mode: initialSettings.networkMode,
+      manualProxyUrl: initialSettings.manualProxyUrl,
+    }));
+  } catch (error) {
+    console.warn("[leemo:network] saved proxy settings were invalid; using system proxy:", error);
+    await networkRuntime.apply({ mode: "auto" });
+    persistedSettingsCache = { ...persistedSettingsCache, networkMode: "auto" };
+    sqlitePersistence.saveSettings(persistedSettingsCache);
+  }
   continueInBackground = continueInBackgroundSetting(initialSettings);
   quickCaptureShortcut = quickCaptureShortcutSetting(initialSettings);
   captureStorageRoot = captureStorageRootSetting(initialSettings);
@@ -953,7 +968,7 @@ function setupHost(): void {
   });
   ipcMain.handle("leemo:about", (event, message: unknown) => handleAbout(event.sender, message));
 
-  ipcMain.handle("leemo:desktop", (event, message: unknown) => {
+  ipcMain.handle("leemo:desktop", async (event, message: unknown) => {
     if (event.sender !== win?.webContents) {
       return { ok: false, error: "无法确认设置窗口身份。" };
     }
@@ -967,6 +982,13 @@ function setupHost(): void {
         throw new Error("桌面设置格式不正确。");
       }
       const patch = payload as Record<string, unknown>;
+      const previousNetwork = networkRuntime.config();
+      const nextNetwork = normalizeNetworkConfig({
+        mode: patch.networkMode ?? previousNetwork.mode,
+        manualProxyUrl: patch.manualProxyUrl
+          ?? (previousNetwork.mode === "manual" ? previousNetwork.manualProxyUrl : persistedSettingsCache.manualProxyUrl),
+      });
+      const networkChanged = JSON.stringify(previousNetwork) !== JSON.stringify(nextNetwork);
       const nextBackground = patch.continueInBackground === undefined
         ? continueInBackground
         : patch.continueInBackground;
@@ -991,10 +1013,18 @@ function setupHost(): void {
         ...persistedSettingsCache,
         continueInBackground: nextBackground,
         quickCaptureShortcut: normalizedShortcut,
+        networkMode: nextNetwork.mode,
+        manualProxyUrl: nextNetwork.mode === "manual"
+          ? nextNetwork.manualProxyUrl
+          : typeof persistedSettingsCache.manualProxyUrl === "string"
+            ? persistedSettingsCache.manualProxyUrl
+            : "",
       };
       try {
+        if (networkChanged) await networkRuntime.apply(nextNetwork);
         persistence!.saveSettings(nextSettings);
       } catch (error: unknown) {
+        if (networkChanged) await networkRuntime.apply(previousNetwork).catch(() => undefined);
         if (shortcutChanged && normalizedShortcut !== previousShortcut) {
           quickCaptureController?.updateShortcut(previousShortcut);
         }
@@ -1005,7 +1035,13 @@ function setupHost(): void {
       quickCaptureShortcut = normalizedShortcut;
       return {
         ok: true,
-        response: { continueInBackground, quickCaptureShortcut, captureStorageRoot },
+        response: {
+          continueInBackground,
+          quickCaptureShortcut,
+          captureStorageRoot,
+          networkMode: nextNetwork.mode,
+          manualProxyUrl: nextSettings.manualProxyUrl,
+        },
       };
     } catch (error: unknown) {
       return { ok: false, error: error instanceof Error ? error.message : String(error) };
@@ -1086,6 +1122,8 @@ function setupHost(): void {
     ...(subscriptionAuth ? { subscriptionAuth } : {}),
     ...(codexExecutionRuntime ? { codexRuntime: codexExecutionRuntime } : {}),
     ...(geminiExecutionRuntime ? { geminiRuntime: geminiExecutionRuntime } : {}),
+    fetchFn: networkRuntime.fetch,
+    resolveProcessEnv: () => networkRuntime.env(),
     dataDir,
     // 轮 7 A1: momo 在用户看得见的工作区里干活。没有本子的对话（主人格）就在根上，
     // 所以它天然看得见所有本子 —— 它们是它的子目录。
@@ -1116,7 +1154,7 @@ function setupHost(): void {
       query,
     ),
     memoryDir: memoryDir(),
-    skillAdmin: createSkillAdminService({ memoryDir: memoryDir(), fetchFn: fetch }),
+    skillAdmin: createSkillAdminService({ memoryDir: memoryDir(), fetchFn: networkRuntime.fetch }),
     officeSkills,
     bundledSkills,
     superpowersSkills,
@@ -1373,12 +1411,24 @@ function setupHost(): void {
             // Desktop integration values are only accepted through
             // leemo:desktop after the OS operation succeeds. A renderer store
             // update must never make an unavailable shortcut look saved.
-            const confirmedSettings = {
+            const confirmedSettings: Record<string, unknown> = {
               ...settings,
               continueInBackground,
               quickCaptureShortcut,
             };
-            persistence!.saveSettings(confirmedSettings);
+            const previousNetwork = networkRuntime.config();
+            const nextNetwork = normalizeNetworkConfig({
+              mode: confirmedSettings.networkMode,
+              manualProxyUrl: confirmedSettings.manualProxyUrl,
+            });
+            const networkChanged = JSON.stringify(previousNetwork) !== JSON.stringify(nextNetwork);
+            try {
+              if (networkChanged) await networkRuntime.apply(nextNetwork);
+              persistence!.saveSettings(confirmedSettings);
+            } catch (error) {
+              if (networkChanged) await networkRuntime.apply(previousNetwork).catch(() => undefined);
+              throw error;
+            }
             persistedSettingsCache = confirmedSettings;
             taskWakeLock?.setEnabled(keepAwakeSetting(confirmedSettings));
             desktopNotifications?.setEnabled(desktopNotificationsSetting(confirmedSettings));
@@ -1870,12 +1920,12 @@ function createWindow(): void {
   });
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   if (!HAS_SINGLE_INSTANCE_LOCK) return;
   if (process.platform === "win32") app.setAppUserModelId("com.leemo.app");
   // 必须早于 setupHost —— 它会去读加密件、开 SQLite。迁移晚一步，用户就会看到
   // 一个空库、然后我们又把空库写回去。
-  setupHost();
+  await setupHost();
   setupQuickCaptureDesktop();
   cleanupStaleClipboardAttachments(clipboardAttachmentRoot(), Date.now(), {
     protectedPrefix: CLIPBOARD_ATTACHMENT_PROTECTED_PREFIX,

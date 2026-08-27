@@ -95,6 +95,9 @@ export interface BridgeDeps {
   /** Root dir under which per-provider CLAUDE_CONFIG_DIRs live
    *  (`<dataDir>/providers/<id>/`). Phase 1 passes Electron userData. */
   dataDir: string;
+  /** Main-process runtime overlay for proxy variables. Resolved per send so a
+   * settings change retires a warm transport before its next round. */
+  resolveEnvOverlay?: () => Record<string, string>;
   /** Recycle an idle Agent SDK subprocess after this delay. A bounded warm
    * window preserves provider prefix-cache hits during active work without
    * accumulating one background CLI process for every old conversation. */
@@ -298,6 +301,7 @@ class Conversation implements ConversationHandle {
     private readonly dataDir: string,
     private readonly persistentQueryIdleMs: number,
     private readonly persistentTurnBoundaryGraceMs: number,
+    private readonly resolveEnvOverlay?: () => Record<string, string>,
   ) {
     this.id = cfg.id ?? randomUUID();
     this.provider = cfg.provider;
@@ -486,6 +490,7 @@ class Conversation implements ConversationHandle {
       // unaffected while sibling secrets never reach the child. (B1 fix.)
       ...sanitizeHostEnv(process.env),
       ...buildConversationEnv(this.provider, this.modelId, this.gatewayPort, this.searchShimPort),
+      ...(this.resolveEnvOverlay?.() ?? {}),
       CLAUDE_CONFIG_DIR: configDir,
       // The UI promises at most five transparent reconnect attempts. Pin the
       // native SDK to the same limit so a host-level override cannot leave a
@@ -516,6 +521,7 @@ class Conversation implements ConversationHandle {
       tools: roundOptions?.tools ?? null,
       disallowedTools: roundOptions?.disallowedTools ?? null,
       runtimeRevision: this.runtimeRevision,
+      envOverlay: this.resolveEnvOverlay?.() ?? null,
     });
   }
 
@@ -976,6 +982,7 @@ export function createBridge(deps: BridgeDeps): Bridge {
         deps.dataDir,
         deps.persistentQueryIdleMs ?? DEFAULT_PERSISTENT_QUERY_IDLE_MS,
         deps.persistentTurnBoundaryGraceMs ?? DEFAULT_PERSISTENT_TURN_BOUNDARY_GRACE_MS,
+        deps.resolveEnvOverlay,
       );
       conversations.add(convo);
       return convo;

@@ -25,6 +25,23 @@ describe("buildGreeting", () => {
 });
 
 describe("settings store", () => {
+  it("persists validated network recovery settings", () => {
+    const store = createSettingsStore();
+    store.getState().setNetworkMode("manual");
+    store.getState().setManualProxyUrl("http://127.0.0.1:10801");
+
+    expect(pickPersistedSettings(store.getState())).toMatchObject({
+      networkMode: "manual",
+      manualProxyUrl: "http://127.0.0.1:10801",
+    });
+
+    const restored = createSettingsStore();
+    restored.getState().hydrate({ networkMode: "direct", manualProxyUrl: "http://proxy.test:8080" });
+    expect(restored.getState()).toMatchObject({
+      networkMode: "direct",
+      manualProxyUrl: "http://proxy.test:8080",
+    });
+  });
   it("keeps legacy defaults and starts with safe, key-free foundation values", () => {
     const state = createSettingsStore().getState();
     expect(state.themeId).toBe("white-copper");

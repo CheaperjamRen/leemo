@@ -30,7 +30,7 @@ const SETTINGS_TABS: { id: SettingsTabId; label: string; icon: LucideIcon; keywo
   { id: "models", label: "模型", icon: Box, keywords: "模型 provider 供应商 api key base url 服务地址 协议 快速任务 后台任务 子任务模型 自动推荐 自动继承 模型发现地址 请求头 header 高级设置" },
   { id: "usage", label: "用量与费用", icon: CircleDollarSign, keywords: "用量 费用 token 余额 消耗 账单 今天 近7天" },
   { id: "personalization", label: "个性化", icon: Sparkles, keywords: "个性化 momo 人设 气质 MBTI ENTP INFJ ENFP ENTJ 朋友 搭档 学长 学姐 导师 关系 话风 记忆 自动记忆" },
-  { id: "connectors", label: "连接器", icon: Link2, keywords: "连接器 mcp 浏览器 playwright 联网 搜索 websearch webfetch" },
+  { id: "connectors", label: "连接器", icon: Link2, keywords: "连接器 网络 代理 直连 系统代理 mcp 浏览器 playwright 联网 搜索 websearch webfetch" },
   { id: "permissions", label: "权限", icon: ShieldCheck, keywords: "权限 审批 永久允许 危险 每次确认 风险确认 完全访问" },
   { id: "data", label: "数据与存储", icon: Database, keywords: "数据 存储 文件 文件夹 位置 副本 迁移" },
   { id: "shortcuts", label: "快捷键", icon: Keyboard, keywords: "快捷键 快速记录 便签 Alt N" },
@@ -341,6 +341,8 @@ export function SettingsPage({
     webEnabled,
     webSearchEnabled,
     webFetchEnabled,
+    networkMode,
+    manualProxyUrl,
     rememberMode,
     keepAwakeDuringTasks,
     desktopNotifications,
@@ -365,6 +367,8 @@ export function SettingsPage({
     setWebEnabled,
     setWebSearchEnabled,
     setWebFetchEnabled,
+    setNetworkMode,
+    setManualProxyUrl,
     setRememberMode,
     setKeepAwakeDuringTasks,
     setDesktopNotifications,
@@ -437,6 +441,9 @@ export function SettingsPage({
   const [aboutActionBusy, setAboutActionBusy] = useState(false);
   const [aboutMessage, setAboutMessage] = useState<string | null>(null);
   const [aboutError, setAboutError] = useState<string | null>(null);
+  const [networkDraftMode, setNetworkDraftMode] = useState(networkMode);
+  const [networkDraftUrl, setNetworkDraftUrl] = useState(manualProxyUrl);
+  const [networkMessage, setNetworkMessage] = useState<string | null>(null);
 
   const normalizedQuery = settingsQuery.trim().toLocaleLowerCase();
   const visibleTabs = normalizedQuery
@@ -596,15 +603,30 @@ export function SettingsPage({
   const settingsStyle = { accentColor: "var(--leemo-amber)" } as CSSProperties;
 
   const configureDesktop = async (
-    payload: { continueInBackground?: boolean; quickCaptureShortcut?: string },
-    apply: (value: { continueInBackground: boolean; quickCaptureShortcut: string }) => void,
+    payload: {
+      continueInBackground?: boolean;
+      quickCaptureShortcut?: string;
+      networkMode?: "auto" | "direct" | "manual";
+      manualProxyUrl?: string;
+    },
+    apply: (value: {
+      continueInBackground: boolean;
+      quickCaptureShortcut: string;
+      networkMode: "auto" | "direct" | "manual";
+      manualProxyUrl: string;
+    }) => void,
   ): Promise<void> => {
     if (desktopSettingBusy) return;
     setDesktopSettingError(null);
     const api = (window as Window & {
       leemoDesktop?: {
         configure(value: typeof payload): Promise<
-          | { ok: true; response: { continueInBackground: boolean; quickCaptureShortcut: string } }
+          | { ok: true; response: {
+            continueInBackground: boolean;
+            quickCaptureShortcut: string;
+            networkMode: "auto" | "direct" | "manual";
+            manualProxyUrl: string;
+          } }
           | { ok: false; error: string }
         >;
       };
@@ -613,6 +635,8 @@ export function SettingsPage({
       apply({
         continueInBackground: payload.continueInBackground ?? continueInBackground,
         quickCaptureShortcut: payload.quickCaptureShortcut ?? quickCaptureShortcut,
+        networkMode: payload.networkMode ?? networkMode,
+        manualProxyUrl: payload.manualProxyUrl ?? manualProxyUrl,
       });
       return;
     }
@@ -629,6 +653,20 @@ export function SettingsPage({
     } finally {
       setDesktopSettingBusy(false);
     }
+  };
+
+  const applyNetworkSettings = async (): Promise<void> => {
+    setNetworkMessage(null);
+    await configureDesktop({
+      networkMode: networkDraftMode,
+      manualProxyUrl: networkDraftUrl,
+    }, (value) => {
+      setNetworkMode(value.networkMode);
+      setManualProxyUrl(value.manualProxyUrl);
+      setNetworkDraftMode(value.networkMode);
+      setNetworkDraftUrl(value.manualProxyUrl);
+      setNetworkMessage("连接设置已应用，下一次模型请求会使用这项设置。");
+    });
   };
 
   const recordQuickCaptureShortcut = (event: React.KeyboardEvent<HTMLInputElement>): void => {
@@ -841,6 +879,61 @@ export function SettingsPage({
 
           {activeTab === "connectors" && (
             <>
+              <section className="settings-section settings-network mb-8" aria-labelledby="settings-network-heading">
+                <div className="settings-section-heading">
+                  <h2 id="settings-network-heading">网络连接</h2>
+                  <p>模型服务连接异常时，可在这里选择系统代理、直连或手动代理。</p>
+                </div>
+                <label className="settings-row settings-row-select">
+                  <span>
+                    <span className="settings-row-title">连接方式</span>
+                    <span className="settings-row-description">自动会读取 Windows 当前代理设置</span>
+                  </span>
+                  <select
+                    aria-label="网络连接方式"
+                    value={networkDraftMode}
+                    disabled={desktopSettingBusy}
+                    onChange={(event) => {
+                      setNetworkDraftMode(event.target.value as "auto" | "direct" | "manual");
+                      setNetworkMessage(null);
+                    }}
+                  >
+                    <option value="auto">自动（系统代理）</option>
+                    <option value="direct">直连</option>
+                    <option value="manual">手动代理</option>
+                  </select>
+                </label>
+                {networkDraftMode === "manual" ? (
+                  <label className="settings-network__manual">
+                    <span>代理地址</span>
+                    <input
+                      type="url"
+                      aria-label="手动代理地址"
+                      value={networkDraftUrl}
+                      disabled={desktopSettingBusy}
+                      placeholder="http://127.0.0.1:10801"
+                      spellCheck={false}
+                      onChange={(event) => {
+                        setNetworkDraftUrl(event.target.value);
+                        setNetworkMessage(null);
+                      }}
+                    />
+                    <small>填写协议、主机和端口。带账号密码的代理地址暂不保存。</small>
+                  </label>
+                ) : null}
+                <div className="settings-network__actions">
+                  <button
+                    type="button"
+                    disabled={desktopSettingBusy || (networkDraftMode === "manual" && !networkDraftUrl.trim())}
+                    onClick={() => void applyNetworkSettings()}
+                  >
+                    {desktopSettingBusy ? "正在应用…" : "应用连接设置"}
+                  </button>
+                  <button type="button" onClick={() => requestSettingsTab("models")}>测试所选模型</button>
+                </div>
+                {networkMessage ? <p className="settings-network__message" role="status">{networkMessage}</p> : null}
+                {desktopSettingError ? <p className="settings-network__error" role="alert">{desktopSettingError}</p> : null}
+              </section>
               <SearchSourcesSection
                 store={searchSources}
                 webEnabled={webEnabled}

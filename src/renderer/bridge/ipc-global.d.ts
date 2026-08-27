@@ -11,6 +11,8 @@ interface LeemoDesktopApi {
   configure(payload: {
     continueInBackground?: boolean;
     quickCaptureShortcut?: string;
+    networkMode?: "auto" | "direct" | "manual";
+    manualProxyUrl?: string;
   }): Promise<
     | {
       ok: true;
@@ -18,6 +20,8 @@ interface LeemoDesktopApi {
         continueInBackground: boolean;
         quickCaptureShortcut: string;
         captureStorageRoot?: string;
+        networkMode: "auto" | "direct" | "manual";
+        manualProxyUrl: string;
       };
     }
     | { ok: false; error: string }

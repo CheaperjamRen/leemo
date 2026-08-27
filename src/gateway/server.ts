@@ -36,6 +36,7 @@ export interface GatewayHookRoute {
 
 export interface GatewayOptions {
   hook?: GatewayHookRoute;
+  fetchFn?: typeof fetch;
 }
 
 const PLACEHOLDER_PREFIX = "leemo-gw:";
@@ -176,7 +177,8 @@ function upstreamFailure(status: number, rawBody: string): { kind: GatewayFailur
 async function handleMessages(
   req: IncomingMessage,
   res: ServerResponse,
-  registry: ProviderRegistry
+  registry: ProviderRegistry,
+  fetchFn: typeof fetch,
 ): Promise<void> {
   const providerId = parseProviderId(req);
   if (!providerId) {
@@ -245,7 +247,7 @@ async function handleMessages(
     const upstreamHeaders = new Headers(provider.headers);
     upstreamHeaders.set("Content-Type", "application/json");
     upstreamHeaders.set("Authorization", `Bearer ${provider.apiKey}`);
-    upstream = await fetch(upstreamUrl, {
+    upstream = await fetchFn(upstreamUrl, {
       method: "POST",
       headers: upstreamHeaders,
       body: JSON.stringify(openaiBody),
@@ -410,7 +412,7 @@ export async function startGateway(
           return;
         }
         if (face.kind === "messages" && method === "POST") {
-          await handleMessages(req, res, registry);
+          await handleMessages(req, res, registry, options.fetchFn ?? fetch);
           return;
         }
         sendError(res, 404, "not_found_error", `no route for ${method} ${url}`);

@@ -83,6 +83,8 @@ contextBridge.exposeInMainWorld("leemoDesktop", {
   configure(payload: {
     continueInBackground?: boolean;
     quickCaptureShortcut?: string;
+    networkMode?: "auto" | "direct" | "manual";
+    manualProxyUrl?: string;
   }): Promise<{ ok: boolean; response?: unknown; error?: string }> {
     return ipcRenderer.invoke("leemo:desktop", { op: "configure", payload });
   },

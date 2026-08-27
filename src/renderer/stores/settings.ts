@@ -30,6 +30,7 @@ export interface PersonaCardDraft {
 export type RelationshipStyle = "companion" | "friend" | "senior" | "mentor";
 export type AppSurface = "start" | "buddy" | "workbench";
 export type ThemeId = "white-copper" | "warm-copper" | "white-indigo";
+export type NetworkMode = "auto" | "direct" | "manual";
 
 /** The three palette contracts are deliberately named for user-visible
  * qualities, not implementation tokens.  Keeping this list beside the
@@ -130,6 +131,10 @@ export interface SettingsState {
   webSearchEnabled: boolean;
   /** 二级开关「联网抓取 WebFetch」. Same masking rule as above. */
   webFetchEnabled: boolean;
+  /** Shared main-process connection mode used by provider tests, gateway
+   * requests and model subprocesses. */
+  networkMode: NetworkMode;
+  manualProxyUrl: string;
   searchKeySources: { kind: string; configured: boolean }[];
   rememberMode: boolean;
   /** Keep long Agent rounds alive while still allowing the display to sleep. */
@@ -186,6 +191,8 @@ export interface SettingsState {
   setWebEnabled(enabled: boolean): void;
   setWebSearchEnabled(enabled: boolean): void;
   setWebFetchEnabled(enabled: boolean): void;
+  setNetworkMode(mode: NetworkMode): void;
+  setManualProxyUrl(url: string): void;
   setRememberMode(enabled: boolean): void;
   setKeepAwakeDuringTasks(enabled: boolean): void;
   setDesktopNotifications(enabled: boolean): void;
@@ -241,6 +248,8 @@ export const PERSISTED_SETTING_KEYS = [
   "webEnabled",
   "webSearchEnabled",
   "webFetchEnabled",
+  "networkMode",
+  "manualProxyUrl",
   "rememberMode",
   "keepAwakeDuringTasks",
   "desktopNotifications",
@@ -314,6 +323,8 @@ export interface SettingsInitial {
   webEnabled?: boolean;
   webSearchEnabled?: boolean;
   webFetchEnabled?: boolean;
+  networkMode?: NetworkMode;
+  manualProxyUrl?: string;
   searchKeySources?: { kind: string; configured: boolean }[];
   rememberMode?: boolean;
   keepAwakeDuringTasks?: boolean;
@@ -387,6 +398,14 @@ const isPermissionMode = (value: unknown): value is PermissionMode =>
   value === "default" || value === "acceptEdits" || value === "bypassPermissions" || value === "plan";
 const isCaptureFileDropMode = (value: unknown): value is "reference" | "copy" =>
   value === "reference" || value === "copy";
+const isNetworkMode = (value: unknown): value is NetworkMode =>
+  value === "auto" || value === "direct" || value === "manual";
+
+function cleanManualProxyUrl(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const url = value.trim();
+  return url.length <= 500 && !/[\u0000-\u001f\u007f]/u.test(url) ? url : undefined;
+}
 
 function cleanCaptureStorageRoot(value: unknown): string | undefined {
   if (typeof value !== "string") return undefined;
@@ -525,6 +544,8 @@ export function createSettingsStore(initial: SettingsInitial = {}): StoreApi<Set
     webEnabled: initial.webEnabled ?? false,
     webSearchEnabled: initial.webSearchEnabled ?? true,
     webFetchEnabled: initial.webFetchEnabled ?? true,
+    networkMode: isNetworkMode(initial.networkMode) ? initial.networkMode : "auto",
+    manualProxyUrl: cleanManualProxyUrl(initial.manualProxyUrl) ?? "",
     searchKeySources: (initial.searchKeySources ?? []).map((source) => ({ ...source })),
     rememberMode: initial.rememberMode ?? true,
     keepAwakeDuringTasks: initial.keepAwakeDuringTasks ?? true,
@@ -630,6 +651,13 @@ export function createSettingsStore(initial: SettingsInitial = {}): StoreApi<Set
     },
     setWebFetchEnabled: (webFetchEnabled) => {
       if (typeof webFetchEnabled === "boolean") set({ webFetchEnabled });
+    },
+    setNetworkMode: (networkMode) => {
+      if (isNetworkMode(networkMode)) set({ networkMode });
+    },
+    setManualProxyUrl: (manualProxyUrl) => {
+      const clean = cleanManualProxyUrl(manualProxyUrl);
+      if (clean !== undefined) set({ manualProxyUrl: clean });
     },
     setRememberMode: (rememberMode) => {
       if (typeof rememberMode === "boolean") set({ rememberMode });
@@ -744,6 +772,9 @@ export function createSettingsStore(initial: SettingsInitial = {}): StoreApi<Set
       bool("webEnabled");
       bool("webSearchEnabled");
       bool("webFetchEnabled");
+      if (isNetworkMode(persisted.networkMode)) patch.networkMode = persisted.networkMode;
+      const manualProxyUrl = cleanManualProxyUrl(persisted.manualProxyUrl);
+      if (manualProxyUrl !== undefined) patch.manualProxyUrl = manualProxyUrl;
       bool("rememberMode");
       bool("keepAwakeDuringTasks");
       bool("desktopNotifications");

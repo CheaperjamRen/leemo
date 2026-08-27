@@ -140,6 +140,25 @@ afterEach(() => {
 // ---- DIRECT wiring ----------------------------------------------------------
 
 describe("pool — DIRECT wiring env reaches the SDK", () => {
+  it("resolves the network environment for every round", async () => {
+    const { queryFn, calls } = makeFakeQuery({
+      scripts: [oneTurnStream("network-session", "ok")],
+    });
+    let proxy = "http://127.0.0.1:10801";
+    const bridge = createBridge({
+      queryFn,
+      dataDir: freshDataDir(),
+      resolveEnvOverlay: () => ({ HTTPS_PROXY: proxy, NO_PROXY: "127.0.0.1,localhost" }),
+    });
+    const conversation = bridge.createConversation({ provider: deepseekDirect, modelId: "deepseek-chat" });
+
+    await drain(conversation.send("one"));
+    proxy = "";
+    await drain(conversation.send("two"));
+
+    expect(calls[0].options.env).toMatchObject({ HTTPS_PROXY: "http://127.0.0.1:10801" });
+    expect(calls[1].options.env).toMatchObject({ HTTPS_PROXY: "" });
+  });
   it("emits the SDK's exact context snapshot after the terminal result", async () => {
     const getContextUsage = vi.fn(async () => ({
       categories: [],

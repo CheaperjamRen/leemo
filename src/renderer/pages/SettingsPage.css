@@ -6,6 +6,74 @@
   font-size: 14px;
 }
 
+.settings-network__manual {
+  display: grid;
+  gap: 0.45rem;
+  padding: 0.9rem 0;
+  color: var(--leemo-ink-2);
+  font-size: 0.875rem;
+}
+
+.settings-network__manual input {
+  width: min(100%, 34rem);
+  border: 1px solid var(--leemo-line);
+  border-radius: 0.625rem;
+  background: var(--leemo-surface);
+  color: var(--leemo-ink);
+  padding: 0.65rem 0.75rem;
+  outline: none;
+}
+
+.settings-network__manual input:focus {
+  border-color: var(--leemo-amber);
+  box-shadow: 0 0 0 3px var(--leemo-focus-ring);
+}
+
+.settings-network__manual small {
+  color: var(--leemo-ink-3);
+}
+
+.settings-network__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.625rem;
+  padding-top: 0.75rem;
+}
+
+.settings-network__actions button {
+  min-height: 2.25rem;
+  border: 1px solid var(--leemo-line);
+  border-radius: 0.625rem;
+  background: var(--leemo-surface);
+  color: var(--leemo-ink-2);
+  padding: 0.45rem 0.8rem;
+}
+
+.settings-network__actions button:first-child {
+  border-color: var(--leemo-amber-line);
+  color: var(--leemo-amber-ink);
+}
+
+.settings-network__actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.settings-network__message,
+.settings-network__error {
+  margin-top: 0.75rem;
+  font-size: 0.75rem;
+  line-height: 1.5;
+}
+
+.settings-network__message {
+  color: var(--leemo-ok);
+}
+
+.settings-network__error {
+  color: var(--leemo-danger);
+}
+
 .settings-page .settings-header {
   height: 56px;
   padding-inline: 32px 64px;

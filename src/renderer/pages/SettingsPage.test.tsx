@@ -547,6 +547,43 @@ describe("SettingsPage", () => {
     }
   });
 
+  it("applies a manual proxy through the main process before showing it as saved", async () => {
+    const user = userEvent.setup();
+    const configure = vi.fn(async () => ({
+      ok: true as const,
+      response: {
+        continueInBackground: true,
+        quickCaptureShortcut: "Alt+N",
+        networkMode: "manual" as const,
+        manualProxyUrl: "http://127.0.0.1:10801",
+      },
+    }));
+    Object.defineProperty(window, "leemoDesktop", {
+      configurable: true,
+      value: { configure },
+    });
+    try {
+      render(
+        <BridgeProvider client={mockClient}>
+          <SettingsPage />
+        </BridgeProvider>,
+      );
+
+      await user.click(screen.getByRole("tab", { name: "连接器" }));
+      await user.selectOptions(screen.getByLabelText("网络连接方式"), "manual");
+      await user.type(screen.getByLabelText("手动代理地址"), "http://127.0.0.1:10801");
+      await user.click(screen.getByRole("button", { name: "应用连接设置" }));
+
+      expect(configure).toHaveBeenCalledWith({
+        networkMode: "manual",
+        manualProxyUrl: "http://127.0.0.1:10801",
+      });
+      expect(await screen.findByRole("status")).toHaveTextContent("下一次模型请求");
+    } finally {
+      delete (window as Window & { leemoDesktop?: unknown }).leemoDesktop;
+    }
+  });
+
   it("lets the user disable small model calls for ambiguous task times", async () => {
     const user = userEvent.setup();
     render(
