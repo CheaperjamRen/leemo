@@ -178,8 +178,21 @@ describe("startPersistenceSync", () => {
     });
     const cid = await stores.conversations.getState().createConversation({ source: "buddy" });
     await stores.conversations.getState().send(cid, "hi");
-    expect(persist.saveConversation).not.toHaveBeenCalled();
+    expect(persist.saveConversation).toHaveBeenCalledTimes(1);
     const runId = stores.conversations.getState().runIds[cid]!;
+    stores.conversations.setState((state) => ({
+      timelines: {
+        ...state.timelines,
+        [cid]: [...state.timelines[cid], {
+          kind: "text",
+          id: "m-stream",
+          runId,
+          role: "momo",
+          text: "处理中",
+          streaming: true,
+        }],
+      },
+    }));
 
     stores.conversations.setState((state) => ({
       timelines: {
@@ -198,11 +211,11 @@ describe("startPersistenceSync", () => {
     }));
 
     expect(cancel).toHaveBeenCalled();
-    expect(persist.saveConversation).toHaveBeenCalledTimes(1);
-    expect(persist.saveConversation.mock.calls[0][1].at(-1)).toMatchObject({ kind: "result", finalText: "done" });
+    expect(persist.saveConversation).toHaveBeenCalledTimes(2);
+    expect(persist.saveConversation.mock.calls[1][1].at(-1)).toMatchObject({ kind: "result", finalText: "done" });
     // The old debounce callback is harmless after the immediate flush.
     pending?.();
-    expect(persist.saveConversation).toHaveBeenCalledTimes(1);
+    expect(persist.saveConversation).toHaveBeenCalledTimes(2);
     stop();
   });
 
@@ -212,9 +225,22 @@ describe("startPersistenceSync", () => {
     const stop = startPersistenceSync(stores, persist, { schedule: () => () => undefined });
     const cid = await stores.conversations.getState().createConversation({ source: "buddy" });
     await stores.conversations.getState().send(cid, "save before close");
-    expect(persist.saveConversation).not.toHaveBeenCalled();
-    stop();
     expect(persist.saveConversation).toHaveBeenCalledTimes(1);
+    stores.conversations.setState((state) => ({
+      timelines: {
+        ...state.timelines,
+        [cid]: [...state.timelines[cid], {
+          kind: "text",
+          id: "m-streaming",
+          runId: state.runIds[cid]!,
+          role: "momo",
+          text: "处理中",
+          streaming: true,
+        }],
+      },
+    }));
+    stop();
+    expect(persist.saveConversation).toHaveBeenCalledTimes(2);
   });
 
   it("does not write a pending conversation after its external book is removed", () => {

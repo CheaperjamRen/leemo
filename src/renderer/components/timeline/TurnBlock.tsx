@@ -22,6 +22,7 @@ import { pairAskUserQuestions } from "./ask-user-pairing";
 import { resolveComposerScope } from "../../stores/composer-drafts";
 import { HOME_WORKSPACE_ID } from "../../stores/workspaces";
 import MomoAvatar from "../momo/MomoAvatar";
+import { memo } from "react";
 
 function fileName(filePath: string): string {
   return filePath.split("/").filter(Boolean).at(-1) ?? filePath;
@@ -42,7 +43,7 @@ const isProcess = (i: TimelineItem) =>
   i.kind === "retry" ||
   i.kind === "compact";
 
-export default function TurnBlock({
+function TurnBlock({
   items,
   active,
   runId,
@@ -422,3 +423,13 @@ export default function TurnBlock({
     </div>
   );
 }
+
+function sameTurn(previous: Parameters<typeof TurnBlock>[0], next: Parameters<typeof TurnBlock>[0]): boolean {
+  return previous.active === next.active
+    && previous.runId === next.runId
+    && previous.density === next.density
+    && previous.items.length === next.items.length
+    && previous.items.every((item, index) => item === next.items[index]);
+}
+
+export default memo(TurnBlock, sameTurn);

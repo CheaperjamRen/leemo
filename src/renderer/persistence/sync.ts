@@ -36,7 +36,7 @@ export interface PersistenceSyncDeps {
   onError?: (err: unknown) => void;
 }
 
-const DEFAULT_DEBOUNCE_MS = 300;
+const DEFAULT_DEBOUNCE_MS = 1_500;
 
 /**
  * Wire the renderer stores to persistent storage (Electron main → SQLite).
@@ -106,6 +106,7 @@ export function startPersistenceSync(
   const unsubConversations = stores.conversations.subscribe((state, previous) => {
     let changed = false;
     let reachedTerminal = false;
+    let startedTurn = false;
     for (const cid of Object.keys(state.byId)) {
       const meta = state.byId[cid];
       const timeline = state.timelines[cid] ?? [];
@@ -115,13 +116,14 @@ export function startPersistenceSync(
         changed = true;
       }
       if (previous.runIds[cid] && state.runIds[cid] === null) reachedTerminal = true;
+      if (!previous.runIds[cid] && state.runIds[cid]) startedTurn = true;
     }
     if (changed) {
       cancelPending?.();
       // A terminal event is the user's durable completion boundary. Waiting
       // another 300 ms lets a fast window close discard the result footer and
       // final text, so flush the entire dirty batch immediately.
-      if (reachedTerminal) flush();
+      if (startedTurn || reachedTerminal) flush();
       else cancelPending = schedule(flush);
     }
   });

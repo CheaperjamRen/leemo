@@ -16,6 +16,7 @@ import type { NotificationsState } from "../stores/notifications";
 import type { ContextUsageState } from "../stores/context-usage";
 import { foldContextUsage } from "../stores/context-usage";
 import type { BridgeEventEnvelope, ApprovalExpired, ApprovalRequest, AskUserPayload } from "../../bridge/contract";
+import { createBridgeEventBatcher } from "./event-batcher";
 
 export interface BridgeStores {
   conversations: StoreApi<ConversationsState>;
@@ -154,7 +155,7 @@ export function wireBridgeSubscriptions(
   }
 
   // bridge:event subscription - route by conversationId
-  const unsubEvent = client.subscribe("bridge:event", (envelope: BridgeEventEnvelope) => {
+  const receiveEvent = (envelope: BridgeEventEnvelope): void => {
     const { conversationId, event } = envelope;
 
     // Check if this is a wiki shadow conversation
@@ -222,6 +223,10 @@ export function wireBridgeSubscriptions(
         if (flushQueuedTurns) void flushQueuedTurns(conversationId);
       }
     }
+  };
+  const eventBatcher = createBridgeEventBatcher(receiveEvent);
+  const unsubEvent = client.subscribe("bridge:event", (envelope: BridgeEventEnvelope) => {
+    eventBatcher.push(envelope);
   });
 
   // bridge:approvalRequest subscription
@@ -304,6 +309,7 @@ export function wireBridgeSubscriptions(
 
   // Return aggregate unsubscribe
   return () => {
+    eventBatcher.dispose();
     unsubEvent();
     unsubApproval();
     unsubApprovalExpired();

@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState, type MouseEvent, type ReactNode } from "react";
+import { memo, useEffect, useId, useRef, useState, type MouseEvent, type ReactNode } from "react";
 import { Check, CircleAlert, Copy, Info, Lightbulb, OctagonAlert, TriangleAlert } from "lucide-react";
 import { Highlight, themes, type Language } from "prism-react-renderer";
 import ReactMarkdown, { defaultUrlTransform } from "react-markdown";
@@ -256,7 +256,7 @@ function Callout({ type, children }: { type: string; children: ReactNode }) {
   );
 }
 
-export default function MarkdownContent({
+function MarkdownContent({
   text,
   variant = "answer",
   className = "",
@@ -369,3 +369,5 @@ export default function MarkdownContent({
     </div>
   );
 }
+
+export default memo(MarkdownContent);

@@ -95,7 +95,7 @@ describe("wireBridgeSubscriptions", () => {
     expect(mockClient.subscribe).toHaveBeenCalledWith("bridge:askUser", expect.any(Function));
   });
 
-  it("routes main conversation events to conversations store", () => {
+  it("routes main conversation events to conversations store", async () => {
     wireBridgeSubscriptions(mockClient, {
       conversations: conversationsStore,
       approvals: approvalsStore,
@@ -109,7 +109,9 @@ describe("wireBridgeSubscriptions", () => {
 
     eventSubscriber!(envelope);
 
-    expect(conversationsStore.setState).toHaveBeenCalledWith(expect.any(Function));
+    await vi.waitFor(() => {
+      expect(conversationsStore.setState).toHaveBeenCalledWith(expect.any(Function));
+    });
   });
 
   it("routes live, final, exact, and compaction context events into the shared meter", () => {
@@ -315,7 +317,7 @@ describe("wireBridgeSubscriptions", () => {
     });
   });
 
-  it("routes wiki shadow events to wikiEntries store, not conversations", () => {
+  it("routes wiki shadow events to wikiEntries store, not conversations", async () => {
     const receiveEvent = vi.fn();
     wikiEntriesStore.getState = vi.fn(() => ({
       entries: [{ id: "wiki-1", filePath: "/test.txt", quotedText: "...", turns: [], createdAt: 1000 }],
@@ -342,7 +344,9 @@ describe("wireBridgeSubscriptions", () => {
 
     eventSubscriber!(envelope);
 
-    expect(receiveEvent).toHaveBeenCalledWith("c-wiki-shadow", envelope.event);
+    await vi.waitFor(() => {
+      expect(receiveEvent).toHaveBeenCalledWith("c-wiki-shadow", envelope.event);
+    });
     expect(conversationsStore.setState).not.toHaveBeenCalled();
   });
 

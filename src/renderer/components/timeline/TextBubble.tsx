@@ -2,6 +2,7 @@ import MomoAvatar from "../momo/MomoAvatar";
 import { Paperclip } from "lucide-react";
 import MarkdownContent from "../MarkdownContent";
 import type { TimelineItem } from "../../stores/message-model";
+import { memo } from "react";
 
 function formatTime(createdAt: number): string {
   return new Intl.DateTimeFormat("zh-CN", {
@@ -11,7 +12,7 @@ function formatTime(createdAt: number): string {
   }).format(new Date(createdAt));
 }
 
-export default function TextBubble({
+function TextBubble({
   item,
   density = "workbench",
   showCaret = item.streaming,
@@ -76,3 +77,10 @@ export default function TextBubble({
     </div>
   );
 }
+
+export default memo(TextBubble, (previous, next) => (
+  previous.item === next.item
+  && previous.density === next.density
+  && previous.showCaret === next.showCaret
+  && previous.showAvatar === next.showAvatar
+));
