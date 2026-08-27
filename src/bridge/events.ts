@@ -822,8 +822,11 @@ export function toUserFacingRunError(error: unknown): string {
   const statusMatch = unwrapped.match(/(?:API\s+Error:\s*)?(\d{3})(?:\b|\D)/i);
   const status = statusMatch?.[1];
 
-  if (status === "401" || status === "403") {
-    return `服务商拒绝了凭据（${status}）。请检查 API Key 或账号权限后重试。`;
+  if (/LEEMO_UPSTREAM_PERMISSION/i.test(unwrapped) || status === "403") {
+    return "当前账号没有所选模型的访问权限（403）。请在模型设置中换一个可用模型，或确认服务商已开通权限。";
+  }
+  if (/LEEMO_UPSTREAM_AUTH/i.test(unwrapped) || status === "401") {
+    return "服务商未接受当前 API Key（401）。请在模型设置中检查或重新填写 Key。";
   }
   if (status === "404") {
     return "服务商找不到模型或接口（404）。请检查模型名称和接口地址后重试。";

@@ -4,6 +4,7 @@ import {
   normalizeSdkStream,
   buildUsageRecord,
   auditClaimedPaths,
+  toUserFacingRunError,
   type LeemoEvent,
 } from "../../src/bridge/events";
 import {
@@ -37,6 +38,14 @@ function fakeStream(msgs: TestMsgB2[]): AsyncIterable<TestMsgB2> {
 }
 
 const CWD = path.resolve(__dirname, "fixtures"); // a real dir, guaranteed to exist
+
+describe("provider recovery messages", () => {
+  it("distinguishes an upstream model-permission failure from a network 502", () => {
+    expect(toUserFacingRunError("API Error: 403 LEEMO_UPSTREAM_PERMISSION")).toBe(
+      "当前账号没有所选模型的访问权限（403）。请在模型设置中换一个可用模型，或确认服务商已开通权限。",
+    );
+  });
+});
 
 describe("normalizeSdkStream — event-by-event mapping", () => {
   it("surfaces a native Claude retry without replaying or ending the stream", async () => {

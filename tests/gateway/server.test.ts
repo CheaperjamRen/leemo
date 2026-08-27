@@ -568,7 +568,7 @@ describe("gateway shell (G3)", () => {
     expect(logLine).toContain("computer");
   });
 
-  it("B0-低优: upstream 401 maps to a 502 api_error (upstream auth failed), NOT a client 401", async () => {
+  it("preserves an upstream 401 as a sanitized authentication failure", async () => {
     const logs: string[] = [];
     const mock = await startMock((_req, res) => {
       sendJson(res, 401, { error: { message: `invalid upstream key Bearer ${REAL_KEY}` } });
@@ -581,19 +581,19 @@ describe("gateway shell (G3)", () => {
       headers: { "Content-Type": "application/json", Authorization: "Bearer leemo-gw:p1" },
       body: JSON.stringify({ model: "x", max_tokens: 10, messages: [{ role: "user", content: "hi" }] }),
     });
-    // client sees 502 — the gateway token WAS valid; the failure is upstream-side.
-    expect(resp.status).toBe(502);
+    expect(resp.status).toBe(401);
     const text = await resp.text();
     const j = JSON.parse(text);
     expect(j.type).toBe("error");
-    expect(j.error.type).toBe("api_error");
+    expect(j.error.type).toBe("authentication_error");
+    expect(j.error.leemo_failure).toEqual({ source: "upstream", status: 401, kind: "auth" });
     expect(j.error.message.toLowerCase()).toContain("upstream");
     // no key leak in body or logs
     expect(text).not.toContain(REAL_KEY);
     expect(logs.join("\n")).not.toContain(REAL_KEY);
   });
 
-  it("B0-低优: upstream 403 also maps to 502 api_error", async () => {
+  it("preserves an upstream 403 as a sanitized model-permission failure", async () => {
     const logs: string[] = [];
     const mock = await startMock((_req, res) => sendJson(res, 403, { error: { message: "forbidden" } }));
     cleanups.push(mock.close);
@@ -604,9 +604,11 @@ describe("gateway shell (G3)", () => {
       headers: { "Content-Type": "application/json", Authorization: "Bearer leemo-gw:p1" },
       body: JSON.stringify({ model: "x", max_tokens: 10, messages: [{ role: "user", content: "hi" }] }),
     });
-    expect(resp.status).toBe(502);
+    expect(resp.status).toBe(403);
     const j = (await resp.json()) as any;
-    expect(j.error.type).toBe("api_error");
+    expect(j.error.type).toBe("permission_error");
+    expect(j.error.leemo_failure).toEqual({ source: "upstream", status: 403, kind: "permission" });
+    expect(JSON.stringify(j)).not.toContain("forbidden");
   });
 
   it("B0-凑手①: waitForDrain resolves on close even when drain never fires (no hang)", async () => {

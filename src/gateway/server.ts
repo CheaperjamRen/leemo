@@ -40,9 +40,21 @@ export interface GatewayOptions {
 
 const PLACEHOLDER_PREFIX = "leemo-gw:";
 
-/** Anthropic error envelope `{type:"error", error:{type, message}}`. */
-function anthropicError(type: string, message: string): { type: "error"; error: { type: string; message: string } } {
-  return { type: "error", error: { type, message } };
+type GatewayFailureKind = "network" | "auth" | "permission" | "model_missing" | "quota" | "rate_limit" | "server";
+
+interface GatewayFailureMetadata {
+  source: "upstream";
+  status: number;
+  kind: GatewayFailureKind;
+}
+
+/** Anthropic error envelope with a small sanitized Leemo extension. */
+function anthropicError(
+  type: string,
+  message: string,
+  failure?: GatewayFailureMetadata,
+): { type: "error"; error: { type: string; message: string; leemo_failure?: GatewayFailureMetadata } } {
+  return { type: "error", error: { type, message, ...(failure ? { leemo_failure: failure } : {}) } };
 }
 
 function sendJson(res: ServerResponse, status: number, obj: unknown): void {
@@ -51,8 +63,14 @@ function sendJson(res: ServerResponse, status: number, obj: unknown): void {
   res.end(body);
 }
 
-function sendError(res: ServerResponse, status: number, type: string, message: string): void {
-  sendJson(res, status, anthropicError(type, message));
+function sendError(
+  res: ServerResponse,
+  status: number,
+  type: string,
+  message: string,
+  failure?: GatewayFailureMetadata,
+): void {
+  sendJson(res, status, anthropicError(type, message, failure));
 }
 
 function errMessage(e: unknown): string {
@@ -127,6 +145,31 @@ function upstreamErrorType(status: number): string {
   if (status === 429) return "rate_limit_error";
   if (status >= 500) return "api_error";
   return "invalid_request_error";
+}
+
+function upstreamFailure(status: number, rawBody: string): { kind: GatewayFailureKind; type: string; marker: string } {
+  let bodyType = "";
+  let bodyCode = "";
+  try {
+    const parsed = JSON.parse(rawBody) as Record<string, unknown>;
+    const nested = parsed.error && typeof parsed.error === "object"
+      ? parsed.error as Record<string, unknown>
+      : undefined;
+    bodyType = String(nested?.type ?? parsed.type ?? "").toLowerCase();
+    bodyCode = String(parsed.code ?? nested?.code ?? "").toLowerCase();
+  } catch {
+    // Upstream bodies are diagnostic input only. Invalid JSON falls back to status.
+  }
+  if (status === 401 || bodyType.includes("authentication") || bodyCode === "invalidapikey") {
+    return { kind: "auth", type: "authentication_error", marker: "LEEMO_UPSTREAM_AUTH" };
+  }
+  if (status === 403) {
+    return { kind: "permission", type: "permission_error", marker: "LEEMO_UPSTREAM_PERMISSION" };
+  }
+  if (status === 402) return { kind: "quota", type: "permission_error", marker: "LEEMO_UPSTREAM_QUOTA" };
+  if (status === 404) return { kind: "model_missing", type: "not_found_error", marker: "LEEMO_UPSTREAM_MODEL_MISSING" };
+  if (status === 429) return { kind: "rate_limit", type: "rate_limit_error", marker: "LEEMO_UPSTREAM_RATE_LIMIT" };
+  return { kind: "server", type: upstreamErrorType(status), marker: "LEEMO_UPSTREAM_SERVER" };
 }
 
 /** POST /v1/messages(?beta=true): translate → upstream → back (stream or not). */
@@ -216,22 +259,23 @@ async function handleMessages(
   }
 
   if (!upstream.ok) {
-    // drain the body so the socket is freed; do NOT echo it (may embed the key).
+    // Read for local classification, then discard. Never echo or log this body:
+    // several providers include credential fragments in their error text.
+    let upstreamBody = "";
     try {
-      await upstream.text();
+      upstreamBody = await upstream.text();
     } catch {
       /* ignore */
     }
     registry.logger.warn(`upstream returned ${upstream.status}`);
-    // B0 低优: upstream auth rejection (401/403) is an upstream/config failure,
-    // not a client auth problem — surface it as 502 api_error so the client does
-    // NOT mistake it for its own (valid) gateway token being wrong.
-    if (upstream.status === 401 || upstream.status === 403) {
-      if (!res.headersSent) sendError(res, 502, "api_error", "upstream auth failed (upstream provider rejected the gateway's key)");
-      return;
-    }
-    const type = upstreamErrorType(upstream.status);
-    if (!res.headersSent) sendError(res, upstream.status, type, `upstream provider error (${upstream.status})`);
+    const failure = upstreamFailure(upstream.status, upstreamBody);
+    if (!res.headersSent) sendError(
+      res,
+      upstream.status,
+      failure.type,
+      `${failure.marker} upstream provider rejected the request`,
+      { source: "upstream", status: upstream.status, kind: failure.kind },
+    );
     return;
   }
 
