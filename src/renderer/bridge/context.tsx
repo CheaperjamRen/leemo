@@ -651,6 +651,11 @@ function useStores(): BridgeStores {
 
 export const useConversations = <T,>(sel: (s: ConversationsState) => T): T =>
   useStore(useStores().conversations, sel);
+/** Imperative access for event handlers that need a point-in-time snapshot.
+ * Reading through this API does not subscribe the owning React surface to
+ * streaming timeline updates. */
+export const useConversationsApi = (): BridgeStores["conversations"] =>
+  useStores().conversations;
 export const useSettings = <T,>(sel: (s: SettingsState) => T): T =>
   useStore(useStores().settings, sel);
 export const useNotifications = <T,>(sel: (s: NotificationsState) => T): T =>

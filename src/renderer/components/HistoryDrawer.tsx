@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ComponentProps } from "react";
 import { ChevronDown, ChevronRight, Search, X } from "lucide-react";
 import type { ConversationMeta } from "../stores/conversations";
+import type { TimelineItem } from "../stores/message-model";
 import { useApprovals, useConversations, useNotebooks, useWorkspaces } from "../bridge/context";
 import { deriveConversationStatus } from "../stores/conversation-status";
 import { HOME_WORKSPACE_ID } from "../stores/workspaces";
@@ -16,6 +17,30 @@ interface HistoryGroup {
 }
 
 const DAY_MS = 24 * 60 * 60 * 1_000;
+const EMPTY_TIMELINES: Record<string, TimelineItem[]> = {};
+
+function LiveHistoryConversationItem({
+  conversationId,
+  ...props
+}: Omit<ComponentProps<typeof ConversationListItem>, "status"> & {
+  conversationId: string;
+}): React.JSX.Element {
+  const activeRunId = useConversations((state) => state.runIds[conversationId] ?? null);
+  const terminalTimeline = useConversations((state) => (
+    activeRunId ? undefined : state.timelines[conversationId]
+  ));
+  const pending = useApprovals((state) => state.pendingByConversation[conversationId] ?? null);
+  return (
+    <ConversationListItem
+      {...props}
+      status={deriveConversationStatus({
+        timeline: terminalTimeline ?? [],
+        activeRunId,
+        pending,
+      })}
+    />
+  );
+}
 
 function activityTime(conversation: ConversationMeta): number {
   return conversation.lastActivityAt || conversation.lastOpenedAt || conversation.createdAt;
@@ -89,11 +114,10 @@ export default function HistoryDrawer({
   const archiveConversation = useConversations((s) => s.archiveConversation);
   const moveConversation = useConversations((s) => s.moveConversation);
   const deleteConversation = useConversations((s) => s.deleteConversation);
-  const timelines = useConversations((s) => s.timelines);
-  const runIds = useConversations((s) => s.runIds);
+  // Search needs message bodies; a closed drawer and an empty search do not.
+  const timelines = useConversations((s) => open && q.trim() !== "" ? s.timelines : EMPTY_TIMELINES);
   const notebookList = useNotebooks((s) => s.list);
   const workspaceList = useWorkspaces((s) => s.list);
-  const pendingByConversation = useApprovals((s) => s.pendingByConversation);
 
   useEffect(() => {
     if (!open) return;
@@ -153,7 +177,8 @@ export default function HistoryDrawer({
 
   const row = (conversation: ConversationMeta) => (
     <li key={conversation.id} className="buddy-history-row">
-      <ConversationListItem
+      <LiveHistoryConversationItem
+        conversationId={conversation.id}
         conversation={conversation}
         active={conversation.id === relationshipId}
         variant="buddy"
@@ -165,11 +190,6 @@ export default function HistoryDrawer({
         onDelete={() => deleteConversation(conversation.id)}
         moveTargets={moveTargets}
         onMove={(target) => moveConversation(conversation.id, target)}
-        status={deriveConversationStatus({
-          timeline: timelines[conversation.id] ?? [],
-          activeRunId: runIds[conversation.id] ?? null,
-          pending: pendingByConversation[conversation.id] ?? null,
-        })}
       />
       <span className="buddy-history-row-time" aria-hidden>{formatActivityTime(conversation, now)}</span>
     </li>

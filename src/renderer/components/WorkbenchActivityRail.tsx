@@ -17,6 +17,7 @@ import {
   useWorkspaces,
 } from "../bridge/context";
 import type { ScopeKey } from "../stores/workbench-scope";
+import type { TimelineItem } from "../stores/message-model";
 import { HOME_WORKSPACE_ID } from "../stores/workspaces";
 import {
   WORKBENCH_COMPACT_SIDEBAR_WIDTH,
@@ -46,8 +47,33 @@ const TOOL_ICONS = {
   search: Search,
 } as const;
 
+const EMPTY_TIMELINES: Record<string, TimelineItem[]> = {};
+
 interface WorkbenchActivityRailProps {
   shellWidth?: number;
+}
+
+function useSettledWindowWidth(override?: number): number {
+  const [width, setWidth] = useState(() => (
+    override ?? (typeof window === "undefined" ? 1280 : window.innerWidth)
+  ));
+  useEffect(() => {
+    if (override !== undefined) return;
+    let timer: number | null = null;
+    const update = (): void => {
+      if (timer !== null) window.clearTimeout(timer);
+      timer = window.setTimeout(() => {
+        timer = null;
+        setWidth(window.innerWidth);
+      }, 72);
+    };
+    window.addEventListener("resize", update);
+    return () => {
+      window.removeEventListener("resize", update);
+      if (timer !== null) window.clearTimeout(timer);
+    };
+  }, [override]);
+  return override ?? width;
 }
 
 function scopeParts(scopeKey: ScopeKey): { workspaceId: string; bookId: string | null } {
@@ -233,7 +259,10 @@ export default function WorkbenchActivityRail({ shellWidth }: WorkbenchActivityR
   const scopeKey = useUi((s) => s.activeScopeKey);
   const activeConversationId = useConversations((s) => s.activeId);
   const conversations = useConversations((s) => s.byId);
-  const timelines = useConversations((s) => s.timelines);
+  // The overview is the only rail surface that needs every conversation's
+  // timeline. Keep the closed rail and the files/search panels off the hot
+  // streaming path.
+  const timelines = useConversations((s) => activeTool === "overview" ? s.timelines : EMPTY_TIMELINES);
   const runIds = useConversations((s) => s.runIds);
   const switchConversation = useConversations((s) => s.switchActive);
   const refreshWorkOverview = useConversations((s) => s.refreshWorkOverview);
@@ -242,7 +271,7 @@ export default function WorkbenchActivityRail({ shellWidth }: WorkbenchActivityR
   const resolvedByRun = useApprovals((s) => s.resolvedByRun);
   const artifacts = useArtifacts((s) => s.entries);
   const activeWorkspaceId = useWorkspaces((s) => s.activeId);
-  const currentWidth = shellWidth ?? (typeof window === "undefined" ? 1280 : window.innerWidth);
+  const currentWidth = useSettledWindowWidth(shellWidth);
   const [liveToolWidth, setLiveToolWidth] = useState<{ tool: "files" | "overview" | "search"; width: number } | null>(null);
   const resolvedSidebarWidth = resolveWorkbenchSidebarMode(sidebarPreference, currentWidth) === "compact"
     ? WORKBENCH_COMPACT_SIDEBAR_WIDTH

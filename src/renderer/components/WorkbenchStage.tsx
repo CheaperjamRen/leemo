@@ -14,6 +14,7 @@ import {
   WORKBENCH_STAGE_SPLIT_HANDLE_WIDTH,
   WORKBENCH_STAGE_SPLIT_MIN_WIDTH,
 } from "../workbench-spatial";
+import { useElementBelowWidth } from "../hooks/useElementBreakpoint";
 
 const FOCUS_THRESHOLD = 0.18;
 
@@ -27,29 +28,6 @@ export interface WorkbenchStageProps {
 
 type StageSurface = "conversation" | "file";
 
-function useStageWidth(ref: React.RefObject<HTMLDivElement | null>): number {
-  const [width, setWidth] = useState(() => typeof window === "undefined" ? 1280 : window.innerWidth);
-
-  useEffect(() => {
-    const element = ref.current;
-    if (!element) return;
-    const update = () => {
-      const measured = element.getBoundingClientRect().width;
-      setWidth(measured > 0 ? measured : window.innerWidth);
-    };
-    update();
-    if (typeof ResizeObserver === "undefined") {
-      window.addEventListener("resize", update);
-      return () => window.removeEventListener("resize", update);
-    }
-    const observer = new ResizeObserver(update);
-    observer.observe(element);
-    return () => observer.disconnect();
-  }, [ref]);
-
-  return width;
-}
-
 export default function WorkbenchStage({
   conversation,
   file,
@@ -62,14 +40,14 @@ export default function WorkbenchStage({
   const fileSurfaceRef = useRef<HTMLElement>(null);
   const focusFileKeyRef = useRef<string | null | undefined>(undefined);
   const focusHadFileRef = useRef(false);
-  const width = useStageWidth(stageRef);
+  const belowSplitBreakpoint = useElementBelowWidth(stageRef, WORKBENCH_STAGE_SPLIT_MIN_WIDTH);
   const activeScopeKey = useUi((state) => state.activeScopeKey);
   const session = useUi((state) => state.scopeSessions[state.activeScopeKey]);
   const setScopeSurface = useUi((state) => state.setScopeSurface);
   const setScopeSplitRatio = useUi((state) => state.setScopeSplitRatio);
   const surfacePreference = session?.surfacePreference ?? "split";
   const storedRatio = session?.splitRatio ?? DEFAULT_SPLIT_RATIO;
-  const canSplit = width >= WORKBENCH_STAGE_SPLIT_MIN_WIDTH;
+  const canSplit = !belowSplitBreakpoint;
   const layout = !hasFile
     ? "conversation"
     : surfacePreference === "split" && canSplit
@@ -107,11 +85,6 @@ export default function WorkbenchStage({
         ? "conversation"
         : tabSurface;
   const splitRatio = liveRatio ?? storedRatio;
-  const usableWidth = Math.max(1, width - WORKBENCH_STAGE_SPLIT_HANDLE_WIDTH);
-  const conversationWidth = Math.min(
-    Math.max(WORKBENCH_CONVERSATION_MIN_WIDTH, usableWidth * splitRatio),
-    Math.max(WORKBENCH_CONVERSATION_MIN_WIDTH, usableWidth - WORKBENCH_FILE_MIN_WIDTH),
-  );
 
   const chooseTab = (surface: StageSurface): void => {
     if (!canSplit) {
@@ -139,8 +112,9 @@ export default function WorkbenchStage({
     if (!dragRef.current || !event.currentTarget.hasPointerCapture?.(event.pointerId)) return;
     const raw = ratioFromPointer(event.clientX);
     if (raw === null) return;
-    const minRatio = WORKBENCH_CONVERSATION_MIN_WIDTH / Math.max(1, width - WORKBENCH_STAGE_SPLIT_HANDLE_WIDTH);
-    const maxRatio = 1 - WORKBENCH_FILE_MIN_WIDTH / Math.max(1, width - WORKBENCH_STAGE_SPLIT_HANDLE_WIDTH);
+    const dragWidth = dragRef.current.width;
+    const minRatio = WORKBENCH_CONVERSATION_MIN_WIDTH / Math.max(1, dragWidth - WORKBENCH_STAGE_SPLIT_HANDLE_WIDTH);
+    const maxRatio = 1 - WORKBENCH_FILE_MIN_WIDTH / Math.max(1, dragWidth - WORKBENCH_STAGE_SPLIT_HANDLE_WIDTH);
     setLiveRatio(Math.min(maxRatio, Math.max(minRatio, raw)));
   };
 
@@ -158,7 +132,7 @@ export default function WorkbenchStage({
     } else if (raw >= 1 - FOCUS_THRESHOLD) {
       setScopeSurface("conversation");
     } else {
-      const usableDragWidth = Math.max(1, (drag?.width ?? width) - WORKBENCH_STAGE_SPLIT_HANDLE_WIDTH);
+      const usableDragWidth = Math.max(1, (drag?.width ?? window.innerWidth) - WORKBENCH_STAGE_SPLIT_HANDLE_WIDTH);
       const minRatio = WORKBENCH_CONVERSATION_MIN_WIDTH / usableDragWidth;
       const maxRatio = 1 - WORKBENCH_FILE_MIN_WIDTH / usableDragWidth;
       setScopeSplitRatio(Math.min(maxRatio, Math.max(minRatio, raw)));
@@ -235,7 +209,9 @@ export default function WorkbenchStage({
 
       <div
         className={layout === "split" ? "grid min-h-0 min-w-0 flex-1" : "relative flex min-h-0 min-w-0 flex-1"}
-        style={layout === "split" ? { gridTemplateColumns: `${conversationWidth}px ${WORKBENCH_STAGE_SPLIT_HANDLE_WIDTH}px minmax(0, 1fr)` } : undefined}
+        style={layout === "split" ? {
+          gridTemplateColumns: `minmax(${WORKBENCH_CONVERSATION_MIN_WIDTH}px, ${splitRatio}fr) ${WORKBENCH_STAGE_SPLIT_HANDLE_WIDTH}px minmax(${WORKBENCH_FILE_MIN_WIDTH}px, ${1 - splitRatio}fr)`,
+        } : undefined}
       >
         <section
           ref={conversationSurfaceRef}

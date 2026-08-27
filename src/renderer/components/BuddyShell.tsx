@@ -9,7 +9,7 @@ import Timeline from "./timeline/Timeline";
 import LiveStatusBar from "./timeline/LiveStatusBar";
 import DropClassifyBar from "./DropClassifyBar";
 import { isFileDataTransfer, useFileDrop } from "./useFileDrop";
-import { useApprovals, useArtifacts, useCaptures, useComposerDrafts, useContextUsage, useConversations, useScheduledTasks, useSettings, useSkills, useProviders, useUi, useWorkspace, useFileTree, useWorkspaces } from "../bridge/context";
+import { useApprovals, useArtifacts, useCaptures, useComposerDrafts, useContextUsage, useConversations, useConversationsApi, useScheduledTasks, useSettings, useSkills, useProviders, useUi, useWorkspace, useFileTree, useWorkspaces } from "../bridge/context";
 import type { AttachmentRef, WorkspaceFileRef } from "../../bridge/contract";
 import { orderConfiguredProviders } from "./model-picker";
 import {
@@ -27,6 +27,7 @@ import {
   RELATIONSHIP_ONBOARDING_LABEL,
   buildRelationshipOnboardingPrompt,
   findRelationshipConversation,
+  isGlobalBuddyConversation,
 } from "../stores/relationship-onboarding";
 import {
   canReuseEmptyRelationshipChapter,
@@ -41,6 +42,48 @@ import { LEEMO_ASK_USER_TOOL_NAME } from "../bridge/tool-names";
 import "./BuddyShell.css";
 
 const RELATIONSHIP_PAGE_SIZE = 40;
+
+function BuddyRelationshipTimeline({
+  activeId,
+  activeRunId,
+  historyFocus,
+  runLimit,
+  onLoadOlder,
+}: {
+  activeId: string | null;
+  activeRunId: string | null;
+  historyFocus: { runId: string; nonce: number } | null;
+  runLimit: number;
+  onLoadOlder: () => void;
+}): React.JSX.Element {
+  // Keep the relationship projection beside the timeline that actually grows.
+  // The shell, top navigation and composer stay responsive while this small
+  // subtree receives streamed text.
+  const conversations = useConversations((state) => state.byId);
+  const timelines = useConversations((state) => state.timelines);
+  const chapters = useMemo(() => deriveRelationshipChapters({
+    conversations,
+    timelines,
+    activeId,
+  }), [activeId, conversations, timelines]);
+  const window = useMemo(
+    () => projectRelationshipTimelineWindow(chapters, runLimit),
+    [chapters, runLimit],
+  );
+
+  return (
+    <Timeline
+      items={window.items}
+      activeConversationId={activeId}
+      activeRunId={activeRunId}
+      pageKey={`buddy-relationship:${activeId ?? "empty"}`}
+      focusRequest={historyFocus}
+      chapterMarkers={window.chapterMarkers}
+      hasOlder={window.hasOlder}
+      onLoadOlder={onLoadOlder}
+    />
+  );
+}
 
 export default function BuddyShell() {
   const [drawer, setDrawer] = useState(false);
@@ -80,6 +123,7 @@ export default function BuddyShell() {
   const composerDraft = composerDrafts[draftScope] ?? EMPTY_COMPOSER_DRAFT;
   const draft = composerDraft.text;
   const createConversation = useConversations((s) => s.createConversation);
+  const conversationsApi = useConversationsApi();
   const switchActive = useConversations((s) => s.switchActive);
   const send = useConversations((s) => s.send);
   const guide = useConversations((s) => s.guide);
@@ -96,19 +140,7 @@ export default function BuddyShell() {
   const pendingInteraction = useApprovals((s) => activeId ? s.pendingByConversation[activeId] : null);
   const retryDraft = useConversations((s) => activeId ? s.pendingSends[activeId] : undefined);
   const queuedTurns = useConversations((s) => activeId ? s.queuedTurns[activeId] : undefined);
-  const conversationOrder = useConversations((s) => s.order);
-  const timelines = useConversations((s) => s.timelines);
-  const runIds = useConversations((s) => s.runIds);
-  const relationshipChapters = useMemo(() => deriveRelationshipChapters({
-    conversations,
-    timelines,
-    activeId,
-  }), [activeId, conversations, timelines]);
   useEffect(() => setRelationshipRunLimit(RELATIONSHIP_PAGE_SIZE), [activeId]);
-  const relationshipWindow = useMemo(
-    () => projectRelationshipTimelineWindow(relationshipChapters, relationshipRunLimit),
-    [relationshipChapters, relationshipRunLimit],
-  );
   const artifacts = useArtifacts((s) => s.entries);
   const scheduledTasks = useScheduledTasks((s) => s.tasks);
   const scheduledRuns = useScheduledTasks((s) => s.runs);
@@ -151,15 +183,18 @@ export default function BuddyShell() {
   const enabledSkills = skillList.filter(
     (skill) => skill.available !== false && !skillsDisabled.includes(skill.id ?? skill.name),
   );
-  const messages = relationshipWindow.items;
-  const retryRecoveryRendered = Boolean(
-    retryDraft?.errorMessage
-      && messages.some((item) => item.kind === "result"
+  const retryRecoveryRendered = useConversations((state) => Boolean(
+    activeId
+      && retryDraft?.errorMessage
+      && (state.timelines[activeId] ?? []).some((item) => item.kind === "result"
         && item.runId === retryDraft.runId
         && item.isError
         && !item.interrupted),
-  );
-  const hasMessages = messages.length > 0;
+  ));
+  const hasMessages = useConversations((state) => Object.values(state.byId).some((conversation) => (
+    isGlobalBuddyConversation(conversation)
+      && (state.timelines[conversation.id]?.length ?? 0) > 0
+  )));
   const interactionNeedsTranscript = Boolean(activeRunId || pendingInteraction || retryDraft?.errorMessage);
   const showTimeline = interactionNeedsTranscript || (hasMessages && historyVisible);
   const newTopicUnavailable = Boolean(
@@ -172,10 +207,11 @@ export default function BuddyShell() {
       || newTopicBusy,
   );
   const drop = useFileDrop();
-  const runningTool = (() => {
-    if (!activeRunId) return undefined;
-    for (let i = messages.length - 1; i >= 0; i--) {
-      const item = messages[i];
+  const runningTool = useConversations((state) => {
+    if (!activeId || !activeRunId) return undefined;
+    const activeTimeline = state.timelines[activeId] ?? [];
+    for (let i = activeTimeline.length - 1; i >= 0; i--) {
+      const item = activeTimeline[i];
       if (
         item.kind === "tool"
         && item.status === "running"
@@ -183,7 +219,7 @@ export default function BuddyShell() {
       ) return item.name;
     }
     return undefined;
-  })();
+  });
 
   const ensureRelationshipConversation = useCallback(async (): Promise<string> => {
     const existing = findRelationshipConversation(conversations, relationshipConversationId);
@@ -247,13 +283,14 @@ export default function BuddyShell() {
     try {
       const now = Date.now();
       const conversationId = await ensureRelationshipConversation();
-      if (hasDailyReviewToday(timelines[conversationId], now) || runIds[conversationId]) return;
+      const snapshot = conversationsApi.getState();
+      if (hasDailyReviewToday(snapshot.timelines[conversationId], now) || snapshot.runIds[conversationId]) return;
 
       const prompt = buildDailyReviewPrompt({
         now,
-        conversations,
-        order: conversationOrder,
-        timelines,
+        conversations: snapshot.byId,
+        order: snapshot.order,
+        timelines: snapshot.timelines,
         artifacts,
         scheduledTasks,
         scheduledRuns,
@@ -267,14 +304,11 @@ export default function BuddyShell() {
     }
   }, [
     artifacts,
-    conversationOrder,
-    conversations,
+    conversationsApi,
     ensureRelationshipConversation,
     scheduledRuns,
     scheduledTasks,
     send,
-    timelines,
-    runIds,
   ]);
 
   const startRelationshipOnboarding = useCallback(async () => {
@@ -286,7 +320,7 @@ export default function BuddyShell() {
     dismissRelationshipInvite();
     try {
       const conversationId = await ensureRelationshipConversation();
-      if (runIds[conversationId]) return;
+      if (conversationsApi.getState().runIds[conversationId]) return;
       await send(
         conversationId,
         buildRelationshipOnboardingPrompt(),
@@ -302,8 +336,8 @@ export default function BuddyShell() {
     }
   }, [
     dismissRelationshipInvite,
+    conversationsApi,
     ensureRelationshipConversation,
-    runIds,
     send,
   ]);
 
@@ -320,6 +354,12 @@ export default function BuddyShell() {
     setNewTopicError(null);
     const sourceDraftScope = draftScopeRef.current;
     try {
+      const snapshot = conversationsApi.getState();
+      const relationshipChapters = deriveRelationshipChapters({
+        conversations: snapshot.byId,
+        timelines: snapshot.timelines,
+        activeId,
+      });
       const activeChapter = relationshipChapters.find((chapter) => chapter.active);
       const conversationId = canReuseEmptyRelationshipChapter(activeChapter)
         ? activeChapter!.conversation.id
@@ -349,11 +389,12 @@ export default function BuddyShell() {
     }
   }, [
     activeRunId,
+    activeId,
     activeMeta,
     assignComposerConversation,
     createConversation,
     pendingInteraction,
-    relationshipChapters,
+    conversationsApi,
     setRelationshipConversationId,
     switchActive,
   ]);
@@ -416,14 +457,11 @@ export default function BuddyShell() {
           // the step that raised them: nothing is pinned above the input
           // anymore — a pinned copy on top of the inline one is exactly the
           // "same card twice" duplicate-render bug this round fixed.
-          <Timeline
-            items={relationshipWindow.items}
-            activeConversationId={activeId}
+          <BuddyRelationshipTimeline
+            activeId={activeId}
             activeRunId={activeRunId}
-            pageKey={`buddy-relationship:${activeId ?? "empty"}`}
-            focusRequest={historyFocus}
-            chapterMarkers={relationshipWindow.chapterMarkers}
-            hasOlder={relationshipWindow.hasOlder}
+            historyFocus={historyFocus}
+            runLimit={relationshipRunLimit}
             onLoadOlder={() => setRelationshipRunLimit((count) => count + RELATIONSHIP_PAGE_SIZE)}
           />
         ) : (
@@ -566,10 +604,16 @@ export default function BuddyShell() {
         relationshipId={activeId}
         onClose={() => setDrawer(false)}
         onPickChapter={(conversationId) => {
-          const target = (timelines[conversationId] ?? []).find((item) => (
+          const snapshot = conversationsApi.getState();
+          const target = (snapshot.timelines[conversationId] ?? []).find((item) => (
             item.kind !== "compact" && typeof item.runId === "string" && item.runId.length > 0
           ));
           if (!target || target.kind === "compact") return;
+          const relationshipChapters = deriveRelationshipChapters({
+            conversations: snapshot.byId,
+            timelines: snapshot.timelines,
+            activeId,
+          });
           const requiredRuns = relationshipRunCountFromEnd(relationshipChapters, target.runId);
           if (requiredRuns !== undefined) {
             setRelationshipRunLimit((count) => Math.max(count, requiredRuns));

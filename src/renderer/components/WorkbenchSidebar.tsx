@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState, type ComponentProps } from "react";
 import {
   Archive,
   BookOpen,
@@ -68,6 +68,7 @@ export interface WorkbenchSidebarProps {
   onNewConversation: (scope?: WorkbenchConversationScope) => void | Promise<void>;
   onConversationPicked?: (conversationId: string) => void;
   drafting?: boolean;
+  collapsed?: boolean;
   shellWidth?: number;
 }
 
@@ -76,10 +77,32 @@ const isSameScope = (left: ScopeTarget, right: ScopeTarget): boolean =>
 
 const scopeMenuItemClass = "flex h-8 w-full items-center gap-2 rounded-md px-2 text-left text-xs text-[var(--leemo-ink-2)] transition-colors hover:bg-[var(--leemo-side-hover)] hover:text-[var(--leemo-ink)] disabled:opacity-45";
 
+function LiveConversationListItem({
+  conversationId,
+  ...props
+}: Omit<ComponentProps<typeof ConversationListItem>, "status"> & {
+  conversationId: string;
+}): React.JSX.Element {
+  const activeRunId = useConversations((state) => state.runIds[conversationId] ?? null);
+  // A running row has one stable visual state. Its text grows in Timeline, so
+  // keep the sidebar detached from token-by-token timeline mutations.
+  const terminalTimeline = useConversations((state) => (
+    activeRunId ? undefined : state.timelines[conversationId]
+  ));
+  const pending = useApprovals((state) => state.pendingByConversation[conversationId] ?? null);
+  const status = deriveConversationStatus({
+    timeline: terminalTimeline ?? [],
+    activeRunId,
+    pending,
+  });
+  return <ConversationListItem {...props} status={status} />;
+}
+
 export default function WorkbenchSidebar({
   onNewConversation,
   onConversationPicked,
   drafting = false,
+  collapsed,
   shellWidth,
 }: WorkbenchSidebarProps): React.JSX.Element {
   const sidebarPreference = useUi((state) => state.workbenchSidebarPreference);
@@ -96,9 +119,6 @@ export default function WorkbenchSidebar({
   const conversations = useConversations((state) => state.byId);
   const order = useConversations((state) => state.order);
   const activeConversationId = useConversations((state) => state.activeId);
-  const timelines = useConversations((state) => state.timelines);
-  const runIds = useConversations((state) => state.runIds);
-  const pendingByConversation = useApprovals((state) => state.pendingByConversation);
   const switchActive = useConversations((state) => state.switchActive);
   const renameTitle = useConversations((state) => state.renameTitle);
   const setConversationUnread = useConversations((state) => state.setConversationUnread);
@@ -137,7 +157,8 @@ export default function WorkbenchSidebar({
   const [pendingDecision, setPendingDecision] = useState<PendingScopeChange | null>(null);
   const [decisionError, setDecisionError] = useState<string | null>(null);
   const currentShellWidth = shellWidth ?? (typeof window === "undefined" ? 1280 : window.innerWidth);
-  const sidebarCollapsed = resolveWorkbenchSidebarMode(sidebarPreference, currentShellWidth) === "compact";
+  const sidebarCollapsed = collapsed
+    ?? resolveWorkbenchSidebarMode(sidebarPreference, currentShellWidth) === "compact";
   const [dragWidth, setDragWidth] = useState<number | null>(null);
   const dragRef = useRef<{ startX: number; startWidth: number; width: number } | null>(null);
 
@@ -392,8 +413,9 @@ export default function WorkbenchSidebar({
     const conversation = conversations[id];
     if (!conversation) return null;
     return (
-      <ConversationListItem
+      <LiveConversationListItem
         key={id}
+        conversationId={id}
         conversation={conversation}
         active={!drafting && id === activeConversationId}
         variant="workbench"
@@ -405,11 +427,6 @@ export default function WorkbenchSidebar({
         onDelete={() => deleteConversation(id)}
         moveTargets={moveTargets.filter((target) => target.workspaceId !== (conversation.workspaceId ?? HOME_WORKSPACE_ID) || target.bookId !== conversation.bookId)}
         onMove={(target) => moveConversation(id, target)}
-        status={deriveConversationStatus({
-          timeline: timelines[id] ?? [],
-          activeRunId: runIds[id] ?? null,
-          pending: pendingByConversation[id] ?? null,
-        })}
         contextLabel={showContext ? target.label : undefined}
       />
     );

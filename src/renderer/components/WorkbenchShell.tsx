@@ -28,11 +28,15 @@ import WorkbenchStage from "./WorkbenchStage";
 import TopBar from "./TopBar";
 import { HOME_WORKSPACE_ID } from "../stores/workspaces";
 import type { ConversationTurnOptions } from "../stores/conversations";
-import { resolveWorkbenchSidebarMode } from "../workbench-spatial";
+import {
+  WORKBENCH_AUTO_COMPACT_BREAKPOINT,
+  resolveWorkbenchSidebarMode,
+} from "../workbench-spatial";
 import { scopeKeyForSelection } from "../stores/workbench-scope";
 import WorkbenchConversationScopePicker, {
   type WorkbenchConversationScopeOption,
 } from "./WorkbenchConversationScopePicker";
+import { useElementBelowWidth } from "../hooks/useElementBreakpoint";
 
 const SkillsPage = lazy(() => import("../pages/SkillsPage"));
 const ScheduledTasksPage = lazy(() => import("../pages/ScheduledTasksPage"));
@@ -103,6 +107,92 @@ function useNarrowPreviewLayout(): boolean {
   return matches;
 }
 
+function WorkbenchConversationViewport({
+  activeId,
+  draft,
+  onStarter,
+}: {
+  activeId: string | null;
+  draft: string;
+  onStarter: (prompt: string) => void;
+}): React.JSX.Element {
+  const hasMessages = useConversations((state) => (
+    activeId ? (state.timelines[activeId]?.length ?? 0) > 0 : false
+  ));
+
+  if (hasMessages) return <Timeline />;
+
+  return (
+    <div className="leemo-workbench-empty flex flex-1 items-center justify-center px-6 pb-8">
+      <div className="w-full max-w-[500px] text-center">
+        <div className="mx-auto mb-3 w-fit"><MomoAvatar size={34} /></div>
+        <p className="text-[14px] font-medium text-[var(--leemo-ink-2)]">今天想先处理什么？</p>
+        {draft.trim().length === 0 && (
+          <div
+            className="leemo-workbench-starters mt-4 flex flex-wrap justify-center gap-2"
+            aria-label="开始一项工作"
+          >
+            {WORKBENCH_STARTERS.map(({ label, prompt, Icon }) => (
+              <button
+                key={label}
+                type="button"
+                className="flex h-9 items-center justify-center gap-1.5 rounded-full border border-[var(--leemo-line)] bg-[var(--leemo-card)] px-3.5 text-[12px] text-[var(--leemo-ink-2)] transition-[background-color,border-color,color] hover:border-[var(--leemo-amber-line)] hover:bg-[var(--leemo-amber-bg)] hover:text-[var(--leemo-ink)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--leemo-amber-line)]"
+                onClick={() => onStarter(prompt)}
+              >
+                <Icon className="h-4 w-4 shrink-0 text-[var(--leemo-ink-3)]" aria-hidden />
+                <span>{label}</span>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function WorkbenchActiveStateMark({
+  conversationId,
+  className,
+  testId,
+}: {
+  conversationId: string | null;
+  className?: string;
+  testId?: string;
+}): React.JSX.Element | null {
+  const activeRunId = useConversations((state) => (
+    conversationId ? state.runIds[conversationId] ?? null : null
+  ));
+  // While a round is active the marker is already determined by activeRunId.
+  // Avoid subscribing this header-sized component to every text delta.
+  const terminalTimeline = useConversations((state) => (
+    conversationId && !activeRunId ? state.timelines[conversationId] : undefined
+  ));
+  const pending = useApprovals((state) => (
+    conversationId ? state.pendingByConversation[conversationId] ?? null : null
+  ));
+  const conversation = useConversations((state) => (
+    conversationId ? state.byId[conversationId] : undefined
+  ));
+
+  if (!conversationId || !conversation) return null;
+  const status = deriveConversationStatus({
+    timeline: terminalTimeline ?? [],
+    activeRunId,
+    pending,
+  });
+  const marker = deriveConversationMarker({ status, unread: conversation.unread });
+  if (!marker) return null;
+  const content = (
+    <ConversationStateMark
+      marker={marker}
+      label={conversation.title || "当前对话"}
+      detail={status.detail}
+      className={className}
+    />
+  );
+  return testId ? <span data-testid={testId}>{content}</span> : content;
+}
+
 export default function WorkbenchShell() {
   const permissionMode = useSettings((s) => s.permissionMode);
   const setPermissionMode = useSettings((s) => s.setPermissionMode);
@@ -113,10 +203,6 @@ export default function WorkbenchShell() {
   const globalActiveId = useConversations((s) => s.activeId);
   const openTabs = useConversations((s) => s.openTabs);
   const conversations = useConversations((s) => s.byId);
-  const timelines = useConversations((s) => s.timelines);
-  const runIds = useConversations((s) => s.runIds);
-  const pendingSends = useConversations((s) => s.pendingSends);
-  const pendingByConversation = useApprovals((s) => s.pendingByConversation);
   const switchActive = useConversations((s) => s.switchActive);
   const activateScope = useConversations((s) => s.activateScope);
   const createConversation = useConversations((s) => s.createConversation);
@@ -160,21 +246,11 @@ export default function WorkbenchShell() {
   const activateWorkbenchScope = useUi((s) => s.activateWorkbenchScope);
   const setWorkspaceTransitioning = useUi((s) => s.setWorkspaceTransitioning);
   const shellRef = useRef<HTMLDivElement>(null);
-  const [shellWidth, setShellWidth] = useState(() => typeof window === "undefined" ? 1280 : window.innerWidth);
-  const sidebarCollapsed = resolveWorkbenchSidebarMode(sidebarPreference, shellWidth) === "compact";
-  useEffect(() => {
-    const shell = shellRef.current;
-    if (!shell) return;
-    const update = () => setShellWidth(shell.getBoundingClientRect().width || window.innerWidth);
-    update();
-    if (typeof ResizeObserver === "undefined") {
-      window.addEventListener("resize", update);
-      return () => window.removeEventListener("resize", update);
-    }
-    const observer = new ResizeObserver(update);
-    observer.observe(shell);
-    return () => observer.disconnect();
-  }, []);
+  const sidebarAutoCompact = useElementBelowWidth(shellRef, WORKBENCH_AUTO_COMPACT_BREAKPOINT);
+  const sidebarCollapsed = resolveWorkbenchSidebarMode(
+    sidebarPreference,
+    sidebarAutoCompact ? WORKBENCH_AUTO_COMPACT_BREAKPOINT - 1 : WORKBENCH_AUTO_COMPACT_BREAKPOINT,
+  ) === "compact";
   const narrowPreviewActive = useNarrowPreviewLayout() && previewOpen && view === "artifacts";
   const previewColumnRef = useRef<HTMLDivElement>(null);
   const previewReturnFocusRef = useRef<HTMLElement | null>(null);
@@ -242,11 +318,10 @@ export default function WorkbenchShell() {
       setDraftingScope(null);
     }
   }, [currentScope, draftingScope]);
-  const timeline = activeId ? timelines[activeId] : undefined;
-  const activeRunId = activeId ? runIds[activeId] ?? null : null;
+  const activeRunId = useConversations((s) => activeId ? s.runIds[activeId] ?? null : null);
   const stopping = useConversations((s) => activeId ? s.stoppingById[activeId] === true : false);
   const stopLocked = useConversations((s) => activeId ? s.stopLockedById[activeId] === true : false);
-  const retryDraft = activeId ? pendingSends[activeId] : undefined;
+  const retryDraft = useConversations((s) => activeId ? s.pendingSends[activeId] : undefined);
   const queuedTurns = useConversations((s) => activeId ? s.queuedTurns[activeId] : undefined);
   // Model picker (轮 3 卡 F): the shell owns the subscription, InputArea renders.
   const activeMeta = activeId ? conversations[activeId] : undefined;
@@ -296,7 +371,6 @@ export default function WorkbenchShell() {
       && conversations[id]?.bookId === activeBookId
   ), [activeBookId, activeWorkspaceId, conversations, openTabs]);
 
-  const messages = timeline ?? [];
   // 06 §2.2 归类: drop anywhere in the shell. With an active 本子 the file lands
   // straight in it; otherwise momo proposes and the user confirms.
   const drop = useFileDrop();
@@ -494,17 +568,6 @@ export default function WorkbenchShell() {
   const contextTitle = view === "chat" && activeId
     ? conversations[activeId]?.title ?? null
     : null;
-  const activeStatus = activeId
-    ? deriveConversationStatus({
-        timeline: timelines[activeId] ?? [],
-        activeRunId: runIds[activeId] ?? null,
-        pending: pendingByConversation[activeId] ?? null,
-      })
-    : null;
-  const activeMarker = activeId && activeStatus && conversations[activeId]
-    ? deriveConversationMarker({ status: activeStatus, unread: conversations[activeId].unread })
-    : null;
-
   const artifactPreviewColumn = previewOpen ? (
     <div
       ref={previewColumnRef}
@@ -569,34 +632,7 @@ export default function WorkbenchShell() {
     // chat 视图（默认）
     const conversationSurface = (
       <div className="flex min-h-0 min-w-0 flex-1 flex-col" data-testid="conversation-column">
-          {messages.length > 0 ? (
-            <Timeline />
-          ) : (
-            <div className="leemo-workbench-empty flex flex-1 items-center justify-center px-6 pb-8">
-              <div className="w-full max-w-[500px] text-center">
-                <div className="mx-auto mb-3 w-fit"><MomoAvatar size={34} /></div>
-                <p className="text-[14px] font-medium text-[var(--leemo-ink-2)]">今天想先处理什么？</p>
-                {draft.trim().length === 0 && (
-                  <div
-                    className="leemo-workbench-starters mt-4 flex flex-wrap justify-center gap-2"
-                    aria-label="开始一项工作"
-                  >
-                    {WORKBENCH_STARTERS.map(({ label, prompt, Icon }) => (
-                      <button
-                        key={label}
-                        type="button"
-                        className="flex h-9 items-center justify-center gap-1.5 rounded-full border border-[var(--leemo-line)] bg-[var(--leemo-card)] px-3.5 text-[12px] text-[var(--leemo-ink-2)] transition-[background-color,border-color,color] hover:border-[var(--leemo-amber-line)] hover:bg-[var(--leemo-amber-bg)] hover:text-[var(--leemo-ink)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--leemo-amber-line)]"
-                        onClick={() => primeComposer(prompt)}
-                      >
-                        <Icon className="h-4 w-4 shrink-0 text-[var(--leemo-ink-3)]" aria-hidden />
-                        <span>{label}</span>
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
+          <WorkbenchConversationViewport activeId={activeId} draft={draft} onStarter={primeComposer} />
           <div className="mt-auto shrink-0">
             <div
               className="leemo-workbench-composer-column mx-auto w-full max-w-[952px] max-[1120px]:max-w-[856px]"
@@ -682,14 +718,7 @@ export default function WorkbenchShell() {
           file={chatFileSurface}
           hasFile={previewOpen}
           fileKey={previewActivePath ? `${activeWorkspaceId}\u0000${previewActivePath}` : null}
-          conversationMarker={activeMarker && activeStatus ? (
-            <ConversationStateMark
-              marker={activeMarker}
-              label={contextTitle ?? "当前对话"}
-              detail={activeStatus.detail}
-              className="mr-0"
-            />
-          ) : null}
+          conversationMarker={<WorkbenchActiveStateMark conversationId={activeId} className="mr-0" />}
         />
       </div>
     );
@@ -722,7 +751,7 @@ export default function WorkbenchShell() {
           onNewConversation={handleNewConversation}
           onConversationPicked={() => setDraftingScope(null)}
           drafting={!activeId}
-          shellWidth={shellWidth}
+          collapsed={sidebarCollapsed}
         />
 
         {/* 主区域 */}
@@ -781,15 +810,12 @@ export default function WorkbenchShell() {
                 {contextTitle ?? "新对话"}
               </div>
             )}
-            {view === "chat" && activeStatus && activeMarker && (
-              <span data-testid="current-conversation-status">
-                <ConversationStateMark
-                  marker={activeMarker}
-                  label={contextTitle ?? "当前对话"}
-                  detail={activeStatus.detail}
-                  className="mr-0"
-                />
-              </span>
+            {view === "chat" && (
+              <WorkbenchActiveStateMark
+                conversationId={activeId}
+                className="mr-0"
+                testId="current-conversation-status"
+              />
             )}
           </div>
 
@@ -805,7 +831,7 @@ export default function WorkbenchShell() {
         {content}
         </main>
 
-        <WorkbenchActivityRail shellWidth={shellWidth} />
+        <WorkbenchActivityRail />
       </div>
 
     </div>

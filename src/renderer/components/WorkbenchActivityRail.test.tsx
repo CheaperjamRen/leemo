@@ -1,4 +1,4 @@
-import { act, render, screen, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useContext } from "react";
 import { describe, expect, it, vi } from "vitest";
@@ -53,6 +53,28 @@ function semanticOverview(
 }
 
 describe("WorkbenchActivityRail", () => {
+  it("coalesces a native resize burst before changing tool presentation", () => {
+    vi.useFakeTimers();
+    const originalWidth = window.innerWidth;
+    Object.defineProperty(window, "innerWidth", { configurable: true, value: 1440 });
+    try {
+      render(<BridgeProvider><WorkbenchActivityRail /></BridgeProvider>);
+      fireEvent.click(screen.getByRole("button", { name: "概览" }));
+      expect(screen.getByTestId("workbench-tool-panel")).toHaveAttribute("data-presentation", "docked");
+
+      for (const width of [1320, 1200, 1080, 960]) {
+        Object.defineProperty(window, "innerWidth", { configurable: true, value: width });
+        fireEvent(window, new Event("resize"));
+      }
+      expect(screen.getByTestId("workbench-tool-panel")).toHaveAttribute("data-presentation", "docked");
+      act(() => vi.advanceTimersByTime(100));
+      expect(screen.getByTestId("workbench-tool-panel")).toHaveAttribute("data-presentation", "overlay");
+    } finally {
+      vi.useRealTimers();
+      Object.defineProperty(window, "innerWidth", { configurable: true, value: originalWidth });
+    }
+  });
+
   it("keeps files, overview, and search mutually exclusive in the right slot", async () => {
     const user = userEvent.setup();
     let stores!: BridgeStores;

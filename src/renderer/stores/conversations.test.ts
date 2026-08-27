@@ -1439,13 +1439,18 @@ describe("conversations store", () => {
     expect(store.getState().byId[a]).toMatchObject({ title: "秋招准备", titleManuallyUpdated: true });
   });
 
-  it("moves activity to the front without duplicate order entries", async () => {
+  it("moves completed activity to the front without reordering for every streamed token", async () => {
     const { bridge, store, a, b } = await registerTwo();
     expect(store.getState().order).toEqual([b, a]);
 
     await store.getState().send(a, "A moves front");
     expect(store.getState().order).toEqual([a, b]);
     bridge.emit({ conversationId: b, event: { type: "text.delta", text: "B moves front" } });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(store.getState().order).toEqual([a, b]);
+    bridge.emit({ conversationId: b, event: {
+      type: "run.finished", subtype: "success", isError: false, finalText: "B done", pathAudit: { claimed: [] },
+    } });
     await vi.waitFor(() => expect(store.getState().order).toEqual([b, a]));
     expect(store.getState().order).toEqual([b, a]);
     expect(new Set(store.getState().order).size).toBe(store.getState().order.length);
@@ -1566,7 +1571,7 @@ describe("conversations store", () => {
     expect(store.getState().byId[id]).toMatchObject({ providerId: DEFAULTS.providerId, modelId: DEFAULTS.modelId });
   });
 
-  it("exposes a pure fold independent from activeId and ignores unknown envelopes without inventing state", async () => {
+  it("keeps streaming deltas out of metadata subscribers until the round finishes", async () => {
     const { store, a, b } = await registerTwo();
     await store.getState().send(a, "A run");
     store.getState().switchActive(b);
@@ -1576,8 +1581,17 @@ describe("conversations store", () => {
     expect(folded.timelines?.[a]).toEqual(expect.arrayContaining([
       expect.objectContaining({ kind: "text", role: "momo", text: "A background", runId: before.runIds[a] }),
     ]));
-    expect(folded.byId?.[a]).toMatchObject({ lastActivityAt: 999 });
-    expect(folded.order?.[0]).toBe(a);
+    expect(folded.byId).toBeUndefined();
+    expect(folded.order).toBeUndefined();
+
+    const finished = foldConversationEnvelope(before, {
+      conversationId: a,
+      event: {
+        type: "run.finished", subtype: "success", finalText: "done", isError: false, pathAudit: { claimed: [] },
+      },
+    }, 1_000);
+    expect(finished.byId?.[a]).toMatchObject({ lastActivityAt: 1_000, unread: true });
+    expect(finished.order?.[0]).toBe(a);
 
     expect(foldConversationEnvelope(before, { conversationId: "unknown", event: { type: "text.delta", text: "ignored" } }, 1000)).toEqual({});
   });

@@ -513,11 +513,18 @@ export function foldConversationEnvelope(
       pendingSends = withoutConversation(state.pendingSends, conversationId);
     }
   }
-  const nextMeta: ConversationMeta = {
-    ...meta,
-    lastActivityAt: now,
-    unread: finished && conversationId !== state.activeId ? true : meta.unread,
-  };
+  // Streaming events only change the active timeline. Publishing a fresh
+  // metadata map and reordering the sidebar for every token wakes every
+  // conversation-list subscriber, which made the whole desktop feel frozen
+  // during a long response. The send path already records round start; commit
+  // durable activity metadata once at the terminal event.
+  const nextMeta: ConversationMeta | null = finished
+    ? {
+        ...meta,
+        lastActivityAt: now,
+        unread: conversationId !== state.activeId ? true : meta.unread,
+      }
+    : null;
   // 卡 C: latch the round's session id onto meta. This is the ONLY write path —
   // meta becomes a new object, which is exactly what startPersistenceSync's
   // reference check watches, so the id reaches SQLite with no extra plumbing.
@@ -527,14 +534,16 @@ export function foldConversationEnvelope(
     && !event.isError
     && event.subtype !== "interrupted"
     && (event.outcome === undefined || event.outcome === "completed");
-  if (commitsSession && event.sessionId) {
+  if (nextMeta && commitsSession && event.sessionId) {
     nextMeta.sessionId = event.sessionId;
     nextMeta.sessionProviderId = event.sessionProviderId ?? meta.providerId;
   }
 
   return {
-    byId: { ...state.byId, [conversationId]: nextMeta },
-    order: moveToFront(state.order, conversationId),
+    ...(nextMeta ? {
+      byId: { ...state.byId, [conversationId]: nextMeta },
+      order: moveToFront(state.order, conversationId),
+    } : {}),
     timelines: { ...state.timelines, [conversationId]: timeline },
     pendingSends,
     stopLockedById: stopLocked
