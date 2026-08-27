@@ -39,7 +39,7 @@ describe("CDP visual audit safety", () => {
     expect(visible).toBe(true);
   });
 
-  it("waits for a real conversation row instead of removed status copy", async () => {
+  it("keeps a new workbench draft unpersisted until its first message", async () => {
     const moduleUrl = pathToFileURL(path.join(root, "scripts", "verify-memory-workspace.mjs")).href;
     const { newConversation } = await import(moduleUrl) as {
       newConversation: (page: unknown) => Promise<void>;
@@ -68,12 +68,15 @@ describe("CDP visual audit safety", () => {
         }
         throw new Error(`unknown locator: ${selector}`);
       },
-      getByRole(role: string, options: { name: string; exact: boolean }) {
+      getByRole(role: string, options: { name: string | RegExp; exact?: boolean }) {
         expect(role).toBe("button");
+        if (options.name instanceof RegExp) {
+          expect(options.name.test("对话归属：Leemo 工作台")).toBe(true);
+          return { waitFor: async () => {} };
+        }
         expect(options).toEqual({ name: "新建对话", exact: true });
         return {
           click: async () => {
-            rows += 1;
             composerReady = true;
           },
         };
@@ -81,7 +84,7 @@ describe("CDP visual audit safety", () => {
     };
 
     await newConversation(page);
-    expect(rows).toBe(2);
+    expect(rows).toBe(1);
   });
 
   it("accepts visible final content without restoring a completed text badge", async () => {

@@ -396,7 +396,7 @@ export default function WorkbenchActivityRail({ shellWidth }: WorkbenchActivityR
           <ScopedFilesPanel
             onClose={closeTool}
             scopeKey={scopeKey}
-            onOpenFile={presentation === "docked" ? undefined : closeTool}
+            onOpenFile={closeTool}
           />
         )}
         {activeTool === "overview" && (

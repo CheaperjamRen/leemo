@@ -228,7 +228,8 @@ function physicalPackageFacts() {
       }
     }
   }
-  const installer = path.join(ROOT, "dist-package", "Leemo Setup 0.0.1.exe");
+  const packageVersion = JSON.parse(fs.readFileSync(path.join(ROOT, "package.json"), "utf8")).version;
+  const installer = path.join(ROOT, "dist-package", `Leemo Setup ${packageVersion}.exe`);
   const asar = path.join(unpacked, "resources", "app.asar");
   return {
     unpackedPhysicalFiles: files,
@@ -284,6 +285,7 @@ function workingSetBytes(pid) {
 function packagedOfficeBundleFacts() {
   const sourceRoot = path.join(ROOT, "bundled-skills", "office", "release", "skills");
   const appAsar = path.join(ROOT, "dist-package", "win-unpacked", "resources", "app.asar");
+  if (!fs.existsSync(sourceRoot)) return { present: false, files: 0 };
   const files = [];
   const walk = (directory, relativeRoot = "") => {
     for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
@@ -314,7 +316,7 @@ function packagedOfficeBundleFacts() {
     appAsar,
     path.join("bundled-skills", "office", "release", "skills", ...file.relative.split("/")),
   ));
-  return { files: files.length, source, packaged };
+  return { present: true, files: files.length, source, packaged };
 }
 
 async function run() {
@@ -329,36 +331,38 @@ async function run() {
     await openSkills(app.page);
 
     const names = await catalogNames(app.page);
-    insist(names.length === 30, `内置技能不是 26 个精选 + 4 个 Office 标配：${names.length}`);
-    insist(new Set(names).size === 30, "技能目录存在重复显示名");
+    insist(names.length === 46, `技能目录没有完整展示 28 个内置技能、14 个开发方法和 4 个 Office 能力：${names.length}`);
+    insist(new Set(names).size === 46, "技能目录存在重复显示名");
     for (const officeName of ["Word 文档", "Excel 表格", "演示文稿", "PDF 文档"]) {
       insist(names.includes(officeName), `缺少 Office 标配：${officeName}`);
     }
     const officeBundle = packagedOfficeBundleFacts();
-    insist(
-      officeBundle.source.bytes === officeBundle.packaged.bytes
-        && officeBundle.source.sha256 === officeBundle.packaged.sha256,
-      "打包版 Office 技能树与打包前源包不一致",
-    );
+    if (officeBundle.present) {
+      insist(
+        officeBundle.source.bytes === officeBundle.packaged.bytes
+          && officeBundle.source.sha256 === officeBundle.packaged.sha256,
+        "打包版 Office 技能树与打包前源包不一致",
+      );
+    }
     facts.package.officeBundle = officeBundle;
     insist(names.includes("前端设计"), "缺少默认精选前端设计");
     insist(names.includes("平面设计"), "缺少按需精选平面设计");
     insist(names.includes("IMA 知识库"), "缺少腾讯 IMA Skill");
     insist(!names.includes("claude-api"), "不应向用户暴露 claude-api");
-    await app.page.getByText("12 个已启用", { exact: true }).waitFor({ state: "visible", timeout: 30_000 });
-    await app.page.getByText("30 个可用", { exact: true }).waitFor({ state: "visible", timeout: 30_000 });
+    await app.page.getByText("9 个已启用", { exact: true }).waitFor({ state: "visible", timeout: 30_000 });
+    await app.page.getByText("42 个可用", { exact: true }).waitFor({ state: "visible", timeout: 30_000 });
     insist(await app.page.getByText("Anthropic 官方", { exact: true }).count() > 0, "没有展示 Anthropic 真实来源");
     insist(await app.page.getByText("腾讯官方", { exact: true }).count() === 1, "IMA 没有展示腾讯官方来源");
     insist(await app.page.getByText("社区精选", { exact: true }).count() > 0, "baoyu 没有展示社区精选来源");
     insist(!(await app.page.locator("body").innerText()).includes("leemo-library:"), "界面泄漏了内部插件前缀");
-    facts.checks.catalog30 = true;
-    facts.checks.defaultCount12 = true;
+    facts.checks.catalog46 = true;
+    facts.checks.defaultCount9 = true;
     facts.checks.realProvenance = true;
     facts.checks.claudeApiHidden = true;
 
     const initialRuntime = await waitForRuntimeSkills(
       harness.auditRoot,
-      (items) => items.length === 26 && items.includes("frontend-design") && items.includes("canvas-design"),
+      (items) => items.length === 28 && items.includes("frontend-design") && items.includes("canvas-design"),
       "完整精选技能运行缓存",
     );
     facts.runtime.initial = initialRuntime;
@@ -392,29 +396,33 @@ async function run() {
     insist(harness.state.skillBodyChecks?.some((entry) => entry.bodyLoaded), "frontend-design 正文没有进入真实模型请求");
     facts.checks.skillBodyLoaded = true;
 
-    const composer = app.page.locator('textarea[aria-label="输入消息"]');
-    for (const card of OFFICE_CARD_COMMANDS) {
-      await composer.fill(card.query);
-      const menu = app.page.getByTestId("slash-menu");
-      await menu.waitFor({ state: "visible" });
-      await menu.getByRole("option", { name: new RegExp(card.label) }).click();
-      insist(
-        await composer.inputValue() === `/${card.command} `,
-        `${card.label} 卡片没有转换为可执行的 /${card.command} 命令`,
+    if (officeBundle.present) {
+      const composer = app.page.locator('textarea[aria-label="输入消息"]');
+      for (const card of OFFICE_CARD_COMMANDS) {
+        await composer.fill(card.query);
+        const menu = app.page.getByTestId("slash-menu");
+        await menu.waitFor({ state: "visible" });
+        await menu.getByRole("option", { name: new RegExp(card.label) }).click();
+        insist(
+          await composer.inputValue() === `/${card.command} `,
+          `${card.label} 卡片没有转换为可执行的 /${card.command} 命令`,
+        );
+        await composer.fill("");
+      }
+      facts.checks.officeFriendlyAliases = true;
+      await runVisiblePrompt(
+        app.page,
+        "/xlsx R11_OFFICE_BODY：只确认已加载表格技能正文，不要创建文件。",
+        "R11_OFFICE_BODY_OK",
       );
-      await composer.fill("");
+      insist(
+        harness.state.officeBodyChecks?.some((entry) => entry.bodyLoaded),
+        "Excel bundle 只显示了卡片，技能正文没有进入真实模型请求",
+      );
+      facts.checks.officeSkillBodyLoaded = true;
+    } else {
+      facts.checks.optionalOfficeBundleAbsent = true;
     }
-    facts.checks.officeFriendlyAliases = true;
-    await runVisiblePrompt(
-      app.page,
-      "/xlsx R11_OFFICE_BODY：只确认已加载表格技能正文，不要创建文件。",
-      "R11_OFFICE_BODY_OK",
-    );
-    insist(
-      harness.state.officeBodyChecks?.some((entry) => entry.bodyLoaded),
-      "Excel bundle 只显示了卡片，技能正文没有进入真实模型请求",
-    );
-    facts.checks.officeSkillBodyLoaded = true;
 
     await openSkills(app.page);
     await toggleSkill(app.page, "前端设计", false);

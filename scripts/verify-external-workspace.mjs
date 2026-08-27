@@ -20,8 +20,9 @@ import {
 
 const PREFIX = "leemo-e2e-r11-external-";
 const PROJECT_DIR_NAME = "毕业设计项目";
-const ARTIFACT_NAME = "r11-project-artifact.md";
-const ARTIFACT_CONTENT = "# 外部项目产物\n\nR11_EXTERNAL_ARTIFACT_CONTENT\n";
+const ARTIFACT_NAME = "项目进展.md";
+const ARTIFACT_CONTENT = "# 本周进展\n\n- 梳理研究问题和文献框架\n- 完成访谈提纲初稿\n- 整理下一轮验证计划\n";
+const ARTIFACT_TASK_MARKER = "请在当前毕业设计项目根目录新建一份项目进展.md";
 const REFERENCED_FILE_NAME = "课程计划.md";
 const REFERENCED_FILE_ORIGINAL = "# 课程计划\n\n先阅读论文。\n";
 const REFERENCED_FILE_UPDATED = "# 课程计划\n\n先阅读论文，再整理三条核心结论。\n";
@@ -34,14 +35,14 @@ const MEMORY_SCREENSHOT = path.join(OUTPUT_DIR, "r11-external-memory-720x640.png
 const MISSING_SCREENSHOT = path.join(OUTPUT_DIR, "r11-external-missing-folder.png");
 
 const PROMPTS = {
-  artifact: "R11_TASK_ARTIFACT：在当前项目根目录写入 r11-project-artifact.md，完成后简短回复。",
+  artifact: `${ARTIFACT_TASK_MARKER}，记录本周完成的研究梳理、访谈提纲和下一轮验证计划。`,
   editReference: `${REFERENCED_EDIT_TASK_MARKER}，再把第二段改成“先阅读论文，再整理三条核心结论。”，最后重新读取确认。`,
   remember: `R11_TASK_REMEMBER：请记住当前项目约定：${PROJECT_MEMORY}。完成后简短回复。`,
   continue: "R11_TASK_CONTINUE：这是重启恢复测试，请只回复 R11_CONTINUE_OK。",
 };
 
 const FINAL = {
-  artifact: "R11_ARTIFACT_OK",
+  artifact: "已经把本周进展整理到 项目进展.md，并保存在当前项目根目录。",
   editReference: "课程计划已更新，并重新读取确认。",
   remember: "R11_MEMORY_OK",
   continue: "R11_CONTINUE_OK",
@@ -139,7 +140,7 @@ function writeToolCall(response, model, toolName, args, sequence) {
 }
 
 function latestTask(serialized) {
-  const latest = ["R11_TASK_ARTIFACT", REFERENCED_EDIT_TASK_MARKER, "R11_TASK_REMEMBER", "R11_TASK_CONTINUE"]
+  const latest = [ARTIFACT_TASK_MARKER, REFERENCED_EDIT_TASK_MARKER, "R11_TASK_REMEMBER", "R11_TASK_CONTINUE"]
     .map((marker) => ({ marker, index: serialized.lastIndexOf(marker) }))
     .sort((left, right) => right.index - left.index)[0];
   return latest && latest.index >= 0 ? latest.marker : undefined;
@@ -167,7 +168,7 @@ function streamRouter(response, body, state) {
   };
 
   switch (latestTask(serialized)) {
-    case "R11_TASK_ARTIFACT":
+    case ARTIFACT_TASK_MARKER:
       if (!hasToolResult) call("Write", { file_path: ARTIFACT_NAME, content: ARTIFACT_CONTENT });
       else writeSuccess(response, model, FINAL.artifact);
       return;
@@ -235,10 +236,10 @@ async function switchWorkspace(page, name) {
 }
 
 async function ensureFileTree(page) {
-  if (!await page.getByTestId("file-tree-column").isVisible().catch(() => false)) {
-    await page.getByRole("button", { name: "文件树", exact: true }).click();
+  if (!await page.getByTestId("file-tree").isVisible().catch(() => false)) {
+    await page.getByRole("button", { name: "文件", exact: true }).click();
   }
-  await page.getByTestId("file-tree-column").waitFor({ state: "visible" });
+  await page.getByTestId("file-tree").waitFor({ state: "visible" });
   await page.getByRole("button", { name: "刷新文件树", exact: true }).click();
 }
 
@@ -325,11 +326,9 @@ async function run() {
     insist(!fs.existsSync(path.join(harness.workspaceRoot, "默认工作区", ARTIFACT_NAME)), "外部项目产物串进默认工作区");
 
     await ensureFileTree(app.page);
-    await app.page.getByText(ARTIFACT_NAME, { exact: true }).click();
-    await app.page.getByRole("heading", { name: "外部项目产物", exact: true }).waitFor({ state: "visible" });
-    await app.page.getByRole("button", { name: "成果", exact: true }).click();
-    await app.page.getByTestId("artifact-card").filter({ hasText: ARTIFACT_NAME }).waitFor({ state: "visible" });
-    await app.page.getByText("当前本子", { exact: true }).waitFor({ state: "visible" });
+    await app.page.getByTestId(`file-row-${ARTIFACT_NAME}`).click();
+    await app.page.getByRole("heading", { name: "本周进展", exact: true }).waitFor({ state: "visible" });
+    await app.page.getByRole("button", { name: `选择本子，当前 ${PROJECT_DIR_NAME}` }).waitFor({ state: "visible" });
     await app.page.screenshot({ path: PROJECT_SCREENSHOT, animations: "disabled" });
     facts.screenshots.project = relativeOutput(PROJECT_SCREENSHOT);
 
@@ -344,11 +343,11 @@ async function run() {
     const referencedFilePath = path.join(projectRoot, REFERENCED_FILE_NAME);
     insist(fs.readFileSync(referencedFilePath, "utf8") === REFERENCED_FILE_UPDATED, "引用文件没有按要求原位修改");
     insist(harness.state.referencedEditReadBack === true, "模型没有在修改后重新读取文件");
-    const fileReceipt = app.page.getByRole("button", { name: "查看文件变化" }).last();
+    const fileReceipt = app.page.locator("[data-file-delivery-receipt]").last();
     await fileReceipt.waitFor({ state: "visible" });
-    insist((await fileReceipt.innerText()).includes("修改了 1 个文件"), "完成回执没有说清文件变化数量");
-    await fileReceipt.click();
-    await app.page.getByRole("button", { name: `预览 ${REFERENCED_FILE_NAME}` }).click();
+    insist((await fileReceipt.innerText()).includes("本轮交付 1 个文件"), "完成回执没有说清单文件交付数量");
+    insist((await fileReceipt.innerText()).includes("修改"), "完成回执没有说清文件修改状态");
+    await fileReceipt.getByRole("button", { name: `预览 ${REFERENCED_FILE_NAME}` }).click();
     await app.page.getByText("先阅读论文，再整理三条核心结论。", { exact: true }).waitFor({ state: "visible" });
     await app.page.keyboard.press("Escape");
     await app.page.screenshot({ path: REFERENCED_EDIT_SCREENSHOT, animations: "disabled" });
@@ -437,7 +436,7 @@ async function run() {
     facts.checks = {
       controlledPicker: true,
       artifactAtProjectRoot: true,
-      artifactVisibleInTreeAndResults: true,
+      artifactVisibleInTreeAndPreview: true,
       referencedFileReadEditedAndReadBack: true,
       fileChangeReceiptOpenedPreview: true,
       referencedEditSurvivedRestart: true,

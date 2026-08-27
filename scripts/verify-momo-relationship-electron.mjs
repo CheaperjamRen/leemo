@@ -31,7 +31,7 @@ const FIRST_TURN_REPLY = "MOMO_E2E_NEW_SESSION_OK";
 const ASK_USER_REPLY = "MOMO_E2E_ASK_USER_OK";
 const HISTORY_REPLY = "MOMO_E2E_HISTORY_OK";
 const HISTORY_PHRASE = "最影响状态的那件事";
-const draftAttachmentPath = path.join(auditRoot, "home", "Leemo", "默认工作区", "draft-reference.md");
+const draftAttachmentPath = path.join(auditRoot, "home", "Leemo", "默认工作区", "待整理想法.md");
 
 function insist(value, message) {
   if (!value) throw new Error(message);
@@ -287,6 +287,64 @@ async function seed(page, mockBaseUrl) {
     continueInBackground: false,
   });
   return { providerId: provider.id, secondProviderId: secondProvider.id, meta, timeline };
+}
+
+async function captureReadmeScenario(page, {
+  id,
+  title,
+  providerId,
+  messages,
+  screenshotName,
+}) {
+  const now = Date.now();
+  const existing = await invokePersistence(page, "loadAll", undefined);
+  for (const conversation of existing.conversations ?? []) {
+    await invokePersistence(page, "deleteConversation", { conversationId: conversation.meta.id });
+  }
+  const timeline = messages.map((message, index) => ({
+    kind: "text",
+    id: `${id}-message-${index + 1}`,
+    runId: `${id}-run-${Math.floor(index / 2) + 1}`,
+    role: message.role,
+    text: message.text,
+    streaming: false,
+    createdAt: now - (messages.length - index) * 60_000,
+  }));
+  await invokePersistence(page, "saveConversation", {
+    meta: {
+      id,
+      title,
+      titleManuallyUpdated: true,
+      bookId: null,
+      workspaceId: "leemo-home",
+      source: "buddy",
+      providerId,
+      modelId: "deepseek-v4-flash",
+      createdAt: now - messages.length * 60_000,
+      lastActivityAt: now - 60_000,
+      lastOpenedAt: now - 60_000,
+      unread: false,
+      pinned: false,
+      archived: false,
+    },
+    timeline,
+  });
+  await invokePersistence(page, "saveSettings", {
+    surface: "buddy",
+    mode: "buddy",
+    themeId: "white-copper",
+    onboardingCompleted: true,
+    relationshipInviteDismissed: true,
+    relationshipConversationId: id,
+    defaultProviderId: providerId,
+    defaultModelId: "deepseek-v4-flash",
+    continueInBackground: false,
+  });
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await page.getByTestId("buddy-landing").waitFor({ timeout: 15_000 });
+  await page.getByRole("button", { name: "继续上次聊天" }).click();
+  await page.getByText(messages[0].text, { exact: true }).waitFor({ timeout: 15_000 });
+  return screenshot(page, screenshotName, 1440, 900);
 }
 
 async function waitForPersistedRelationship(page, expectedId, timeoutMs = 8_000) {
@@ -550,10 +608,10 @@ try {
   evidence.push(await screenshot(page, "compact-iterations-1440x900.png", 1440, 900));
 
   const composer = page.getByPlaceholder("输入消息…");
-  await composer.fill("这个想法先留在输入框里 @draft");
+  await composer.fill("这个想法先留在输入框里 @待");
   await page.getByRole("listbox", { name: "引用工作区文件" }).waitFor();
-  await page.getByRole("option", { name: /draft-reference\.md/ }).click();
-  await page.getByRole("button", { name: "移除引用 draft-reference.md" }).waitFor();
+  await page.getByRole("option", { name: /待整理想法\.md/ }).click();
+  await page.getByRole("button", { name: "移除引用 待整理想法.md" }).waitFor();
   await page.getByRole("banner").getByRole("button", { name: "新话题" }).click();
   await page.getByTestId("buddy-topic-boundary").waitFor();
   evidence.push(await screenshot(page, "new-topic-boundary-1280x720.png", 1280, 720));
@@ -570,7 +628,7 @@ try {
   const undoneSnapshot = await waitForPersistedRelationship(page, "momo-history");
   checks.newTopicUndoRestoredPriorChapter = !undoneSnapshot.conversations.some((entry) => entry.meta.id === firstNewRelationshipId)
     && (await composer.inputValue()).trim() === "这个想法先留在输入框里"
-    && await page.getByRole("button", { name: "移除引用 draft-reference.md" }).isVisible()
+    && await page.getByRole("button", { name: "移除引用 待整理想法.md" }).isVisible()
     && await page.getByTestId("buddy-topic-boundary").count() === 0;
   insist(checks.newTopicUndoRestoredPriorChapter, "撤销新话题没有恢复上一章节、草稿或附件引用。");
 
@@ -596,7 +654,7 @@ try {
   const restartedSnapshot = await waitForPersistedRelationship(restartedPage, newRelationshipId);
   const restartedComposer = restartedPage.getByPlaceholder("输入消息…");
   checks.restartRestoredDraft = (await restartedComposer.inputValue()).trim() === "这个想法先留在输入框里"
-    && await restartedPage.getByRole("button", { name: "移除引用 draft-reference.md" }).isVisible();
+    && await restartedPage.getByRole("button", { name: "移除引用 待整理想法.md" }).isVisible();
   insist(checks.restartRestoredDraft, "重启没有恢复新章节的文本和安全附件引用。");
   checks.restartRestoredCurrentChapter = restartedSnapshot.settings.relationshipConversationId === newRelationshipId;
   insist(checks.restartRestoredCurrentChapter, "重启没有恢复当前关系章节。");
@@ -656,6 +714,58 @@ try {
   await restartedPage.locator('[data-shell="buddy"]').waitFor();
   checks.parentSurfaceSwitch = await restartedPage.locator('[data-shell="buddy"]').isVisible();
 
+  const requestsBeforeReadmeShots = upstreamRequests.length;
+  evidence.push(await captureReadmeScenario(restartedPage, {
+    id: "readme-job-search",
+    title: "把求职材料讲清楚",
+    providerId: seeded.providerId,
+    screenshotName: "readme-job-search-1440x900.png",
+    messages: [
+      { role: "user", text: "我把项目经历越改越像岗位说明书了，明明做过不少事，但不知道该先讲哪一段。" },
+      { role: "momo", text: "先留一件你真正推动过的事。你当时遇到什么乱局，做了哪个判断，最后谁因此少走了弯路？" },
+      { role: "user", text: "数据分析实习那段吧。需求一天一变，我后来做了个校验表，至少让大家知道数据能不能用。" },
+      { role: "momo", text: "这段已经有故事了：变化很多的业务现场、你补上的判断机制、团队因此获得的确定性。接下来把一次具体冲突和结果写实。" },
+    ],
+  }));
+  evidence.push(await captureReadmeScenario(restartedPage, {
+    id: "readme-research",
+    title: "把灵感变成研究问题",
+    providerId: seeded.providerId,
+    screenshotName: "readme-research-1440x900.png",
+    messages: [
+      { role: "user", text: "我最近老觉得 AI 帮人切换任务可能会把注意力越弄越碎，但这个想法太散了，不知道怎么变成能研究的问题。" },
+      { role: "momo", text: "先抓一个可以观察的瞬间。你担心的变化发生在切换之前、刚切过去，还是过了一会儿才显出来？" },
+      { role: "user", text: "比如任务 A 刚切到任务 B 后，人会不会更晚察觉自己其实没进入状态？" },
+      { role: "momo", text: "这个已经能测了。可以记录切换后的首次有效操作、主观进入状态的时间，以及错误率，再比较有无 AI 提示时的差异。" },
+    ],
+  }));
+  evidence.push(await captureReadmeScenario(restartedPage, {
+    id: "readme-study",
+    title: "把 p 值想明白",
+    providerId: seeded.providerId,
+    screenshotName: "readme-study-philosophy-1440x900.png",
+    messages: [
+      { role: "user", text: "p 值我会算，可一放回题里就又怕自己只是背了个结论。" },
+      { role: "momo", text: "先看你最担心它帮你判断什么。是判断结果靠不靠谱，还是判断眼前证据和零假设有多不相容？" },
+      { role: "user", text: "我其实想知道，算出一个很小的数，到底是在说明世界，还是只说明我手里的证据看起来有点反常？" },
+      { role: "momo", text: "它描述的是后一件事：假设零假设成立，像你手里这样或更极端的数据有多少见。对世界的判断还要结合研究设计、效应大小和先验信息。" },
+    ],
+  }));
+  evidence.push(await captureReadmeScenario(restartedPage, {
+    id: "readme-heart",
+    title: "先把感受说清楚",
+    providerId: seeded.providerId,
+    screenshotName: "readme-heart-to-heart-1440x900.png",
+    messages: [
+      { role: "user", text: "最近什么都想往前推，可越赶越像在原地打转，晚上又会怀疑是不是自己太慢。" },
+      { role: "momo", text: "听起来很多事情同时在拉你。今晚先不用把全部解决，挑一件做完后能让你松一点的事，好吗？" },
+      { role: "user", text: "那就先把明天要发的那份材料整理出来，其他的明天再说。" },
+      { role: "momo", text: "好。你把现有内容给我，我们先整理成一个可以发出去的版本。" },
+    ],
+  }));
+  checks.readmeScenariosNoModelCall = upstreamRequests.length === requestsBeforeReadmeShots;
+  insist(checks.readmeScenariosNoModelCall, "README 场景截图触发了模型请求。");
+
   const dbPath = path.join(auditRoot, "user-data", "leemo.db");
   insist(fs.existsSync(dbPath), "隔离 SQLite 没有落盘。");
   checks.isolatedSqlite = fs.existsSync(dbPath);
@@ -678,6 +788,7 @@ try {
     "relationshipHistoryMcpCalled",
     "trayListenerRestoredWindow",
     "parentSurfaceSwitch",
+    "readmeScenariosNoModelCall",
     "isolatedSqlite",
   ];
   const pass = requiredChecks.every((key) => checks[key] === true);

@@ -227,6 +227,32 @@ describe("WorkbenchActivityRail", () => {
     expect(screen.queryByTestId("workbench-tool-panel")).not.toBeInTheDocument();
   });
 
+  it("closes a docked file tree when the selected file takes over the stage", async () => {
+    const user = userEvent.setup();
+    let stores!: BridgeStores;
+    render(
+      <BridgeProvider>
+        <Capture onReady={(value) => { stores = value; }} />
+        <WorkbenchActivityRail shellWidth={1440} />
+      </BridgeProvider>,
+    );
+    act(() => {
+      stores.notebooks.setState({
+        list: [{ id: "课程", title: "课程", dir: "C:/Leemo/课程", color: "blue", hasMemory: false }],
+        activeId: "课程",
+      });
+      stores.fileTree.setState({ roots: [{ path: "课程/笔记.md", name: "笔记.md", kind: "file", bookId: "课程" }] });
+      stores.ui.getState().activateWorkbenchScope("notebook:课程");
+    });
+
+    await user.click(screen.getByRole("button", { name: "文件" }));
+    expect(screen.getByTestId("workbench-tool-panel")).toHaveAttribute("data-presentation", "docked");
+    await user.click(screen.getByText("笔记.md"));
+    expect(stores.ui.getState().previewActivePath).toBe("课程/笔记.md");
+    expect(screen.queryByTestId("workbench-tool-panel")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("workbench-tool-backdrop")).not.toBeInTheDocument();
+  });
+
   it("opens and switches overview scopes locally while keeping every projection source-scoped", async () => {
     const user = userEvent.setup();
     let stores!: BridgeStores;

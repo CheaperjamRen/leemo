@@ -17,6 +17,7 @@ const port = Number(process.env.LEEMO_START_CDP_PORT ?? 9362);
 const tempParent = fs.realpathSync(os.tmpdir());
 const auditRoot = fs.mkdtempSync(path.join(tempParent, "leemo-e2e-start-workspace-"));
 const outputDir = path.join(ROOT, ".tmp-visual-audit", "start-note-library");
+const screenshotHome1440 = path.join(outputDir, "start-home-1440x900.png");
 const screenshot1440 = path.join(outputDir, "start-documents-1440x900.png");
 const screenshotObjects1440 = path.join(outputDir, "start-documents-objects-1440x900.png");
 const screenshotSource1440 = path.join(outputDir, "start-documents-source-1440x900.png");
@@ -33,6 +34,21 @@ function insist(value, message) {
 function killTree(child) {
   if (!child?.pid) return;
   spawnSync("taskkill", ["/PID", String(child.pid), "/T", "/F"], { stdio: "ignore", windowsHide: true });
+}
+
+async function removeAuditRoot() {
+  for (let attempt = 0; attempt < 12; attempt += 1) {
+    try {
+      await fs.promises.rm(auditRoot, { recursive: true, force: true, maxRetries: 2, retryDelay: 100 });
+      return;
+    } catch (error) {
+      if (attempt === 11) {
+        console.warn(`[start-workspace] 隔离目录仍被 Windows 占用，已保留待系统释放：${auditRoot}`, error);
+        return;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    }
+  }
 }
 
 async function waitForCdp(timeoutMs = 20_000) {
@@ -150,7 +166,7 @@ async function seedAndExercise(page) {
   await openDocuments(page);
 
   await page.getByRole("button", { name: "新建文档" }).first().click();
-  await page.getByRole("textbox", { name: "文档标题" }).fill("求职主线与独立思考");
+  await page.getByRole("textbox", { name: "文档标题" }).fill("求职材料整理计划");
   await page.getByRole("button", { name: "编辑 Markdown 源码" }).click();
   const sourceEditor = page.getByRole("textbox", { name: "Markdown 源码" });
   await sourceEditor.fill([
@@ -160,9 +176,9 @@ async function seedAndExercise(page) {
     "",
     "## 主线",
     "",
-    "- [ ] 打磨 Leemo 的产品故事与 PRD",
-    "- [ ] 把简历按 AI 产品岗位重新组织",
-    "- [ ] 梳理 WorkBuddy、Codex 与 Kimi 的真实工作流差异",
+    "- [ ] 复盘目标岗位 JD",
+    "- [ ] 把数据分析实习的业务背景讲清楚",
+    "- [ ] 整理三段可验证的项目证据",
     "- [x] 已确认先由用户思考，再按需调用 AI",
     "",
     "> 先让自己的想法多活一会儿，再决定什么时候让 AI 介入。",
@@ -178,7 +194,7 @@ async function seedAndExercise(page) {
     "",
     "| 工作对象 | 当前状态 |",
     "| --- | :---: |",
-    "| 产品故事 | 进行中 |",
+    "| 面试故事 | 进行中 |",
     "",
     "## 观察",
     "",
@@ -199,14 +215,14 @@ async function seedAndExercise(page) {
   await page.getByText("已保存", { exact: true }).waitFor();
 
   let notes = await invokeCapture(page, "listNotes");
-  const parent = notes.find((note) => note.title === "求职主线与独立思考");
+  const parent = notes.find((note) => note.title === "求职材料整理计划");
   insist(parent, "没有找到刚创建的父文档");
-  const child = await invokeCapture(page, "createNote", { title: "产品故事证据", markdown: "# 证据\n\n保留可验证的用户路径与截图。" });
+  const child = await invokeCapture(page, "createNote", { title: "实习经历证据", markdown: "# 证据\n\n保留业务背景、具体动作和可验证结果。" });
   const sibling = await invokeCapture(page, "createNote", { title: "临时灵感", markdown: "稍后再判断，不立即展开。" });
   await page.waitForTimeout(250);
 
-  const childRow = page.getByRole("treeitem", { name: "产品故事证据" });
-  const parentRow = page.getByRole("treeitem", { name: "求职主线与独立思考" });
+  const childRow = page.getByRole("treeitem", { name: "实习经历证据" });
+  const parentRow = page.getByRole("treeitem", { name: "求职材料整理计划" });
   await childRow.dragTo(parentRow);
   await page.waitForFunction(async ({ id, expectedParent }) => {
     const result = await window.leemoCapture.invoke("listNotes");
@@ -219,18 +235,18 @@ async function seedAndExercise(page) {
     id: parent.id,
     expectedRevision: latestParent.revision,
     title: latestParent.title,
-    markdown: `${latestParent.markdown}\n\n相关证据：[产品故事证据](leemo-note://${child.id})`,
+    markdown: `${latestParent.markdown}\n\n相关证据：[实习经历证据](leemo-note://${child.id})`,
   });
   await page.waitForTimeout(250);
-  await openDocument(page, "求职主线与独立思考");
-  await page.getByRole("link", { name: "产品故事证据" }).click();
+  await openDocument(page, "求职材料整理计划");
+  await page.getByRole("link", { name: "实习经历证据" }).click();
   await page.getByRole("textbox", { name: "文档标题" }).waitFor();
-  insist(await page.getByRole("textbox", { name: "文档标题" }).inputValue() === "产品故事证据", "本地引用没有打开目标文档");
-  await page.getByLabel("被这些文档引用").getByRole("button", { name: "求职主线与独立思考", exact: true }).click();
-  insist(await page.getByRole("textbox", { name: "文档标题" }).inputValue() === "求职主线与独立思考", "反向引用没有返回来源文档");
+  insist(await page.getByRole("textbox", { name: "文档标题" }).inputValue() === "实习经历证据", "本地引用没有打开目标文档");
+  await page.getByLabel("被这些文档引用").getByRole("button", { name: "求职材料整理计划", exact: true }).click();
+  insist(await page.getByRole("textbox", { name: "文档标题" }).inputValue() === "求职材料整理计划", "反向引用没有返回来源文档");
 
   const editorAfterReference = await ensureEditMode(page);
-  await editorAfterReference.locator("li").filter({ hasText: "打磨 Leemo 的产品故事与 PRD" }).first().selectText();
+  await editorAfterReference.locator("li").filter({ hasText: "把数据分析实习的业务背景讲清楚" }).first().selectText();
   const createLinkedTask = page.getByRole("button", { name: "从便签创建待办" });
   await page.waitForFunction(() => {
     const button = document.querySelector('button[aria-label="从便签创建待办"]');
@@ -248,14 +264,20 @@ async function seedAndExercise(page) {
   const beforeReference = notes.find((note) => note.id === parent.id);
   await invokeCapture(page, "attachExternalFile", { noteId: parent.id, expectedRevision: beforeReference.revision, path: externalFile });
   await page.waitForTimeout(250);
-  await openDocument(page, "求职主线与独立思考");
+  await openDocument(page, "求职材料整理计划");
   await page.getByText("面试资料.pdf", { exact: true }).waitFor();
   notes = await invokeCapture(page, "listNotes");
   const beforeCopy = notes.find((note) => note.id === parent.id);
   await invokeCapture(page, "attachFileCopy", { noteId: parent.id, expectedRevision: beforeCopy.revision, path: copiedFile });
   await page.waitForTimeout(250);
-  await openDocument(page, "求职主线与独立思考");
+  await openDocument(page, "求职材料整理计划");
   await page.getByText("作品集补充.txt", { exact: true }).waitFor();
+
+  await page.getByRole("button", { name: "首页", exact: true }).click();
+  await page.getByRole("heading", { name: "开始", exact: true }).waitFor();
+  await page.screenshot({ path: screenshotHome1440, animations: "disabled" });
+  await openDocuments(page);
+  await openDocument(page, "求职材料整理计划");
 
   await ensureEditMode(page);
   await page.locator(".leemo-document-scroll").evaluate((element) => element.scrollTo({ top: 0, left: 0 }));
@@ -307,18 +329,18 @@ async function seedAndExercise(page) {
   await page.getByRole("button", { name: "归档文档" }).click();
   await page.getByRole("dialog", { name: "归档父便签" }).getByRole("button", { name: "连同子便签一起处理" }).click();
   await page.getByRole("button", { name: "已归档", exact: true }).click();
-  await openDocument(page, "求职主线与独立思考");
+  await openDocument(page, "求职材料整理计划");
   await page.getByRole("button", { name: "恢复文档" }).click();
   await page.getByTestId("start-documents-view").waitFor();
 
-  await openDocument(page, "求职主线与独立思考");
+  await openDocument(page, "求职材料整理计划");
   await page.getByRole("button", { name: "移到回收站" }).click();
   await page.getByRole("dialog", { name: "删除父便签" }).getByRole("button", { name: "连同子便签一起处理" }).click();
   await page.getByRole("button", { name: "回收站", exact: true }).click();
-  await page.getByRole("button", { name: "恢复便签 求职主线与独立思考" }).click();
+  await page.getByRole("button", { name: "恢复便签 求职材料整理计划" }).click();
   await page.getByText("回收站是空的。", { exact: true }).waitFor();
   await openDocuments(page);
-  await openDocument(page, "求职主线与独立思考");
+  await openDocument(page, "求职材料整理计划");
   const restored = await invokeCapture(page, "listNotes");
   insist(restored.some((note) => note.id === child.id && note.parentId === parent.id), "归档/回收站恢复后父子结构丢失");
   insist(restored.some((note) => note.id === sibling.id), "无关文档在树操作中丢失");
@@ -333,7 +355,7 @@ async function verifyRestart(page, ids) {
   await page.getByRole("heading", { name: "开始", exact: true }).waitFor();
   await instrumentModelCalls(page);
   await openDocuments(page);
-  await openDocument(page, "求职主线与独立思考");
+  await openDocument(page, "求职材料整理计划");
   await ensureEditMode(page);
   await page.locator(".leemo-document-scroll").evaluate((element) => element.scrollTo({ top: 0, left: 0 }));
   await page.getByText("作品集补充.txt", { exact: true }).waitFor();
@@ -395,6 +417,7 @@ try {
     runtime: packagedExecutable ? "packaged" : "development-build",
     isolatedRoot: auditRoot,
     screenshots: [
+      path.relative(ROOT, screenshotHome1440).replaceAll(path.sep, "/"),
       path.relative(ROOT, screenshot1440).replaceAll(path.sep, "/"),
       path.relative(ROOT, screenshotObjects1440).replaceAll(path.sep, "/"),
       path.relative(ROOT, screenshotSource1440).replaceAll(path.sep, "/"),
@@ -426,5 +449,8 @@ try {
   killTree(restarted ?? child);
   const resolved = path.resolve(auditRoot);
   const expectedPrefix = `${tempParent}${path.sep}leemo-e2e-start-workspace-`;
-  if (resolved.startsWith(expectedPrefix)) fs.rmSync(resolved, { recursive: true, force: true });
+  if (resolved.startsWith(expectedPrefix)) {
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    await removeAuditRoot();
+  }
 }

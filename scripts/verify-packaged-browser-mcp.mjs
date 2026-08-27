@@ -11,9 +11,10 @@ import path from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport, getDefaultEnvironment } from "@modelcontextprotocol/sdk/client/stdio.js";
 
-const EXE = process.argv[2];
+const EXE_ARG = process.argv[2];
+const EXE = EXE_ARG ? path.resolve(EXE_ARG) : undefined;
 if (!EXE || !fs.existsSync(EXE)) {
-  console.error(`Usage: node scripts/verify-packaged-browser-mcp.mjs <Leemo.exe>\nReceived: ${EXE ?? "(none)"}`);
+  console.error(`Usage: node scripts/verify-packaged-browser-mcp.mjs <Leemo.exe>\nReceived: ${EXE_ARG ?? "(none)"}`);
   process.exit(2);
 }
 

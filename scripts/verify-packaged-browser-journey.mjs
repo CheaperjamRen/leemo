@@ -7,6 +7,11 @@ import http from "node:http";
 import os from "node:os";
 import path from "node:path";
 import { chromium } from "playwright";
+import {
+  configureLoopbackProvider,
+  skipOnboarding,
+  TEST_KEY as CONFIG_TEST_KEY,
+} from "./verify-memory-workspace.mjs";
 
 const ROOT = path.resolve(import.meta.dirname, "..");
 const EXE = path.resolve(process.argv[2] || path.join(ROOT, "dist-rc", "win-unpacked", "Leemo.exe"));
@@ -16,10 +21,8 @@ const TAKEOVER_SHOT = path.join(OUTPUT_DIR, "packaged-browser-takeover.png");
 const FINAL_ACTION_SHOT = path.join(OUTPUT_DIR, "packaged-browser-final-confirmation.png");
 const COMPLETE_SHOT = path.join(OUTPUT_DIR, "packaged-browser-journey-complete.png");
 const ROOT_PREFIX = "leemo-e2e-browser-journey-";
-const PROVIDER_ID = "browser-journey-local";
-const PROVIDER_NAME = "浏览器旅程本机验收";
 const MODEL_ID = "browser-journey-model";
-const TEST_KEY = "leemo-browser-journey-local-key";
+const TEST_KEY = CONFIG_TEST_KEY;
 const SUCCESS_MARKER = "LEEMO_BROWSER_JOURNEY_OK";
 const PROMPT = "请打开本地申请页，检查内容并继续；遇到需要我接管的步骤就停下来，最终提交前按 Leemo 的规则确认。";
 
@@ -267,12 +270,23 @@ async function launchApp(auditRoot) {
   ], { cwd: auditRoot, windowsHide: true, stdio: ["ignore", "pipe", "pipe"] });
   child.stdout.on("data", (chunk) => logs.push(chunk.toString()));
   child.stderr.on("data", (chunk) => logs.push(chunk.toString()));
-  await waitForRenderer(port);
-  const browser = await chromium.connectOverCDP(`http://127.0.0.1:${port}`);
-  const page = browser.contexts().flatMap((context) => context.pages())[0];
-  insist(page, "隔离 Leemo 没有 renderer page");
-  await page.locator('textarea[aria-label="输入消息"]').waitFor({ state: "attached", timeout: 60_000 });
-  return { child, browser, page, logs };
+  let browser;
+  try {
+    await waitForRenderer(port);
+    browser = await chromium.connectOverCDP(`http://127.0.0.1:${port}`);
+    const page = browser.contexts().flatMap((context) => context.pages())[0];
+    insist(page, "隔离 Leemo 没有 renderer page");
+    await page.getByTestId("topbar-primary-controls").waitFor({ state: "attached", timeout: 60_000 });
+    return { child, browser, page, logs };
+  } catch (error) {
+    if (child.exitCode === null && child.pid) {
+      try {
+        execFileSync("taskkill.exe", ["/PID", String(child.pid), "/T", "/F"], { windowsHide: true, stdio: "ignore" });
+      } catch { /* process can exit while startup failure is being handled */ }
+    }
+    await browser?.close().catch(() => {});
+    throw error;
+  }
 }
 
 async function stopApp(instance) {
@@ -290,38 +304,8 @@ async function stopApp(instance) {
   await instance.browser.close().catch(() => {});
 }
 
-async function seedProvider(page, baseUrl) {
-  const result = await page.evaluate(async ({ providerId, providerName, modelId, apiKey, url }) => {
-    const saved = await window.leemoBridge.invoke("bridge:saveProvider", {
-      id: providerId,
-      kind: "custom",
-      name: providerName,
-      baseUrl: url,
-      apiFormat: "openai",
-      category: "custom",
-      apiKey,
-      models: [modelId],
-      capabilities: { text: true, vision: false, thinking: false },
-    });
-    if (!saved.ok) throw new Error(saved.error || "saveProvider failed");
-    const loaded = await window.leemoPersist.invoke("loadAll", undefined);
-    if (!loaded.ok) throw new Error(loaded.error || "loadAll failed");
-    const persisted = await window.leemoPersist.invoke("saveSettings", {
-      ...(loaded.response.settings || {}),
-      onboardingCompleted: true,
-      mode: "workbench",
-      defaultProviderId: saved.response.id,
-      defaultModelId: modelId,
-      permissionMode: "acceptEdits",
-    });
-    if (!persisted.ok) throw new Error(persisted.error || "saveSettings failed");
-    return saved.response;
-  }, { providerId: PROVIDER_ID, providerName: PROVIDER_NAME, modelId: MODEL_ID, apiKey: TEST_KEY, url: baseUrl });
-  insist(result.id === PROVIDER_ID, "本机验收服务商没有保存");
-}
-
 async function enableManagedBrowser(page) {
-  await page.getByRole("button", { name: "设置", exact: true }).click();
+  await page.getByTestId("topbar-primary-controls").getByRole("button", { name: "设置", exact: true }).click();
   await page.getByTestId("settings-window").waitFor({ state: "visible" });
   await page.getByRole("tab", { name: "连接器", exact: true }).click();
   const section = page.locator("#settings-browser");
@@ -348,10 +332,12 @@ async function runJourney(page) {
   await composer.fill(PROMPT);
   await page.getByRole("button", { name: "发送", exact: true }).click();
 
-  const capture = page.getByRole("img", { name: "浏览器截图" });
-  await capture.waitFor({ state: "visible", timeout: 90_000 });
   const question = page.getByText("页面要求登录或身份验证，处理完成后继续吗？", { exact: true });
   await question.waitFor({ state: "visible", timeout: 90_000 });
+  const expand = page.getByTestId("process-fold-toggle").last();
+  if (await expand.getAttribute("aria-expanded") !== "true") await expand.click();
+  const capture = page.getByRole("img", { name: "浏览器截图" }).last();
+  await capture.waitFor({ state: "visible", timeout: 30_000 });
   await question.scrollIntoViewIfNeeded();
   await page.screenshot({ path: TAKEOVER_SHOT, animations: "disabled" });
 
@@ -367,7 +353,7 @@ async function runJourney(page) {
   await approval.getByRole("button", { name: "允许一次", exact: true }).click();
 
   await page.getByText(SUCCESS_MARKER, { exact: false }).waitFor({ state: "visible", timeout: 45_000 });
-  await page.getByTestId("current-conversation-status").filter({ hasText: "已完成" }).waitFor({ state: "visible" });
+  await page.locator('[data-testid="process-fold"][data-state="terminal"]').last().waitFor({ state: "visible" });
   await page.screenshot({ path: COMPLETE_SHOT, animations: "disabled" });
 }
 
@@ -390,10 +376,22 @@ async function main() {
   try {
     loopback = await startServer(state);
     current = await launchApp(auditRoot);
-    await seedProvider(current.page, loopback.baseUrl);
+    await skipOnboarding(current.page);
+    await configureLoopbackProvider(current.page, loopback.baseUrl);
+    const desktop = await current.page.evaluate(() => window.leemoDesktop.configure({ continueInBackground: false }));
+    insist(desktop.ok, desktop.error || "后台运行设置没有保存");
+    const secretsPath = path.join(auditRoot, "user-data", "leemo-secrets.enc");
+    insist(fs.existsSync(secretsPath) && fs.statSync(secretsPath).size > 0, "服务商保存成功后没有形成加密配置文件");
     await stopApp(current);
+    insist(fs.existsSync(secretsPath) && fs.statSync(secretsPath).size > 0, "关闭应用后加密服务商配置丢失");
     logs.push(...current.logs);
     current = await launchApp(auditRoot);
+    const configuredProviders = await current.page.evaluate(async () => {
+      const result = await window.leemoBridge.invoke("bridge:listProviders", undefined);
+      if (!result.ok) throw new Error(result.error || "listProviders failed");
+      return result.response.filter((provider) => provider.configured).map((provider) => provider.id);
+    });
+    insist(configuredProviders.length === 1, `重启后服务商配置没有恢复：${configuredProviders.join(",") || "空"}`);
     await enableManagedBrowser(current.page);
     await runJourney(current.page);
 
@@ -401,7 +399,7 @@ async function main() {
     insist(state.finalClickObserved, "最终网页提交没有在真实工具结果中得到证明");
     insist(state.requests.every((request) => request.names.some((name) => name.endsWith("browser_navigate"))), "浏览器工具没有持续注入模型上下文");
     const allLogs = [...logs, ...current.logs].join("");
-    insist(!allLogs.includes(TEST_KEY), "打包主进程日志泄露了测试 API Key");
+    insist(!allLogs.includes(CONFIG_TEST_KEY), "打包主进程日志泄露了测试 API Key");
 
     const facts = {
       checkedAt: new Date().toISOString(),
@@ -433,6 +431,12 @@ async function main() {
     });
     const tail = current?.logs.join("").slice(-10_000);
     if (tail) console.error(`[packaged-browser-journey] host log:\n${tail}`);
+    const bodyText = await current?.page.locator("body").innerText().catch(() => "");
+    if (bodyText) console.error(`[packaged-browser-journey] visible UI:\n${bodyText.slice(-8_000)}`);
+    await current?.page.screenshot({
+      path: path.join(OUTPUT_DIR, "packaged-browser-journey-failure.png"),
+      animations: "disabled",
+    }).catch(() => {});
     throw error;
   } finally {
     await stopApp(current);

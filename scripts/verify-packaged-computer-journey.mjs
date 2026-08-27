@@ -8,6 +8,11 @@ import http from "node:http";
 import os from "node:os";
 import path from "node:path";
 import { chromium } from "playwright";
+import {
+  configureLoopbackProvider,
+  skipOnboarding,
+  TEST_KEY as CONFIG_TEST_KEY,
+} from "./verify-memory-workspace.mjs";
 
 const ROOT = path.resolve(import.meta.dirname, "..");
 const EXE = path.resolve(process.argv[2] || path.join(ROOT, "dist-package", "win-unpacked", "Leemo.exe"));
@@ -18,10 +23,8 @@ const FIRST_APPROVAL_SHOT = path.join(OUTPUT_DIR, "packaged-computer-task-approv
 const FINAL_APPROVAL_SHOT = path.join(OUTPUT_DIR, "packaged-computer-final-approval.png");
 const COMPLETE_SHOT = path.join(OUTPUT_DIR, "packaged-computer-journey-complete.png");
 const ROOT_PREFIX = "leemo-e2e-computer-journey-";
-const PROVIDER_ID = "computer-journey-local";
-const PROVIDER_NAME = "电脑操作旅程本机验收";
 const MODEL_ID = "computer-journey-model";
-const TEST_KEY = "leemo-computer-journey-local-key";
+const TEST_KEY = CONFIG_TEST_KEY;
 const WINDOW_TITLE = "Leemo Computer Acceptance";
 const INPUT_TEXT = "Leemo 电脑操作完整旅程";
 const SUCCESS_MARKER = "LEEMO_COMPUTER_JOURNEY_OK";
@@ -293,12 +296,19 @@ async function launchApp(auditRoot) {
   ], { cwd: auditRoot, windowsHide: true, stdio: ["ignore", "pipe", "pipe"] });
   child.stdout.on("data", (chunk) => logs.push(chunk.toString()));
   child.stderr.on("data", (chunk) => logs.push(chunk.toString()));
-  await waitForRenderer(port);
-  const browser = await chromium.connectOverCDP(`http://127.0.0.1:${port}`);
-  const page = browser.contexts().flatMap((context) => context.pages())[0];
-  insist(page, "隔离 Leemo 没有 renderer page");
-  await page.locator('textarea[aria-label="输入消息"]').waitFor({ state: "attached", timeout: 60_000 });
-  return { child, browser, page, logs };
+  let browser;
+  try {
+    await waitForRenderer(port);
+    browser = await chromium.connectOverCDP(`http://127.0.0.1:${port}`);
+    const page = browser.contexts().flatMap((context) => context.pages())[0];
+    insist(page, "隔离 Leemo 没有 renderer page");
+    await page.getByTestId("topbar-primary-controls").waitFor({ state: "attached", timeout: 60_000 });
+    return { child, browser, page, logs };
+  } catch (error) {
+    await stopProcess(child);
+    await browser?.close().catch(() => {});
+    throw error;
+  }
 }
 
 async function stopProcess(child) {
@@ -319,20 +329,8 @@ async function stopApp(instance) {
   await instance.browser.close().catch(() => {});
 }
 
-async function seedRuntime(page, baseUrl) {
-  const result = await page.evaluate(async ({ providerId, providerName, modelId, apiKey, url }) => {
-    const saved = await window.leemoBridge.invoke("bridge:saveProvider", {
-      id: providerId,
-      kind: "custom",
-      name: providerName,
-      baseUrl: url,
-      apiFormat: "openai",
-      category: "custom",
-      apiKey,
-      models: [modelId],
-      capabilities: { text: true, vision: false, thinking: false },
-    });
-    if (!saved.ok) throw new Error(saved.error || "saveProvider failed");
+async function seedRuntime(page) {
+  const result = await page.evaluate(async () => {
     const computer = await window.leemoBridge.invoke("bridge:saveMcpServer", {
       id: "computer",
       name: "操作电脑",
@@ -340,20 +338,11 @@ async function seedRuntime(page, baseUrl) {
       enabled: true,
     });
     if (!computer.ok || !computer.response.available) throw new Error(computer.error || "computer runtime unavailable");
-    const loaded = await window.leemoPersist.invoke("loadAll", undefined);
-    if (!loaded.ok) throw new Error(loaded.error || "loadAll failed");
-    const persisted = await window.leemoPersist.invoke("saveSettings", {
-      ...(loaded.response.settings || {}),
-      onboardingCompleted: true,
-      mode: "workbench",
-      defaultProviderId: saved.response.id,
-      defaultModelId: modelId,
-      permissionMode: "acceptEdits",
-    });
-    if (!persisted.ok) throw new Error(persisted.error || "saveSettings failed");
-    return { providerId: saved.response.id, computerEnabled: computer.response.enabled };
-  }, { providerId: PROVIDER_ID, providerName: PROVIDER_NAME, modelId: MODEL_ID, apiKey: TEST_KEY, url: baseUrl });
-  insist(result.providerId === PROVIDER_ID && result.computerEnabled === true, "本机模型或电脑操作没有保存");
+    const desktop = await window.leemoDesktop.configure({ continueInBackground: false });
+    if (!desktop.ok) throw new Error(desktop.error || "desktop integration save failed");
+    return { computerEnabled: computer.response.enabled };
+  });
+  insist(result.computerEnabled === true, "电脑操作没有保存");
 }
 
 async function ensureWorkbench(page) {
@@ -385,7 +374,7 @@ async function runJourney(page) {
   await finalApproval.getByRole("button", { name: "允许一次", exact: true }).click();
 
   await page.getByText(SUCCESS_MARKER, { exact: false }).waitFor({ state: "visible", timeout: 60_000 });
-  await page.getByTestId("current-conversation-status").filter({ hasText: "已完成" }).waitFor({ state: "visible" });
+  await page.locator('[data-testid="process-fold"][data-state="terminal"]').last().waitFor({ state: "visible" });
   await page.screenshot({ path: COMPLETE_SHOT, animations: "disabled" });
   const processFold = page.getByTestId("process-fold").last();
   await processFold.locator(":scope > button").click();
@@ -415,7 +404,9 @@ async function main() {
   try {
     loopback = await startServer(state);
     current = await launchApp(auditRoot);
-    await seedRuntime(current.page, loopback.baseUrl);
+    await skipOnboarding(current.page);
+    await configureLoopbackProvider(current.page, loopback.baseUrl);
+    await seedRuntime(current.page);
     await stopApp(current);
     logs.push(...current.logs);
     current = undefined;

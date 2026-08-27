@@ -483,10 +483,11 @@ export async function newConversation(page) {
   const rows = page.locator("[data-conversation-id]");
   const previousCount = await rows.count();
   await page.getByRole("button", { name: "新建对话", exact: true }).click();
-  await rows.nth(previousCount).waitFor({ state: "attached" });
   const composer = page.locator('textarea[aria-label="输入消息"]');
   await composer.waitFor({ state: "visible" });
   insist(await composer.inputValue() === "", "新对话没有提供空白输入框");
+  await page.getByRole("button", { name: /^对话归属：/ }).waitFor({ state: "visible" });
+  insist(await rows.count() === previousCount, "空白草稿在发送前就创建了持久对话");
 }
 
 export async function runVisiblePrompt(page, prompt, finalMarker, timeoutMs = 90_000) {
