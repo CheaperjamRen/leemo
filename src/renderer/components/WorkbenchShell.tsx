@@ -6,7 +6,7 @@ import {
   Search,
   X,
 } from "lucide-react";
-import { useApprovals, useCaptures, useComposerDrafts, useContextUsage, useConversations, useSettings, useUi, useSkills, useProviders, useWorkspace, useWorkspaces, useNotebooks, useFileTree } from "../bridge/context";
+import { useApprovals, useCaptures, useComposerDrafts, useContextUsage, useConversations, useSettings, useUi, useSkills, useProviders, useWorkspace, useWorkspaces, useNotebooks, useFileTree, usePreviewContent } from "../bridge/context";
 import { deriveConversationMarker, deriveConversationStatus } from "../stores/conversation-status";
 import {
   EMPTY_COMPOSER_DRAFT,
@@ -29,6 +29,10 @@ import TopBar from "./TopBar";
 import { HOME_WORKSPACE_ID } from "../stores/workspaces";
 import type { ConversationTurnOptions } from "../stores/conversations";
 import { resolveWorkbenchSidebarMode } from "../workbench-spatial";
+import { scopeKeyForSelection } from "../stores/workbench-scope";
+import WorkbenchConversationScopePicker, {
+  type WorkbenchConversationScopeOption,
+} from "./WorkbenchConversationScopePicker";
 
 const SkillsPage = lazy(() => import("../pages/SkillsPage"));
 const ScheduledTasksPage = lazy(() => import("../pages/ScheduledTasksPage"));
@@ -39,6 +43,11 @@ const ArtifactsPage = lazy(async () => {
 });
 
 const NARROW_PREVIEW_MEDIA = "(max-width: 1023.98px)";
+
+const sameConversationScope = (
+  left: WorkbenchConversationScope,
+  right: WorkbenchConversationScope,
+): boolean => left.workspaceId === right.workspaceId && left.bookId === right.bookId;
 
 const WORKBENCH_STARTERS = [
   {
@@ -148,6 +157,8 @@ export default function WorkbenchShell() {
   const previewActivePath = useUi((s) => s.previewActivePath);
   const previewWidthPx = useUi((s) => s.previewWidthPx);
   const setScopeSurface = useUi((s) => s.setScopeSurface);
+  const activateWorkbenchScope = useUi((s) => s.activateWorkbenchScope);
+  const setWorkspaceTransitioning = useUi((s) => s.setWorkspaceTransitioning);
   const shellRef = useRef<HTMLDivElement>(null);
   const [shellWidth, setShellWidth] = useState(() => typeof window === "undefined" ? 1280 : window.innerWidth);
   const sidebarCollapsed = resolveWorkbenchSidebarMode(sidebarPreference, shellWidth) === "compact";
@@ -201,19 +212,36 @@ export default function WorkbenchShell() {
   }, [narrowPreviewActive, previewActivePath, previewOpen]);
   const workspaceList = useWorkspaces((state) => state.list);
   const activeWorkspaceId = useWorkspaces((state) => state.activeId);
+  const selectWorkspace = useWorkspaces((state) => state.select);
   const activeWorkspaceKind = workspaceList.find((entry) => entry.id === activeWorkspaceId)?.kind ?? "home";
+  const notebookList = useNotebooks((state) => state.list);
   const activeNotebookId = useNotebooks((state) => state.activeId);
+  const setNotebook = useNotebooks((state) => state.setActive);
   const activeBookId = activeWorkspaceKind === "home" ? activeNotebookId : null;
-  const activeId = globalActiveId
+  const [draftingScope, setDraftingScope] = useState<WorkbenchConversationScope | null>(null);
+  const currentScope = useMemo<WorkbenchConversationScope>(() => ({
+    workspaceId: activeWorkspaceId,
+    bookId: activeBookId,
+  }), [activeBookId, activeWorkspaceId]);
+  const scopeActiveId = globalActiveId
     && (conversations[globalActiveId]?.workspaceId ?? HOME_WORKSPACE_ID) === activeWorkspaceId
     && conversations[globalActiveId]?.bookId === activeBookId
     ? globalActiveId
     : null;
+  const draftingCurrentScope = draftingScope !== null && sameConversationScope(draftingScope, currentScope);
+  const activeId = draftingCurrentScope ? null : scopeActiveId;
   const activeIdRef = useRef(activeId);
   activeIdRef.current = activeId;
   useEffect(() => {
-    if (globalActiveId !== activeId) activateScope(activeWorkspaceId, activeBookId);
-  }, [activateScope, activeBookId, activeId, activeWorkspaceId, globalActiveId]);
+    if (globalActiveId !== scopeActiveId && !draftingCurrentScope) {
+      activateScope(activeWorkspaceId, activeBookId);
+    }
+  }, [activateScope, activeBookId, activeWorkspaceId, draftingCurrentScope, globalActiveId, scopeActiveId]);
+  useEffect(() => {
+    if (draftingScope && !sameConversationScope(draftingScope, currentScope)) {
+      setDraftingScope(null);
+    }
+  }, [currentScope, draftingScope]);
   const timeline = activeId ? timelines[activeId] : undefined;
   const activeRunId = activeId ? runIds[activeId] ?? null : null;
   const stopping = useConversations((s) => activeId ? s.stoppingById[activeId] === true : false);
@@ -227,12 +255,42 @@ export default function WorkbenchShell() {
   const notes = useCaptures((state) => state.notes);
   const updateComposerDraft = useComposerDrafts((state) => state.updateDraft);
   const setComposerText = useComposerDrafts((state) => state.setText);
+  const moveComposerDraft = useComposerDrafts((state) => state.moveDraft);
   const assignComposerConversation = useComposerDrafts((state) => state.assignConversation);
+  const previewDrafts = usePreviewContent((state) => state.drafts);
+  const clearPreviewContent = usePreviewContent((state) => state.clear);
+  const discardWorkspacePreviewDrafts = usePreviewContent((state) => state.discardWorkspaceDrafts);
+  const refreshTree = useFileTree((state) => state.refresh);
   const draftScope = resolveComposerScope(composerDrafts, activeId, activeWorkspaceId, activeBookId);
   const draftScopeRef = useRef(draftScope);
   draftScopeRef.current = draftScope;
   const composerDraft = composerDrafts[draftScope] ?? EMPTY_COMPOSER_DRAFT;
   const draft = composerDraft.text;
+  const scopeOptions = useMemo<WorkbenchConversationScopeOption[]>(() => [
+    {
+      workspaceId: HOME_WORKSPACE_ID,
+      bookId: null,
+      label: "Leemo 工作台",
+      kind: "default",
+    },
+    ...notebookList.map((notebook) => ({
+      workspaceId: HOME_WORKSPACE_ID,
+      bookId: notebook.id,
+      label: notebook.title,
+      kind: "notebook" as const,
+      archived: notebook.archived ?? false,
+    })),
+    ...workspaceList
+      .filter((entry) => entry.kind === "external")
+      .map((entry) => ({
+        workspaceId: entry.id,
+        bookId: null,
+        label: entry.name,
+        kind: "workspace" as const,
+        archived: entry.archived ?? false,
+        available: entry.available,
+      })),
+  ], [notebookList, workspaceList]);
   const visibleOpenTabs = useMemo(() => openTabs.filter((id) =>
     (conversations[id]?.workspaceId ?? HOME_WORKSPACE_ID) === activeWorkspaceId
       && conversations[id]?.bookId === activeBookId
@@ -242,6 +300,49 @@ export default function WorkbenchShell() {
   // 06 §2.2 归类: drop anywhere in the shell. With an active 本子 the file lands
   // straight in it; otherwise momo proposes and the user confirms.
   const drop = useFileDrop();
+
+  const handleDraftScopeChange = async (target: WorkbenchConversationScope): Promise<void> => {
+    if (activeId || composerDraft.assignedConversationId || sameConversationScope(currentScope, target)) return;
+    const dirtyPreviewCount = Object.entries(previewDrafts).filter(([key, entry]) =>
+      key.startsWith(`${activeWorkspaceId}\u0000`) && entry.status !== "clean"
+    ).length;
+    if (dirtyPreviewCount > 0) {
+      throw new Error(`还有 ${dirtyPreviewCount} 份文档改动没有保存，请先保存或关闭文档再切换本子。`);
+    }
+
+    const sourceScope = draftScope;
+    const targetScope = workspaceComposerScope(target.workspaceId, target.bookId);
+    setWorkspaceTransitioning(true);
+    let workspaceChanged = false;
+    try {
+      if (target.workspaceId !== activeWorkspaceId) {
+        const selected = await selectWorkspace(target.workspaceId);
+        if (!selected) throw new Error("这个本子暂时无法打开，请检查文件夹位置后再试。");
+        workspaceChanged = true;
+      }
+      try {
+        moveComposerDraft(sourceScope, targetScope, target.workspaceId);
+      } catch (error) {
+        if (workspaceChanged) await selectWorkspace(activeWorkspaceId);
+        setNotebook(activeWorkspaceId === HOME_WORKSPACE_ID ? activeBookId : null);
+        throw error;
+      }
+
+      setNotebook(target.workspaceId === HOME_WORKSPACE_ID ? target.bookId : null);
+      activateScope(target.workspaceId, target.bookId);
+      activateWorkbenchScope(scopeKeyForSelection({
+        workspaceId: target.workspaceId,
+        notebookId: target.bookId,
+      }));
+      clearPreviewContent();
+      discardWorkspacePreviewDrafts(activeWorkspaceId);
+      await refreshTree();
+      setDraftingScope(target);
+      setView("chat");
+    } finally {
+      setWorkspaceTransitioning(false);
+    }
+  };
 
   const handleSend = async (
     text: string,
@@ -253,14 +354,24 @@ export default function WorkbenchShell() {
     const sendingWorkspaceId = activeWorkspaceId;
     let conversationId = activeId ?? composerDraft.assignedConversationId;
     if (!conversationId) {
-      conversationId = await createConversation({
-        source: "workbench",
-        workspaceId: sendingWorkspaceId,
-        bookId: activeBookId,
-        activate: false,
-      });
+      try {
+        conversationId = await createConversation({
+          source: "workbench",
+          workspaceId: sendingWorkspaceId,
+          bookId: activeBookId,
+          activate: false,
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        updateComposerDraft(sendingScope, (current) => ({ ...current, submitError: message }));
+        if (/还没有(?:选择可用模型|完成登录与保存|配置 API Key)/u.test(message)) {
+          openSettings("models");
+        }
+        throw error;
+      }
       assignComposerConversation(sendingScope, conversationId);
       if (!activeIdRef.current && draftScopeRef.current === sendingScope) {
+        setDraftingScope(null);
         switchActive(conversationId);
       }
     }
@@ -268,44 +379,23 @@ export default function WorkbenchShell() {
     // A later navigation still wins; this fallback covers an existing draft
     // that was assigned to a conversation before this send began.
     if (!activeIdRef.current && draftScopeRef.current === sendingScope) {
+      setDraftingScope(null);
       switchActive(conversationId);
     }
   };
 
-  const handleNewConversation = async (requestedScope?: WorkbenchConversationScope) => {
+  const handleNewConversation = (requestedScope?: WorkbenchConversationScope): void => {
     const targetWorkspaceId = requestedScope?.workspaceId ?? activeWorkspaceId;
     const targetBookId = requestedScope ? requestedScope.bookId : activeBookId;
-    const targetDraftScope = requestedScope
-      ? workspaceComposerScope(targetWorkspaceId, targetBookId)
-      : draftScope;
-    const targetDraft = composerDrafts[targetDraftScope] ?? EMPTY_COMPOSER_DRAFT;
-    const isCurrentScope = targetWorkspaceId === activeWorkspaceId && targetBookId === activeBookId;
-    const carryDraft = isCurrentScope && !activeId && (
-      targetDraft.text.length > 0
-      || targetDraft.attachments.length > 0
-      || (targetDraft.workspaceFiles?.length ?? 0) > 0
-      || targetDraft.submitError !== null
-    );
-    try {
-      const id = await createConversation({
-        source: "workbench",
-        workspaceId: targetWorkspaceId,
-        bookId: targetBookId,
-        activate: false,
-      });
-      if (carryDraft) assignComposerConversation(targetDraftScope, id);
-      switchActive(id);
-      setView("chat");
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      updateComposerDraft(targetDraftScope, (current) => ({ ...current, submitError: message }));
-      if (/还没有(?:选择可用模型|完成登录与保存|配置 API Key)/u.test(message)) {
-        openSettings("models");
-      }
-    }
+    setDraftingScope({ workspaceId: targetWorkspaceId, bookId: targetBookId });
+    setView("chat");
+    requestAnimationFrame(() => {
+      document.querySelector<HTMLTextAreaElement>('textarea[aria-label="输入消息"]')?.focus();
+    });
   };
 
   const handlePickConversation = (id: string) => {
+    setDraftingScope(null);
     switchActive(id);
     setView("chat");
   };
@@ -344,7 +434,10 @@ export default function WorkbenchShell() {
       assignComposerConversation(goalScope, conversationId);
     }
     await setGoal(conversationId, text);
-    if (!activeIdRef.current && draftScopeRef.current === goalScope) switchActive(conversationId);
+    if (!activeIdRef.current && draftScopeRef.current === goalScope) {
+      setDraftingScope(null);
+      switchActive(conversationId);
+    }
   };
 
   const primeComposer = (prompt: string): void => {
@@ -568,6 +661,15 @@ export default function WorkbenchShell() {
                     setDefaultModel(providerId, modelId);
                   }}
               />
+              {!activeId && !composerDraft.assignedConversationId && (
+                <div className="flex px-3 pb-1 pt-2">
+                  <WorkbenchConversationScopePicker
+                    value={currentScope}
+                    options={scopeOptions}
+                    onChange={handleDraftScopeChange}
+                  />
+                </div>
+              )}
             </div>
           </div>
       </div>
@@ -616,7 +718,12 @@ export default function WorkbenchShell() {
       />
 
       <div className="flex min-h-0 flex-1 pt-14">
-        <WorkbenchSidebar onNewConversation={handleNewConversation} shellWidth={shellWidth} />
+        <WorkbenchSidebar
+          onNewConversation={handleNewConversation}
+          onConversationPicked={() => setDraftingScope(null)}
+          drafting={!activeId}
+          shellWidth={shellWidth}
+        />
 
         {/* 主区域 */}
         <main className="leemo-workbench-main leemo-workbench-canvas flex min-h-0 min-w-0 flex-1 flex-col bg-[var(--leemo-bg)]" data-surface-level="canvas" data-content-axis="primary">
@@ -627,8 +734,13 @@ export default function WorkbenchShell() {
           data-testid="workbench-conversation-bar"
         >
           <div className="leemo-workbench-tabs flex h-full min-w-0 flex-1 items-end gap-1 pr-4 text-sm">
-            {visibleOpenTabs.length > 1 ? (
+            {visibleOpenTabs.length > 1 || draftingCurrentScope ? (
               <>
+                {draftingCurrentScope && (
+                  <div className="flex h-[38px] max-w-[220px] items-center rounded-t-[7px] border-x border-t border-[var(--leemo-line)] bg-[var(--leemo-bg)] px-3 text-xs font-medium text-[var(--leemo-ink)]">
+                    新对话
+                  </div>
+                )}
                 {visibleOpenTabs.map((id) => {
                   const conv = conversations[id];
                   if (!conv) return null;

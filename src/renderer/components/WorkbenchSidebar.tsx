@@ -66,6 +66,8 @@ export interface WorkbenchConversationScope {
 
 export interface WorkbenchSidebarProps {
   onNewConversation: (scope?: WorkbenchConversationScope) => void | Promise<void>;
+  onConversationPicked?: (conversationId: string) => void;
+  drafting?: boolean;
   shellWidth?: number;
 }
 
@@ -74,7 +76,12 @@ const isSameScope = (left: ScopeTarget, right: ScopeTarget): boolean =>
 
 const scopeMenuItemClass = "flex h-8 w-full items-center gap-2 rounded-md px-2 text-left text-xs text-[var(--leemo-ink-2)] transition-colors hover:bg-[var(--leemo-side-hover)] hover:text-[var(--leemo-ink)] disabled:opacity-45";
 
-export default function WorkbenchSidebar({ onNewConversation, shellWidth }: WorkbenchSidebarProps): React.JSX.Element {
+export default function WorkbenchSidebar({
+  onNewConversation,
+  onConversationPicked,
+  drafting = false,
+  shellWidth,
+}: WorkbenchSidebarProps): React.JSX.Element {
   const sidebarPreference = useUi((state) => state.workbenchSidebarPreference);
   const sidebarWidth = useUi((state) => state.workbenchSidebarWidth);
   const setSidebarWidth = useUi((state) => state.setWorkbenchSidebarWidth);
@@ -283,6 +290,7 @@ export default function WorkbenchSidebar({ onNewConversation, shellWidth }: Work
 
   const pickConversation = (id: string, target: ScopeTarget): void => {
     requestScopeChange(target, () => {
+      onConversationPicked?.(id);
       switchActive(id);
       setView("chat");
     });
@@ -387,7 +395,7 @@ export default function WorkbenchSidebar({ onNewConversation, shellWidth }: Work
       <ConversationListItem
         key={id}
         conversation={conversation}
-        active={id === activeConversationId}
+        active={!drafting && id === activeConversationId}
         variant="workbench"
         onPick={() => pickConversation(id, target)}
         onRename={(title) => renameTitle(id, title)}

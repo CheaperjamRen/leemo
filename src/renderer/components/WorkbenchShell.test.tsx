@@ -122,10 +122,18 @@ describe("WorkbenchShell", () => {
     expect(screen.queryByTestId("workbench-context-title")).not.toBeInTheDocument();
   });
 
-  it("renders conversation list", async () => {
+  it("opens a blank draft without persisting an empty conversation", async () => {
     const user = userEvent.setup();
+    const client = new FixtureBridgeClient();
+    const invoke = vi.spyOn(client, "invoke");
+    let stores!: BridgeStores;
+    function CaptureStores() {
+      stores = useContext(BridgeContext) as BridgeStores;
+      return null;
+    }
     render(
-      <BridgeProvider>
+      <BridgeProvider client={client}>
+        <CaptureStores />
         <WorkbenchShell />
       </BridgeProvider>
     );
@@ -133,8 +141,11 @@ describe("WorkbenchShell", () => {
     const newBtn = screen.getByLabelText("新建对话");
     await user.click(newBtn);
 
-    expect(within(screen.getByTestId("workbench-sidebar")).getAllByText("新对话")).toHaveLength(2); // create action + conversation row
-    expect(screen.queryByText("还没有对话")).not.toBeInTheDocument();
+    expect(Object.keys(stores.conversations.getState().byId)).toHaveLength(0);
+    expect(invoke).not.toHaveBeenCalledWith("bridge:createConversation", expect.anything());
+    expect(screen.getByText("还没有对话")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "对话归属：Leemo 工作台" })).toBeInTheDocument();
+    expect(screen.getByLabelText("输入消息")).toHaveFocus();
   });
 
   it("opens model setup and explains why a new conversation could not start", async () => {
@@ -159,27 +170,45 @@ describe("WorkbenchShell", () => {
     );
 
     await userEvent.click(screen.getByLabelText("新建对话"));
+    await userEvent.type(screen.getByLabelText("输入消息"), "开始处理{Enter}");
 
     expect(await screen.findByRole("alert")).toHaveTextContent("还没有配置 API Key");
     expect(stores.ui.getState()).toMatchObject({ settingsOpen: true, settingsSection: "models" });
   });
 
-  it("switches active conversation on click", async () => {
+  it("returns from a blank draft to an existing conversation", async () => {
     const user = userEvent.setup();
+    let stores!: BridgeStores;
+    function SeedConversation() {
+      stores = useContext(BridgeContext) as BridgeStores;
+      if (!stores.conversations.getState().byId.existing) {
+        stores.conversations.setState({
+          byId: {
+            existing: {
+              id: "existing", title: "已有对话", titleManuallyUpdated: true, bookId: null,
+              source: "workbench", providerId: "deepseek", modelId: "deepseek-chat",
+              createdAt: 1, lastActivityAt: 1, unread: false,
+            },
+          },
+          order: ["existing"], activeId: "existing",
+          timelines: { existing: [] }, runIds: { existing: null },
+        });
+      }
+      return null;
+    }
     render(
       <BridgeProvider>
+        <SeedConversation />
         <WorkbenchShell />
       </BridgeProvider>
     );
 
-    const newBtn = screen.getByLabelText("新建对话");
-    await user.click(newBtn);
-    await user.click(newBtn);
-
-    const items = screen.getAllByRole("button").filter((btn) => btn.textContent === "新对话");
-    expect(items.length).toBeGreaterThanOrEqual(2);
-
-    await user.click(items[1]);
+    await user.click(screen.getByLabelText("新建对话"));
+    expect(screen.getByRole("button", { name: "对话归属：Leemo 工作台" })).toBeInTheDocument();
+    expect(stores.conversations.getState().activeId).toBe("existing");
+    await user.click(screen.getByRole("button", { name: "已有对话" }));
+    expect(screen.queryByRole("button", { name: "对话归属：Leemo 工作台" })).not.toBeInTheDocument();
+    expect(screen.getByTestId("workbench-context-title")).toHaveTextContent("已有对话");
   });
 
   it("keeps unsent text drafts with their conversation instead of carrying them across tabs", async () => {
@@ -189,20 +218,29 @@ describe("WorkbenchShell", () => {
       stores = useContext(BridgeContext) as BridgeStores;
       return null;
     }
-    render(
-      <BridgeProvider>
-        <CaptureStores />
-        <WorkbenchShell />
-      </BridgeProvider>,
-    );
+    function SeedConversations() {
+      CaptureStores();
+      if (!stores.conversations.getState().byId.first) {
+        const meta = (id: string, title: string) => ({
+          id, title, titleManuallyUpdated: true, bookId: null,
+          source: "workbench" as const, providerId: "deepseek", modelId: "deepseek-chat",
+          createdAt: 1, lastActivityAt: 1, unread: false,
+        });
+        stores.conversations.setState({
+          byId: { first: meta("first", "对话 A"), second: meta("second", "对话 B") },
+          order: ["first", "second"], activeId: "first",
+          timelines: { first: [], second: [] }, runIds: { first: null, second: null },
+        });
+      }
+      return null;
+    }
+    render(<BridgeProvider><SeedConversations /><WorkbenchShell /></BridgeProvider>);
 
-    await user.click(screen.getByLabelText("新建对话"));
-    const first = stores.conversations.getState().activeId!;
+    const first = "first";
     await user.type(screen.getByLabelText("输入消息"), "对话 A 的草稿");
 
-    await user.click(screen.getByLabelText("新建对话"));
-    const second = stores.conversations.getState().activeId!;
-    expect(second).not.toBe(first);
+    await user.click(screen.getByRole("button", { name: "对话 B" }));
+    const second = "second";
     expect(screen.getByLabelText("输入消息")).toHaveValue("");
     await user.type(screen.getByLabelText("输入消息"), "对话 B 的草稿");
 
@@ -336,14 +374,12 @@ describe("WorkbenchShell", () => {
   });
 
   it("truncates a chat title in the header while preserving its full tooltip", async () => {
-    const user = userEvent.setup();
     render(
       <BridgeProvider>
         <WorkbenchShell />
       </BridgeProvider>,
     );
 
-    await user.click(screen.getByLabelText("新建对话"));
     const title = screen.getByTestId("workbench-context-title");
     expect(title).toHaveClass("truncate");
     expect(title).toHaveAttribute("title", "新对话");
@@ -829,6 +865,37 @@ describe("WorkbenchShell — 本子 + 拖入归类 (轮 3 卡 G, 06 §2.2)", () 
       </BridgeProvider>,
     );
 
+  it("chooses a conversation scope before first send and persists only after sending", async () => {
+    const home = {
+      id: HOME_WORKSPACE_ID, name: "Leemo", displayPath: "/w/Leemo", kind: "home" as const,
+      available: true, lastOpenedAt: 0,
+    };
+    const project = {
+      id: "workspace-project", name: "毕业设计", displayPath: "D:/Projects/毕业设计",
+      kind: "external" as const, available: true, lastOpenedAt: 10,
+    };
+    const client = new FixtureBridgeClient();
+    const invoke = vi.spyOn(client, "invoke");
+    renderWith(fakeWorkspace({
+      listWorkspaces: async () => [home, project],
+      touchWorkspace: async (id) => id === project.id ? project : home,
+    }), client);
+
+    const scopeTrigger = await screen.findByRole("button", { name: "对话归属：Leemo 工作台" });
+    await userEvent.click(scopeTrigger);
+    await userEvent.click(screen.getByRole("menuitem", { name: "将对话放入 毕业设计" }));
+
+    expect(await screen.findByRole("button", { name: "对话归属：毕业设计" })).toBeInTheDocument();
+    expect(invoke).not.toHaveBeenCalledWith("bridge:createConversation", expect.anything());
+    await userEvent.type(screen.getByLabelText("输入消息"), "整理开题资料{Enter}");
+
+    await waitFor(() => expect(invoke).toHaveBeenCalledWith(
+      "bridge:createConversation",
+      expect.objectContaining({ workspaceId: project.id }),
+    ));
+    expect(screen.queryByRole("button", { name: "对话归属：毕业设计" })).not.toBeInTheDocument();
+  });
+
   it("统一入口列出 Leemo 管理的真本子（启动时自动读一次 ~/Leemo）", async () => {
     renderWith(fakeWorkspace());
     await userEvent.click(await screen.findByRole("button", { name: "选择本子，当前 Leemo 工作台" }));
@@ -849,8 +916,7 @@ describe("WorkbenchShell — 本子 + 拖入归类 (轮 3 卡 G, 06 §2.2)", () 
     expect(screen.getByText(/当前范围还没有可恢复的工作记录/)).toBeInTheDocument();
   });
 
-  it("orders pinned conversations first and keeps archived conversations in a restorable section", async () => {
-    const user = userEvent.setup();
+  it("keeps pinned conversations visible and removes archived conversations from the daily sidebar", () => {
     let stores!: BridgeStores;
     function CaptureStores() {
       stores = useContext(BridgeContext) as BridgeStores;
@@ -894,16 +960,8 @@ describe("WorkbenchShell — 本子 + 拖入归类 (轮 3 卡 G, 06 §2.2)", () 
     expect(rows[0]).toHaveAttribute("data-conversation-id", "pinned");
     expect(rows[1]).toHaveAttribute("data-conversation-id", "regular");
     expect(screen.queryByRole("button", { name: "归档对话" })).not.toBeInTheDocument();
-
-    await user.click(screen.getByRole("button", { name: "已归档 1" }));
-    const archivedRow = document.querySelector('[data-conversation-id="archived"]');
-    expect(archivedRow).not.toBeNull();
-    await user.click(within(archivedRow as HTMLElement).getByRole("button", { name: "归档对话" }));
-    expect(stores.conversations.getState().activeId).toBe("archived");
-    await user.click(within(archivedRow as HTMLElement).getByRole("button", { name: "更多操作：归档对话" }));
-    await user.click(screen.getByRole("button", { name: "移出归档" }));
-
-    expect(stores.conversations.getState().byId.archived.archived).toBe(false);
+    expect(screen.queryByText("已归档 1")).not.toBeInTheDocument();
+    expect(document.querySelector('[data-conversation-id="archived"]')).toBeNull();
   });
 
   it("同一入口切到外部本子，并从它的真实目录读取文件树", async () => {
@@ -1294,6 +1352,9 @@ describe("WorkbenchShell — workspace conversation scope", () => {
     await waitFor(() => expect(stores.notebooks.getState().activeId).toBe("高等数学"));
     invoke.mockClear();
     await userEvent.click(screen.getByRole("button", { name: "新建全局对话" }));
+    expect(invoke).not.toHaveBeenCalledWith("bridge:createConversation", expect.anything());
+    expect(stores.notebooks.getState().activeId).toBeNull();
+    await userEvent.type(screen.getByLabelText("输入消息"), "整理全局资料{Enter}");
 
     await waitFor(() => {
       const createCall = invoke.mock.calls.find(([channel]) => channel === "bridge:createConversation");
@@ -1330,6 +1391,8 @@ describe("WorkbenchShell — workspace conversation scope", () => {
       </BridgeProvider>,
     );
     await userEvent.click(screen.getByLabelText("新建对话"));
+    expect(invoke).not.toHaveBeenCalledWith("bridge:createConversation", expect.anything());
+    await userEvent.type(screen.getByLabelText("输入消息"), "复习微积分{Enter}");
 
     await waitFor(() => expect(invoke).toHaveBeenCalledWith(
       "bridge:createConversation",
