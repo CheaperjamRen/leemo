@@ -86,6 +86,14 @@ export interface ComposerDraftsState {
   hydrate(raw: unknown, validConversationIds: ReadonlySet<string>): void;
   updateDraft(scope: string, update: (draft: ComposerDraft) => ComposerDraft): void;
   setText(scope: string, text: string): void;
+  /** Move a blank-conversation draft between notebook/workspace scopes before
+   * its first turn. Local attachments remain valid; workspace references only
+   * move when they still belong to the destination workspace. */
+  moveDraft(
+    sourceScope: string,
+    targetScope: string,
+    targetWorkspaceId: string,
+  ): { removedWorkspaceFileCount: number };
   assignConversation(scope: string, conversationId: string): void;
   /** Delete keeps the user's unsent text in place, but releases the id that no
    * longer exists so the next send can create a fresh conversation. */
@@ -225,7 +233,7 @@ export function hydrateComposerDrafts(
 }
 
 export function createComposerDraftsStore(): StoreApi<ComposerDraftsState> {
-  return createStore<ComposerDraftsState>((set) => ({
+  return createStore<ComposerDraftsState>((set, get) => ({
     drafts: {},
     hydrate: (raw, validConversationIds) => set({
       drafts: hydrateComposerDrafts(raw, validConversationIds),
@@ -242,6 +250,48 @@ export function createComposerDraftsStore(): StoreApi<ComposerDraftsState> {
         [scope]: { ...(state.drafts[scope] ?? EMPTY_COMPOSER_DRAFT), text },
       },
     })),
+    moveDraft: (sourceScope, targetScope, targetWorkspaceId) => {
+      if (sourceScope === targetScope) return { removedWorkspaceFileCount: 0 };
+      const source = get().drafts[sourceScope];
+      if (!source) return { removedWorkspaceFileCount: 0 };
+      if (source.submitPending || source.retryPending || source.pendingStageCount > 0) {
+        throw new Error("请等待当前发送完成后再切换本子。");
+      }
+      if (source.assignedConversationId) {
+        throw new Error("这段草稿已经属于一个对话，请通过移动对话更改本子。");
+      }
+      const target = get().drafts[targetScope];
+      if (target && (hasPersistableIntent({
+        text: target.text,
+        attachments: target.attachments,
+        workspaceFiles: target.workspaceFiles ?? [],
+        allowSubagents: target.allowSubagents,
+        planMode: target.planMode,
+      }) || target.assignedConversationId !== null
+        || target.submitPending || target.retryPending || target.pendingStageCount > 0)) {
+        throw new Error("目标本子里已经有一份未发送草稿，请先处理它。");
+      }
+
+      const workspaceFiles = (source.workspaceFiles ?? []).filter((file) =>
+        file.workspaceId === targetWorkspaceId
+      );
+      const removedWorkspaceFileCount = (source.workspaceFiles?.length ?? 0) - workspaceFiles.length;
+      const moved: ComposerDraft = {
+        ...source,
+        workspaceFiles,
+        assignedConversationId: null,
+        submitError: removedWorkspaceFileCount > 0
+          ? `已切换本子；原工作区的 ${removedWorkspaceFileCount} 个文件引用没有带过来，请重新添加。`
+          : source.submitError,
+      };
+      set((state) => {
+        const drafts = { ...state.drafts };
+        delete drafts[sourceScope];
+        drafts[targetScope] = moved;
+        return { drafts };
+      });
+      return { removedWorkspaceFileCount };
+    },
     assignConversation: (scope, conversationId) => set((state) => ({
       drafts: {
         ...state.drafts,

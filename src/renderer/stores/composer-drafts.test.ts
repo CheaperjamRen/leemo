@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   conversationComposerScope,
   createComposerDraftsStore,
+  EMPTY_COMPOSER_DRAFT,
   hydrateComposerDrafts,
   resolveComposerScope,
   serializeComposerDrafts,
@@ -76,6 +77,68 @@ describe("composer drafts", () => {
       text: "跟着对话去求职本子",
       assignedConversationId: "moved-conversation",
     });
+  });
+
+  it("moves an unsent draft to another scope and drops stale workspace-file references", () => {
+    const store = createComposerDraftsStore();
+    const source = workspaceComposerScope("workspace-a");
+    const target = workspaceComposerScope("workspace-b");
+    store.getState().updateDraft(source, () => ({
+      ...EMPTY_COMPOSER_DRAFT,
+      text: "继续写方案",
+      attachments: [{ id: "local", name: "本机附件.pdf", path: "C:/材料.pdf", size: 12 }],
+      workspaceFiles: [{ id: "old", name: "旧文件.md", workspaceId: "workspace-a", workspacePath: "旧文件.md" }],
+    }));
+
+    const result = store.getState().moveDraft(source, target, "workspace-b");
+
+    expect(result).toEqual({ removedWorkspaceFileCount: 1 });
+    expect(store.getState().drafts[source]).toBeUndefined();
+    expect(store.getState().drafts[target]).toMatchObject({
+      text: "继续写方案",
+      attachments: [{ name: "本机附件.pdf" }],
+      workspaceFiles: [],
+      assignedConversationId: null,
+      submitError: "已切换本子；原工作区的 1 个文件引用没有带过来，请重新添加。",
+    });
+  });
+
+  it("keeps valid workspace references when the destination uses the same workspace", () => {
+    const store = createComposerDraftsStore();
+    const source = workspaceComposerScope("leemo-home", "旧本子");
+    const target = workspaceComposerScope("leemo-home", "新本子");
+    store.getState().updateDraft(source, () => ({
+      ...EMPTY_COMPOSER_DRAFT,
+      text: "带着引用移动",
+      workspaceFiles: [{ id: "same", name: "简历.md", workspaceId: "leemo-home", workspacePath: "简历.md" }],
+    }));
+
+    expect(store.getState().moveDraft(source, target, "leemo-home")).toEqual({ removedWorkspaceFileCount: 0 });
+    expect(store.getState().drafts[target]?.workspaceFiles).toHaveLength(1);
+  });
+
+  it("does not overwrite another meaningful draft or move an in-flight draft", () => {
+    const store = createComposerDraftsStore();
+    const source = workspaceComposerScope("workspace-a");
+    const target = workspaceComposerScope("workspace-b");
+    store.getState().setText(source, "来源草稿");
+    store.getState().setText(target, "目标草稿");
+
+    expect(() => store.getState().moveDraft(source, target, "workspace-b")).toThrow(/目标本子.*草稿/);
+    expect(store.getState().drafts[source]?.text).toBe("来源草稿");
+    expect(store.getState().drafts[target]?.text).toBe("目标草稿");
+
+    store.getState().updateDraft(target, () => EMPTY_COMPOSER_DRAFT);
+    store.getState().updateDraft(source, (draft) => ({ ...draft, submitPending: true }));
+    expect(() => store.getState().moveDraft(source, target, "workspace-b")).toThrow(/发送完成/);
+  });
+
+  it("treats moving to the same scope or moving an empty source as a no-op", () => {
+    const store = createComposerDraftsStore();
+    const scope = workspaceComposerScope("leemo-home");
+
+    expect(store.getState().moveDraft(scope, scope, "leemo-home")).toEqual({ removedWorkspaceFileCount: 0 });
+    expect(store.getState().moveDraft("missing", scope, "leemo-home")).toEqual({ removedWorkspaceFileCount: 0 });
   });
 
   it("持久化文本和安全引用，重启时清理运行态与临时粘贴图并给出提示", () => {
