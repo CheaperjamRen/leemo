@@ -57,8 +57,8 @@ function removeAuditRoot(candidate, prefix) {
   fs.rmSync(validateAuditRoot(candidate, prefix), {
     recursive: true,
     force: true,
-    maxRetries: 5,
-    retryDelay: 180,
+    maxRetries: 20,
+    retryDelay: 250,
   });
 }
 
@@ -318,7 +318,7 @@ async function closeServer(server) {
 async function connectRenderer(
   port,
   timeoutMs = 60_000,
-  readySelector = 'textarea[aria-label="输入消息"]',
+  readySelector = '[data-testid="topbar-primary-controls"]',
 ) {
   const deadline = Date.now() + timeoutMs;
   let lastTargets = [];
@@ -719,6 +719,7 @@ export async function createMemoryAcceptanceHarness({
       await stopApp(current).catch(() => {});
       await closeServer(mock.server).catch(() => {});
       if (process.env.LEEMO_KEEP_AUDIT !== "1") {
+        await sleep(1_500);
         try {
           removeAuditRoot(auditRoot, prefix);
         } catch (error) {

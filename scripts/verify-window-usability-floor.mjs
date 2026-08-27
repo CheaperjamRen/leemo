@@ -8,9 +8,9 @@ import {
 } from "./verify-memory-workspace.mjs";
 
 const PREFIX = "leemo-e2e-window-floor-";
-const SCREENSHOT = path.join(OUTPUT_DIR, "window-floor-preview-800x640.png");
-const RESTORED_SCREENSHOT = path.join(OUTPUT_DIR, "window-floor-restored-800x640.png");
-const WIDE_SCREENSHOT = path.join(OUTPUT_DIR, "window-floor-side-by-side-1040x720.png");
+const SCREENSHOT = path.join(OUTPUT_DIR, "window-floor-preview-960x680.png");
+const RESTORED_SCREENSHOT = path.join(OUTPUT_DIR, "window-floor-restored-960x680.png");
+const WIDE_SCREENSHOT = path.join(OUTPUT_DIR, "window-floor-side-by-side-1440x900.png");
 const FACTS_PATH = path.join(OUTPUT_DIR, "window-floor-facts.json");
 
 function insist(condition, message) {
@@ -144,9 +144,9 @@ if (-not [LeemoWindowProbe]::GetWindowRect($handle, [ref]$rect)) {
 
 async function layout(page) {
   return page.evaluate(() => {
-    const preview = document.querySelector('[data-testid="preview-pane-column"]');
+    const preview = document.querySelector('[data-testid="file-surface"]');
     const surface = document.querySelector('[data-testid="workbench-content-surface"]');
-    const conversation = document.querySelector('[data-testid="conversation-column"]');
+    const conversation = document.querySelector('[data-testid="conversation-surface"]');
     const composer = document.querySelector('[data-testid="workbench-composer-column"]');
     const rect = (element) => element?.getBoundingClientRect();
     const previewRect = rect(preview);
@@ -175,7 +175,7 @@ async function layout(page) {
           && previewRect.top >= -1
           && previewRect.right <= innerWidth + 1
           && previewRect.bottom <= innerHeight + 1,
-        focused: document.activeElement === preview,
+        focused: document.activeElement === preview || preview.contains(document.activeElement),
       } : null,
       conversation: conversationRect ? {
         left: conversationRect.left,
@@ -214,7 +214,7 @@ async function run() {
     const app = await harness.start("窗口可用性底线");
     await ensureWorkbench(app.page);
 
-    const wideRequestedBounds = { width: 1040, height: 720 };
+    const wideRequestedBounds = { width: 1440, height: 900 };
     const wideNativeBounds = resizeNativeWindow(app.child.pid, wideRequestedBounds.width, wideRequestedBounds.height);
     insist(
       wideNativeBounds.width === wideRequestedBounds.width && wideNativeBounds.height === wideRequestedBounds.height,
@@ -226,7 +226,7 @@ async function run() {
     facts.wideNativeBounds = wideNativeBounds;
     facts.layouts.wideBaseline = wideBaseline;
 
-    await app.page.getByRole("button", { name: "文件树", exact: true }).click();
+    await app.page.getByRole("button", { name: "文件", exact: true }).click();
     await app.page.getByTestId("file-row-窄窗.md").click();
     const preview = app.page.getByTestId("preview-pane-column");
     await preview.waitFor({ state: "visible" });
@@ -243,19 +243,27 @@ async function run() {
         && nearlyEqual(widePreviewLayout.preview.top, widePreviewLayout.surface.top)
         && nearlyEqual(widePreviewLayout.preview.right, widePreviewLayout.surface.right)
         && nearlyEqual(widePreviewLayout.preview.bottom, widePreviewLayout.surface.bottom)
-        && nearlyEqual(widePreviewLayout.preview.left, widePreviewLayout.conversation?.right),
-      "1024px 以上预览没有保持对话与预览并排",
+        && widePreviewLayout.conversation
+        && widePreviewLayout.preview.left >= widePreviewLayout.conversation.right
+        && widePreviewLayout.preview.left - widePreviewLayout.conversation.right <= 12,
+      "宽窗预览没有保持对话、分隔手柄与文件并排",
     );
     insist(
       widePreviewLayout.conversation?.inert === false && widePreviewLayout.conversation.ariaHidden === null,
       "宽窗并排预览不应冻结底层对话",
     );
     facts.checks.widePreviewRemainsSideBySide = true;
+    const wideToolBackdrop = app.page.getByTestId("workbench-tool-backdrop");
+    if (await wideToolBackdrop.isVisible().catch(() => false)) await wideToolBackdrop.click();
     await app.page.getByRole("button", { name: "关闭 窄窗.md" }).click();
 
     const requestedBounds = { width: 640, height: 480 };
     const nativeBounds = resizeNativeWindow(app.child.pid, requestedBounds.width, requestedBounds.height);
-    insist(nativeBounds.width === 800 && nativeBounds.height === 640, "Leemo 没有把过小窗口约束在 800x640");
+    insist(
+      nativeBounds.width >= 960 && nativeBounds.width <= 980
+        && nativeBounds.height >= 680 && nativeBounds.height <= 700,
+      `Leemo 没有把过小窗口约束在 960x680：${JSON.stringify(nativeBounds)}`,
+    );
     await app.page.waitForFunction(() => innerWidth < 1024);
     facts.requestedBounds = requestedBounds;
     facts.nativeBounds = nativeBounds;
@@ -263,7 +271,7 @@ async function run() {
     const narrowBaseline = await layout(app.page);
     facts.layouts.narrowBaseline = narrowBaseline;
 
-    await app.page.getByRole("button", { name: "文件树", exact: true }).click();
+    await app.page.getByRole("button", { name: "文件", exact: true }).click();
     await app.page.getByTestId("file-row-窄窗.md").click();
     await preview.waitFor({ state: "visible" });
     await app.page.getByRole("heading", { name: "窄窗预览" }).waitFor({ state: "visible" });
@@ -274,8 +282,17 @@ async function run() {
     insist(previewLayout.viewport.width < 1024, "窄窗没有进入单主界面布局");
     insist(previewLayout.horizontalOverflow === 0, "打开预览后页面横向溢出");
     insist(previewLayout.preview?.fullyVisible, "窄窗预览没有完整覆盖主内容区");
-    insist(sameRect(previewLayout.preview, narrowBaseline.surface), "窄窗预览没有与主内容区四边重合");
-    insist(sameRect(previewLayout.conversation, narrowBaseline.conversation), "预览覆盖层挤压了底层对话列");
+    insist(
+      previewLayout.preview
+        && previewLayout.surface
+        && nearlyEqual(previewLayout.preview.left, previewLayout.surface.left)
+        && nearlyEqual(previewLayout.preview.right, previewLayout.surface.right)
+        && nearlyEqual(previewLayout.preview.bottom, previewLayout.surface.bottom)
+        && previewLayout.preview.top >= previewLayout.surface.top
+        && previewLayout.preview.top - previewLayout.surface.top <= 48,
+      "窄窗文件表面没有在工作表面内完整显示",
+    );
+    insist(sameRect(previewLayout.preview, previewLayout.conversation), "窄窗文件与对话表面没有复用同一画布");
     insist(
       previewLayout.conversation?.inert === true && previewLayout.conversation.ariaHidden === "true",
       "窄窗预览没有冻结被遮住的对话内容",
@@ -284,7 +301,7 @@ async function run() {
     facts.checks.previewUsesSingleMainSurface = true;
     facts.checks.narrowPreviewOwnsInteraction = true;
 
-    await app.page.getByRole("button", { name: "文件树", exact: true }).click();
+    await app.page.getByRole("button", { name: "文件", exact: true }).click();
     await app.page.getByTestId("file-row-第二份.md").click();
     await app.page.getByRole("heading", { name: "第二份预览" }).waitFor({ state: "visible" });
     const switchedPreview = await layout(app.page);
