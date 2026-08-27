@@ -402,6 +402,8 @@ interface ConvRecord {
      * File receipts and native-memory reconciliation may run only after it
      * resolves true. A false result deliberately leaves the round locked. */
     cleanup?: Promise<boolean>;
+    /** One host-owned async completion path publishes the final stop state. */
+    stopCompletion?: Promise<void>;
     /** The interrupt IPC owns the visible terminal event for a user Stop. */
     userStopRequested: boolean;
     stopFailureReported: boolean;
@@ -3535,7 +3537,7 @@ export function createBridgeHost(deps: HostDeps): BridgeHost {
         // Release a parked approval/question before aborting the child. That
         // promise may be the only thing allowing the engine to unwind.
         releasePending(r.conversationId, "interrupted by user");
-        if (rec && round) {
+        if (rec && round && !round.userStopRequested) {
           // Fence the round immediately and wake drain even if the SDK never
           // yields after abort. Do not publish the visible terminal yet: the UI
           // may only say "stopped" after the owned process tree is gone.
@@ -3543,20 +3545,19 @@ export function createBridgeHost(deps: HostDeps): BridgeHost {
           round.cleanup ??= interruptConversation(rec);
           round.resolveInterrupted();
         }
-        const processTreeStopped = rec
-          ? await (round?.cleanup ?? interruptConversation(rec))
-          : true;
-        if (!processTreeStopped && round) round.nativeCleanupSafe = false;
         if (rec && round) {
-          if (processTreeStopped) {
-            const finalized = await round.finalize();
-            if (!finalized) {
+          round.stopCompletion ??= (async () => {
+            const processTreeStopped = await (round.cleanup ?? interruptConversation(rec));
+            if (!processTreeStopped) round.nativeCleanupSafe = false;
+            const finalized = processTreeStopped ? await round.finalize() : false;
+            if (!processTreeStopped || !finalized) {
               const message = PROCESS_STOP_UNCONFIRMED_MESSAGE;
               if (!round.stopFailureReported) {
                 round.stopFailureReported = true;
                 push("bridge:event", { conversationId: r.conversationId, event: { type: "error", message } });
+                push("bridge:event", { conversationId: r.conversationId, event: { type: "run.stopLocked", message } });
               }
-              return { state: "locked" } as R<"bridge:interrupt"> as R<K>;
+              return;
             }
             push("bridge:event", {
               conversationId: r.conversationId,
@@ -3568,15 +3569,15 @@ export function createBridgeHost(deps: HostDeps): BridgeHost {
                 pathAudit: { claimed: [] },
               },
             });
-            return { state: "stopped" } as R<"bridge:interrupt"> as R<K>;
-          } else {
-            const message = PROCESS_STOP_UNCONFIRMED_MESSAGE;
+          })().catch((error: unknown) => {
+            const message = `${PROCESS_STOP_UNCONFIRMED_MESSAGE} ${toUserFacingRunError(error)}`;
             if (!round.stopFailureReported) {
               round.stopFailureReported = true;
               push("bridge:event", { conversationId: r.conversationId, event: { type: "error", message } });
+              push("bridge:event", { conversationId: r.conversationId, event: { type: "run.stopLocked", message } });
             }
-            return { state: "locked" } as R<"bridge:interrupt"> as R<K>;
-          }
+          });
+          return { state: round.stopFailureReported ? "locked" : "stopping" } as R<"bridge:interrupt"> as R<K>;
         }
         return { state: "idle" } as R<"bridge:interrupt"> as R<K>;
       }

@@ -489,23 +489,24 @@ describe("bridge-host — ChatGPT subscription execution engine", () => {
     await vi.waitFor(() => expect(handle.prompts).toContain("长任务"));
 
     let interruptSettled = false;
-    const interrupt = host.handleInvoke("bridge:interrupt", { conversationId }).then(() => {
+    const interrupt = host.handleInvoke("bridge:interrupt", { conversationId }).then((result) => {
       interruptSettled = true;
+      return result;
     });
     await new Promise((resolve) => setTimeout(resolve, 10));
-    expect(interruptSettled).toBe(false);
+    expect(interruptSettled).toBe(true);
+    await expect(interrupt).resolves.toEqual({ state: "stopping" });
     expect(pushed.filter((call) =>
       call.channel === "bridge:event"
       && (call.payload as { event?: { type?: string } }).event?.type === "run.finished"
     )).toHaveLength(0);
 
     confirmStop(true);
-    await interrupt;
-    expect(pushed.filter((call) =>
+    await vi.waitFor(() => expect(pushed.filter((call) =>
       call.channel === "bridge:event"
       && (call.payload as { event?: { type?: string; subtype?: string } }).event?.type === "run.finished"
       && (call.payload as { event: { subtype?: string } }).event.subtype === "interrupted"
-    )).toHaveLength(1);
+    )).toHaveLength(1));
     host.dispose();
   });
 });

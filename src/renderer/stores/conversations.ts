@@ -488,6 +488,7 @@ export function foldConversationEnvelope(
   );
   const event = envelope.event;
   const finished = event.type === "run.finished";
+  const stopLocked = event.type === "run.stopLocked";
   const pending = state.pendingSends[conversationId];
   // The host enforces one active round per conversation. Keeping the local
   // run-id guard here additionally prevents a stale error fold from rewriting
@@ -536,9 +537,14 @@ export function foldConversationEnvelope(
     order: moveToFront(state.order, conversationId),
     timelines: { ...state.timelines, [conversationId]: timeline },
     pendingSends,
-    stopLockedById: finished
-      ? withoutConversation(state.stopLockedById, conversationId)
-      : state.stopLockedById,
+    stopLockedById: stopLocked
+      ? { ...state.stopLockedById, [conversationId]: true }
+      : finished
+        ? withoutConversation(state.stopLockedById, conversationId)
+        : state.stopLockedById,
+    stoppingById: finished || stopLocked
+      ? withoutConversation(state.stoppingById, conversationId)
+      : state.stoppingById,
     runIds: finished
       ? { ...state.runIds, [conversationId]: null }
       : state.runIds,
@@ -1215,12 +1221,18 @@ export function createConversationsStore(
         if (result.state === "locked") {
           set((state) => ({
             stopLockedById: { ...state.stopLockedById, [conversationId]: true },
+            stoppingById: withoutConversation(state.stoppingById, conversationId),
+          }));
+        } else if (result.state === "idle" || result.state === "stopped") {
+          set((state) => ({
+            stoppingById: withoutConversation(state.stoppingById, conversationId),
           }));
         }
-      } finally {
+      } catch (error) {
         set((state) => ({
           stoppingById: withoutConversation(state.stoppingById, conversationId),
         }));
+        throw error;
       }
     },
 

@@ -1371,6 +1371,10 @@ describe("conversations store", () => {
     bridge.emit({ conversationId: a, event: { type: "text.delta", text: "A delta" } });
     bridge.emit({ conversationId: b, event: { type: "text.delta", text: "B delta" } });
 
+    await vi.waitFor(() => expect(store.getState().timelines[a]).toEqual(expect.arrayContaining([
+      expect.objectContaining({ kind: "text", role: "momo", text: "A delta", runId: store.getState().runIds[a] }),
+    ])));
+
     expect(store.getState().activeId).toBe(b);
     expect(store.getState().timelines[a]).toEqual(expect.arrayContaining([
       expect.objectContaining({ kind: "text", role: "momo", text: "A delta", runId: store.getState().runIds[a] }),
@@ -1442,6 +1446,7 @@ describe("conversations store", () => {
     await store.getState().send(a, "A moves front");
     expect(store.getState().order).toEqual([a, b]);
     bridge.emit({ conversationId: b, event: { type: "text.delta", text: "B moves front" } });
+    await vi.waitFor(() => expect(store.getState().order).toEqual([b, a]));
     expect(store.getState().order).toEqual([b, a]);
     expect(new Set(store.getState().order).size).toBe(store.getState().order.length);
   });
@@ -1494,14 +1499,9 @@ describe("conversations store", () => {
   });
 
   it("deduplicates Stop while host cleanup is pending and clears the stopping acknowledgement afterward", async () => {
-    let releaseStop!: () => void;
-    const stopGate = new Promise<void>((resolve) => { releaseStop = resolve; });
     const invoke = vi.fn(async (channel: string) => {
       if (channel === "bridge:createConversation") return { conversationId: "conv-stop" };
-      if (channel === "bridge:interrupt") {
-        await stopGate;
-        return { state: "stopped" };
-      }
+      if (channel === "bridge:interrupt") return { state: "stopping" };
       return undefined;
     });
     const store = createConversationsStore({
@@ -1510,21 +1510,28 @@ describe("conversations store", () => {
     } as unknown as BridgeClient, { resolveConversationDefaults: () => DEFAULTS });
     const conversationId = await store.getState().createConversation({ source: "buddy" });
 
-    const firstStop = store.getState().interrupt(conversationId);
-    await Promise.resolve();
+    await store.getState().interrupt(conversationId);
     expect(store.getState().stoppingById[conversationId]).toBe(true);
     await store.getState().interrupt(conversationId);
     expect(invoke.mock.calls.filter(([channel]) => channel === "bridge:interrupt")).toHaveLength(1);
 
-    releaseStop();
-    await firstStop;
+    store.setState((state) => foldConversationEnvelope(state, {
+      conversationId,
+      event: {
+        type: "run.finished",
+        subtype: "interrupted",
+        isError: false,
+        finalText: "",
+        pathAudit: { claimed: [] },
+      },
+    }, 1_000));
     expect(store.getState().stoppingById[conversationId]).toBeUndefined();
   });
 
   it("keeps an unverified Stop visibly locked and ignores later Stop clicks", async () => {
     const invoke = vi.fn(async (channel: string) => {
       if (channel === "bridge:createConversation") return { conversationId: "conv-locked" };
-      if (channel === "bridge:interrupt") return { state: "locked" };
+      if (channel === "bridge:interrupt") return { state: "stopping" };
       return undefined;
     });
     const store = createConversationsStore({
@@ -1534,6 +1541,10 @@ describe("conversations store", () => {
     const conversationId = await store.getState().createConversation({ source: "buddy" });
 
     await store.getState().interrupt(conversationId);
+    store.setState((state) => foldConversationEnvelope(state, {
+      conversationId,
+      event: { type: "run.stopLocked", message: "后台命令仍在退出" },
+    }, 1_000));
     expect(store.getState().stopLockedById[conversationId]).toBe(true);
     await store.getState().interrupt(conversationId);
     expect(invoke.mock.calls.filter(([channel]) => channel === "bridge:interrupt")).toHaveLength(1);

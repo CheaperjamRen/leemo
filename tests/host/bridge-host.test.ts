@@ -487,7 +487,13 @@ describe("bridge-host — root artifact routing", () => {
         prompt: "先写一点",
       });
       await vi.waitFor(() => expect(existsSync(reportPath)).toBe(true));
-      await host.handleInvoke("bridge:interrupt", { conversationId: created.conversationId });
+      await expect(host.handleInvoke("bridge:interrupt", { conversationId: created.conversationId }))
+        .resolves.toEqual({ state: "stopping" });
+      await vi.waitFor(() => expect(pushed.some((call) => (
+        call.channel === "bridge:event"
+        && (call.payload as { event?: { type?: string; subtype?: string } }).event?.type === "run.finished"
+        && (call.payload as { event?: { subtype?: string } }).event?.subtype === "interrupted"
+      ))).toBe(true));
 
       const events = pushed
         .filter((call) => call.channel === "bridge:event")
@@ -845,7 +851,12 @@ describe("bridge-host — interrupt releases pending interactions (bug1)", () =>
       expect(events).toContainEqual(expect.objectContaining({ type: "tool.started" }));
     });
 
-    await expect(host.handleInvoke("bridge:interrupt", { conversationId })).resolves.toEqual({ state: "stopped" });
+    await expect(host.handleInvoke("bridge:interrupt", { conversationId })).resolves.toEqual({ state: "stopping" });
+    await vi.waitFor(() => expect(pushed.some((entry) => (
+      entry.channel === "bridge:event"
+      && (entry.payload as { event?: { type?: string; subtype?: string } }).event?.type === "run.finished"
+      && (entry.payload as { event?: { subtype?: string } }).event?.subtype === "interrupted"
+    ))).toBe(true));
     await expect(host.handleInvoke("bridge:interrupt", { conversationId })).resolves.toEqual({ state: "idle" });
 
     const eventsAfterInterrupt = pushed
@@ -912,7 +923,11 @@ describe("bridge-host — interrupt releases pending interactions (bug1)", () =>
       expect(events).toContainEqual(expect.objectContaining({ type: "tool.started" }));
     });
 
-    await expect(host.handleInvoke("bridge:interrupt", { conversationId })).resolves.toEqual({ state: "locked" });
+    await expect(host.handleInvoke("bridge:interrupt", { conversationId })).resolves.toEqual({ state: "stopping" });
+    await vi.waitFor(() => expect(pushed.some((entry) => (
+      entry.channel === "bridge:event"
+      && (entry.payload as { event?: { type?: string } }).event?.type === "run.stopLocked"
+    ))).toBe(true));
     await expect(host.handleInvoke("bridge:interrupt", { conversationId })).resolves.toEqual({ state: "locked" });
     const events = pushed
       .filter((entry) => entry.channel === "bridge:event")
@@ -1001,7 +1016,12 @@ describe("bridge-host — interrupt releases pending interactions (bug1)", () =>
       entry.channel === "bridge:event"
       && (entry.payload as { event?: { type?: string } }).event?.type === "conversation.started")).toBe(true));
 
-    await host.handleInvoke("bridge:interrupt", { conversationId });
+    await expect(host.handleInvoke("bridge:interrupt", { conversationId })).resolves.toEqual({ state: "stopping" });
+    await vi.waitFor(() => expect(pushed.some((entry) => (
+      entry.channel === "bridge:event"
+      && (entry.payload as { event?: { type?: string; subtype?: string } }).event?.type === "run.finished"
+      && (entry.payload as { event?: { subtype?: string } }).event?.subtype === "interrupted"
+    ))).toBe(true));
 
     const events = pushed
       .filter((entry) => entry.channel === "bridge:event")

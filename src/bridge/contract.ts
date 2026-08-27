@@ -1254,7 +1254,7 @@ export interface BridgeInvokeMap {
   "bridge:createConversation": { request: CreateConversationRequest; response: ConversationRef };
   "bridge:send": { request: SendRequest; response: void };
   "bridge:guide": { request: GuideRequest; response: GuideResponse };
-  "bridge:interrupt": { request: ConversationRef; response: { state: "stopped" | "locked" | "idle" } };
+  "bridge:interrupt": { request: ConversationRef; response: { state: "stopping" | "stopped" | "locked" | "idle" } };
   "bridge:setModel": { request: SetModelRequest; response: void };
   "bridge:updateContext": { request: UpdateContextRequest; response: void };
   "bridge:disposeConversation": { request: ConversationRef; response: void };

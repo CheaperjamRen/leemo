@@ -194,6 +194,7 @@ export type LeemoEvent =
       retryable?: boolean;
       statusCode?: number;
     }
+  | { type: "run.stopLocked"; message: string }
   | { type: "error"; message: string };
 
 // ---------------------------------------------------------------------------
