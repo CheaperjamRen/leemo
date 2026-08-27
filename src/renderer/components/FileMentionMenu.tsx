@@ -13,6 +13,7 @@ export default function FileMentionMenu({ files, selectedIndex, onPick, onHover 
 
   return (
     <div
+      data-composer-popover=""
       className="absolute bottom-full left-0 z-20 mb-2 max-h-64 w-[min(360px,calc(100vw-48px))] overflow-y-auto rounded-[8px] border border-[var(--leemo-line)] bg-white p-1 shadow-lg"
       data-testid="file-mention-menu"
     >

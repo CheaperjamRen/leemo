@@ -1259,6 +1259,17 @@ describe("InputArea", () => {
     expect(screen.queryByRole("listbox", { name: "引用文件或便签" })).not.toBeInTheDocument();
   });
 
+  it("dismisses a composer popover when the user clicks elsewhere", async () => {
+    const user = userEvent.setup();
+    render(<InputArea {...defaultProps} permissionMode="acceptEdits" />);
+
+    await user.click(screen.getByRole("button", { name: "权限模式：风险确认" }));
+    expect(screen.getByRole("menu", { name: "权限模式" })).toBeInTheDocument();
+
+    fireEvent.pointerDown(document.body);
+    expect(screen.queryByRole("menu", { name: "权限模式" })).not.toBeInTheDocument();
+  });
+
   it("enters plan mode from the plus menu and carries it with the turn", async () => {
     const user = userEvent.setup();
     const onSend = vi.fn().mockResolvedValue(undefined);

@@ -20,6 +20,7 @@ export default function ComposerPlusMenu({
   if (!open) return null;
   return (
     <div
+      data-composer-popover=""
       role="menu"
       aria-label="添加到对话"
       className="absolute bottom-[calc(100%+8px)] left-2 right-2 z-40 rounded-[14px] border border-[var(--leemo-line)] bg-[var(--leemo-card)] p-1.5 shadow-[var(--leemo-shadow-popover)] sm:right-auto sm:w-[440px]"

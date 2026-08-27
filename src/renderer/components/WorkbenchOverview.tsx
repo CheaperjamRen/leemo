@@ -16,6 +16,7 @@ import {
   type ConversationContinuitySnapshot,
   type NotebookContinuitySnapshot,
 } from "./workbench-overview-model";
+import { useDismissiblePopover } from "./useDismissiblePopover";
 
 export type WorkbenchOverviewModel = NotebookContinuitySnapshot;
 
@@ -345,6 +346,8 @@ export function WorkbenchOverview({
   activeConversationIdRef.current = activeConversationId;
   const [scope, setScope] = useState<"notebook" | "conversation">(activeConversation ? "conversation" : "notebook");
   const [menuOpen, setMenuOpen] = useState(false);
+  const menuTriggerRef = useRef<HTMLButtonElement>(null);
+  const menuLayerRef = useRef<HTMLDivElement>(null);
   const [editing, setEditing] = useState(false);
   const [objective, setObjective] = useState(activeConversation?.objective?.text ?? "");
   const [criteria, setCriteria] = useState((activeConversation?.successCriteria ?? []).join("\n"));
@@ -358,6 +361,13 @@ export function WorkbenchOverview({
     || refreshRunInProgress
     || refreshState.kind === "pending"
     || !onRequestRefresh;
+
+  useDismissiblePopover({
+    open: menuOpen,
+    triggerRef: menuTriggerRef,
+    layerRef: menuLayerRef,
+    onDismiss: () => setMenuOpen(false),
+  });
 
   useEffect(() => {
     correctionRequestRef.current += 1;
@@ -467,9 +477,9 @@ export function WorkbenchOverview({
             <button type="button" aria-pressed={scope === "notebook"} onClick={() => { setScope("notebook"); setMenuOpen(false); }} className="rounded-[calc(var(--leemo-radius-control)-2px)] text-xs font-medium text-[var(--leemo-ink-2)] transition-colors aria-pressed:bg-[var(--leemo-card)] aria-pressed:text-[var(--leemo-ink)] aria-pressed:shadow-[var(--leemo-shadow-resting)]">{notebookScopeLabel}</button>
           </div>
           <div className="relative">
-            <button type="button" aria-label="概览操作" aria-expanded={menuOpen} onClick={() => setMenuOpen((open) => !open)} className="leemo-icon-btn h-8 w-8"><MoreHorizontal className="h-4 w-4" aria-hidden /></button>
+            <button ref={menuTriggerRef} type="button" aria-label="概览操作" aria-expanded={menuOpen} onClick={() => setMenuOpen((open) => !open)} className="leemo-icon-btn h-8 w-8"><MoreHorizontal className="h-4 w-4" aria-hidden /></button>
             {menuOpen && (
-              <div className="absolute right-0 top-10 z-20 w-36 rounded-[var(--leemo-radius-control)] border border-[var(--leemo-line)] bg-[var(--leemo-surface-overlay)] p-1.5 shadow-[var(--leemo-shadow-popover)]">
+              <div ref={menuLayerRef} className="absolute right-0 top-10 z-20 w-36 rounded-[var(--leemo-radius-control)] border border-[var(--leemo-line)] bg-[var(--leemo-surface-overlay)] p-1.5 shadow-[var(--leemo-shadow-popover)]">
                 <button type="button" onClick={beginEdit} disabled={!activeConversation || !onSaveCorrection} className="flex h-8 w-full items-center gap-2 rounded-full px-2.5 text-left text-xs text-[var(--leemo-ink-2)] hover:bg-[var(--leemo-hover)] disabled:opacity-40"><FileText className="h-3.5 w-3.5" aria-hidden />编辑工作目标</button>
               </div>
             )}

@@ -15,13 +15,22 @@ export default function NoteReferenceMenu({
 }) {
   const [query, setQuery] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     inputRef.current?.focus();
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") onClose();
     };
+    const onPointerDown = (event: PointerEvent) => {
+      const target = event.target;
+      if (target instanceof Node && !menuRef.current?.contains(target)) onClose();
+    };
     window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
+    document.addEventListener("pointerdown", onPointerDown);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+      document.removeEventListener("pointerdown", onPointerDown);
+    };
   }, [onClose]);
   const shown = useMemo(() => {
     const normalized = query.trim().toLocaleLowerCase();
@@ -32,7 +41,7 @@ export default function NoteReferenceMenu({
   }, [currentNoteId, notes, query]);
 
   return (
-    <div className="leemo-note-reference-menu" role="dialog" aria-label="引用便签">
+    <div ref={menuRef} className="leemo-note-reference-menu" role="dialog" aria-label="引用便签">
       <header><strong>引用便签</strong><button type="button" aria-label="关闭引用菜单" onClick={onClose}><X aria-hidden /></button></header>
       <label><Search aria-hidden /><input ref={inputRef} type="search" aria-label="搜索可引用便签" value={query} onChange={(event) => setQuery(event.currentTarget.value)} placeholder="输入标题" /></label>
       <div role="listbox" aria-label="可引用便签">

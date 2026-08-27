@@ -31,6 +31,7 @@ import {
   normalizePdfRotation,
   savePdfReaderState,
 } from "./pdf-reader-state";
+import { useDismissiblePopover } from "./useDismissiblePopover";
 
 type PdfJsRuntime = typeof import("pdfjs-dist");
 type ViewerRuntime = typeof import("pdfjs-dist/web/pdf_viewer.mjs");
@@ -225,8 +226,17 @@ export default function PdfView({
   const [outline, setOutline] = useState<Array<PdfOutlineItem & { depth: number }>>([]);
   const [outlineLoaded, setOutlineLoaded] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const menuTriggerRef = useRef<HTMLButtonElement>(null);
+  const menuLayerRef = useRef<HTMLDivElement>(null);
   const [imageOnly, setImageOnly] = useState(false);
   const [copyRestricted, setCopyRestricted] = useState(false);
+
+  useDismissiblePopover({
+    open: menuOpen,
+    triggerRef: menuTriggerRef,
+    layerRef: menuLayerRef,
+    onDismiss: () => setMenuOpen(false),
+  });
 
   useEffect(() => {
     copyPermissionCallbackRef.current = onCopyPermissionChange;
@@ -603,9 +613,9 @@ export default function PdfView({
           <Focus className="h-3.5 w-3.5" aria-hidden />
         </button>
         <div className="relative">
-          <button type="button" className="pdf-reader__icon-button" aria-label="更多 PDF 操作" aria-expanded={menuOpen} onClick={() => setMenuOpen((value) => !value)}><Menu className="h-3.5 w-3.5" aria-hidden /></button>
+          <button ref={menuTriggerRef} type="button" className="pdf-reader__icon-button" aria-label="更多 PDF 操作" aria-expanded={menuOpen} onClick={() => setMenuOpen((value) => !value)}><Menu className="h-3.5 w-3.5" aria-hidden /></button>
           {menuOpen && (
-            <div className="pdf-reader__menu" role="menu">
+            <div ref={menuLayerRef} className="pdf-reader__menu" role="menu">
               <button type="button" role="menuitem" onClick={() => { if (viewerRef.current) viewerRef.current.currentScaleValue = "page-width"; setMenuOpen(false); }}>适合宽度</button>
               <button type="button" role="menuitem" onClick={() => { if (viewerRef.current) viewerRef.current.currentScaleValue = "page-fit"; setMenuOpen(false); }}>适合页面</button>
               <div className="pdf-reader__menu-separator" aria-hidden />

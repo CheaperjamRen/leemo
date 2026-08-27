@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import type { Note } from "../../captures";
@@ -37,5 +37,20 @@ describe("NoteReferenceMenu", () => {
     expect(screen.queryByRole("option", { name: /产品故事/ })).not.toBeInTheDocument();
     await userEvent.click(screen.getByRole("option", { name: /简历优化/ }));
     expect(onSelect).toHaveBeenCalledWith(expect.objectContaining({ id: "resume" }));
+  });
+
+  it("closes when the user clicks outside the reference picker", () => {
+    const onClose = vi.fn();
+    render(
+      <NoteReferenceMenu
+        notes={[note("resume", "简历优化")]}
+        currentNoteId={null}
+        onSelect={vi.fn()}
+        onClose={onClose}
+      />,
+    );
+
+    fireEvent.pointerDown(document.body);
+    expect(onClose).toHaveBeenCalledOnce();
   });
 });

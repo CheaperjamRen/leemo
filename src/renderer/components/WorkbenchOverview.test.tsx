@@ -210,6 +210,24 @@ describe("WorkbenchOverview", () => {
     expect(screen.queryByRole("form", { name: "编辑工作目标" })).not.toBeInTheDocument();
   });
 
+  it("dismisses overview actions on outside click and restores the trigger on Escape", async () => {
+    const user = userEvent.setup();
+    const active = conversation({ state: "recent", currentPlan: undefined });
+    render(<WorkbenchOverview model={notebook([active])} conversationModel={notebook([active])} onSaveCorrection={vi.fn()} />);
+    const trigger = screen.getByRole("button", { name: "概览操作" });
+
+    await user.click(trigger);
+    expect(screen.getByRole("button", { name: "编辑工作目标" })).toBeInTheDocument();
+    fireEvent.pointerDown(document.body);
+    expect(screen.queryByRole("button", { name: "编辑工作目标" })).not.toBeInTheDocument();
+
+    await user.click(trigger);
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(screen.queryByRole("button", { name: "编辑工作目标" })).not.toBeInTheDocument();
+    await act(async () => undefined);
+    expect(trigger).toHaveFocus();
+  });
+
   it("resets scope and drafts when the active conversation changes or disappears", async () => {
     const user = userEvent.setup();
     const saveA = vi.fn();

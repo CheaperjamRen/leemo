@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertCircle,
   CalendarClock,
@@ -26,6 +26,7 @@ import type {
   ScheduledTaskSchedule,
 } from "../../scheduled-tasks";
 import "./ScheduledTasksPage.css";
+import { useDismissiblePopover } from "../components/useDismissiblePopover";
 
 type ScheduleKind = ScheduledTaskDraft["schedule"]["kind"];
 type TaskListFilter = "all" | "active" | "paused" | "attention";
@@ -150,8 +151,17 @@ export default function ScheduledTasksPage() {
   const [form, setForm] = useState<FormState>(() => newForm(activeWorkspaceId));
   const [busyAction, setBusyAction] = useState<string | null>(null);
   const [menuTaskId, setMenuTaskId] = useState<string | null>(null);
+  const menuTriggerRef = useRef<HTMLButtonElement>(null);
+  const menuLayerRef = useRef<HTMLDivElement>(null);
   const [listFilter, setListFilter] = useState<TaskListFilter>("all");
   const [searchQuery, setSearchQuery] = useState("");
+
+  useDismissiblePopover({
+    open: menuTaskId !== null,
+    triggerRef: menuTriggerRef,
+    layerRef: menuLayerRef,
+    onDismiss: () => setMenuTaskId(null),
+  });
 
   useEffect(() => {
     if (editingId || form.prompt) return;
@@ -572,7 +582,10 @@ export default function ScheduledTasksPage() {
                       </button>
                       <button
                         type="button"
-                        onClick={() => setMenuTaskId((current) => current === task.id ? null : task.id)}
+                        onClick={(event) => {
+                          menuTriggerRef.current = event.currentTarget;
+                          setMenuTaskId((current) => current === task.id ? null : task.id);
+                        }}
                         className="leemo-icon-btn"
                         title="更多操作"
                         aria-label={`更多 ${task.name} 操作`}
@@ -581,7 +594,7 @@ export default function ScheduledTasksPage() {
                         <MoreHorizontal className="h-4 w-4" aria-hidden />
                       </button>
                       {menuTaskId === task.id && (
-                        <div className="absolute right-0 top-9 z-20 min-w-28 rounded-[6px] border border-[var(--leemo-line)] bg-[var(--leemo-shell-card)] p-1 shadow-[var(--leemo-shadow-popover)]">
+                        <div ref={menuLayerRef} className="absolute right-0 top-9 z-20 min-w-28 rounded-[6px] border border-[var(--leemo-line)] bg-[var(--leemo-shell-card)] p-1 shadow-[var(--leemo-shadow-popover)]">
                           <button
                             type="button"
                             disabled={busyAction !== null || Boolean(activeRun)}

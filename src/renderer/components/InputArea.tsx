@@ -410,8 +410,27 @@ export default function InputArea({
       window.requestAnimationFrame(() => textareaRef.current?.focus());
     };
 
+    const closeOnOutsidePointer = (event: PointerEvent) => {
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+      if (target.closest("[data-composer-popover], [data-composer-popover-trigger]")) return;
+      setPlusMenuOpen(false);
+      setModelPickerOpen(false);
+      setPermissionMenuOpen(false);
+      setSlashEmptyOpen(false);
+      setReferencePickerOpen(false);
+      if (target.closest("[data-composer-inline-trigger]")) return;
+      if (slashQuery !== null) setSlashDismissed(slashQuery);
+      if (mentionKey !== null) setMentionDismissed(mentionKey);
+      if (noteMentionKey !== null) setNoteMentionDismissed(noteMentionKey);
+    };
+
     document.addEventListener("keydown", closeOnEscape);
-    return () => document.removeEventListener("keydown", closeOnEscape);
+    document.addEventListener("pointerdown", closeOnOutsidePointer);
+    return () => {
+      document.removeEventListener("keydown", closeOnEscape);
+      document.removeEventListener("pointerdown", closeOnOutsidePointer);
+    };
   }, [
     mentionKey,
     mentionOpen,
@@ -1386,6 +1405,7 @@ export default function InputArea({
         )}
         {slashEmptyOpen && (
           <div
+            data-composer-popover=""
             role="status"
             className="absolute bottom-[calc(100%+8px)] left-0 z-30 w-[280px] rounded-[10px] border border-[var(--leemo-line)] bg-[var(--leemo-card)] px-3.5 py-3 shadow-[var(--leemo-shadow-popover)]"
           >
@@ -1395,6 +1415,7 @@ export default function InputArea({
         )}
         {referencePickerOpen && (
           <div
+            data-composer-popover=""
             role="listbox"
             aria-label="引用文件或便签"
             className="absolute bottom-[calc(100%+8px)] left-0 z-30 max-h-[min(360px,58vh)] w-[420px] max-w-full min-w-[280px] overflow-y-auto rounded-[14px] border border-[var(--leemo-line)] bg-[var(--leemo-card)] p-1.5 shadow-[var(--leemo-shadow-popover)]"
@@ -1462,6 +1483,7 @@ export default function InputArea({
         )}
         {noteMentionOpen && (
           <div
+            data-composer-popover=""
             data-testid="note-mention-menu"
             className="absolute bottom-full left-0 z-30 mb-2 max-h-60 w-full overflow-y-auto rounded-lg border border-[var(--leemo-line)] bg-[var(--leemo-card)] p-1 shadow-lg"
           >
@@ -1504,6 +1526,7 @@ export default function InputArea({
         />
 
         <textarea
+          data-composer-inline-trigger=""
           ref={textareaRef}
           aria-label="输入消息"
           placeholder="输入消息…"
@@ -1531,6 +1554,7 @@ export default function InputArea({
 
         <div className="leemo-composer-toolbar flex min-h-11 items-center gap-1.5 px-2.5 pb-1.5">
           <button
+            data-composer-popover-trigger=""
             data-testid="composer-icon-control"
             type="button"
             onClick={() => {
@@ -1557,6 +1581,7 @@ export default function InputArea({
             )}
           </button>
           <button
+            data-composer-popover-trigger=""
             data-testid="composer-icon-control"
             type="button"
             onClick={handleSkillClick}
@@ -1569,6 +1594,7 @@ export default function InputArea({
           </button>
 
           <button
+            data-composer-popover-trigger=""
             data-testid="composer-icon-control"
             type="button"
             onClick={handleReferenceClick}
@@ -1594,6 +1620,7 @@ export default function InputArea({
                   />
                 )}
                 <button
+                  data-composer-popover-trigger=""
                   type="button"
                   className="leemo-composer-model flex min-h-8 min-w-0 max-w-[190px] items-center gap-1.5 rounded-md px-2 py-1 text-[12.5px] text-[var(--leemo-ink-2)] hover:bg-[var(--leemo-hover)]"
                   aria-label="切换模型"
@@ -1611,6 +1638,7 @@ export default function InputArea({
                 </button>
               </span>
               <button
+                data-composer-popover-trigger=""
                 type="button"
                 aria-label={`权限模式：${permissionLabel[approvalPermissionMode]}`}
                 aria-expanded={permissionMenuOpen}
@@ -1705,6 +1733,7 @@ export default function InputArea({
 
         {permissionMenuOpen && (
           <div
+            data-composer-popover=""
             role="menu"
             aria-label="权限模式"
             className="absolute bottom-[calc(100%+8px)] left-3 right-3 z-40 overflow-hidden rounded-[14px] border border-[var(--leemo-line)] bg-[var(--leemo-card)] p-1.5 shadow-[0_14px_36px_rgba(17,31,49,0.16)] sm:left-[132px] sm:right-auto sm:w-[340px]"
@@ -1742,6 +1771,7 @@ export default function InputArea({
 
         {modelPickerOpen && (
           <div
+            data-composer-popover=""
             data-testid="model-picker-menu"
             className="absolute bottom-[calc(100%+8px)] left-3 right-3 z-40 max-h-72 overflow-y-auto rounded-[14px] border border-[var(--leemo-line)] bg-[var(--leemo-card)] p-2 shadow-[var(--leemo-shadow-popover)] sm:left-[132px] sm:right-auto sm:w-[360px]"
           >

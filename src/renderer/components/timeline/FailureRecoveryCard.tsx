@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import {
   Check,
   ChevronRight,
@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import type { TimelineItem } from "../../stores/message-model";
 import "./FailureRecoveryCard.css";
+import { useDismissiblePopover } from "../useDismissiblePopover";
 
 export interface FailureRecoveryModel {
   badge: string;
@@ -132,12 +133,21 @@ export default function FailureRecoveryCard({
   const model = useMemo(() => buildFailureRecoveryModel(items), [items]);
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
+  const moreTriggerRef = useRef<HTMLButtonElement>(null);
+  const moreLayerRef = useRef<HTMLDivElement>(null);
   const [busyAction, setBusyAction] = useState<"retry" | "paste" | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const rawDetails = useMemo(
     () => uniqueFacts([...model.rawDetails, retryError]),
     [model.rawDetails, retryError],
   );
+
+  useDismissiblePopover({
+    open: moreOpen,
+    triggerRef: moreTriggerRef,
+    layerRef: moreLayerRef,
+    onDismiss: () => setMoreOpen(false),
+  });
 
   const runAction = async (action: "retry" | "paste", callback: () => Promise<void>) => {
     if (busyAction) return;
@@ -211,6 +221,7 @@ export default function FailureRecoveryCard({
         {onDismiss && (
           <div className="failure-recovery__more-wrap">
             <button
+              ref={moreTriggerRef}
               type="button"
               className="failure-recovery__button failure-recovery__button--icon"
               aria-label="更多恢复操作"
@@ -220,7 +231,7 @@ export default function FailureRecoveryCard({
               <Ellipsis aria-hidden />
             </button>
             {moreOpen && (
-              <div className="failure-recovery__menu">
+              <div ref={moreLayerRef} className="failure-recovery__menu">
                 <button
                   type="button"
                   onClick={() => {

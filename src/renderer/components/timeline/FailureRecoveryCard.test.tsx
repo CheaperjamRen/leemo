@@ -211,6 +211,16 @@ describe("buddy failure recovery receipt", () => {
     expect(stores.conversations.getState().pendingSends[conversationId]).toBeUndefined();
   });
 
+  it("dismisses the secondary recovery menu when clicking elsewhere", async () => {
+    const { getStores } = renderFailedTurn([userTurn, failedBrowser, rawError, failedResult]);
+    await seedRetryDraft(getStores());
+
+    fireEvent.click(await screen.findByRole("button", { name: "更多恢复操作" }));
+    expect(screen.getByRole("button", { name: "不再显示恢复入口" })).toBeInTheDocument();
+    fireEvent.pointerDown(document.body);
+    expect(screen.queryByRole("button", { name: "不再显示恢复入口" })).not.toBeInTheDocument();
+  });
+
   it("does not turn an ordinary interruption into a recovery card, but keeps actionable workbench failures recoverable", async () => {
     const interrupted = renderFailedTurn([userTurn, plan, interruptedResult]);
     expect(screen.queryByTestId("buddy-failure-recovery")).not.toBeInTheDocument();

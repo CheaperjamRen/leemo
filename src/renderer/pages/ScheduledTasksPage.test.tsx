@@ -106,6 +106,26 @@ describe("ScheduledTasksPage", () => {
     await waitFor(() => expect(screen.getByRole("button", { name: "保存修改" })).toBeEnabled());
   });
 
+  it("dismisses a task row menu when clicking elsewhere", async () => {
+    const user = userEvent.setup();
+    const scheduler = new MemorySchedulerClient();
+    await scheduler.create({
+      prompt: "整理今日学习记录",
+      workspaceId: "leemo-home",
+      schedule: { kind: "daily", hour: 21, minute: 0 },
+    });
+    render(
+      <BridgeProvider client={new FixtureBridgeClient()} scheduler={scheduler}>
+        <ScheduledTasksPage />
+      </BridgeProvider>,
+    );
+
+    await user.click(await screen.findByLabelText("更多 整理今日学习记录 操作"));
+    expect(screen.getByLabelText("编辑 整理今日学习记录")).toBeInTheDocument();
+    await user.pointer({ keys: "[MouseLeft]", target: document.body });
+    expect(screen.queryByLabelText("编辑 整理今日学习记录")).not.toBeInTheDocument();
+  });
+
   it("shows a compact repeat-task list with separate scope and enabled controls", async () => {
     const scheduler = new MemorySchedulerClient();
     await scheduler.create({

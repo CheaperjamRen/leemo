@@ -244,6 +244,16 @@ describe("PdfView beta reading chain", () => {
     expect(viewer.currentScaleValue).toBe("page-fit");
   });
 
+  it("dismisses PDF overflow actions when clicking outside", async () => {
+    renderReader();
+    await readyViewer();
+
+    await userEvent.click(screen.getByRole("button", { name: "更多 PDF 操作" }));
+    expect(screen.getByRole("menuitem", { name: "适合宽度" })).toBeInTheDocument();
+    fireEvent.pointerDown(document.body);
+    expect(screen.queryByRole("menuitem", { name: "适合宽度" })).not.toBeInTheDocument();
+  });
+
   it("owns Ctrl+F and provides query, next/previous, count and clear over PDFFindController", async () => {
     renderReader();
     await readyViewer();

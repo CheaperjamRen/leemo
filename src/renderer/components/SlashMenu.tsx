@@ -22,6 +22,7 @@ export default function SlashMenu({ skills, selectedIndex, onPick, onHover }: Sl
 
   return (
     <div
+      data-composer-popover=""
       className="absolute bottom-[calc(100%+8px)] left-2 right-2 z-40 max-h-[min(360px,58vh)] overflow-y-auto rounded-[14px] border border-[var(--leemo-line)] bg-[var(--leemo-card)] p-1.5 shadow-[var(--leemo-shadow-popover)] sm:right-auto sm:w-[360px]"
       data-testid="slash-menu"
     >
