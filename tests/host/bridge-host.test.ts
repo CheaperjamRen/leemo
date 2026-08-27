@@ -642,6 +642,28 @@ describe("bridge-host — root artifact routing", () => {
     });
   });
 
+  it.each(["report.pdf", "resume.docx", "slides.pptx", "analysis.xlsx"])(
+    "redirects native Read for a document format to Leemo's document reader: %s",
+    async (filePath) => {
+      const { preToolUse } = await assembled("acceptEdits");
+
+      await expect(runPreToolUse(preToolUse, "Read", { file_path: filePath })).resolves.toEqual({
+        continue: true,
+        hookSpecificOutput: {
+          hookEventName: "PreToolUse",
+          permissionDecision: "deny",
+          permissionDecisionReason: "这是 PDF 或 Office 文档。请改用 Leemo 的“读取文档”工具读取同一路径。",
+        },
+      });
+    },
+  );
+
+  it("keeps native Read available for ordinary text files", async () => {
+    const { preToolUse } = await assembled("acceptEdits");
+    await expect(runPreToolUse(preToolUse, "Read", { file_path: "notes.md" }))
+      .resolves.toEqual({ continue: true });
+  });
+
   it.each([
     [false, "C:\\Users\\R\\Desktop\\报告.md"],
     [true, "报告.md"],

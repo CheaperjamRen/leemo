@@ -1730,6 +1730,19 @@ export function createBridgeHost(deps: HostDeps): BridgeHost {
 
   const memoryWriteDeniedMessage =
     "长期记忆由 Leemo 管理，请使用记忆工具；普通文档请写入工作区。";
+  const documentReadDeniedMessage =
+    "这是 PDF 或 Office 文档。请改用 Leemo 的“读取文档”工具读取同一路径。";
+  const DOCUMENT_READ_EXTENSIONS = new Set([".pdf", ".docx", ".pptx", ".xlsx"]);
+
+  function needsLeemoDocumentReader(toolName: string, input: Record<string, unknown>): boolean {
+    if (toolName !== "Read") return false;
+    const target = typeof input.file_path === "string"
+      ? input.file_path
+      : typeof input.path === "string"
+        ? input.path
+        : "";
+    return DOCUMENT_READ_EXTENSIONS.has(path.extname(target.trim()).toLocaleLowerCase());
+  }
 
   interface GovernedToolInput {
     denied?: string;
@@ -1749,6 +1762,9 @@ export function createBridgeHost(deps: HostDeps): BridgeHost {
     cwd: string,
     workspace: ConversationWorkspace,
   ): GovernedToolInput {
+    if (needsLeemoDocumentReader(toolName, input)) {
+      return { denied: documentReadDeniedMessage, effectiveInput: input };
+    }
     if (isGovernedMemoryWrite(toolName, input, cwd)) {
       return { denied: memoryWriteDeniedMessage, effectiveInput: input };
     }

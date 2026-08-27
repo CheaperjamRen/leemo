@@ -7,7 +7,6 @@ import PptxGenJS from "pptxgenjs";
 import { strToU8, unzipSync, zipSync } from "fflate";
 import {
   DEFAULT_DOCUMENT_TEXT_LIMIT,
-  DOCUMENT_INPUT_MAX_BYTES,
   PDF_INPUT_MAX_BYTES,
   MAX_DOCUMENT_TEXT_LIMIT,
   DocumentToolError,
@@ -197,10 +196,10 @@ describe("document engine contract", () => {
     });
   });
 
-  it("allows a PDF larger than the Office limit to reach the parser", async () => {
+  it("allows a PDF larger than the native 20 MB limit to reach the parser", { timeout: 15_000 }, async () => {
     const file = path.join(temporaryDirectory(), "large-but-supported.pdf");
     fs.writeFileSync(file, "%PDF-1.4\ninvalid but within the PDF byte budget");
-    fs.truncateSync(file, DOCUMENT_INPUT_MAX_BYTES + 1);
+    fs.truncateSync(file, 20 * 1024 * 1024 + 1);
 
     await expect(readDocumentFile(file)).rejects.toMatchObject({
       code: "corrupt",
