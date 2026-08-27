@@ -1,11 +1,9 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import {
   Archive,
-  ArchiveRestore,
   BookOpen,
   CalendarClock,
   ChevronDown,
-  ChevronRight,
   Folder,
   FolderOpen,
   Languages,
@@ -43,6 +41,7 @@ import {
 import ConversationListItem, { type ConversationMoveTarget } from "./ConversationListItem";
 import AnchoredLayer from "./AnchoredLayer";
 import WorkspaceSwitcher from "./WorkspaceSwitcher";
+import { deriveWorkbenchSidebarModel } from "./workbench-sidebar-model";
 
 interface ScopeTarget {
   kind: "managed" | "external";
@@ -123,16 +122,8 @@ export default function WorkbenchSidebar({ onNewConversation, shellWidth }: Work
   const workspaceError = useWorkspaces((state) => state.error);
   const notebookError = useNotebooks((state) => state.error);
 
-  const [showArchived, setShowArchived] = useState<Record<string, boolean>>({});
-  const [showArchivedNotebooks, setShowArchivedNotebooks] = useState(false);
-  const archivedNotebooksRef = useRef<HTMLDivElement | null>(null);
   const [scopeMenu, setScopeMenu] = useState<{ target: ScopeTarget; anchor: HTMLElement } | null>(null);
   const [renamingScope, setRenamingScope] = useState(false);
-
-  useEffect(() => {
-    if (!showArchivedNotebooks) return;
-    archivedNotebooksRef.current?.scrollIntoView?.({ block: "nearest" });
-  }, [showArchivedNotebooks]);
   const [scopeName, setScopeName] = useState("");
   const [scopeActionBusy, setScopeActionBusy] = useState(false);
   const [scopeActionError, setScopeActionError] = useState<string | null>(null);
@@ -175,7 +166,6 @@ export default function WorkbenchSidebar({ onNewConversation, shellWidth }: Work
       })),
   ], [notebookList, workspaceList]);
   const visibleTargets = targets.filter((target) => !target.archived);
-  const archivedTargets = targets.filter((target) => target.archived);
 
   const globalTarget: ScopeTarget = {
     kind: "managed",
@@ -186,26 +176,21 @@ export default function WorkbenchSidebar({ onNewConversation, shellWidth }: Work
     archived: false,
   };
 
-  const sortConversationIds = (ids: string[]): string[] => [...ids].sort((left, right) => {
-    const a = conversations[left];
-    const b = conversations[right];
-    return Number(b?.pinned ?? false) - Number(a?.pinned ?? false)
-      || (b?.lastActivityAt ?? 0) - (a?.lastActivityAt ?? 0);
-  });
-  const conversationsFor = (target: ScopeTarget) => sortConversationIds(order.filter((id) => {
-    const conversation = conversations[id];
-    return conversation
-      && !conversation.archived
-      && (conversation.workspaceId ?? HOME_WORKSPACE_ID) === target.workspaceId
-      && conversation.bookId === target.bookId;
-  }));
-  const archivedFor = (target: ScopeTarget) => sortConversationIds(order.filter((id) => {
-    const conversation = conversations[id];
-    return conversation
-      && conversation.archived
-      && (conversation.workspaceId ?? HOME_WORKSPACE_ID) === target.workspaceId
-      && conversation.bookId === target.bookId;
-  }));
+  const targetByScope = useMemo(() => new Map([
+    [scopeKeyForSelection({ workspaceId: globalTarget.workspaceId, notebookId: globalTarget.bookId }), globalTarget],
+    ...visibleTargets.map((target) => [
+      scopeKeyForSelection({ workspaceId: target.workspaceId, notebookId: target.bookId }),
+      target,
+    ] as const),
+  ]), [visibleTargets]);
+  const sidebarModel = useMemo(() => deriveWorkbenchSidebarModel({
+    conversations,
+    order,
+    visibleScopeKeys: new Set(targetByScope.keys()),
+  }), [conversations, order, targetByScope]);
+  const conversationsFor = (target: ScopeTarget): string[] => sidebarModel.byScope[
+    scopeKeyForSelection({ workspaceId: target.workspaceId, notebookId: target.bookId })
+  ] ?? [];
 
   const moveTargets = useMemo<ConversationMoveTarget[]>(() => [
     ...notebookList.filter((book) => !book.archived).map((book) => ({ workspaceId: HOME_WORKSPACE_ID, bookId: book.id, label: book.title })),
@@ -395,7 +380,7 @@ export default function WorkbenchSidebar({ onNewConversation, shellWidth }: Work
     setScopeActionBusy(false);
   };
 
-  const renderConversation = (id: string, target: ScopeTarget) => {
+  const renderConversation = (id: string, target: ScopeTarget, showContext = false) => {
     const conversation = conversations[id];
     if (!conversation) return null;
     return (
@@ -417,6 +402,7 @@ export default function WorkbenchSidebar({ onNewConversation, shellWidth }: Work
           activeRunId: runIds[id] ?? null,
           pending: pendingByConversation[id] ?? null,
         })}
+        contextLabel={showContext ? target.label : undefined}
       />
     );
   };
@@ -426,8 +412,6 @@ export default function WorkbenchSidebar({ onNewConversation, shellWidth }: Work
     const current = isSameScope(target, currentTarget);
     const menuOpen = scopeMenu !== null && isSameScope(scopeMenu.target, target);
     const ids = conversationsFor(target);
-    const archived = archivedFor(target);
-    const archivedOpen = showArchived[key] ?? false;
     return (
       <div key={key} className="min-w-0">
         <div
@@ -436,10 +420,10 @@ export default function WorkbenchSidebar({ onNewConversation, shellWidth }: Work
         >
           <button
             type="button"
-            aria-label={`${target.archived ? "恢复" : "打开"}本子 ${target.label}`}
+            aria-label={`打开本子 ${target.label}`}
             aria-current={current ? "page" : undefined}
-            disabled={(!target.available && !target.archived) || transitioning}
-            onClick={() => target.archived ? void setScopeArchived(target, false) : requestScopeChange(target)}
+            disabled={!target.available || transitioning}
+            onClick={() => requestScopeChange(target)}
             className="flex h-9 min-w-0 flex-1 items-center gap-2 px-2.5 text-left disabled:cursor-not-allowed disabled:opacity-50"
             title={target.available ? target.label : "找不到文件夹"}
           >
@@ -511,9 +495,9 @@ export default function WorkbenchSidebar({ onNewConversation, shellWidth }: Work
                   重新定位文件夹
                 </button>
               )}
-              <button type="button" role="menuitem" className={scopeMenuItemClass} onClick={() => void setScopeArchived(target, !target.archived)}>
-                {target.archived ? <ArchiveRestore className="h-3.5 w-3.5" aria-hidden /> : <Archive className="h-3.5 w-3.5" aria-hidden />}
-                {target.archived ? "恢复到侧栏" : "归档本子"}
+              <button type="button" role="menuitem" className={scopeMenuItemClass} onClick={() => void setScopeArchived(target, true)}>
+                <Archive className="h-3.5 w-3.5" aria-hidden />
+                归档本子
               </button>
               {target.kind === "external" && (
                 <button type="button" role="menuitem" className={`${scopeMenuItemClass} text-[var(--leemo-danger,#b42318)]`} onClick={() => void removeExternalScope(target)}>
@@ -531,21 +515,6 @@ export default function WorkbenchSidebar({ onNewConversation, shellWidth }: Work
               <p className="px-2.5 py-2 text-[11px] text-[var(--leemo-ink-3)]">还没有对话</p>
             ) : (
               <div className="space-y-0.5">{ids.map((id) => renderConversation(id, target))}</div>
-            )}
-            {archived.length > 0 && (
-              <div className="mt-1">
-                <button
-                  type="button"
-                  aria-expanded={archivedOpen}
-                  onClick={() => setShowArchived((state) => ({ ...state, [key]: !archivedOpen }))}
-                  className="flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-left text-[10px] text-[var(--leemo-ink-3)] hover:bg-[var(--leemo-side-hover)]"
-                >
-                  {archivedOpen ? <ChevronDown className="h-3 w-3" aria-hidden /> : <ChevronRight className="h-3 w-3" aria-hidden />}
-                  <Archive className="h-3 w-3" aria-hidden />
-                  已归档 {archived.length}
-                </button>
-                {archivedOpen && <div className="space-y-0.5 opacity-80">{archived.map((id) => renderConversation(id, target))}</div>}
-              </div>
             )}
           </div>
         )}
@@ -612,6 +581,26 @@ export default function WorkbenchSidebar({ onNewConversation, shellWidth }: Work
             </button>
           </div>
 
+          {sidebarModel.pinned.length > 0 && (
+            <section
+              className="leemo-workbench-sidebar__pinned flex max-h-[180px] shrink-0 flex-col border-b border-[var(--leemo-line)] px-2 py-2"
+              aria-label="置顶对话"
+            >
+              <div className="flex shrink-0 items-center justify-between px-2 pb-1 text-[12px] font-medium text-[var(--leemo-ink-2)]">
+                <span>置顶</span>
+                <span className="text-[10px] font-normal text-[var(--leemo-ink-3)]">{sidebarModel.pinned.length}</span>
+              </div>
+              <div className="min-h-0 overflow-y-auto pr-0.5">
+                <div className="space-y-0.5">
+                  {sidebarModel.pinned.map(({ id, scopeKey }) => {
+                    const target = targetByScope.get(scopeKey);
+                    return target ? renderConversation(id, target, true) : null;
+                  })}
+                </div>
+              </div>
+            </section>
+          )}
+
           <section className="leemo-workbench-sidebar__notebooks flex min-h-[120px] max-h-[55%] shrink-0 flex-col overflow-visible px-2 py-2" data-testid="workbench-notebook-map" aria-label="本子">
             <div className="relative z-50 flex shrink-0 items-center justify-between px-2 pb-1 text-[12px] font-medium text-[var(--leemo-ink-2)]">
               <span>本子</span>
@@ -621,7 +610,7 @@ export default function WorkbenchSidebar({ onNewConversation, shellWidth }: Work
               </span>
             </div>
             <div data-testid="workbench-notebook-list" className="min-h-0 overflow-y-auto pr-0.5">
-              {visibleTargets.length === 0 && archivedTargets.length === 0 ? (
+              {visibleTargets.length === 0 ? (
                 <div className="leemo-sidebar-empty" data-testid="workbench-notebook-empty">
                   <span className="leemo-sidebar-empty__icon" aria-hidden>
                     <BookOpen />
@@ -634,25 +623,6 @@ export default function WorkbenchSidebar({ onNewConversation, shellWidth }: Work
               ) : (
                 <div className="space-y-0.5">
                   {visibleTargets.map((target) => renderScopeSection(target, true))}
-                  {archivedTargets.length > 0 && (
-                    <div className="mt-1 border-t border-[var(--leemo-line-soft)] pt-1">
-                      <button
-                        type="button"
-                        aria-expanded={showArchivedNotebooks}
-                        onClick={() => setShowArchivedNotebooks((value) => !value)}
-                        className="flex h-7 w-full items-center gap-1.5 rounded-md px-2 text-left text-[10px] text-[var(--leemo-ink-3)] hover:bg-[var(--leemo-side-hover)]"
-                      >
-                        {showArchivedNotebooks ? <ChevronDown className="h-3 w-3" aria-hidden /> : <ChevronRight className="h-3 w-3" aria-hidden />}
-                        <ArchiveRestore className="h-3 w-3" aria-hidden />
-                        已归档本子 {archivedTargets.length}
-                      </button>
-                      {showArchivedNotebooks && (
-                        <div ref={archivedNotebooksRef} className="space-y-0.5 opacity-80">
-                          {archivedTargets.map((target) => renderScopeSection(target, false))}
-                        </div>
-                      )}
-                    </div>
-                  )}
                 </div>
               )}
             </div>
@@ -687,16 +657,6 @@ export default function WorkbenchSidebar({ onNewConversation, shellWidth }: Work
                 </div>
               ) : (
                 <div className="space-y-0.5">{conversationsFor(globalTarget).map((id) => renderConversation(id, globalTarget))}</div>
-              )}
-              {archivedFor(globalTarget).length > 0 && (
-                <div className="mt-2 border-t border-[var(--leemo-line-soft)] pt-1">
-                  <button type="button" aria-expanded={showArchived.global ?? false} onClick={() => setShowArchived((state) => ({ ...state, global: !(state.global ?? false) }))} className="flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-left text-[10px] text-[var(--leemo-ink-3)] hover:bg-[var(--leemo-side-hover)]">
-                    {showArchived.global ? <ChevronDown className="h-3 w-3" aria-hidden /> : <ChevronRight className="h-3 w-3" aria-hidden />}
-                    <ArchiveRestore className="h-3 w-3" aria-hidden />
-                    已归档 {archivedFor(globalTarget).length}
-                  </button>
-                  {showArchived.global && <div className="space-y-0.5 opacity-80">{archivedFor(globalTarget).map((id) => renderConversation(id, globalTarget))}</div>}
-                </div>
               )}
             </div>
           </section>

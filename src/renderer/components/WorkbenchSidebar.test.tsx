@@ -9,7 +9,6 @@ import type { WorkspaceClient } from "../workspace/client";
 
 function Seed({ onReady }: { onReady?: (stores: BridgeStores) => void }): null {
   const stores = useContext(BridgeContext) as BridgeStores;
-  onReady?.(stores);
   if (!stores.conversations.getState().byId["global-chat"]) {
     stores.notebooks.setState({
       list: [
@@ -42,6 +41,7 @@ function Seed({ onReady }: { onReady?: (stores: BridgeStores) => void }): null {
       runIds: { "global-chat": null, "math-chat": null, "career-chat": null },
     });
   }
+  onReady?.(stores);
   return null;
 }
 
@@ -146,6 +146,42 @@ describe("WorkbenchSidebar", () => {
     expect(global).toHaveClass("min-h-[164px]");
   });
 
+  it("shows one cross-scope pinned section and omits pinned duplicates and archived records", async () => {
+    const user = userEvent.setup();
+    let stores!: BridgeStores;
+    render(
+      <BridgeProvider>
+        <Seed onReady={(value) => {
+          stores = value;
+          stores.conversations.setState((state) => ({
+            byId: {
+              ...state.byId,
+              "global-chat": { ...state.byId["global-chat"], pinned: true },
+              "career-chat": { ...state.byId["career-chat"], pinned: true },
+              "math-chat": { ...state.byId["math-chat"], archived: true },
+            },
+          }));
+        }} />
+        <WorkbenchSidebar onNewConversation={() => {}} />
+      </BridgeProvider>,
+    );
+
+    const pinned = screen.getByRole("region", { name: "置顶对话" });
+    expect(within(pinned).getByText("和 momo 讨论方向")).toBeInTheDocument();
+    expect(within(pinned).getByText("简历修改")).toBeInTheDocument();
+    expect(within(screen.getByTestId("workbench-global-map")).queryByText("和 momo 讨论方向")).not.toBeInTheDocument();
+    expect(within(screen.getByTestId("workbench-notebook-map")).queryByText("简历修改")).not.toBeInTheDocument();
+    expect(screen.queryByText("微积分复习")).not.toBeInTheDocument();
+    expect(screen.queryByText(/已归档/)).not.toBeInTheDocument();
+
+    await user.click(within(pinned).getByRole("button", { name: "简历修改，所属 求职" }));
+    await waitFor(() => {
+      expect(stores.notebooks.getState().activeId).toBe("career");
+      expect(stores.conversations.getState().activeId).toBe("career-chat");
+      expect(stores.ui.getState().activeScopeKey).toBe("notebook:career");
+    });
+  });
+
   it("uses the dense workbench row rhythm", () => {
     render(
       <BridgeProvider>
@@ -165,14 +201,8 @@ describe("WorkbenchSidebar", () => {
     }
   });
 
-  it("renames, archives and restores a managed notebook without presenting a delete action", async () => {
+  it("renames and archives a managed notebook without keeping an archive drawer in the sidebar", async () => {
     const user = userEvent.setup();
-    const scrollIntoView = vi.fn();
-    const originalScrollIntoView = HTMLElement.prototype.scrollIntoView;
-    Object.defineProperty(HTMLElement.prototype, "scrollIntoView", {
-      configurable: true,
-      value: scrollIntoView,
-    });
     render(
       <BridgeProvider>
         <Seed onReady={(stores) => {
@@ -208,16 +238,7 @@ describe("WorkbenchSidebar", () => {
     await user.click(screen.getByRole("button", { name: "微积分复习本本子菜单" }));
     await user.click(screen.getByRole("menuitem", { name: "归档本子" }));
     expect(screen.queryByRole("button", { name: "打开本子 微积分复习本" })).not.toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "已归档本子 1" }));
-    expect(scrollIntoView).toHaveBeenCalledWith({ block: "nearest" });
-    await user.click(screen.getByRole("button", { name: "恢复本子 微积分复习本" }));
-    expect(await screen.findByRole("button", { name: "打开本子 微积分复习本" })).toBeInTheDocument();
-
-    if (originalScrollIntoView) {
-      Object.defineProperty(HTMLElement.prototype, "scrollIntoView", { configurable: true, value: originalScrollIntoView });
-    } else {
-      delete (HTMLElement.prototype as Partial<HTMLElement>).scrollIntoView;
-    }
+    expect(screen.queryByText(/已归档本子/)).not.toBeInTheDocument();
   });
 
   it("removes an external folder only from Leemo through an explicit menu action", async () => {

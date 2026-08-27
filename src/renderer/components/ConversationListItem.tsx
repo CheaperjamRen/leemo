@@ -41,6 +41,7 @@ export default function ConversationListItem({
   moveTargets = [],
   onMove,
   status,
+  contextLabel,
 }: {
   conversation: ConversationMeta;
   active: boolean;
@@ -54,6 +55,7 @@ export default function ConversationListItem({
   moveTargets?: ConversationMoveTarget[];
   onMove?: (target: ConversationMoveTarget) => void | Promise<void>;
   status?: ConversationStatus;
+  contextLabel?: string;
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(conversation.title);
@@ -144,13 +146,14 @@ export default function ConversationListItem({
         <button
           ref={menuButtonRef}
           type="button"
-          aria-label={conversation.title}
-          title={conversation.title}
+          aria-label={contextLabel ? `${conversation.title}，所属 ${contextLabel}` : conversation.title}
+          title={contextLabel ? `${conversation.title} · ${contextLabel}` : conversation.title}
           onClick={onPick}
           className="flex h-9 min-w-0 flex-1 items-center gap-2 pl-2.5 text-left text-[13px] leading-5 focus-visible:outline-none"
         >
           {conversation.pinned && <Pin className="h-3 w-3 shrink-0 text-[var(--leemo-amber)]" aria-label="已置顶" />}
           <span className="min-w-0 flex-1 truncate">{conversation.title}</span>
+          {contextLabel && <span className="sr-only">所属 {contextLabel}</span>}
           <ConversationStateMark marker={marker} label={conversation.title} detail={status?.detail} />
         </button>
         <button
