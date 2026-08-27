@@ -14,7 +14,7 @@
   </p>
 </div>
 
-![Leemo 开始页：收集箱、待办、本地文档与最近内容](.github/assets/readme/v0.1.6/00-start-home.png)
+![Leemo 开始页：收集箱、待办、本地文档与最近内容](.github/assets/readme/v0.1.10/00-start-home.png)
 
 <table>
   <thead>
@@ -29,8 +29,8 @@
       <td>长期关系流、继续历史、新话题章节、上下文反馈、可管理记忆。回来时可以接着聊，也可以干净地开始另一个话题。</td>
     </tr>
     <tr>
-      <td><a href=".github/assets/readme/v0.1.6/06-workbench-overview.png"><img src=".github/assets/readme/v0.1.6/06-workbench-overview.png" alt="Leemo 工作台：真实本子文件树、写入工具状态与落盘成果" /><br /><sub>点击图片查看完整界面</sub></a></td>
-      <td><a href=".github/assets/readme/v0.1.6/04-buddy-history-context.png"><img src=".github/assets/readme/v0.1.6/04-buddy-history-context.png" alt="Leemo 搭子：长期关系流、历史对话与实时上下文" /><br /><sub>点击图片查看完整界面</sub></a></td>
+      <td><a href=".github/assets/readme/v0.1.10/06-workbench-overview.png"><img src=".github/assets/readme/v0.1.10/06-workbench-overview.png" alt="Leemo 工作台：真实本子文件树、写入工具状态与落盘成果" /><br /><sub>点击图片查看完整界面</sub></a></td>
+      <td><a href=".github/assets/readme/v0.1.10/04-buddy-history-context.png"><img src=".github/assets/readme/v0.1.10/04-buddy-history-context.png" alt="Leemo 搭子：长期关系流、历史对话与实时上下文" /><br /><sub>点击图片查看完整界面</sub></a></td>
     </tr>
   </tbody>
 </table>
@@ -73,21 +73,21 @@ Leemo 把快速记录、本地文档、momo 对话和文件夹执行连成一条
 
 短记录可以继续长成一份本地 Markdown 文档。标题、列表、清单、引用、表格、代码、公式和图表都保存在普通文件中，既能在 Leemo 里写，也能交给其他软件继续处理。
 
-![Leemo 本地文档：整理计划、阶段与待办](.github/assets/readme/v0.1.6/01-local-document-plan.png)
+![Leemo 本地文档：整理计划、阶段与待办](.github/assets/readme/v0.1.10/01-local-document-plan.png)
 
 需要装下表格、清单和更丰富的内容时，仍然写在同一类本地 Markdown 文件里：
 
-![Leemo 本地文档：表格、清单与 Markdown 内容](.github/assets/readme/v0.1.6/02-local-document-markdown.png)
+![Leemo 本地文档：表格、清单与 Markdown 内容](.github/assets/readme/v0.1.10/02-local-document-markdown.png)
 
 ### 3. 想聊时，继续上次的话题
 
 打开搭子页，可以继续最近的聊天，也可以先从一句还没想清楚的话开始。momo 在同一条长期关系流里承接历史；话题换了，你可以新开一个章节，让当前上下文保持清楚。
 
-![Leemo 搭子欢迎页：继续最近聊天或开始交流](.github/assets/readme/v0.1.6/03-buddy-welcome.png)
+![Leemo 搭子欢迎页：继续最近聊天或开始交流](.github/assets/readme/v0.1.10/03-buddy-welcome.png)
 
-想换一个讨论方向时，点“新话题”会先确认，再进入新的章节：
+想换一个讨论方向时，点“新话题”会立即建立章节边界并清理当前上下文。分界线上保留“撤销”，发送新章节的第一条消息后正式固化：
 
-![Leemo 搭子：开始新话题前的确认](.github/assets/readme/v0.1.6/05-buddy-new-topic.png)
+![Leemo 搭子：新话题章节边界与撤销](.github/assets/readme/v0.1.10/05-buddy-new-topic.png)
 
 历史可以回看，实时上下文可以查看，新话题也不会抹掉以前聊过的内容。
 
@@ -126,6 +126,7 @@ Leemo 的主 Agent 执行内核建立在 Anthropic 官方的 [`@anthropic-ai/cla
 - **课程学习**：从一个具体误解开始解释，整理笔记、复习计划和自测题。
 - **写作与内容创作**：保留自己的原稿，再让 momo 查资料、找反例、校对或生成派生版本。
 - **办公与数据处理**：处理 Word、Excel、演示文稿和 PDF，交付可继续编辑的文件。
+- **网页与电脑操作**：在你允许的范围内浏览网页、填写表单或操作 Windows 应用；登录、验证码和最终提交会停下来让你接管或确认。
 - **日常规划**：用便签、Todo 和本地文档安排学习、生活与工作，临时想法先放进收集箱。
 - **谈心与选择澄清**：把还没说顺的感受慢慢讲出来，再决定眼下最小的一步。
 - **哲学与深度讨论**：围绕技术、注意力和价值判断继续追问，也让 momo 提供反例。
@@ -137,23 +138,36 @@ Leemo 的主 Agent 执行内核建立在 Anthropic 官方的 [`@anthropic-ai/cla
 
 > p 值我每次都会背定义，但一到题里就懵。能不能换个说法？
 
-![Leemo 求职与科研场景](.github/assets/readme/v0.1.6/07-job-and-research.png)
+<table>
+  <thead>
+    <tr>
+      <th width="50%">求职：把经历讲成真实故事</th>
+      <th width="50%">科研：把灵感变成可观察问题</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><a href=".github/assets/readme/v0.1.10/07-job-search.png"><img src=".github/assets/readme/v0.1.10/07-job-search.png" alt="Leemo 求职场景：从实习经历中梳理具体问题、判断和结果" /></a></td>
+      <td><a href=".github/assets/readme/v0.1.10/08-research.png"><img src=".github/assets/readme/v0.1.10/08-research.png" alt="Leemo 科研场景：把关于注意力切换的直觉变成可验证问题" /></a></td>
+    </tr>
+  </tbody>
+</table>
 
 学习和开放讨论也可以从一个没想明白的问题继续：
 
-![Leemo 学习与哲学讨论场景](.github/assets/readme/v0.1.6/08-study-and-philosophy.png)
+![Leemo 学习与哲学讨论场景](.github/assets/readme/v0.1.10/09-study-and-philosophy.png)
 
 谈心也可以只是当下的一句话：
 
 > 我今天什么都不想做，又有点慌。你先别给我列一大堆计划。
 
-![Leemo momo 谈心场景](.github/assets/readme/v0.1.6/09-heart-to-heart.png)
+![Leemo momo 谈心场景](.github/assets/readme/v0.1.10/10-heart-to-heart.png)
 
 ## Skill Hub：把专业能力接进当前任务
 
 Skill 是可以重复使用的专业方法。Office、PDF、研究阅读、网页资料和其他 Skills 会说明用途、来源与状态；启用后，momo 可以在当前任务里直接调用，不必重新搭一套工作流。
 
-![Leemo Skill Hub：查看并启用当前任务需要的专业能力](.github/assets/readme/v0.1.6/10-skill-hub.png)
+![Leemo Skill Hub：查看并启用当前任务需要的专业能力](.github/assets/readme/v0.1.10/11-skill-hub.png)
 
 Skills 仍然使用同一套本地工作空间、权限和成果关系。你可以使用 Leemo 自带或社区提供的能力，也可以把自己的流程保存成个人 Skill。
 
